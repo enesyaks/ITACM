@@ -6,22 +6,32 @@
  *     (recommended for Vercel/PaaS secret stores)
  *  2. FIREBASE_SERVICE_ACCOUNT_JSON   — raw JSON string
  *  3. GOOGLE_APPLICATION_CREDENTIALS  — file path (local dev)
- *  4. Application Default Credentials (Google Cloud runtimes)
+ *  4. FIREBASE_USE_APPLICATION_DEFAULT_CREDENTIALS=true — Google Cloud ADC
  */
 const admin = require('firebase-admin');
 const config = require('../../config');
 
+function parseServiceAccountJson(raw, source) {
+  try {
+    return JSON.parse(raw);
+  } catch (err) {
+    throw new Error(`${source} must contain valid Firebase service account JSON: ${err.message}`);
+  }
+}
+
 function resolveCredential() {
   if (config.firebaseServiceAccountBase64) {
-    const json = JSON.parse(
-      Buffer.from(config.firebaseServiceAccountBase64, 'base64').toString('utf8')
+    const decoded = Buffer.from(config.firebaseServiceAccountBase64, 'base64').toString('utf8');
+    return admin.credential.cert(
+      parseServiceAccountJson(decoded, 'FIREBASE_SERVICE_ACCOUNT_BASE64')
     );
-    return admin.credential.cert(json);
   }
   if (config.firebaseServiceAccountJson) {
-    return admin.credential.cert(JSON.parse(config.firebaseServiceAccountJson));
+    return admin.credential.cert(
+      parseServiceAccountJson(config.firebaseServiceAccountJson, 'FIREBASE_SERVICE_ACCOUNT_JSON')
+    );
   }
-  return undefined; // fall back to GOOGLE_APPLICATION_CREDENTIALS / ADC
+  return undefined; // fall back to GOOGLE_APPLICATION_CREDENTIALS / explicit ADC
 }
 
 if (!admin.apps.length) {

@@ -60,8 +60,11 @@ npm install
 npm run setup
 ```
 
-The wizard writes a ready-to-run `.env` (generates strong secrets for you) and
-prints the exact next steps for your choice.
+The wizard writes a ready-to-run local `.env` (generates strong secrets for
+you) and prints the exact next steps for your choice. On hosted platforms such
+as Vercel, Railway, Render, Fly.io or Cloud Run, define the same names in the
+platform's Environment Variables / Secrets UI; the app reads them from
+`process.env` at runtime.
 
 ---
 
@@ -118,9 +121,14 @@ Provide it to the app one of these ways:
 | **Base64 env var** (recommended) | `base64 -i key.json \| tr -d '\n'` → `FIREBASE_SERVICE_ACCOUNT_BASE64` | Vercel & any PaaS secret store |
 | Raw JSON env var | paste JSON into `FIREBASE_SERVICE_ACCOUNT_JSON` | CI secrets |
 | File path | `GOOGLE_APPLICATION_CREDENTIALS=/path/outside/repo/key.json` | local development |
+| Explicit ADC | `FIREBASE_USE_APPLICATION_DEFAULT_CREDENTIALS=true` | Google Cloud runtimes |
 
 The `npm run setup` wizard does the base64 conversion for you and never copies
 the key into the project.
+
+If you use the built-in web UI in Firebase mode, also create a Firebase Web App
+and set `FIREBASE_WEB_CONFIG` to the one-line web config JSON. This value is
+public Firebase client config, not the Admin service account key.
 
 ### 3. Configure, deploy rules, create the first Admin
 
@@ -148,13 +156,23 @@ In Firebase mode the **client** signs in with the Firebase Web SDK
 
 1. Push the repo to GitHub and **Import Project** in Vercel — `vercel.json` is
    already configured (all `/api/*` traffic → one serverless function).
-2. Add Environment Variables in the Vercel dashboard:
-   - **Firebase mode:** `DATA_BACKEND=firebase`, `FIREBASE_SERVICE_ACCOUNT_BASE64=<...>`
-   - **Postgres mode:** `DATA_BACKEND=postgres`, `DATABASE_URL=<managed Postgres URL>`,
-     `PGSSL=true`, `JWT_SECRET=<openssl rand -hex 32>`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`
-     (serverless has no local disk — use a managed Postgres such as
-     [Neon](https://neon.tech), [Supabase](https://supabase.com) or RDS; prefer their *pooled* connection string)
+2. In **Project Settings → Environment Variables**, add the required values for
+   Production (and Preview if you want branch deploys). Do **not** put secrets
+   in `vercel.json`, source code, or the repo.
+   - **Firebase mode:** `DATA_BACKEND=firebase`,
+     `FIREBASE_SERVICE_ACCOUNT_BASE64=<base64 service account JSON>`,
+     `FIREBASE_WEB_CONFIG=<one-line web config JSON>`
+   - **Postgres mode:** `DATA_BACKEND=postgres`,
+     `DATABASE_URL=<managed Postgres URL>`, `PGSSL=true`,
+     `JWT_SECRET=<openssl rand -hex 32>`, `ADMIN_EMAIL`,
+     `ADMIN_USERNAME`, `ADMIN_PASSWORD`
 3. Deploy. The schema is applied automatically on the first cold start.
+
+Vercel Environment Variables are available to the serverless function through
+`process.env`; changes apply to new deployments, so redeploy after editing
+them. `DATABASE_URL` is the preferred Postgres connection variable. If a
+Marketplace integration injects `POSTGRES_URL`, ITACM will use it as a
+fallback, but prefer the provider's pooled connection string for serverless.
 
 ### Docker on a VPS / on-premises
 
@@ -164,8 +182,9 @@ reverse proxy (Caddy/Nginx/Traefik) with TLS in front of port 8000 and set
 
 ### Other platforms (Railway, Render, Fly.io, Cloud Run…)
 
-Deploy the `Dockerfile`, attach a Postgres add-on, set the same env vars as
-compose. Nothing else is required — provisioning is automatic at startup.
+Deploy the `Dockerfile`, attach a Postgres add-on, and set the same env vars in
+the platform's secret/env manager. Nothing else is required — provisioning is
+automatic at startup.
 
 ---
 
@@ -176,7 +195,8 @@ compose. Nothing else is required — provisioning is automatic at startup.
 | `DATA_BACKEND` | both | ✅ | `postgres` or `firebase` |
 | `PORT` | both | – | HTTP port (default `8000`) |
 | `CORS_ORIGINS` | both | – | Comma-separated allowed origins |
-| `DATABASE_URL` | postgres | ✅ | `postgres://user:pass@host:5432/db` |
+| `DATABASE_URL` | postgres | ✅ | Preferred Postgres URL: `postgres://user:pass@host:5432/db` |
+| `POSTGRES_URL` | postgres | – | Fallback when a platform integration injects this instead of `DATABASE_URL` |
 | `PGSSL` | postgres | – | `true` for managed Postgres over TLS |
 | `JWT_SECRET` | postgres | ✅ | Min 32 chars — `openssl rand -hex 32` |
 | `JWT_EXPIRES_IN` | postgres | – | Token lifetime (default `12h`) |
@@ -184,8 +204,10 @@ compose. Nothing else is required — provisioning is automatic at startup.
 | `FIREBASE_SERVICE_ACCOUNT_BASE64` | firebase | ✅* | Base64 service account JSON |
 | `FIREBASE_SERVICE_ACCOUNT_JSON` | firebase | ✅* | Raw JSON alternative |
 | `GOOGLE_APPLICATION_CREDENTIALS` | firebase | ✅* | File-path alternative (local dev) |
+| `FIREBASE_USE_APPLICATION_DEFAULT_CREDENTIALS` | firebase | ✅* | Set `true` to use Google Cloud ADC without a key file |
+| `FIREBASE_WEB_CONFIG` | firebase | – | Public Firebase Web App config JSON; required for built-in UI login |
 
-\* exactly one of the three.
+\* exactly one Firebase Admin credential source.
 
 ## API reference
 
@@ -239,7 +261,9 @@ impossible for two operators to hand over the same laptop concurrently.
 
 - **Secrets never live in the repo.** `.env` and `*serviceAccount*.json` are
   git-ignored; the setup wizard writes `.env` with `0600` permissions and
-  converts Firebase keys to env vars instead of copying files.
+  converts Firebase keys to env vars instead of copying files. On Vercel or a
+  similar platform, store these values in the platform Environment Variables /
+  Secrets UI and let the app read them from `process.env`.
 - **Postgres mode:** passwords are bcrypt-hashed (cost 12); JWTs are signed
   HS256 with your ≥32-char secret; login uses a single error message for both
   unknown email and wrong password; every request re-checks the user row so
