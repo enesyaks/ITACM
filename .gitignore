@@ -1,0 +1,20 @@
+# Dependencies
+node_modules/
+
+# Secrets & credentials
+.env
+data/
+data/.itacm-bootstrap-password
+
+# Logs
+*.log
+
+# Database backups (may contain personal data — keep them out of git)
+backups/
+
+# OS
+.DS_Store
+
+# Local tooling / session config
+.claude/
+docker-compose.override.yml

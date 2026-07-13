@@ -1,0 +1,61 @@
+# ITACM — self-hosted stack: API + PostgreSQL, fully automatic provisioning.
+#
+#   cp .env.example .env       # then edit at least JWT_SECRET & ADMIN_*
+#   docker compose up -d
+#   docker compose logs api    # first-run admin credentials appear here
+#
+# The API applies the database schema and seeds the first Admin account on
+# startup — no manual SQL, users, or permissions required.
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-itacm}
+      POSTGRES_USER: ${POSTGRES_USER:-itacm}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-itacm_change_me}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-itacm} -d ${POSTGRES_DB:-itacm}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    # Uncomment to reach the DB from the host (psql, DBeaver, ...):
+    # ports:
+    #   - "5432:5432"
+
+  api:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - app-data:/app/data
+    environment:
+      DATA_BACKEND: postgres
+      DATA_DIR: /app/data
+      DATABASE_URL: postgres://${POSTGRES_USER:-itacm}:${POSTGRES_PASSWORD:-itacm_change_me}@db:5432/${POSTGRES_DB:-itacm}
+      JWT_SECRET: "${JWT_SECRET:?Set JWT_SECRET in .env (generate with openssl rand -hex 32)}"
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-12h}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-IT Admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      PORT: 8000
+    ports:
+      - "${API_PORT:-8000}:8000"
+    healthcheck:
+      # /api/health returns 503 when the DB is unreachable; wget exits non-zero
+      # on that, so the container is flagged unhealthy. (wget ships in alpine.)
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8000/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  db-data:
+  app-data:
