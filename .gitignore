@@ -17,4 +17,5 @@ backups/
 
 # Local tooling / session config
 .claude/
+.cursor/
 docker-compose.override.yml
