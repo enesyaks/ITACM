@@ -1,9 +1,19 @@
 const { Pool } = require('pg');
 const config = require('../../config');
 
+function sslConfig() {
+  if (!config.pgSsl) return undefined;
+  if (config.pgSslInsecure) {
+    console.warn('[pool] PGSSL_INSECURE=true — TLS certificate verification is disabled');
+    return { rejectUnauthorized: false };
+  }
+  // Default: verify server cert (use NODE_EXTRA_CA_CERTS or system trust store).
+  return { rejectUnauthorized: true };
+}
+
 const pool = new Pool({
   connectionString: config.databaseUrl,
-  ssl: config.pgSsl ? { rejectUnauthorized: false } : undefined,
+  ssl: sslConfig(),
   max: 10,
 });
 

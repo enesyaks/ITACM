@@ -347,8 +347,10 @@ async function listLinkedAssets(licenseId) {
  */
 async function assertCanLinkAsset(client, licenseId, { excludeAssetId = null } = {}) {
   const q = client && client.query ? client : { query };
+  // Lock license row when inside a transaction to prevent seat oversubscribe races.
+  const forUpdate = client && client.query ? ' FOR UPDATE' : '';
   const licRes = await q.query(
-    'SELECT id, software_name, used_seats, total_seats FROM licenses WHERE id = $1',
+    `SELECT id, software_name, used_seats, total_seats FROM licenses WHERE id = $1${forUpdate}`,
     [licenseId]
   );
   const lic = licRes.rows[0];

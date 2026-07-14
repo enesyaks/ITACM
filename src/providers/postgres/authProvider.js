@@ -1,16 +1,20 @@
 /**
- * Local auth provider (postgres mode) — self-contained Email/Password auth.
+ * Local auth provider (postgres mode) — Email/Password + optional TOTP MFA.
  *
- * POST /api/auth/login issues a signed JWT carrying { sub, email, role }.
- * verifyToken() validates the signature AND re-reads the user row so role
- * changes / deletions take effect immediately.
+ * Login with MFA returns a short-lived mfaToken; POST /auth/mfa/verify
+ * exchanges it for a session JWT (jti-tracked for logout revoke).
  */
+const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const { authenticator } = require('otplib');
+const QRCode = require('qrcode');
 const { query } = require('./pool');
 const config = require('../../config');
 const { HttpError } = require('../../utils/httpError');
 const { ROLES, buildPermissions } = require('../../utils/permissions');
+
+authenticator.options = { window: 1 };
 
 function assertValidRole(role) {
   if (!ROLES.includes(role)) {
@@ -18,29 +22,31 @@ function assertValidRole(role) {
   }
 }
 
-// Compared against when the email is unknown, so a login attempt costs one
-// bcrypt verification either way — response TIMING no longer reveals whether
-// an account exists (the error text was already identical).
+function assertPasswordPolicy(password) {
+  if (!password || password.length < 8) {
+    throw HttpError.badRequest('Password must be at least 8 characters');
+  }
+}
+
 const DUMMY_HASH = bcrypt.hashSync('itacm-timing-equalizer', 12);
 
-async function login({ email, password }, meta = {}) {
-  if (!email || !password) throw HttpError.badRequest('email and password are required');
+function parseExpiryToDate(expiresIn) {
+  const m = String(expiresIn || '12h').match(/^(\d+)([smhd])$/i);
+  if (!m) return new Date(Date.now() + 12 * 3600 * 1000);
+  const n = Number(m[1]);
+  const unit = m[2].toLowerCase();
+  const mult = unit === 's' ? 1000 : unit === 'm' ? 60_000 : unit === 'h' ? 3_600_000 : 86_400_000;
+  return new Date(Date.now() + n * mult);
+}
 
-  const { rows } = await query('SELECT * FROM users WHERE email = $1', [email.toLowerCase()]);
-  const user = rows[0];
-  // Same error for unknown email and wrong password — no account enumeration.
-  const match = await bcrypt.compare(password, user ? user.password_hash : DUMMY_HASH);
-  const valid = user && match;
-  if (!valid) throw HttpError.unauthorized('Invalid email or password');
-  if (user.status === 'Disabled') throw HttpError.forbidden('This account has been disabled — contact your Owner');
-
+async function issueSession(user, meta = {}) {
+  const jti = crypto.randomUUID();
   const token = jwt.sign(
-    { sub: user.id, email: user.email, role: user.role },
+    { sub: user.id, email: user.email, role: user.role, jti },
     config.jwtSecret,
-    { expiresIn: config.jwtExpiresIn, issuer: 'itacm' }
+    { expiresIn: config.jwtExpiresIn, issuer: 'itacm', algorithm: 'HS256' }
   );
 
-  // Login audit: last_login_at on the user + one row per sign-in.
   await query('UPDATE users SET last_login_at = now() WHERE id = $1', [user.id]);
   await query(
     'INSERT INTO login_logs (user_id, email, ip, user_agent) VALUES ($1, $2, $3, $4)',
@@ -50,31 +56,265 @@ async function login({ email, password }, meta = {}) {
   return {
     token,
     expiresIn: config.jwtExpiresIn,
-    user: { uid: user.id, username: user.username, email: user.email, role: user.role },
+    user: {
+      uid: user.id,
+      username: user.username,
+      email: user.email,
+      role: user.role,
+      mfaEnabled: !!user.mfa_enabled,
+    },
   };
+}
+
+function issueMfaChallenge(user) {
+  const jti = crypto.randomUUID();
+  const mfaToken = jwt.sign(
+    { sub: user.id, purpose: 'mfa', email: user.email, jti },
+    config.jwtSecret,
+    { expiresIn: '5m', issuer: 'itacm', algorithm: 'HS256' }
+  );
+  return {
+    mfaRequired: true,
+    mfaToken,
+    expiresIn: '5m',
+    user: { email: user.email, username: user.username },
+  };
+}
+
+async function denylistJti(jti, expiresAt) {
+  if (!jti || !expiresAt) return;
+  await query(
+    `INSERT INTO jwt_denylist (jti, expires_at) VALUES ($1, $2)
+     ON CONFLICT (jti) DO NOTHING`,
+    [jti, expiresAt]
+  );
+}
+
+async function assertJtiNotDenied(jti) {
+  if (!jti) return;
+  const { rows: denied } = await query(
+    'SELECT 1 FROM jwt_denylist WHERE jti = $1 AND expires_at > now()',
+    [jti]
+  );
+  if (denied[0]) throw HttpError.unauthorized('Session revoked — sign in again');
+}
+
+async function verifyMfaChallengeToken(mfaToken) {
+  let payload;
+  try {
+    payload = jwt.verify(mfaToken, config.jwtSecret, { issuer: 'itacm', algorithms: ['HS256'] });
+  } catch {
+    throw HttpError.unauthorized('MFA challenge expired — sign in again');
+  }
+  if (payload.purpose !== 'mfa' || !payload.sub) {
+    throw HttpError.unauthorized('Invalid MFA challenge');
+  }
+  await assertJtiNotDenied(payload.jti);
+  const { rows } = await query('SELECT * FROM users WHERE id = $1', [payload.sub]);
+  if (!rows[0]) throw HttpError.unauthorized('Account no longer exists');
+  if (rows[0].status === 'Disabled') throw HttpError.forbidden('This account has been disabled');
+  return {
+    user: rows[0],
+    jti: payload.jti || null,
+    tokenExp: payload.exp ? new Date(payload.exp * 1000) : new Date(Date.now() + 5 * 60 * 1000),
+  };
+}
+
+async function login({ email, password }, meta = {}) {
+  if (!email || !password) throw HttpError.badRequest('email and password are required');
+
+  const { rows } = await query('SELECT * FROM users WHERE email = $1', [email.toLowerCase()]);
+  const user = rows[0];
+  const match = await bcrypt.compare(password, user ? user.password_hash : DUMMY_HASH);
+  const valid = user && match;
+  if (!valid) throw HttpError.unauthorized('Invalid email or password');
+  if (user.status === 'Disabled') throw HttpError.forbidden('This account has been disabled — contact your Owner');
+
+  if (user.mfa_enabled && user.mfa_secret) {
+    return issueMfaChallenge(user);
+  }
+  return issueSession(user, meta);
+}
+
+async function verifyMfaLogin({ mfaToken, code, backupCode }, meta = {}) {
+  const { user, jti, tokenExp } = await verifyMfaChallengeToken(mfaToken);
+  if (!user.mfa_enabled || !user.mfa_secret) {
+    throw HttpError.badRequest('MFA is not enabled for this account');
+  }
+
+  const consumeChallenge = async () => {
+    // One-time MFA challenge — prevent replay within the 5m TTL / TOTP window.
+    await denylistJti(jti, tokenExp);
+  };
+
+  const totpOk = code && authenticator.verify({ token: String(code).replace(/\s/g, ''), secret: user.mfa_secret });
+  if (totpOk) {
+    await consumeChallenge();
+    return issueSession(user, meta);
+  }
+
+  if (backupCode) {
+    const hashes = user.mfa_backup_hashes || [];
+    for (let i = 0; i < hashes.length; i++) {
+      if (await bcrypt.compare(String(backupCode).trim(), hashes[i])) {
+        const next = hashes.slice(0, i).concat(hashes.slice(i + 1));
+        await query('UPDATE users SET mfa_backup_hashes = $2 WHERE id = $1', [user.id, next]);
+        await consumeChallenge();
+        return issueSession(user, meta);
+      }
+    }
+  }
+
+  throw HttpError.unauthorized('Invalid authentication code');
 }
 
 async function verifyToken(token) {
   let payload;
   try {
-    // Algorithm pinned so a token can never downgrade to a weaker/none alg.
     payload = jwt.verify(token, config.jwtSecret, { issuer: 'itacm', algorithms: ['HS256'] });
   } catch (err) {
     throw err.name === 'TokenExpiredError'
       ? HttpError.unauthorized('Token expired — sign in again')
       : HttpError.unauthorized('Invalid token');
   }
+  if (payload.purpose === 'mfa') {
+    throw HttpError.unauthorized('Complete MFA before accessing the app');
+  }
+  await assertJtiNotDenied(payload.jti);
 
-  // Live lookup: deleted/disabled users are locked out and role changes apply instantly.
-  const { rows } = await query('SELECT id, email, role, username, status FROM users WHERE id = $1', [payload.sub]);
+  const { rows } = await query(
+    'SELECT id, email, role, username, status, mfa_enabled, sessions_revoked_at FROM users WHERE id = $1',
+    [payload.sub]
+  );
   if (!rows[0]) throw HttpError.unauthorized('Account no longer exists');
   if (rows[0].status === 'Disabled') throw HttpError.unauthorized('This account has been disabled');
 
-  return { uid: rows[0].id, email: rows[0].email, role: rows[0].role, username: rows[0].username };
+  // Password change (and similar) bumps sessions_revoked_at — invalidate older JWTs.
+  const revokedAt = rows[0].sessions_revoked_at;
+  if (revokedAt && payload.iat != null) {
+    const revokedSec = Math.floor(new Date(revokedAt).getTime() / 1000);
+    if (payload.iat <= revokedSec) {
+      throw HttpError.unauthorized('Session revoked — sign in again');
+    }
+  }
+
+  return {
+    uid: rows[0].id,
+    email: rows[0].email,
+    role: rows[0].role,
+    username: rows[0].username,
+    mfaEnabled: !!rows[0].mfa_enabled,
+    jti: payload.jti || null,
+    tokenExp: payload.exp ? new Date(payload.exp * 1000) : parseExpiryToDate(config.jwtExpiresIn),
+  };
 }
 
-/** Postgres mode logs logins inside login(); verify-token resume is not a login. */
+async function logout(user) {
+  if (user && user.jti && user.tokenExp) {
+    await denylistJti(user.jti, user.tokenExp);
+  }
+  // Opportunistic cleanup of expired entries
+  await query('DELETE FROM jwt_denylist WHERE expires_at < now() - interval \'1 day\'').catch(() => {});
+  return { revoked: true };
+}
+
 async function recordLogin() { /* no-op */ }
+
+async function changePassword(user, { currentPassword, newPassword }) {
+  if (!currentPassword || !newPassword) {
+    throw HttpError.badRequest('currentPassword and newPassword are required');
+  }
+  assertPasswordPolicy(newPassword);
+  const { rows } = await query('SELECT password_hash FROM users WHERE id = $1', [user.uid]);
+  if (!rows[0]) throw HttpError.unauthorized();
+  const ok = await bcrypt.compare(currentPassword, rows[0].password_hash);
+  if (!ok) throw HttpError.unauthorized('Current password is incorrect');
+  const hash = await bcrypt.hash(newPassword, 12);
+  // Revoke every existing session for this user (iat ≤ sessions_revoked_at).
+  await query(
+    'UPDATE users SET password_hash = $2, sessions_revoked_at = now() WHERE id = $1',
+    [user.uid, hash]
+  );
+  if (user.jti && user.tokenExp) await denylistJti(user.jti, user.tokenExp);
+  return { changed: true, reauthRequired: true };
+}
+
+function companyIssuer() {
+  return 'ITACM';
+}
+
+async function mfaSetupStart(user) {
+  const secret = authenticator.generateSecret();
+  await query('UPDATE users SET mfa_pending_secret = $2 WHERE id = $1', [user.uid, secret]);
+  const otpauth = authenticator.keyuri(user.email || user.uid, companyIssuer(), secret);
+  const qrDataUrl = await QRCode.toDataURL(otpauth, { margin: 1, width: 200 });
+  return { secret, otpauth, qrDataUrl };
+}
+
+function generateBackupCodes(n = 8) {
+  const codes = [];
+  for (let i = 0; i < n; i++) {
+    codes.push(crypto.randomBytes(4).toString('hex'));
+  }
+  return codes;
+}
+
+async function mfaSetupConfirm(user, { code }) {
+  const { rows } = await query(
+    'SELECT mfa_pending_secret, mfa_enabled FROM users WHERE id = $1',
+    [user.uid]
+  );
+  const pending = rows[0]?.mfa_pending_secret;
+  if (!pending) throw HttpError.badRequest('No MFA setup in progress — start setup again');
+  const clean = String(code || '').replace(/\s/g, '');
+  if (!authenticator.verify({ token: clean, secret: pending })) {
+    throw HttpError.badRequest('Invalid code — check your authenticator app');
+  }
+  const backups = generateBackupCodes();
+  const hashes = await Promise.all(backups.map((c) => bcrypt.hash(c, 10)));
+  await query(
+    `UPDATE users
+     SET mfa_secret = $2, mfa_enabled = true, mfa_pending_secret = NULL, mfa_backup_hashes = $3
+     WHERE id = $1`,
+    [user.uid, pending, hashes]
+  );
+  return { enabled: true, backupCodes: backups };
+}
+
+async function mfaDisable(user, { password, code }) {
+  const { rows } = await query(
+    'SELECT password_hash, mfa_secret, mfa_enabled FROM users WHERE id = $1',
+    [user.uid]
+  );
+  const row = rows[0];
+  if (!row) throw HttpError.unauthorized();
+  if (!row.mfa_enabled) return { enabled: false };
+  const pwdOk = await bcrypt.compare(password || '', row.password_hash);
+  if (!pwdOk) throw HttpError.unauthorized('Password is incorrect');
+  const totpOk = code && authenticator.verify({
+    token: String(code).replace(/\s/g, ''),
+    secret: row.mfa_secret,
+  });
+  if (!totpOk) throw HttpError.unauthorized('Invalid authentication code');
+  await query(
+    `UPDATE users
+     SET mfa_enabled = false, mfa_secret = NULL, mfa_pending_secret = NULL, mfa_backup_hashes = '{}'
+     WHERE id = $1`,
+    [user.uid]
+  );
+  return { enabled: false };
+}
+
+async function mfaStatus(user) {
+  const { rows } = await query(
+    'SELECT mfa_enabled, cardinality(mfa_backup_hashes) AS backup_left FROM users WHERE id = $1',
+    [user.uid]
+  );
+  return {
+    enabled: !!rows[0]?.mfa_enabled,
+    backupCodesRemaining: Number(rows[0]?.backup_left || 0),
+  };
+}
 
 async function getLoginLogs(uid, limit = 25) {
   const { rows } = await query(
@@ -85,12 +325,15 @@ async function getLoginLogs(uid, limit = 25) {
   return rows;
 }
 
-async function createItUser({ username, email, password, role }) {
+async function createItUser({ username, email, password, role }, actor) {
   if (!username || !email || !password) {
     throw HttpError.badRequest('username, email and password are required');
   }
-  if (password.length < 8) throw HttpError.badRequest('Password must be at least 8 characters');
+  assertPasswordPolicy(password);
   assertValidRole(role);
+  if ((role === 'Owner' || role === 'Admin') && actor && actor.role !== 'Owner') {
+    throw HttpError.forbidden('Only an Owner can assign the Owner or Admin role');
+  }
 
   const hash = await bcrypt.hash(password, 12);
   try {
@@ -107,7 +350,6 @@ async function createItUser({ username, email, password, role }) {
   }
 }
 
-/** Onboarding: create the Owner account, or reset the seeded one's credentials. */
 async function upsertAdmin({ username, email, password }) {
   return upsertAdminTx(null, { username, email, password });
 }
@@ -116,7 +358,7 @@ async function upsertAdminTx(client, { username, email, password }) {
   if (!username || !email || !password) {
     throw HttpError.badRequest('username, email and password are required');
   }
-  if (password.length < 8) throw HttpError.badRequest('Password must be at least 8 characters');
+  assertPasswordPolicy(password);
 
   const hash = await bcrypt.hash(password, 12);
   const q = client ? client.query.bind(client) : query;
@@ -141,6 +383,9 @@ async function setUserRole(uid, role, actor) {
   if (existing[0].role === 'Owner' && (!actor || actor.role !== 'Owner')) {
     throw HttpError.forbidden('Only an Owner can change another Owner\'s role');
   }
+  if ((role === 'Owner' || role === 'Admin') && (!actor || actor.role !== 'Owner')) {
+    throw HttpError.forbidden('Only an Owner can assign the Owner or Admin role');
+  }
   const { rows } = await query(
     'UPDATE users SET role = $2 WHERE id = $1 RETURNING id, role, email, username',
     [uid, role]
@@ -150,26 +395,28 @@ async function setUserRole(uid, role, actor) {
 }
 
 async function getVerifiedProfile(user) {
-  const { rows } = await query('SELECT username FROM users WHERE id = $1', [user.uid]);
+  const { rows } = await query(
+    'SELECT username, mfa_enabled FROM users WHERE id = $1',
+    [user.uid]
+  );
   return {
     uid: user.uid,
     email: user.email,
     username: rows[0]?.username || user.email,
     role: user.role,
+    mfaEnabled: !!rows[0]?.mfa_enabled,
     permissions: buildPermissions(user.role),
   };
 }
 
 async function listUsers() {
   const { rows } = await query(
-    `SELECT id AS uid, username, email, role, status, created_at AS "createdAt",
-            last_login_at AS "lastLoginAt"
+    `SELECT id AS uid, username, email, role, status, mfa_enabled AS "mfaEnabled",
+            created_at AS "createdAt", last_login_at AS "lastLoginAt"
      FROM users ORDER BY created_at DESC`
   );
   return rows;
 }
-
-/* ---- Owner-only account administration (audited in user_admin_logs) ---- */
 
 const logAdminAction = (target, action, byName, detail = null) => query(
   'INSERT INTO user_admin_logs (target_email, target_name, action, detail, by_name) VALUES ($1,$2,$3,$4,$5)',
@@ -201,13 +448,11 @@ async function deleteUser(uid, actor) {
     const { rows } = await query(`SELECT COUNT(*)::int AS n FROM users WHERE role = 'Owner'`);
     if (rows[0].n <= 1) throw HttpError.conflict('Cannot delete the last Owner');
   }
-  // login_logs cascade; handovers keep it_user_id/name (denormalised) for history.
   await query('DELETE FROM users WHERE id = $1', [uid]);
   await logAdminAction(target, 'deleted', actor.username || actor.email, `role was ${target.role}`);
   return { uid, deleted: true };
 }
 
-/** Admin actions (disable/enable/delete/role) for one account, newest first. */
 async function getAdminLogs(email, limit = 25) {
   const { rows } = await query(
     `SELECT target_email AS "targetEmail", target_name AS "targetName", action, detail,
@@ -219,7 +464,8 @@ async function getAdminLogs(email, limit = 25) {
 }
 
 module.exports = {
-  login, verifyToken, recordLogin, getLoginLogs,
+  login, verifyMfaLogin, verifyToken, logout, recordLogin, getLoginLogs,
+  changePassword, mfaSetupStart, mfaSetupConfirm, mfaDisable, mfaStatus,
   createItUser, upsertAdmin, upsertAdminTx, setUserRole, getVerifiedProfile, listUsers,
   setUserStatus, deleteUser, getAdminLogs,
 };

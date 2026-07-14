@@ -120,7 +120,7 @@ Schedule a new hire's kit (reserve assets + lines), then complete it into a sing
 <td width="50%" valign="top">
 
 ### 🔐 Role-based access control
-`Owner`, `Admin`, `Helpdesk`, `Viewer` roles enforced on **every** endpoint, re-checked on each request so changes apply instantly. Owners can disable or delete accounts — every disable/enable/delete/role change is recorded.
+`Owner`, `Admin`, `Helpdesk`, `Viewer` roles enforced on **every** endpoint, re-checked on each request so changes apply instantly. Owners can disable or delete accounts — every disable/enable/delete/role change is recorded. Sign-in is local email/password with optional **TOTP MFA**, password change, and server-side logout (JWT revoke). There is no SSO / Entra login.
 
 ### 🧾 System-wide audit log
 A unified, filterable timeline of **all** instance activity — assets, users, documents, handovers, logins, settings and more — merging the append-only audit table with legacy domain history. Search by source, actor and date; secrets are redacted before storage.
@@ -302,9 +302,9 @@ All responses are `{ success, data }` or `{ success: false, error, details? }`. 
 | GET/POST | `/api/consumables` · `/:id/adjust` | Admin, Helpdesk | Stock + atomic movements |
 | GET/POST | `/api/counts` · `/:id/scan` · `/close` | Admin, Helpdesk | Physical stock-count sessions |
 | GET/PUT | `/api/catalog/*` | Admin, Helpdesk | Catalog, locations, departments, settings |
-| POST | `/api/import/inventory` | Admin, Helpdesk | Excel/CSV migration (dry-run + commit) |
+| POST | `/api/import/inventory` | Owner, Admin | Excel/CSV migration (dry-run + commit) |
+| GET | `/api/documents/:id/download` | Owner, Admin, Helpdesk | Stream a stored handover document (auth required) |
 | GET | `/api/audit` · `/:bucket/:id` | Owner, Admin | Unified audit timeline + event detail |
-| GET | `/api/documents/:id/download` | all | Stream a stored document (inline/attachment) |
 
 <details>
 <summary><b>The atomic handover basket — how it works</b></summary>

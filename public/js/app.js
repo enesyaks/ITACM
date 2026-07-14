@@ -20,6 +20,7 @@ const ROUTES = {
   '#/stockcount': { title: 'Stock Count', view: 'stockcount', icon: 'fact_check' },
   '#/reports': { title: 'Reports', view: 'reports', icon: 'summarize' },
   '#/audit': { title: 'Audit Log', view: 'audit', icon: 'history', perm: 'canViewAudit' },
+  '#/integrations': { title: 'Integrations', view: 'integrations', icon: 'hub', perm: 'canManageBranding' },
   '#/users': { title: 'IT Users', view: 'users', icon: 'vpn_key', perm: 'canManageUsers' },
 };
 
@@ -157,7 +158,17 @@ function showLogin() {
   else if (typeof syncMobileChrome === 'function') syncMobileChrome();
   applyBranding();
   $('#login-mode-note').textContent = 'IT Asset Control Pro';
+  const loginForm = $('#login-form');
+  const mfaForm = $('#mfa-form');
+  if (loginForm) loginForm.classList.remove('hidden');
+  if (mfaForm) {
+    mfaForm.classList.add('hidden');
+    mfaForm.reset();
+    mfaForm.dataset.mfaToken = '';
+  }
   showConfigError('#login-error');
+  const mfaErr = $('#mfa-error');
+  if (mfaErr) mfaErr.classList.add('hidden');
 }
 
 // Surface a server configuration problem (e.g. database unreachable) so the
@@ -1181,18 +1192,47 @@ async function globalSearch(qText) {
 }
 
 /* ---- topbar buttons: notifications / help / settings / profile ---- */
+function notifDismissKey() {
+  const uid = (Auth.profile && (Auth.profile.uid || Auth.profile.id)) || 'anon';
+  return `itacm_notif_dismissed.${uid}`;
+}
+function loadDismissedNotifs() {
+  try { return JSON.parse(localStorage.getItem(notifDismissKey()) || '{}'); }
+  catch { return {}; }
+}
+function saveDismissedNotifs(map) {
+  localStorage.setItem(notifDismissKey(), JSON.stringify(map || {}));
+}
+function dismissNotifIds(ids) {
+  const map = loadDismissedNotifs();
+  const now = Date.now();
+  (ids || []).forEach((id) => { map[id] = now; });
+  // Keep map from growing forever
+  const entries = Object.entries(map);
+  if (entries.length > 200) {
+    entries.sort((a, b) => a[1] - b[1]);
+    entries.slice(0, entries.length - 200).forEach(([k]) => { delete map[k]; });
+  }
+  saveDismissedNotifs(map);
+}
+function clearDismissedNotifs() {
+  localStorage.removeItem(notifDismissKey());
+}
+
 async function showNotifications() {
   const d = await api('/dashboard/stats');
   const todayStr = (() => {
     const t = new Date();
     return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
   })();
+  const dismissed = loadDismissedNotifs();
   const onboardSched = d.alerts.onboardingScheduled || [];
-  const items = [
+  const raw = [
     ...onboardSched.map((o) => {
       const sd = String(o.startDate || '').slice(0, 10);
       const due = sd && sd <= todayStr;
       return {
+        id: `onboard:${o.id}`,
         icon: 'event_available',
         tone: due ? 'rose' : 'indigo',
         label: due
@@ -1203,18 +1243,22 @@ async function showNotifications() {
       };
     }),
     ...d.alerts.expiringLicenses.map((l) => ({
+      id: `lic:${l.id || l.softwareName}`,
       icon: 'vpn_key', tone: l.daysLeft <= 7 ? 'rose' : 'amber',
       text: `${l.softwareName} expires in ${l.daysLeft} days`, go: '#/licenses',
     })),
     ...d.alerts.lowStockConsumables.map((c) => ({
+      id: `stock:${c.id || c.itemName}:${c.totalStock}`,
       icon: 'inventory_2', tone: 'rose',
       text: `${c.itemName} is low on stock (${c.totalStock}/min ${c.minimumStockAlertLevel})`, go: '#/consumables',
     })),
     ...(d.assets.inRepair > 0 ? [{
+      id: `repair:${d.assets.inRepair}`,
       icon: 'build', tone: 'amber',
       text: `${d.assets.inRepair} device(s) currently in repair`, go: '#/maintenance',
     }] : []),
   ];
+  const items = raw.filter((n) => !dismissed[n.id]);
   openModal({
     title: `Notifications (${items.length})`,
     body: items.length === 0 ? '<div class="table-empty">All clear — no active alerts.</div>' :
@@ -1222,15 +1266,35 @@ async function showNotifications() {
       <div class="gs-item" data-note="${i}">
         ${iconChip(n.icon, n.tone)}
         <div style="flex:1">${esc(n.label || n.text)}</div>
+        <button type="button" class="btn btn-outline btn-sm" data-dismiss="${i}" title="Dismiss"><span class="ms">close</span></button>
         <span class="ms">chevron_right</span>
       </div>`).join(''),
-    foot: '<button class="btn btn-outline" data-close>Close</button>',
+    foot: `${items.length ? '<button class="btn btn-outline" id="notif-clear-all">Clear all</button>' : ''}
+           <button class="btn btn-outline" data-close>Close</button>`,
     onMount(overlay) {
-      overlay.querySelectorAll('[data-note]').forEach((it) => it.addEventListener('click', () => {
+      overlay.querySelectorAll('[data-dismiss]').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const n = items[Number(btn.dataset.dismiss)];
+          if (!n) return;
+          dismissNotifIds([n.id]);
+          closeModal();
+          toast('Notification dismissed', 'success');
+          if (typeof refreshOnboardingBell === 'function') refreshOnboardingBell();
+        });
+      });
+      $('#notif-clear-all', overlay)?.addEventListener('click', () => {
+        dismissNotifIds(items.map((n) => n.id));
+        closeModal();
+        toast('Notifications cleared', 'success');
+        if (typeof refreshOnboardingBell === 'function') refreshOnboardingBell();
+      });
+      overlay.querySelectorAll('[data-note]').forEach((it) => it.addEventListener('click', (e) => {
+        if (e.target.closest('[data-dismiss]')) return;
         const n = items[Number(it.dataset.note)];
         closeModal();
         if (n.onboardId && typeof openOnboardingDueModal === 'function') {
-          openOnboardingDueModal({ force: true, focusId: n.onboardId }).catch((e) => toast(e.message, 'error'));
+          openOnboardingDueModal({ force: true, focusId: n.onboardId }).catch((err) => toast(err.message, 'error'));
           return;
         }
         if (n.go) location.hash = n.go;
@@ -1430,6 +1494,112 @@ function startUiTour() {
   };
   setTipsEnabled(true);
   show();
+}
+
+async function showAccountSecurity() {
+  let status = { enabled: false, backupCodesRemaining: 0 };
+  try { status = await api('/auth/mfa'); } catch { /* ignore */ }
+
+  openModal({
+    title: t('account.security') || 'Account security',
+    body: `
+      <div class="settings-shell">
+        <section class="settings-panel">
+          <header class="settings-panel-head"><h3>Password</h3></header>
+          <div class="form-grid" style="grid-template-columns:1fr">
+            <div class="form-field"><label>Current password</label>
+              <input type="password" id="sec-cur" autocomplete="current-password"></div>
+            <div class="form-field"><label>New password (min 8)</label>
+              <input type="password" id="sec-new" autocomplete="new-password"></div>
+            <div class="form-field"><label>Confirm new password</label>
+              <input type="password" id="sec-new2" autocomplete="new-password"></div>
+          </div>
+          <button class="btn btn-primary btn-sm" id="sec-pwd" style="margin-top:8px">Change password</button>
+        </section>
+        <section class="settings-panel" style="margin-top:16px">
+          <header class="settings-panel-head">
+            <h3>Two-factor authentication (TOTP)</h3>
+            <span class="pill ${status.enabled ? 'pill-emerald' : 'pill-slate'}">${status.enabled ? 'Enabled' : 'Off'}</span>
+          </header>
+          <p class="cell-sub" style="margin:0 0 10px">Use an authenticator app (Google Authenticator, 1Password, Authy…). Backup codes remaining: <strong>${status.backupCodesRemaining || 0}</strong></p>
+          <div id="sec-mfa-body">
+            ${status.enabled
+              ? `<div class="form-grid" style="grid-template-columns:1fr 1fr">
+                   <div class="form-field"><label>Password</label><input type="password" id="sec-dis-pwd"></div>
+                   <div class="form-field"><label>Authenticator code</label><input type="text" id="sec-dis-code" inputmode="numeric" maxlength="8"></div>
+                 </div>
+                 <button class="btn btn-danger btn-sm" id="sec-mfa-off" style="margin-top:8px">Disable MFA</button>`
+              : `<button class="btn btn-primary btn-sm" id="sec-mfa-on">Set up MFA</button>`}
+          </div>
+        </section>
+      </div>`,
+    foot: `<button class="btn btn-outline" data-close>Close</button>`,
+  });
+
+  const modal = document.querySelector('.modal-overlay .modal') || document.querySelector('.modal');
+  const root = modal || document;
+
+  $('#sec-pwd', root)?.addEventListener('click', async () => {
+    const cur = $('#sec-cur', root).value;
+    const n1 = $('#sec-new', root).value;
+    const n2 = $('#sec-new2', root).value;
+    if (n1 !== n2) return toast('New passwords do not match', 'error');
+    try {
+      await api('/auth/password', { method: 'POST', body: { currentPassword: cur, newPassword: n1 } });
+      toast('Password updated', 'success');
+      $('#sec-cur', root).value = '';
+      $('#sec-new', root).value = '';
+      $('#sec-new2', root).value = '';
+    } catch (err) { toast(err.message, 'error'); }
+  });
+
+  $('#sec-mfa-on', root)?.addEventListener('click', async () => {
+    try {
+      const setup = await api('/auth/mfa/setup', { method: 'POST' });
+      const body = $('#sec-mfa-body', root);
+      body.innerHTML = `
+        <p class="cell-sub">Scan this QR with your authenticator app, then enter a code to confirm.</p>
+        <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
+          <img src="${esc(setup.qrDataUrl)}" alt="MFA QR" width="160" height="160" style="border-radius:8px;border:1px solid var(--outline-variant)">
+          <div style="flex:1;min-width:180px">
+            <div class="mono cell-sub" style="word-break:break-all;margin-bottom:8px">${esc(setup.secret)}</div>
+            <div class="form-field"><label>Code from app</label>
+              <input type="text" id="sec-en-code" inputmode="numeric" maxlength="8"></div>
+            <button class="btn btn-primary btn-sm" id="sec-mfa-confirm" style="margin-top:8px">Enable MFA</button>
+          </div>
+        </div>`;
+      $('#sec-mfa-confirm', body).addEventListener('click', async () => {
+        try {
+          const res = await api('/auth/mfa/enable', {
+            method: 'POST',
+            body: { code: $('#sec-en-code', body).value.trim() },
+          });
+          const codes = (res.backupCodes || []).join('\n');
+          body.innerHTML = `
+            <p class="pill pill-emerald">MFA enabled</p>
+            <p class="cell-sub">Save these backup codes somewhere safe — each works once:</p>
+            <pre class="mono" style="background:var(--surface-low);padding:12px;border-radius:8px;white-space:pre-wrap">${esc(codes)}</pre>`;
+          if (Auth.profile) Auth.profile.mfaEnabled = true;
+          toast('MFA enabled', 'success');
+        } catch (err) { toast(err.message, 'error'); }
+      });
+    } catch (err) { toast(err.message, 'error'); }
+  });
+
+  $('#sec-mfa-off', root)?.addEventListener('click', async () => {
+    try {
+      await api('/auth/mfa/disable', {
+        method: 'POST',
+        body: {
+          password: $('#sec-dis-pwd', root).value,
+          code: $('#sec-dis-code', root).value.trim(),
+        },
+      });
+      toast('MFA disabled', 'success');
+      closeModal();
+      showAccountSecurity();
+    } catch (err) { toast(err.message, 'error'); }
+  });
 }
 
 function showSettings() {
@@ -1991,19 +2161,65 @@ async function init() {
     try {
       const email = e.target.elements.email.value.trim();
       const password = e.target.elements.password.value;
-      await loginWithPassword(email, password);
+      const result = await loginWithPassword(email, password);
+      if (result && result.mfaRequired) {
+        $('#login-form').classList.add('hidden');
+        const mfaForm = $('#mfa-form');
+        mfaForm.classList.remove('hidden');
+        mfaForm.dataset.mfaToken = result.mfaToken;
+        mfaForm.elements.code.focus();
+        return;
+      }
       showApp();
     } catch (err) {
-      errBox.textContent = err.message; // textContent — no markup interpretation
+      errBox.textContent = err.message;
       errBox.classList.remove('hidden');
     } finally {
       btn.disabled = false;
-      btn.textContent = 'Sign in';
+      btn.textContent = t('login.signin') || 'Sign in';
     }
   });
 
+  const mfaForm = $('#mfa-form');
+  if (mfaForm) {
+    mfaForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = $('#mfa-btn');
+      const errBox = $('#mfa-error');
+      errBox.classList.add('hidden');
+      btn.disabled = true;
+      try {
+        const code = e.target.elements.code.value.trim();
+        const backupCode = e.target.elements.backupCode.value.trim();
+        await loginWithMfa({
+          mfaToken: mfaForm.dataset.mfaToken,
+          code: code || undefined,
+          backupCode: backupCode || undefined,
+        });
+        showApp();
+      } catch (err) {
+        errBox.textContent = err.message;
+        errBox.classList.remove('hidden');
+      } finally {
+        btn.disabled = false;
+      }
+    });
+    $('#mfa-back').addEventListener('click', () => {
+      mfaForm.classList.add('hidden');
+      mfaForm.reset();
+      mfaForm.dataset.mfaToken = '';
+      $('#login-form').classList.remove('hidden');
+      $('#mfa-error').classList.add('hidden');
+    });
+  }
+
   $('#logout-btn').addEventListener('click', () => logout());
-  window.addEventListener('itacm:logout', showLogin);
+  const userInfo = document.querySelector('.sidebar-user-info');
+  if (userInfo) {
+    userInfo.style.cursor = 'pointer';
+    userInfo.title = t('account.security') || 'Account security';
+    userInfo.addEventListener('click', () => { if (Auth.profile) showAccountSecurity(); });
+  }  window.addEventListener('itacm:logout', showLogin);
   window.addEventListener('hashchange', () => { if (Auth.profile) navigate(); });
 
   const menuToggle = $('#menu-toggle');

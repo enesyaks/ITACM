@@ -81,6 +81,7 @@ Views.licenses = async function (el) {
               <td>${fmtDate(l.expirationDate)}</td>
               <td class="actions">
                 <button class="btn btn-outline btn-sm" data-holders="${esc(l.id)}" title="Assigned"><span class="ms">group</span></button>
+                <button class="btn btn-outline btn-sm" data-sam="${esc(l.id)}" title="SAM vs installs"><span class="ms">analytics</span></button>
                 <button class="btn btn-outline btn-sm" data-docs="${esc(l.id)}" title="Documents">
                   <span class="ms">attach_file</span>${l.documentCount ? ` ${l.documentCount}` : ''}
                 </button>
@@ -124,6 +125,32 @@ Views.licenses = async function (el) {
         canEdit,
         onDone: () => Views.licenses(el),
       });
+      return;
+    }
+
+    if (b.dataset.sam) {
+      try {
+        const report = await api(`/integrations/licenses/${b.dataset.sam}/sam`);
+        openModal({
+          title: `SAM — ${esc(report.softwareName)}`,
+          body: `
+            <p class="cell-sub">Seats ${report.totalSeats} · assigned ${report.assignedSeats} · discovered installs ${report.installedCount}
+              ${report.overInstalled ? ' · <span class="pill pill-rose">Over-installed</span>' : ''}</p>
+            <div class="table-wrap"><table class="data">
+              <thead><tr><th>Host / tag</th><th>Version</th><th>Seen</th></tr></thead>
+              <tbody>
+                ${(report.installs || []).length === 0
+                  ? '<tr><td colspan="3" class="table-empty">No installs synced yet. POST /api/integrations/sync/software-installs</td></tr>'
+                  : report.installs.map((x) => `<tr>
+                      <td>${esc(x.hostname || x.assetTag || '—')}</td>
+                      <td class="mono">${esc(x.version || '—')}</td>
+                      <td class="cell-sub">${x.seenAt ? fmtDate(x.seenAt) : '—'}</td>
+                    </tr>`).join('')}
+              </tbody>
+            </table></div>`,
+          foot: '<button class="btn btn-outline" data-close>Close</button>',
+        });
+      } catch (err) { toast(err.message, 'error'); }
       return;
     }
 

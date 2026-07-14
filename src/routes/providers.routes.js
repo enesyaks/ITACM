@@ -18,6 +18,8 @@ router.get('/summary', asyncHandler(async (req, res) => {
 /** GET /api/providers/documents/:docId/download — stream a provider document. */
 router.get('/documents/:docId/download', write, asyncHandler(async (req, res) => {
   const doc = await documentService.getProviderDoc(req.params.docId);
+  // Ensure caller can see this provider (role / soft-delete checks).
+  await providerService.getProvider(doc.providerId, { role: req.user.role });
   const inline = String(req.query.view || '') === '1' || String(req.query.inline || '') === '1';
   res.setHeader('Content-Type', doc.mime || 'application/octet-stream');
   res.setHeader('Content-Disposition', contentDisposition(doc.filename, { inline }));
@@ -26,6 +28,8 @@ router.get('/documents/:docId/download', write, asyncHandler(async (req, res) =>
 
 /** DELETE /api/providers/documents/:docId — Owner/Admin. */
 router.delete('/documents/:docId', requireRole('Owner', 'Admin'), asyncHandler(async (req, res) => {
+  const doc = await documentService.getProviderDoc(req.params.docId);
+  await providerService.getProvider(doc.providerId, { role: req.user.role });
   res.json({ success: true, data: await documentService.deleteProviderDoc(req.params.docId) });
 }));
 

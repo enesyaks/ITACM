@@ -66,6 +66,18 @@ async function api(path, { method = 'GET', body } = {}) {
 
 async function loginWithPassword(email, password) {
   const data = await api('/auth/login', { method: 'POST', body: { email, password } });
+  if (data.mfaRequired) return data;
+  Auth.token = data.token;
+  const profile = await api('/auth/verify-token', { method: 'POST' });
+  Auth.save(data.token, profile);
+  return profile;
+}
+
+async function loginWithMfa({ mfaToken, code, backupCode }) {
+  const body = { mfaToken };
+  if (backupCode) body.backupCode = backupCode;
+  else body.code = code;
+  const data = await api('/auth/mfa/verify', { method: 'POST', body });
   Auth.token = data.token;
   const profile = await api('/auth/verify-token', { method: 'POST' });
   Auth.save(data.token, profile);
@@ -73,6 +85,9 @@ async function loginWithPassword(email, password) {
 }
 
 async function logout() {
+  try {
+    if (Auth.token) await api('/auth/logout', { method: 'POST' });
+  } catch { /* still clear locally */ }
   Auth.clear();
   window.dispatchEvent(new Event('itacm:logout'));
 }

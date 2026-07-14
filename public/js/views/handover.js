@@ -359,6 +359,22 @@ Views.handover = async function (el) {
       if (receipt.assetCount) bits.push(`${receipt.assetCount} asset(s)`);
       if (receipt.lineCount) bits.push(`${receipt.lineCount} line(s)`);
       toast(`Handover recorded — ${bits.join(' + ') || receipt.itemCount + ' item(s)'} → ${receipt.employee.fullName}`, 'success');
+      if (receipt.ackToken) {
+        const ackUrl = `${location.origin}/ack.html?token=${encodeURIComponent(receipt.ackToken)}`;
+        openModal({
+          title: 'Employee acknowledgement link',
+          body: `<p class="cell-sub">Send this link so the employee can confirm receipt (no login).</p>
+                 <p class="mono" style="word-break:break-all;font-size:13px">${esc(ackUrl)}</p>
+                 <button class="btn btn-outline btn-sm" id="ack-copy">Copy link</button>`,
+          foot: `<button class="btn btn-primary" data-close>Continue to print</button>`,
+          onMount(ov) {
+            $('#ack-copy', ov)?.addEventListener('click', async () => {
+              try { await navigator.clipboard.writeText(ackUrl); toast('Copied', 'success'); }
+              catch { toast('Copy failed', 'error'); }
+            });
+          },
+        });
+      }
       const full = await api('/handovers/' + receipt.handoverId);
       printHandover(full);
       Views.handover(el); // reload lists

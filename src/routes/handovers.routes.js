@@ -15,15 +15,28 @@ router.use(authenticate);
  */
 router.post('/', requireRole('Owner', 'Admin', 'Helpdesk'), asyncHandler(async (req, res) => {
   const receipt = await handoverService.executeHandover(req.body, req.user);
-  // The generated PDF is NOT auto-archived — it can always be regenerated on
-  // demand (GET /:id/pdf). Only signed scans the user uploads are stored, so the
-  // archive doesn't fill up with copies nobody signed.
+  try {
+    const { notificationService, webhookService } = require('../services');
+    notificationService.notifyHandoverCompleted(receipt).catch(() => {});
+    // Never put ackToken on the wire to third parties — it is a bearer secret.
+    webhookService.emit('handover.completed', {
+      handoverId: receipt.handoverId,
+      employee: receipt.employee,
+      itemCount: receipt.itemCount,
+      ackPending: !!receipt.ackToken,
+    }).catch(() => {});
+  } catch { /* optional */ }
   res.status(201).json({ success: true, data: receipt });
 }));
 
 /** GET /api/handovers — recent receipts; ?employeeId= filters per employee (all roles). */
 router.get('/', asyncHandler(async (req, res) => {
   res.json({ success: true, data: await handoverService.listHandovers(req.query) });
+}));
+
+/** GET /api/handovers/:id/ack-link — staff-only token for employee acknowledgement URL. */
+router.get('/:id/ack-link', requireRole('Owner', 'Admin', 'Helpdesk'), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await handoverService.getAckLink(req.params.id) });
 }));
 
 /** GET /api/handovers/:id/pdf — download the receipt as a real PDF file.

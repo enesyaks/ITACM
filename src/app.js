@@ -10,7 +10,21 @@ const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 function createApp() {
   const app = express();
   app.disable('x-powered-by');
-  app.set('trust proxy', 1); // correct req.ip behind reverse proxies
+  // TRUST_PROXY: only enable behind a real reverse proxy that strips/sets
+  // X-Forwarded-For. Default OFF so clients cannot spoof req.ip (setup token /
+  // rate-limit bypass). Set TRUST_PROXY=1 (or hop count) when nginx/traefik sits in front.
+  (() => {
+    const raw = String(process.env.TRUST_PROXY || '').trim().toLowerCase();
+    if (!raw || raw === '0' || raw === 'false' || raw === 'no') {
+      app.set('trust proxy', false);
+    } else if (/^\d+$/.test(raw)) {
+      app.set('trust proxy', Number(raw));
+    } else if (raw === '1' || raw === 'true' || raw === 'yes') {
+      app.set('trust proxy', 1);
+    } else {
+      app.set('trust proxy', false);
+    }
+  })();
 
   // Baseline security headers (no external dependency needed). CSP allows
   // only our own code plus Google Fonts. blob: is required so authenticated
@@ -48,13 +62,15 @@ function createApp() {
   });
 
   // Coarse abuse guard for the whole API: 1000 requests / 5 min / IP.
+  const { rateLimitIp } = require('./utils/setupAccess');
   const apiHits = new Map();
   app.use('/api', (req, res, next) => {
     const now = Date.now();
-    let entry = apiHits.get(req.ip);
+    const ipKey = rateLimitIp(req);
+    let entry = apiHits.get(ipKey);
     if (!entry || now > entry.resetAt) {
       entry = { count: 0, resetAt: now + 5 * 60 * 1000 };
-      apiHits.set(req.ip, entry);
+      apiHits.set(ipKey, entry);
     }
     if (++entry.count > 1000) {
       return res.status(429).json({ success: false, error: 'Too many requests — slow down' });
@@ -75,6 +91,7 @@ function createApp() {
     // skip the small global parser so it doesn't reject them first.
     if (req.method === 'POST' && /^\/api\/(employees|maintenance|providers|contracts)\/[^/]+\/documents\/?$/.test(req.path)) return next();
     if (req.method === 'POST' && req.path === '/api/import/inventory') return next(); // big CSV payloads
+    if (req.method === 'POST' && /^\/api\/integrations\/sync\//.test(req.path)) return next(); // sync JSON up to 6mb on route
     return jsonSmall(req, res, next);
   });
 
@@ -143,6 +160,8 @@ function createApp() {
   app.use('/api/contracts', require('./routes/contracts.routes'));
   app.use('/api/import', require('./routes/import.routes'));
   app.use('/api/audit', require('./routes/audit.routes'));
+  app.use('/api/integrations', require('./routes/integrations.routes'));
+  app.use('/api/ack', require('./routes/ack.routes'));
 
   // API 404s stay JSON; anything else falls back to the SPA shell.
   app.use((req, res, next) => {

@@ -20,7 +20,7 @@ function buildPermissions(role) {
     canViewAudit: isOwner || isAdmin,
     canViewConfidentialContracts: isOwner || isAdmin,
     canManageBranding: isOwner, // logo, company info, terms, lifecycles, storage
-    canManageOwner: isOwner, // only an Owner may create/assign the Owner role
+    canManageOwner: isOwner, // only an Owner may create/assign Owner or Admin
     isOwner,
   };
 }

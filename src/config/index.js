@@ -31,6 +31,9 @@ const config = {
 
   databaseUrl,
   pgSsl: flagEnv('PGSSL') || /[?&]sslmode=require/i.test(databaseUrl),
+  // When true, skip CA verification (legacy / managed Postgres with weird chains).
+  // Prefer mounting a CA and leaving this false in production.
+  pgSslInsecure: flagEnv('PGSSL_INSECURE'),
   jwtSecret: env('JWT_SECRET'),
   jwtExpiresIn: trimmedEnv('JWT_EXPIRES_IN') || '12h',
 

@@ -45,6 +45,9 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       CORS_ORIGINS: ${CORS_ORIGINS:-}
       PORT: 8000
+      # Set TRUST_PROXY=1 only behind a reverse proxy that sanitizes X-Forwarded-For.
+      TRUST_PROXY: ${TRUST_PROXY:-0}
+      SMTP_ALLOW_PRIVATE: ${SMTP_ALLOW_PRIVATE:-}
     ports:
       - "${API_PORT:-8000}:8000"
     healthcheck:

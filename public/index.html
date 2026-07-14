@@ -102,6 +102,18 @@
         <div id="login-error" class="login-error hidden"></div>
         <button type="submit" class="btn btn-primary btn-block" id="login-btn" data-i18n="login.signin">Sign in</button>
       </form>
+      <form id="mfa-form" class="hidden" autocomplete="one-time-code">
+        <p class="login-mfa-hint" data-i18n="login.mfaHint">Enter the 6-digit code from your authenticator app.</p>
+        <label><span data-i18n="login.mfaCode">Authentication code</span>
+          <input type="text" name="code" inputmode="numeric" pattern="[0-9 ]*" maxlength="8" autocomplete="one-time-code" placeholder="123456">
+        </label>
+        <label><span data-i18n="login.mfaBackup">Or backup code</span>
+          <input type="text" name="backupCode" autocomplete="off" placeholder="optional">
+        </label>
+        <div id="mfa-error" class="login-error hidden"></div>
+        <button type="submit" class="btn btn-primary btn-block" id="mfa-btn" data-i18n="login.mfaVerify">Verify</button>
+        <button type="button" class="btn btn-outline btn-block" id="mfa-back" data-i18n="login.mfaBack" style="margin-top:8px">Back</button>
+      </form>
       <p class="login-footnote" id="login-mode-note"></p>
     </div>
   </div>
@@ -168,7 +180,7 @@
   <div id="print-root" class="print-root"></div>
 
   <script src="/js/api.js?v=1.0.6"></script>
-  <script src="/js/i18n.js?v=1.0.9"></script>
+  <script src="/js/i18n.js?v=1.1.0"></script>
   <script src="/js/money.js?v=1.0.6"></script>
   <script src="/js/ui.js?v=1.0.6"></script>
   <script src="/js/barcode.js?v=1.0.6"></script>
@@ -189,6 +201,7 @@
   <script src="/js/views/lines-import.js?v=1.0.9"></script>
   <script src="/js/views/providers.js?v=1.0.7"></script>
   <script src="/js/views/audit.js?v=1.0.6"></script>
+  <script src="/js/views/integrations.js?v=1.0.1"></script>
   <script src="/js/app.js?v=1.0.8"></script>
   <script src="/js/mobile-shell.js?v=1.0.7"></script>
 </body>

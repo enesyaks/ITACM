@@ -3,6 +3,9 @@
  * Loopback clients (typical Docker/desktop first-run) get it automatically.
  * Remote clients must supply SETUP_TOKEN env (or the key printed in server logs)
  * via the onboarding form — the token is never broadcast on /api/config.
+ *
+ * CRITICAL: Never trust X-Forwarded-For / req.ip for this decision — attackers can
+ * spoof it when `trust proxy` is enabled. Always use the direct TCP peer.
  */
 function normalizeIp(ip) {
   const s = String(ip || '').replace(/^::ffff:/i, '');
@@ -14,12 +17,51 @@ function isLoopbackIp(ip) {
   return s === '127.0.0.1' || s === 'localhost';
 }
 
-/** Reveal setupToken in API responses only for trusted clients. */
-function canRevealSetupToken(req) {
-  if (['1', 'true', 'yes'].includes(String(process.env.SETUP_TOKEN_PUBLIC || '').toLowerCase())) {
-    return true;
-  }
-  return isLoopbackIp(req && req.ip);
+function envFlag(name) {
+  return ['1', 'true', 'yes'].includes(String(process.env[name] || '').toLowerCase());
 }
 
-module.exports = { canRevealSetupToken, isLoopbackIp, normalizeIp };
+/**
+ * Connection peer IP (not spoofable via X-Forwarded-For).
+ */
+function peerIp(req) {
+  return normalizeIp(req && req.socket && req.socket.remoteAddress);
+}
+
+/**
+ * IP key for rate limits.
+ * When TRUST_PROXY is on, Express `req.ip` reflects the reverse-proxy hop.
+ * Otherwise use the TCP peer so clients cannot rotate X-Forwarded-For.
+ */
+function rateLimitIp(req) {
+  if (envFlag('TRUST_PROXY') || /^\d+$/.test(String(process.env.TRUST_PROXY || '').trim())) {
+    return normalizeIp(req && req.ip) || peerIp(req) || 'unknown';
+  }
+  return peerIp(req) || 'unknown';
+}
+
+/** Reveal setupToken in API responses only for trusted clients. */
+function canRevealSetupToken(req) {
+  if (envFlag('SETUP_TOKEN_PUBLIC')) {
+    const isProd = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
+    const confirmed = String(process.env.SETUP_TOKEN_PUBLIC_CONFIRM || '') === 'I_UNDERSTAND';
+    if (isProd && !confirmed) {
+      console.warn(
+        '[itacm] SETUP_TOKEN_PUBLIC ignored in production '
+        + '(set SETUP_TOKEN_PUBLIC_CONFIRM=I_UNDERSTAND to force — dangerous)'
+      );
+    } else {
+      return true;
+    }
+  }
+  // Direct TCP peer only — never req.ip / X-Forwarded-For.
+  return isLoopbackIp(peerIp(req));
+}
+
+module.exports = {
+  canRevealSetupToken,
+  isLoopbackIp,
+  normalizeIp,
+  peerIp,
+  rateLimitIp,
+};

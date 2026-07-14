@@ -227,16 +227,18 @@ async function executeHandover({ employeeId, documentType = 'single', items = []
       }
     }
 
+    const ackToken = require('crypto').randomBytes(24).toString('hex');
     const handoverRes = await t.query(
-      `INSERT INTO handovers (employee_id, employee_name, it_user_id, it_user_name, document_type, items, template_id)
-       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7) RETURNING id`,
+      `INSERT INTO handovers (employee_id, employee_name, it_user_id, it_user_name, document_type, items, template_id, ack_token)
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8) RETURNING id, ack_token`,
       [employee.id, employee.full_name, itUser.uid, itUser.username || itUser.email || null,
        documentType, JSON.stringify(receiptItems),
-       templateId ? String(templateId).slice(0, 64) : null]
+       templateId ? String(templateId).slice(0, 64) : null, ackToken]
     );
 
     return {
       handoverId: handoverRes.rows[0].id,
+      ackToken: handoverRes.rows[0].ack_token,
       employee: { id: employee.id, fullName: employee.full_name },
       documentType,
       templateId: templateId || null,
@@ -260,7 +262,7 @@ async function getHandover(handoverId) {
     [handoverId]
   );
   if (!rows[0]) throw HttpError.notFound(`Handover ${handoverId} not found`);
-  return mapRow(rows[0]);
+  return redactHandoverSecrets(mapRow(rows[0]));
 }
 
 async function listHandovers({ employeeId, limit = 50 } = {}) {
@@ -276,7 +278,75 @@ async function listHandovers({ employeeId, limit = 50 } = {}) {
     `SELECT * FROM handovers ${where} ORDER BY transaction_date DESC LIMIT $${params.length}`,
     params
   );
-  return mapRows(rows);
+  return mapRows(rows).map(redactHandoverSecrets);
 }
 
-module.exports = { executeHandover, getHandover, listHandovers };
+/**
+ * Never expose ack_token on read APIs — it is a bearer secret for the public
+ * /api/ack routes. Only the create receipt returns it once to the assigner.
+ */
+function redactHandoverSecrets(h) {
+  if (!h) return h;
+  const pending = !!h.ackToken && !h.ackAt;
+  delete h.ackToken;
+  delete h.ackIp;
+  h.ackPending = pending;
+  h.acknowledged = !!h.ackAt;
+  return h;
+}
+
+/** Staff-only: re-fetch the raw ack token for link sharing (Helpdesk+). */
+async function getAckLink(handoverId) {
+  if (!isUuid(handoverId)) throw HttpError.notFound(`Handover ${handoverId} not found`);
+  const { rows } = await query(
+    `SELECT id, ack_token, ack_at FROM handovers WHERE id = $1`,
+    [handoverId]
+  );
+  if (!rows[0]) throw HttpError.notFound(`Handover ${handoverId} not found`);
+  if (!rows[0].ack_token) throw HttpError.notFound('No acknowledgement link for this handover');
+  return {
+    handoverId: rows[0].id,
+    ackToken: rows[0].ack_token,
+    acknowledged: !!rows[0].ack_at,
+  };
+}
+
+async function getByAckToken(token) {
+  const tok = String(token || '').trim();
+  if (!tok || tok.length < 16) throw HttpError.notFound('Acknowledgement link not found');
+  const { rows } = await query('SELECT * FROM handovers WHERE ack_token = $1', [tok]);
+  if (!rows[0]) throw HttpError.notFound('Acknowledgement link not found');
+  const h = mapRow(rows[0]);
+  return {
+    handoverId: h.id,
+    employeeName: h.employeeName,
+    documentType: h.documentType,
+    itemCount: Array.isArray(h.items) ? h.items.length : 0,
+    items: (h.items || []).map((it) => ({
+      type: it.type || (it.assetTag ? 'asset' : 'line'),
+      label: it.assetTag || it.phoneNumber || it.brand || 'item',
+      detail: [it.brand, it.model].filter(Boolean).join(' '),
+    })),
+    acknowledged: !!h.ackAt,
+    ackAt: h.ackAt || null,
+    ackName: h.ackName || null,
+  };
+}
+
+async function confirmAck(token, { name } = {}, meta = {}) {
+  const preview = await getByAckToken(token);
+  if (preview.acknowledged) return preview;
+  const nm = String(name || preview.employeeName || 'Employee').trim().slice(0, 120);
+  const { rows } = await query(
+    `UPDATE handovers SET ack_at = now(), ack_name = $2, ack_ip = $3
+     WHERE ack_token = $1 AND ack_at IS NULL
+     RETURNING *`,
+    [token, nm, meta.ip || null]
+  );
+  if (!rows[0]) return getByAckToken(token);
+  return getByAckToken(token);
+}
+
+module.exports = {
+  executeHandover, getHandover, listHandovers, getByAckToken, confirmAck, getAckLink,
+};

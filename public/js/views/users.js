@@ -1,7 +1,14 @@
 Views.users = async function (el) {
   const items = await api('/auth/users');
-  // Only an Owner may see/assign the Owner role.
-  const roleOptions = Auth.can('canManageOwner') ? ['Owner', 'Admin', 'Helpdesk', 'Viewer'] : ['Admin', 'Helpdesk', 'Viewer'];
+  // Only an Owner may assign Owner or Admin; Admin may manage Helpdesk & Viewer.
+  const roleOptions = Auth.can('canManageOwner') ? ['Owner', 'Admin', 'Helpdesk', 'Viewer'] : ['Helpdesk', 'Viewer'];
+  // Keep current Admin rows selectable when an Admin edits peers' lower roles only;
+  // existing Admin targets stay visible but cannot be assigned by non-Owners.
+  const roleOptionsFor = (u) => {
+    if (Auth.can('canManageOwner')) return roleOptions;
+    if (u.role === 'Admin' || u.role === 'Owner') return [u.role, 'Helpdesk', 'Viewer'];
+    return roleOptions;
+  };
   el.innerHTML = `
     ${pageHead('IT Users', 'Manage system operators and their roles.',
       `<button class="btn btn-primary" id="user-new"><span class="ms">person_add</span> New IT User</button>`)}
@@ -21,8 +28,8 @@ Views.users = async function (el) {
           <td class="actions">
             <button class="btn btn-outline btn-sm" data-logins="${esc(u.uid)}" data-uname="${esc(u.username)}" data-uemail="${esc(u.email)}">
               <span class="ms">history</span> Logins</button>
-            <select data-role="${esc(u.uid)}" style="width:auto" ${(u.role === 'Owner' && !Auth.can('canManageOwner')) ? 'disabled title="Only an Owner can change an Owner"' : ''}>
-              ${roleOptions.map((r) => `<option ${u.role === r ? 'selected' : ''}>${r}</option>`).join('')}
+            <select data-role="${esc(u.uid)}" style="width:auto" ${(u.role === 'Owner' || u.role === 'Admin') && !Auth.can('canManageOwner') ? 'disabled title="Only an Owner can change Owner/Admin roles"' : ''}>
+              ${roleOptionsFor(u).map((r) => `<option ${u.role === r ? 'selected' : ''}>${r}</option>`).join('')}
             </select>
             ${Auth.can('canManageOwner') && u.uid !== (Auth.profile && Auth.profile.uid) ? `
             <button class="btn btn-outline btn-sm" data-toggle-status="${esc(u.uid)}" data-cur="${esc(u.status || 'Active')}" title="${u.status === 'Disabled' ? 'Re-enable this account' : 'Disable sign-in for this account'}">
