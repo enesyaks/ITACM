@@ -389,25 +389,23 @@ function rackLabel(x) {
 }
 
 function renderListTable(items, canEdit) {
-  return `<div class="card"><div class="table-wrap"><table class="data">
+  /* Dense list: warranty / EOL / license live on the detail page so STATUS +
+     actions stay on-screen without horizontal scrolling. */
+  return `<div class="card"><div class="table-wrap"><table class="data net-list">
     <thead><tr>
-      <th style="width:34px"><input type="checkbox" id="sel-all" style="width:15px;height:15px" ${!canEdit ? 'disabled' : ''}></th>
+      <th class="net-col-check"><input type="checkbox" id="sel-all" style="width:15px;height:15px" ${!canEdit ? 'disabled' : ''}></th>
       <th>${esc(t('network.colDevice'))}</th>
       <th>${esc(t('network.colRole'))}</th>
       <th>${esc(t('network.colNetwork'))}</th>
       <th>${esc(t('network.colRack'))}</th>
-      <th>${esc(t('network.colFirmware'))}</th>
-      <th>${esc(t('network.colWarranty'))}</th>
       <th>${esc(t('network.colLocation'))}</th>
       <th>${esc(t('network.colOwner'))}</th>
-      <th>${esc(t('network.colEol'))}</th>
-      <th>${esc(t('network.colLicense'))}</th>
       <th>Status</th>
-      <th style="text-align:right"></th>
+      <th class="net-col-actions"></th>
     </tr></thead>
     <tbody>
       ${items.length === 0
-        ? `<tr><td colspan="13" class="table-empty">${esc(t('network.empty'))}</td></tr>`
+        ? `<tr><td colspan="9" class="table-empty">${esc(t('network.empty'))}</td></tr>`
         : items.map((x) => {
           const s = x.specs || {};
           const lc = lifecycleInfo(x);
@@ -415,47 +413,45 @@ function renderListTable(items, canEdit) {
           const war = dateDaysInfo(x.warrantyEndDate);
           const placed = !!(x.location && x.responsibleEmployee);
           const netBits = [
-            s.hostname ? `<span class="mono">${esc(s.hostname)}</span>` : '',
-            s.ipAddress ? `<span class="mono">${esc(s.ipAddress)}</span>` : '',
-            x.mgmtIp ? `<span class="cell-sub mono">mgmt ${esc(x.mgmtIp)}</span>` : '',
-          ].filter(Boolean).join('<span class="cell-sub"> · </span>');
-          const parentBit = x.parentAsset
-            ? `<div class="cell-sub">↑ ${esc(x.parentAsset.assetTag)}</div>` : '';
+            s.hostname ? `<div class="mono">${esc(s.hostname)}</div>` : '',
+            s.ipAddress ? `<div class="mono">${esc(s.ipAddress)}</div>` : '',
+            x.mgmtIp ? `<div class="cell-sub mono">mgmt ${esc(x.mgmtIp)}</div>` : '',
+          ].filter(Boolean).join('');
+          const metaBits = [
+            parentBitHtml(x),
+            x.firmwareVersion ? `<div class="cell-sub">FW ${esc(x.firmwareVersion)}</div>` : '',
+            eolBadgeHtml(lc),
+            warBadgeHtml(war),
+            licBadgeHtml(lics),
+          ].filter(Boolean).join('');
           return `<tr class="net-row" data-open="${esc(x.id)}">
-            <td onclick="event.stopPropagation()">
+            <td class="net-col-check" onclick="event.stopPropagation()">
               <input type="checkbox" data-sel="${esc(x.id)}" style="width:15px;height:15px" ${!canEdit ? 'disabled' : ''}>
             </td>
             <td>
-              <div style="display:flex;align-items:flex-start;gap:10px">
-                <span class="ms" style="color:var(--on-surface-variant);margin-top:2px">${catIcon(x.category)}</span>
-                <div>
+              <div class="net-device">
+                <span class="ms net-device-ico">${catIcon(x.category)}</span>
+                <div class="net-device-body">
                   <div class="cell-title">${esc(x.brand)} ${esc(x.model)}</div>
-                  <div class="cell-sub mono">${esc(x.assetTag)} · ${esc(x.category)}</div>
-                  ${parentBit}
+                  <div class="cell-sub mono">${esc(x.assetTag)}</div>
+                  ${metaBits}
                 </div>
               </div>
             </td>
             <td>${x.infraRole ? esc(x.infraRole) : '<span class="cell-sub">—</span>'}</td>
-            <td>${netBits || '<span class="cell-sub">—</span>'}</td>
-            <td>${rackLabel(x) ? esc(rackLabel(x)) : '<span class="cell-sub">—</span>'}</td>
-            <td>${x.firmwareVersion
-              ? `<div>${esc(x.firmwareVersion)}</div>
-                 ${x.firmwareUpdatedAt ? `<div class="cell-sub">${fmtDate(x.firmwareUpdatedAt)}</div>` : ''}`
-              : '<span class="cell-sub">—</span>'}</td>
-            <td>${warrantyCellHtml(war)}</td>
+            <td class="net-col-net">${netBits || '<span class="cell-sub">—</span>'}</td>
+            <td>${rackLabel(x) ? `<span class="mono">${esc(rackLabel(x))}</span>` : '<span class="cell-sub">—</span>'}</td>
             <td>${x.location
               ? esc(x.location)
               : `<span class="pill pill-amber">${esc(t('network.noLocation'))}</span>`}</td>
             <td>${x.responsibleEmployee
               ? esc(x.responsibleEmployee.fullName)
               : `<span class="pill pill-amber">${esc(t('network.noOwner'))}</span>`}</td>
-            <td>${eolCellHtml(lc)}</td>
-            <td>${multiLicCellHtml(lics)}</td>
             <td>${placed
               ? `<span class="pill pill-emerald">${esc(t('network.atSite'))}</span>`
               : `<span class="pill pill-amber">${esc(t('network.unplaced'))}</span>`}
               <div class="cell-sub">${esc(x.status)}</div></td>
-            <td class="actions" onclick="event.stopPropagation()">
+            <td class="actions net-col-actions" onclick="event.stopPropagation()">
               ${canEdit ? `<button class="btn btn-primary btn-sm" data-place="${esc(x.id)}" title="${esc(t('network.setPlacement'))}">
                 <span class="ms">location_on</span></button>` : ''}
               <button class="btn btn-outline btn-sm" data-view="${esc(x.id)}"><span class="ms">visibility</span></button>
@@ -465,6 +461,29 @@ function renderListTable(items, canEdit) {
         }).join('')}
     </tbody>
   </table></div></div>`;
+}
+
+function parentBitHtml(x) {
+  return x.parentAsset ? `<div class="cell-sub">↑ ${esc(x.parentAsset.assetTag)}</div>` : '';
+}
+function eolBadgeHtml(lc) {
+  if (!lc || lc.excluded) return '';
+  if (lc.overdue) return `<div><span class="pill pill-rose">EOL</span></div>`;
+  if (lc.pct != null && lc.pct >= 90) return `<div><span class="pill pill-amber">EOL</span></div>`;
+  return '';
+}
+function warBadgeHtml(info) {
+  if (!info || info.days == null) return '';
+  if (info.days < 0) return `<div><span class="pill pill-rose">${esc(t('network.colWarranty'))}</span></div>`;
+  if (info.days <= 60) return `<div><span class="pill pill-amber">${esc(t('network.colWarranty'))}</span></div>`;
+  return '';
+}
+function licBadgeHtml(lics) {
+  if (!lics || !lics.length) return '';
+  const label = lics.length === 1
+    ? (lics[0].softwareName || lics[0].name || 'License')
+    : `${lics.length} ${t('network.colLicense')}`;
+  return `<div class="cell-sub">${esc(label)}</div>`;
 }
 
 /** Bulk select + actions for Network/Server list (no personal zimmet). */

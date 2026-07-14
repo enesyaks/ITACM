@@ -305,6 +305,76 @@ async function deleteContractDoc(docId) {
   return { id: docId, deleted: true };
 }
 
+/* ---- License purchase proofs (invoice / contract scan) ---- */
+
+async function saveLicenseDoc({
+  licenseId, providerId, kind, filename, mime, buffer, uploadedBy, uploadedByName,
+}) {
+  if (!licenseId || !filename || !buffer) {
+    throw HttpError.badRequest('licenseId, filename and file content are required');
+  }
+  if (!isUuid(licenseId)) throw HttpError.notFound(`License ${licenseId} not found`);
+  const docKind = ['invoice', 'contract', 'other'].includes(kind) ? kind : 'invoice';
+
+  const { rows } = await query(
+    `INSERT INTO license_documents
+       (license_id, provider_id, kind, filename, mime, byte_size, content, storage_path,
+        uploaded_by, uploaded_by_name)
+     VALUES ($1,$2,$3,$4,$5,$6,NULL,NULL,$7,$8)
+     RETURNING id`,
+    [
+      licenseId, providerId && isUuid(providerId) ? providerId : null, docKind,
+      filename, mime || 'application/octet-stream', buffer.length,
+      uploadedBy || null, uploadedByName || null,
+    ]
+  );
+  const id = rows[0].id;
+  try {
+    const storagePath = docStorage.writeBuffer('license', id, buffer);
+    await query('UPDATE license_documents SET storage_path = $2 WHERE id = $1', [id, storagePath]);
+  } catch (err) {
+    await query('DELETE FROM license_documents WHERE id = $1', [id]).catch(() => {});
+    throw err;
+  }
+
+  return {
+    id, licenseId, providerId: providerId || null, kind: docKind, filename,
+    mime: mime || 'application/octet-stream', byteSize: buffer.length,
+    uploadedBy, uploadedByName, createdAt: new Date().toISOString(),
+  };
+}
+
+async function listLicenseDocs(licenseId) {
+  if (!isUuid(licenseId)) return [];
+  const { rows } = await query(
+    `SELECT id, license_id, provider_id, kind, filename, mime, byte_size,
+            uploaded_by_name, created_at
+     FROM license_documents WHERE license_id = $1 ORDER BY created_at DESC`,
+    [licenseId]
+  );
+  return mapRows(rows);
+}
+
+async function getLicenseDoc(docId) {
+  if (!isUuid(docId)) throw HttpError.notFound(`Document ${docId} not found`);
+  const { rows } = await query('SELECT * FROM license_documents WHERE id = $1', [docId]);
+  if (!rows[0]) throw HttpError.notFound(`Document ${docId} not found`);
+  const buffer = loadBuffer(rows[0]);
+  if (!buffer) throw HttpError.notFound(`Document file missing for ${docId}`);
+  return { ...mapRow(rows[0]), buffer };
+}
+
+async function deleteLicenseDoc(docId) {
+  if (!isUuid(docId)) throw HttpError.notFound(`Document ${docId} not found`);
+  const { rows } = await query(
+    'DELETE FROM license_documents WHERE id = $1 RETURNING storage_path',
+    [docId]
+  );
+  if (!rows[0]) throw HttpError.notFound(`Document ${docId} not found`);
+  docStorage.deleteFile(rows[0].storage_path);
+  return { id: docId, deleted: true };
+}
+
 module.exports = {
   saveDocument, listByEmployee, getDocument, deleteDocument,
   saveMaintenanceDoc, listMaintenanceDocsByAsset, listMaintenanceDocsByLog,
@@ -312,4 +382,5 @@ module.exports = {
   saveProviderDoc, listProviderDocs, getProviderDoc, deleteProviderDoc,
   saveContractDoc, listContractDocs, listContractDocsByProvider,
   getContractDoc, deleteContractDoc,
+  saveLicenseDoc, listLicenseDocs, getLicenseDoc, deleteLicenseDoc,
 };

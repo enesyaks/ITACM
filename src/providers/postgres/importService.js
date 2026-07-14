@@ -2,16 +2,18 @@
  * Excel/CSV inventory migration.
  *
  * One row = one asset, optionally with the employee it is assigned to. The
- * importer auto-creates everything referenced: employees (deduped by email),
- * catalog brand/model entries, the assets themselves (auto asset tags when the
- * tag column is blank) and one handover (zimmet) per employee covering all of
- * their rows — with full asset history, exactly as if done through the UI.
+ * importer auto-creates employees (deduped by email), catalog brand/model
+ * entries, assets (auto asset tags when blank) and one handover (zimmet) per
+ * employee. Locations must already exist in Product Catalog (case-insensitive
+ * match → canonical name); unknown locations are rejected.
  *
  * dryRun=true validates and returns the plan without touching the database;
  * the commit runs in a single transaction over the valid rows only.
  */
 const { query, withTransaction } = require('./pool');
 const { HttpError } = require('../../utils/httpError');
+const { getSettings } = require('./settingsService');
+const { DEFAULT_LOCATIONS } = require('../../utils/defaults');
 
 const CATEGORIES = ['Laptop', 'Desktop', 'Monitor', 'Television', 'Phone', 'Tablet', 'Printer', 'Network',
   'Keyboard', 'Mouse', 'Headset', 'Docking Station', 'Webcam', 'Peripheral', 'Accessory', 'Other'];
@@ -20,8 +22,35 @@ const MAX_ROWS = 5000;
 
 const s = (v) => (v == null ? '' : String(v).trim());
 
+async function loadKnownLocations() {
+  try {
+    const settings = await getSettings();
+    const list = (settings.locations && settings.locations.length)
+      ? settings.locations
+      : [...DEFAULT_LOCATIONS];
+    return list.map((l) => String(l).trim()).filter(Boolean);
+  } catch {
+    return [...DEFAULT_LOCATIONS];
+  }
+}
+
+function resolveLocation(raw, knownLocations) {
+  const loc = s(raw);
+  if (!loc) return { ok: true, location: null };
+  const match = knownLocations.find((l) => l.toLowerCase() === loc.toLowerCase());
+  if (!match) {
+    const hint = knownLocations.slice(0, 8).join(', ')
+      + (knownLocations.length > 8 ? ', …' : '');
+    return {
+      ok: false,
+      error: `unknown location "${loc}" — add it in Product Catalog → Locations, or use one of: ${hint}`,
+    };
+  }
+  return { ok: true, location: match };
+}
+
 /** Normalise one raw row; returns { ok, data } or { ok:false, error }. */
-function parseRow(r) {
+function parseRow(r, knownLocations = []) {
   const data = {
     employeeName: s(r.employeeName), employeeEmail: s(r.employeeEmail).toLowerCase(),
     department: s(r.department), title: s(r.title),
@@ -36,6 +65,9 @@ function parseRow(r) {
   const canonical = CATEGORIES.find((c) => c.toLowerCase() === data.category.toLowerCase());
   if (!canonical) return { ok: false, error: `unknown category "${data.category}" — use one of: ${CATEGORIES.join(', ')}` };
   data.category = canonical;
+  const loc = resolveLocation(data.location, knownLocations);
+  if (!loc.ok) return loc;
+  data.location = loc.location || '';
   if (data.employeeName && !data.employeeEmail) return { ok: false, error: 'employeeEmail is required when employeeName is set (it is the dedupe key)' };
   if (data.employeeEmail && !EMAIL_RE.test(data.employeeEmail)) return { ok: false, error: `invalid email "${data.employeeEmail}"` };
   if (data.purchaseDate) {
@@ -50,13 +82,14 @@ async function analyse(rows) {
   if (!Array.isArray(rows) || !rows.length) throw HttpError.badRequest('rows must be a non-empty array');
   if (rows.length > MAX_ROWS) throw HttpError.badRequest(`Too many rows — max ${MAX_ROWS} per import`);
 
+  const knownLocations = await loadKnownLocations();
   const errors = [];
   const valid = [];
   const seenSerials = new Set();
   const seenTags = new Set();
   rows.forEach((raw, i) => {
     const rowNo = i + 2; // +1 for header, +1 for 1-based
-    const p = parseRow(raw || {});
+    const p = parseRow(raw || {}, knownLocations);
     if (!p.ok) return errors.push({ row: rowNo, error: p.error });
     if (seenSerials.has(p.data.serialNumber)) return errors.push({ row: rowNo, error: `duplicate serialNumber "${p.data.serialNumber}" in the file` });
     seenSerials.add(p.data.serialNumber);
@@ -80,6 +113,25 @@ async function analyse(rows) {
       }
     }
   }
+  if (seenSerials.size) {
+    const remainingSerials = valid.map((v) => v.serialNumber);
+    if (remainingSerials.length) {
+      const { rows: hitSn } = await query(
+        'SELECT serial_number FROM assets WHERE serial_number = ANY($1)',
+        [remainingSerials]
+      );
+      const takenSn = new Set(hitSn.map((h) => h.serial_number));
+      for (let i = valid.length - 1; i >= 0; i--) {
+        if (takenSn.has(valid[i].serialNumber)) {
+          errors.push({
+            row: valid[i].rowNo,
+            error: `serialNumber "${valid[i].serialNumber}" already exists in the system`,
+          });
+          valid.splice(i, 1);
+        }
+      }
+    }
+  }
 
   const emails = [...new Set(valid.filter((v) => v.employeeEmail).map((v) => v.employeeEmail))];
   const existing = emails.length
@@ -88,25 +140,52 @@ async function analyse(rows) {
   const existingEmails = new Set(existing.map((e) => e.email));
 
   const catalogKeys = [...new Set(valid.map((v) => `${v.category}|${v.brand}|${v.model}`))];
+  const assigned = valid.filter((v) => v.employeeEmail).length;
+  const inStock = valid.length - assigned;
+  const autoTagged = valid.filter((v) => !v.assetTag).length;
+  const categoryCounts = {};
+  for (const v of valid) {
+    categoryCounts[v.category] = (categoryCounts[v.category] || 0) + 1;
+  }
+
+  const preview = valid.slice(0, 60).map((v) => ({
+    row: v.rowNo,
+    assetTag: v.assetTag || null,
+    brand: v.brand,
+    model: v.model,
+    serialNumber: v.serialNumber,
+    category: v.category,
+    location: v.location || null,
+    employeeName: v.employeeName || null,
+    employeeEmail: v.employeeEmail || null,
+    employeeExisting: v.employeeEmail ? existingEmails.has(v.employeeEmail) : false,
+    destination: v.employeeEmail ? 'Assigned' : 'In Stock',
+  }));
 
   return {
     valid, errors,
     plan: {
       totalRows: rows.length,
       assets: valid.length,
+      assigned,
+      inStock,
+      autoTagged,
       employeesNew: emails.filter((e) => !existingEmails.has(e)).length,
       employeesExisting: existingEmails.size,
       handovers: emails.length,
       catalogEntries: catalogKeys.length,
       errorCount: errors.length,
+      categoryCounts,
+      knownLocations,
     },
+    preview,
     existingByEmail: Object.fromEntries(existing.map((e) => [e.email, e.id])),
   };
 }
 
 async function importInventory(rows, { dryRun = false } = {}, itUser) {
-  const { valid, errors, plan, existingByEmail } = await analyse(rows);
-  if (dryRun) return { dryRun: true, ...plan, errors };
+  const { valid, errors, plan, preview, existingByEmail } = await analyse(rows);
+  if (dryRun) return { dryRun: true, ...plan, errors, preview };
   if (!valid.length) throw HttpError.badRequest('No valid rows to import — fix the errors and retry');
 
   const by = [itUser.uid, itUser.username || itUser.email];

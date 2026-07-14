@@ -498,7 +498,8 @@ async function showEmployeeDetail(emp) {
       // Software zimmet: assign a license seat to this employee.
       const swBtn = $('#emp-assign-sw', overlay);
       if (swBtn) swBtn.addEventListener('click', async () => {
-        const licenses = (await api('/licenses')).filter((l) => l.usedSeats < l.totalSeats);
+        const licenses = (await api('/licenses')).filter((l) =>
+          l.lifecycle !== 'cancelled' && l.usedSeats < l.totalSeats);
         formModal({
           title: `Assign software to ${emp.fullName}`,
           fields: [{

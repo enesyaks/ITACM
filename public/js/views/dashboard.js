@@ -10,8 +10,8 @@ Views.dashboard = async function (el) {
     const t = new Date();
     return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
   })();
-  const attnItems = (d.alerts.expiringLicenseCount ? 1 : 0) + (lowest ? 1 : 0) + (eolOverdue ? 1 : 0)
-    + (onboardDueCount ? 1 : 0);
+  const attnItems = (d.alerts.expiredLicenseCount ? 1 : 0) + (d.alerts.expiringLicenseCount ? 1 : 0)
+    + (lowest ? 1 : 0) + (eolOverdue ? 1 : 0) + (onboardDueCount ? 1 : 0);
 
   const donut = (() => {
     const dist = (d.locationDistribution || []).slice(0, 4);
@@ -176,6 +176,14 @@ Views.dashboard = async function (el) {
               <div style="text-align:right"><button class="attn-link" data-open-onboard-due>Open <span class="ms ms-sm">arrow_forward</span></button></div>
             </div>
           </div>` : ''}
+          ${d.alerts.expiredLicenseCount ? `
+          <div class="attn-item rose">
+            ${iconChip('vpn_key_off', 'rose')}
+            <div style="flex:1"><strong>Expired Licenses</strong>
+              <span class="cell-sub">${d.alerts.expiredLicenseCount} software license${d.alerts.expiredLicenseCount > 1 ? 's' : ''} past expiration — renew or cancel.</span>
+              <div style="text-align:right"><button class="attn-link" data-go="#/licenses">Review <span class="ms ms-sm">arrow_forward</span></button></div>
+            </div>
+          </div>` : ''}
           ${d.alerts.expiringLicenseCount ? `
           <div class="attn-item amber">
             ${iconChip('vpn_key', 'amber')}
@@ -220,11 +228,22 @@ Views.dashboard = async function (el) {
           </div>
         </div>
 
-        <!-- Expiring licenses -->
+        <!-- Expiring / expired licenses -->
         <div class="card">
-          <div class="card-head"><h3>Expiring Licenses</h3></div>
-          ${d.alerts.expiringLicenses.length === 0 ? '<div class="table-empty">No licenses expiring soon.</div>' :
-            d.alerts.expiringLicenses.slice(0, 4).map((l) => `
+          <div class="card-head"><h3>License Expiry</h3></div>
+          ${!(d.alerts.expiredLicenses || []).length && !d.alerts.expiringLicenses.length
+            ? '<div class="table-empty">No expired or soon-expiring licenses.</div>'
+            : ''}
+          ${(d.alerts.expiredLicenses || []).slice(0, 4).map((l) => `
+            <div class="exp-item">
+              ${iconChip('vpn_key_off', 'rose')}
+              <div>
+                <strong>${esc(l.softwareName)}</strong>
+                <span class="cell-sub">${l.totalSeats} Seats${l.vendor ? ' • ' + esc(l.vendor) : ''}</span>
+                <div class="exp-days urgent">Expired ${Math.abs(l.daysLeft)} day${Math.abs(l.daysLeft) === 1 ? '' : 's'} ago</div>
+              </div>
+            </div>`).join('')}
+          ${d.alerts.expiringLicenses.slice(0, 4).map((l) => `
             <div class="exp-item">
               ${iconChip('vpn_key', l.daysLeft <= 14 ? 'amber' : 'indigo')}
               <div>

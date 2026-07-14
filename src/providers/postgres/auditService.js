@@ -102,6 +102,14 @@ function describeRequest(req) {
     { m: 'PUT', re: /^\/api\/licenses\/[^/]+$/, action: 'license.update', source: 'licenses', summary: () => 'Updated license' },
     { m: 'POST', re: /^\/api\/licenses\/[^/]+\/assign$/, action: 'license.assign', source: 'licenses', summary: () => 'Assigned software license' },
     { m: 'POST', re: /^\/api\/licenses\/[^/]+\/revoke$/, action: 'license.revoke', source: 'licenses', summary: () => 'Revoked software license' },
+    { m: 'POST', re: /^\/api\/licenses\/[^/]+\/renew$/, action: 'license.renew', source: 'licenses',
+      summary: () => `Renewed license to ${body.expirationDate || 'new date'}` },
+    { m: 'POST', re: /^\/api\/licenses\/[^/]+\/cancel$/, action: 'license.cancel', source: 'licenses',
+      summary: () => 'Cancelled license' },
+    { m: 'PATCH', re: /^\/api\/licenses\/[^/]+$/, action: 'license.update', source: 'licenses',
+      summary: () => 'Updated license / purchase link' },
+    { m: 'POST', re: /^\/api\/licenses\/[^/]+\/documents$/, action: 'license.document', source: 'licenses',
+      summary: () => `Uploaded license document ${body.filename || ''}`.trim() },
     { m: 'POST', re: /^\/api\/lines$/, action: 'line.create', source: 'lines', summary: () => `Created line ${body.phoneNumber || ''}`.trim() },
     { m: 'POST', re: /^\/api\/lines\/[^/]+\/assign$/, action: 'line.assign', source: 'lines', summary: () => 'Assigned mobile line' },
     { m: 'POST', re: /^\/api\/lines\/[^/]+\/unassign$/, action: 'line.unassign', source: 'lines', summary: () => 'Unassigned mobile line' },
@@ -113,7 +121,11 @@ function describeRequest(req) {
     { m: 'POST', re: /^\/api\/counts$/, action: 'stockcount.create', source: 'stockcount', summary: () => 'Opened stock count session' },
     { m: 'POST', re: /^\/api\/counts\/[^/]+\/scan$/, action: 'stockcount.scan', source: 'stockcount', summary: () => `Scanned ${body.code || body.tag || 'item'}` },
     { m: 'POST', re: /^\/api\/counts\/[^/]+\/close$/, action: 'stockcount.close', source: 'stockcount', summary: () => 'Closed stock count' },
-    { m: 'POST', re: /^\/api\/import\/inventory$/, action: 'import.inventory', source: 'import', summary: () => 'Imported inventory (Excel/CSV)' },
+    { m: 'POST', re: /^\/api\/import\/inventory$/, action: 'import.inventory', source: 'import',
+      summary: () => {
+        const n = Array.isArray(body.rows) ? body.rows.length : 0;
+        return `Imported inventory from Excel/CSV (${n} row(s) submitted)`;
+      } },
     { m: 'PUT', re: /^\/api\/settings/, action: 'settings.update', source: 'settings', summary: () => 'Updated settings / branding' },
     { m: 'PATCH', re: /^\/api\/settings/, action: 'settings.update', source: 'settings', summary: () => 'Updated settings / branding' },
     { m: 'POST', re: /^\/api\/setup/, action: 'setup', source: 'setup', summary: () => 'Completed workspace setup' },
@@ -181,6 +193,8 @@ async function logFromRequest(req, res) {
   const path = (req.originalUrl || req.url || '').split('?')[0];
   if (!path.startsWith('/api/')) return;
   if (path === '/api/health' || path === '/api/config') return;
+  // Dry-run import is read-only validation — do not pollute the audit trail.
+  if (path === '/api/import/inventory' && req.body && req.body.dryRun) return;
 
   const described = req.audit || describeRequest(req);
   const user = req.user || {};

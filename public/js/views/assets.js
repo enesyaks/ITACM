@@ -70,7 +70,8 @@ Views.assets = async function (el, params = {}) {
 
   el.innerHTML = `
     ${pageHead('Hardware Inventory', 'Endpoint devices for personal zimmet — laptops, phones, monitors and accessories.', canEdit ? `
-      <button class="btn btn-outline" id="asset-import"><span class="ms">upload_file</span> ${esc(t('common.importExcel'))}</button>
+      ${(Auth.profile && (Auth.profile.role === 'Owner' || Auth.profile.role === 'Admin'))
+        ? `<button class="btn btn-outline" id="asset-import"><span class="ms">upload_file</span> ${esc(t('common.importExcel'))}</button>` : ''}
       <button class="btn btn-outline" id="asset-export"><span class="ms">download</span> ${esc(t('common.export'))}</button>
       <button class="btn btn-primary" id="asset-new"><span class="ms">add</span> ${esc(t('common.addNewAsset'))}</button>` : `
       <button class="btn btn-outline" id="asset-export"><span class="ms">download</span> ${esc(t('common.export'))}</button>`)}
@@ -311,7 +312,9 @@ Views.assets = async function (el, params = {}) {
   });
   if (canEdit) {
     $('#asset-new', el).addEventListener('click', () => assetForm(null, () => rerender({})));
-    $('#asset-import', el).addEventListener('click', () => showImportModal(() => rerender({})));
+    if ($('#asset-import', el)) {
+      $('#asset-import', el).addEventListener('click', () => showImportModal(() => rerender({})));
+    }
   }
   const expBtn = $('#asset-export', el);
   if (expBtn) expBtn.addEventListener('click', () => exportCsv(items));

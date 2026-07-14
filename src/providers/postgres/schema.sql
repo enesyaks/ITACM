@@ -61,6 +61,17 @@ CREATE TABLE IF NOT EXISTS licenses (
 );
 CREATE INDEX IF NOT EXISTS idx_licenses_expiration ON licenses (expiration_date);
 
+-- License renew / cancel lifecycle (also in 016_license_status.sql)
+ALTER TABLE licenses ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active';
+ALTER TABLE licenses DROP CONSTRAINT IF EXISTS licenses_status_check;
+ALTER TABLE licenses ADD CONSTRAINT licenses_status_check CHECK (status IN ('active', 'cancelled'));
+ALTER TABLE licenses ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMPTZ;
+ALTER TABLE licenses ADD COLUMN IF NOT EXISTS cancelled_by TEXT;
+ALTER TABLE licenses ADD COLUMN IF NOT EXISTS cancelled_note TEXT;
+ALTER TABLE licenses ADD COLUMN IF NOT EXISTS renewed_at TIMESTAMPTZ;
+ALTER TABLE licenses ADD COLUMN IF NOT EXISTS renewed_by TEXT;
+CREATE INDEX IF NOT EXISTS idx_licenses_status_exp ON licenses (status, expiration_date);
+
 CREATE TABLE IF NOT EXISTS consumables (
   id                        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   item_name                 TEXT NOT NULL,
@@ -471,6 +482,8 @@ CREATE TABLE IF NOT EXISTS contracts (
                         CHECK (billing_cycle IN ('Monthly', 'Quarterly', 'Annual', 'One-time', 'Other')),
   owner_employee_id     UUID REFERENCES employees(id) ON DELETE SET NULL,
   owner_employee_name   TEXT,
+  visibility            TEXT NOT NULL DEFAULT 'Public'
+                        CHECK (visibility IN ('Public', 'Confidential')),
   notes                 TEXT NOT NULL DEFAULT '',
   created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at            TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -478,6 +491,7 @@ CREATE TABLE IF NOT EXISTS contracts (
 CREATE INDEX IF NOT EXISTS idx_contracts_provider ON contracts (provider_id);
 CREATE INDEX IF NOT EXISTS idx_contracts_status ON contracts (status, end_date);
 CREATE INDEX IF NOT EXISTS idx_contracts_end ON contracts (end_date);
+CREATE INDEX IF NOT EXISTS idx_contracts_visibility ON contracts (visibility);
 
 CREATE TABLE IF NOT EXISTS provider_documents (
   id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -517,6 +531,43 @@ CREATE INDEX IF NOT EXISTS idx_contract_docs_provider
 
 ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS provider_categories JSONB;
 ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS contract_categories JSONB;
+
+-- License ↔ provider / contract purchase link + proofs (also migration 017)
+ALTER TABLE licenses
+  ADD COLUMN IF NOT EXISTS provider_id UUID REFERENCES providers(id) ON DELETE SET NULL;
+ALTER TABLE licenses
+  ADD COLUMN IF NOT EXISTS contract_id UUID REFERENCES contracts(id) ON DELETE SET NULL;
+ALTER TABLE licenses ADD COLUMN IF NOT EXISTS purchase_type TEXT;
+ALTER TABLE licenses DROP CONSTRAINT IF EXISTS licenses_purchase_type_check;
+ALTER TABLE licenses
+  ADD CONSTRAINT licenses_purchase_type_check
+  CHECK (purchase_type IS NULL OR purchase_type IN ('contract', 'invoice'));
+ALTER TABLE licenses ADD COLUMN IF NOT EXISTS invoice_number TEXT;
+ALTER TABLE licenses ADD COLUMN IF NOT EXISTS purchase_date DATE;
+ALTER TABLE licenses ADD COLUMN IF NOT EXISTS purchase_amount NUMERIC(14, 2);
+ALTER TABLE licenses ADD COLUMN IF NOT EXISTS purchase_currency TEXT;
+CREATE INDEX IF NOT EXISTS idx_licenses_provider ON licenses (provider_id)
+  WHERE provider_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_licenses_contract ON licenses (contract_id)
+  WHERE contract_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS license_documents (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  license_id       UUID NOT NULL REFERENCES licenses(id) ON DELETE CASCADE,
+  provider_id      UUID REFERENCES providers(id) ON DELETE SET NULL,
+  kind             TEXT NOT NULL DEFAULT 'invoice'
+                   CHECK (kind IN ('invoice', 'contract', 'other')),
+  filename         TEXT NOT NULL,
+  mime             TEXT,
+  byte_size        INTEGER NOT NULL DEFAULT 0,
+  content          BYTEA,
+  storage_path     TEXT,
+  uploaded_by      TEXT,
+  uploaded_by_name TEXT,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_license_documents_license
+  ON license_documents (license_id, created_at DESC);
 
 -- Employee onboarding (scheduled zimmet with Reserved stock)
 CREATE TABLE IF NOT EXISTS employee_onboardings (

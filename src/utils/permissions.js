@@ -18,10 +18,16 @@ function buildPermissions(role) {
     canManageMaintenance: isStaff,
     canManageUsers: isOwner || isAdmin,
     canViewAudit: isOwner || isAdmin,
+    canViewConfidentialContracts: isOwner || isAdmin,
     canManageBranding: isOwner, // logo, company info, terms, lifecycles, storage
     canManageOwner: isOwner, // only an Owner may create/assign the Owner role
     isOwner,
   };
 }
 
-module.exports = { ROLES, buildPermissions };
+/** Owner / Admin may see contracts marked Confidential. */
+function canViewConfidentialContracts(role) {
+  return role === 'Owner' || role === 'Admin';
+}
+
+module.exports = { ROLES, buildPermissions, canViewConfidentialContracts };

@@ -1,0 +1,9 @@
+﻿employeeName;employeeEmail;department;title;assetTag;category;brand;model;serialNumber;mac;cpu;ram;storage;os;location;purchaseDate
+Ahmet Yılmaz;ahmet.yilmaz@acme.example;Bilgi Teknolojileri;Sistem Uzmanı;;Laptop;Dell;Latitude 5540;SN-DEMO-LT-0001;AA:BB:CC:11:22:01;Intel i5-1235U;16GB;512GB SSD;Windows 11 Pro;Main Office;2024-03-15
+Ahmet Yılmaz;ahmet.yilmaz@acme.example;Bilgi Teknolojileri;Sistem Uzmanı;;Monitor;Dell;U2422H;SN-DEMO-MN-0001;;;;;;Main Office;2024-03-15
+Zeynep Kara;zeynep.kara@acme.example;Finans;Muhasebe Uzmanı;;Laptop;Lenovo;ThinkPad T14;SN-DEMO-LT-0002;AA:BB:CC:11:22:02;AMD Ryzen 5 Pro;16GB;512GB SSD;Windows 11 Pro;Istanbul Branch;2023-11-02
+Zeynep Kara;zeynep.kara@acme.example;Finans;Muhasebe Uzmanı;;Phone;Apple;iPhone 14;SN-DEMO-PH-0001;;;6GB;128GB;iOS 17;Istanbul Branch;2023-11-20
+Can Demir;can.demir@acme.example;Satış;Satış Temsilcisi;IT-9050;Laptop;HP;EliteBook 840;SN-DEMO-LT-0003;AA:BB:CC:11:22:03;Intel i7-1260P;32GB;1TB SSD;Windows 11 Pro;Remote / Home Office;2022-06-01
+;;;;;Monitor;LG;27UP850;SN-DEMO-MN-STOCK-1;;;;;;Warehouse;2023-08-10
+;;;;;Headset;Jabra;Evolve2 65;SN-DEMO-HS-STOCK-1;;;;;;Warehouse;2024-01-12
+Elif Şahin;elif.sahin@acme.example;İnsan Kaynakları;İK Uzmanı;;Tablet;Apple;iPad Air;SN-DEMO-TB-0001;;;8GB;256GB;iPadOS 17;Main Office;2024-05-01

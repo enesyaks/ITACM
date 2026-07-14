@@ -42,6 +42,9 @@ Views.providers = async function (el, params = {}) {
   if (isStaleView(el)) return;
   const canEdit = Auth.can('canManageAssets');
   const tab = params.tab === 'contracts' ? 'contracts' : 'providers';
+  const providerFilterId = params.providerId || '';
+  const statusFilter = params.status || '';
+  const searchQ = (params.q || '').trim();
 
   const [summary, providers, contracts] = await Promise.all([
     api('/providers/summary'),
@@ -50,14 +53,50 @@ Views.providers = async function (el, params = {}) {
   ]);
   if (isStaleView(el)) return;
 
-  const setTab = (next) => {
-    const q = new URLSearchParams({ ...params, tab: next });
-    if (next === 'providers') q.delete('tab');
+  const setTab = (next, extra = {}) => {
+    const q = new URLSearchParams();
+    if (next === 'contracts') {
+      q.set('tab', 'contracts');
+      const providerId = extra.providerId !== undefined ? extra.providerId : '';
+      const status = extra.status !== undefined ? extra.status : '';
+      const text = extra.q !== undefined ? extra.q : '';
+      if (providerId) q.set('providerId', providerId);
+      if (status) q.set('status', status);
+      if (text) q.set('q', text);
+    }
     const qs = q.toString();
     location.hash = '#/providers' + (qs ? '?' + qs : '');
   };
 
+  const setContractFilters = (patch) => {
+    setTab('contracts', {
+      providerId: patch.providerId !== undefined ? patch.providerId : providerFilterId,
+      status: patch.status !== undefined ? patch.status : statusFilter,
+      q: patch.q !== undefined ? patch.q : searchQ,
+    });
+  };
+
   const refresh = () => Views.providers(el, params);
+  const filterProvider = providerFilterId
+    ? providers.find((p) => p.id === providerFilterId) || null
+    : null;
+
+  let visibleContracts = contracts;
+  if (providerFilterId) {
+    visibleContracts = visibleContracts.filter((c) => c.providerId === providerFilterId);
+  }
+  if (statusFilter) {
+    visibleContracts = visibleContracts.filter((c) => c.status === statusFilter);
+  }
+  if (searchQ) {
+    const s = searchQ.toLowerCase();
+    visibleContracts = visibleContracts.filter((c) =>
+      [c.title, c.contractNumber, c.providerName, c.category, c.notes]
+        .filter(Boolean)
+        .some((v) => String(v).toLowerCase().includes(s)));
+  }
+
+  const filtersActive = !!(providerFilterId || statusFilter || searchQ);
 
   el.innerHTML = `
     ${pageHead(
@@ -96,7 +135,7 @@ Views.providers = async function (el, params = {}) {
       </button>
       <button type="button" class="tab ${tab === 'contracts' ? 'active' : ''}" data-tab="contracts" role="tab">
         <span class="ms">description</span> ${esc(t('providers.tabContracts') || 'Contracts')}
-        <span class="cell-sub" style="margin-left:6px">${contracts.length}</span>
+        <span class="cell-sub" style="margin-left:6px">${filtersActive ? `${visibleContracts.length}/${contracts.length}` : contracts.length}</span>
       </button>
     </div>
 
@@ -107,7 +146,16 @@ Views.providers = async function (el, params = {}) {
   if (tab === 'providers') {
     renderProvidersTab(body, providers, canEdit, refresh, setTab);
   } else {
-    renderContractsTab(body, contracts, providers, canEdit, refresh);
+    renderContractsTab(body, visibleContracts, providers, canEdit, refresh, {
+      filterProvider,
+      providerFilterId,
+      statusFilter,
+      searchQ,
+      filtersActive,
+      allCount: contracts.length,
+      setContractFilters,
+      clearFilter: () => setTab('contracts'),
+    });
   }
 
   el.querySelectorAll('#pc-tabs [data-tab]').forEach((b) => {
@@ -116,7 +164,11 @@ Views.providers = async function (el, params = {}) {
 
   if (canEdit) {
     $('#pc-new-provider', el)?.addEventListener('click', () => openProviderForm(null, refresh));
-    $('#pc-new-contract', el)?.addEventListener('click', () => openContractForm(null, providers, refresh));
+    $('#pc-new-contract', el)?.addEventListener('click', () => openContractForm(
+      filterProvider ? { providerId: filterProvider.id } : null,
+      providers,
+      refresh
+    ));
   }
 };
 
@@ -241,7 +293,7 @@ function renderProvidersTab(el, providers, canEdit, refresh, setTab) {
     });
   });
   el.querySelectorAll('[data-show-contracts]').forEach((b) => {
-    b.addEventListener('click', () => setTab('contracts'));
+    b.addEventListener('click', () => setTab('contracts', { providerId: b.dataset.showContracts }));
   });
   el.querySelectorAll('[data-provider-docs]').forEach((b) => {
     b.addEventListener('click', () => {
@@ -262,20 +314,80 @@ function renderProvidersTab(el, providers, canEdit, refresh, setTab) {
   });
 }
 
-function renderContractsTab(el, contracts, providers, canEdit, refresh) {
+function renderContractsTab(el, contracts, providers, canEdit, refresh, opts = {}) {
+  const {
+    filterProvider = null,
+    providerFilterId = '',
+    statusFilter = '',
+    searchQ = '',
+    filtersActive = false,
+    clearFilter = null,
+    setContractFilters = null,
+    allCount = contracts.length,
+  } = opts;
+
+  const statuses = ['Draft', 'Active', 'Expired', 'Cancelled', 'Renewed'];
+  const resultLabel = (t('providers.filterResult') || '{n} of {total}')
+    .replace('{n}', String(contracts.length))
+    .replace('{total}', String(allCount));
+
+  const filterBar = `
+    <div class="card card-pad" style="margin-bottom:12px">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+        <div class="form-field" style="flex:1;min-width:180px;margin:0">
+          <label>${esc(t('common.search') || 'Search')}</label>
+          <input type="search" id="pc-c-q" value="${esc(searchQ)}"
+            placeholder="${esc(t('providers.filterSearch') || 'Search contracts…')}">
+        </div>
+        <div class="form-field" style="min-width:200px;margin:0">
+          <label>${esc(t('providers.colProvider') || 'Provider')}</label>
+          <select id="pc-c-provider">
+            <option value="">${esc(t('providers.filterAllProviders') || 'All providers')}</option>
+            ${providers.map((p) =>
+              `<option value="${esc(p.id)}" ${p.id === providerFilterId ? 'selected' : ''}>${esc(p.name)}</option>`
+            ).join('')}
+          </select>
+        </div>
+        <div class="form-field" style="min-width:150px;margin:0">
+          <label>${esc(t('providers.colStatus') || 'Status')}</label>
+          <select id="pc-c-status">
+            <option value="">${esc(t('providers.filterAllStatuses') || 'All statuses')}</option>
+            ${statuses.map((s) =>
+              `<option value="${esc(s)}" ${s === statusFilter ? 'selected' : ''}>${esc(s)}</option>`
+            ).join('')}
+          </select>
+        </div>
+        ${filtersActive ? `
+        <button type="button" class="btn btn-outline btn-sm" id="pc-clear-provider-filter" style="margin-bottom:2px">
+          <span class="ms">filter_alt_off</span> ${esc(t('providers.filterClear') || 'Clear filters')}
+        </button>` : ''}
+      </div>
+      <div class="cell-sub" style="margin-top:10px">
+        ${esc(resultLabel)}
+        ${filterProvider ? ` · ${esc(filterProvider.name)} — ${esc(t('providers.linkedContracts') || 'linked contract(s)')}` : ''}
+      </div>
+    </div>`;
+
   if (!contracts.length) {
     el.innerHTML = `
+      ${filterBar}
       <div class="card card-pad" style="text-align:center;padding:40px 24px">
         <div class="ms" style="font-size:36px;color:var(--slate-400);margin-bottom:8px">description</div>
-        <div class="cell-title">${esc(t('providers.emptyContracts') || 'No contracts yet')}</div>
+        <div class="cell-title">${esc(filtersActive
+          ? (t('providers.emptyProviderContracts') || 'No contracts for this provider')
+          : (t('providers.emptyContracts') || 'No contracts yet'))}</div>
         <p class="cell-sub" style="max-width:420px;margin:8px auto 0">
-          ${esc(t('providers.emptyContractsHint') || 'Record support SLAs, circuit agreements, SaaS renewals and MSP retainers.')}
+          ${esc(filtersActive
+            ? (t('providers.emptyProviderContractsHint') || 'Add a contract for this provider, or clear the filter to see all contracts.')
+            : (t('providers.emptyContractsHint') || 'Record support SLAs, circuit agreements, SaaS renewals and MSP retainers.'))}
         </p>
       </div>`;
+    wireContractFilters(el, { setContractFilters, clearFilter, searchQ });
     return;
   }
 
   el.innerHTML = `
+    ${filterBar}
     <div class="card"><div class="table-wrap"><table class="data">
       <thead><tr>
         <th>${esc(t('providers.colContract') || 'Contract')}</th>
@@ -320,7 +432,12 @@ function renderContractsTab(el, contracts, providers, canEdit, refresh) {
               <div class="cell-sub">${esc(c.billingCycle || '')}</div>
             </td>
             <td>${esc((c.ownerEmployee && c.ownerEmployee.fullName) || '—')}</td>
-            <td>${statusPill(c.status)}</td>
+            <td>
+              ${statusPill(c.status)}
+              ${c.visibility === 'Confidential'
+                ? `<div style="margin-top:4px"><span class="pill pill-indigo">${esc(t('providers.visibilityConfidential') || 'Confidential')}</span></div>`
+                : ''}
+            </td>
             <td class="actions">
               <button class="btn btn-outline btn-sm" data-contract-docs="${esc(c.id)}" title="${esc(t('common.documents') || 'Documents')}">
                 <span class="ms">attach_file</span>${(c.documentCount || 0) ? ` ${c.documentCount}` : ''}
@@ -333,6 +450,8 @@ function renderContractsTab(el, contracts, providers, canEdit, refresh) {
         }).join('')}
       </tbody>
     </table></div></div>`;
+
+  wireContractFilters(el, { setContractFilters, clearFilter, searchQ });
 
   el.querySelectorAll('[data-edit-contract]').forEach((b) => {
     b.addEventListener('click', () => {
@@ -365,6 +484,43 @@ function renderContractsTab(el, contracts, providers, canEdit, refresh) {
     });
   });
 }
+
+function wireContractFilters(el, { setContractFilters, clearFilter, searchQ }) {
+  if (!setContractFilters) return;
+  const providerSel = $('#pc-c-provider', el);
+  const statusSel = $('#pc-c-status', el);
+  const qInput = $('#pc-c-q', el);
+
+  providerSel?.addEventListener('change', () => {
+    setContractFilters({ providerId: providerSel.value || '' });
+  });
+  statusSel?.addEventListener('change', () => {
+    setContractFilters({ status: statusSel.value || '' });
+  });
+
+  let timer = null;
+  qInput?.addEventListener('input', () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      const next = (qInput.value || '').trim();
+      if (next === (searchQ || '')) return;
+      setContractFilters({ q: next });
+    }, 350);
+  });
+  qInput?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      clearTimeout(timer);
+      setContractFilters({ q: (qInput.value || '').trim() });
+    }
+  });
+
+  $('#pc-clear-provider-filter', el)?.addEventListener('click', () => {
+    if (clearFilter) clearFilter();
+    else setContractFilters({ providerId: '', status: '', q: '' });
+  });
+}
+
 
 function openProviderForm(provider, done) {
   const isEdit = !!(provider && provider.id);
@@ -447,6 +603,19 @@ function openContractForm(contract, providers, done) {
         value: contract?.status || 'Active',
         options: CONTRACT_STATUSES.map((s) => ({ value: s, label: s })),
       },
+      ...(Auth.can('canViewConfidentialContracts')
+        ? [{
+          name: 'visibility',
+          label: t('providers.visibility') || 'Visibility',
+          type: 'select',
+          value: contract?.visibility || 'Public',
+          options: [
+            { value: 'Public', label: t('providers.visibilityPublic') || 'Public — all IT users' },
+            { value: 'Confidential', label: t('providers.visibilityConfidentialOpt') || 'Confidential — Owner / Admin only' },
+          ],
+          full: true,
+        }]
+        : []),
       {
         name: 'billingCycle', label: 'Billing cycle', type: 'select',
         value: contract?.billingCycle || 'Annual',

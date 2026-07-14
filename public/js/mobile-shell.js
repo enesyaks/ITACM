@@ -349,9 +349,60 @@ function syncMobileChrome() {
   renderMobileMoreSheet();
 }
 
+/* ---- responsive card-tables ----
+   On phones, wide `.table-wrap > table.data` scroll horizontally and hide their
+   action columns. This stamps each <td> with its header label (read from <thead>)
+   and tags the wrap `.mcards`, so CSS can stack rows into no-scroll cards.
+   Attribute-only mutations here don't retrigger the childList observer. */
+const MCARD_MQ = window.matchMedia('(max-width: 600px)');
+
+function labelTableCards() {
+  if (!MCARD_MQ.matches) return;
+  const view = document.getElementById('view');
+  if (!view) return;
+  view.querySelectorAll('.table-wrap').forEach((wrap) => {
+    const table = wrap.querySelector('table.data');
+    if (!table) return;
+    const headRow = table.querySelector('thead tr');
+    if (!headRow) return;
+    const labels = Array.from(headRow.children).map((th) => th.textContent.trim());
+    table.querySelectorAll('tbody > tr').forEach((tr) => {
+      const cells = Array.from(tr.children);
+      if (cells.length === 1 && cells[0].hasAttribute('colspan')) return; // empty-state row
+      cells.forEach((td, i) => {
+        if (!td.hasAttribute('data-label')) td.setAttribute('data-label', labels[i] || '');
+        if (!td.classList.contains('actions') && !td.textContent.trim() && !td.querySelector('*')) {
+          td.classList.add('mcard-blank');
+        }
+      });
+    });
+    wrap.classList.add('mcards');
+  });
+}
+
+let __mcardScheduled = false;
+function scheduleTableCards() {
+  if (__mcardScheduled) return;
+  __mcardScheduled = true;
+  requestAnimationFrame(() => {
+    __mcardScheduled = false;
+    try { labelTableCards(); } catch (_) { /* never break the app for cosmetics */ }
+  });
+}
+
+function initTableCards() {
+  const view = document.getElementById('view');
+  if (!view || window.__mcardObserver) return;
+  window.__mcardObserver = new MutationObserver(scheduleTableCards);
+  window.__mcardObserver.observe(view, { childList: true, subtree: true });
+  if (MCARD_MQ.addEventListener) MCARD_MQ.addEventListener('change', scheduleTableCards);
+  scheduleTableCards();
+}
+
 function initMobileShell() {
   if (window.__mobileShellBound) return;
   window.__mobileShellBound = true;
+  initTableCards();
 
   const fabTop = $('#btn-quick-scan');
   if (fabTop) fabTop.addEventListener('click', () => {

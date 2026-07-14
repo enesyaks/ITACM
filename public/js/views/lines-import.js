@@ -430,105 +430,438 @@ Views.lines = async function (el, params = {}) {
 const IMPORT_COLUMNS = ['employeeName', 'employeeEmail', 'department', 'title', 'assetTag',
   'category', 'brand', 'model', 'serialNumber', 'mac', 'cpu', 'ram', 'storage', 'os', 'location', 'purchaseDate'];
 
+/** Turkish + informal aliases → canonical template keys (after space/case strip). */
+const IMPORT_ALIASES = {
+  employeeName: ['employeename', 'calisanadi', 'çalışanadı', 'adisoyadi', 'adsoyad', 'personeladi', 'personel'],
+  employeeEmail: ['employeeemail', 'calisanemail', 'çalışanemail', 'eposta', 'email', 'mail', 'e-posta'],
+  department: ['department', 'departman', 'birim', 'bolum', 'bölüm'],
+  title: ['title', 'unvan', 'ünvan', 'gorev', 'görev', 'jobtitle'],
+  assetTag: ['assettag', 'demirbasno', 'demirbaşno', 'etiket', 'tag', 'envanterno'],
+  category: ['category', 'kategori', 'tur', 'tür'],
+  brand: ['brand', 'marka'],
+  model: ['model'],
+  serialNumber: ['serialnumber', 'serino', 'serinumarasi', 'serinumara', 'sn'],
+  mac: ['mac', 'macaddress', 'macethernet'],
+  cpu: ['cpu', 'islemci', 'işlemci'],
+  ram: ['ram', 'bellek'],
+  storage: ['storage', 'disk', 'depolama', 'hdd', 'ssd'],
+  os: ['os', 'isletimsistemi', 'işletimsistemi'],
+  location: ['location', 'lokasyon', 'konum', 'yer'],
+  purchaseDate: ['purchasedate', 'satinalmatarihi', 'satınalmatarihi', 'alimtarihi'],
+};
+
 function downloadImportTemplate() {
   const sample1 = ['Ahmet Yılmaz', 'ahmet.yilmaz@firma.com', 'Bilgi Teknolojileri', 'Sistem Uzmanı', '',
     'Laptop', 'Dell', 'Latitude 5540', 'SN-ORNEK-1', 'AA:BB:CC:DD:EE:FF', 'Intel i5-1235U', '16GB', '512GB SSD', 'Windows 11 Pro', 'Main Office', '2024-03-15'];
-  const sample2 = ['', '', '', '', '', 'Monitor', 'LG', '27UP850', 'SN-ORNEK-2', '', '', '', '', '', 'Main Office', '2023-11-02'];
+  const sample2 = ['', '', '', '', '', 'Monitor', 'LG', '27UP850', 'SN-ORNEK-2', '', '', '', '', '', 'Warehouse', '2023-11-02'];
   csvDownload('itacm-import-template.csv', IMPORT_COLUMNS, [sample1, sample2]);
-  toast('Template downloaded — fill it in Excel, save as CSV, then upload', 'success');
+  toast(t('imp.templateToast') || 'Template downloaded — fill in Excel, save as CSV, then upload', 'success');
 }
 
-/** Map arbitrary header spellings (case/space tolerant) onto the template keys. */
-function normalizeImportRows(rows) {
-  const canon = Object.fromEntries(IMPORT_COLUMNS.map((c) => [c.toLowerCase(), c]));
-  return rows.map((r) => {
-    const out = {};
+function importHeaderKey(raw) {
+  const stripped = String(raw || '').replace(/\s+/g, '').toLowerCase()
+    .replace(/ı/g, 'i').replace(/İ/g, 'i')
+    .replace(/ş/g, 's').replace(/Ş/g, 's')
+    .replace(/ğ/g, 'g').replace(/Ğ/g, 'g')
+    .replace(/ü/g, 'u').replace(/Ü/g, 'u')
+    .replace(/ö/g, 'o').replace(/Ö/g, 'o')
+    .replace(/ç/g, 'c').replace(/Ç/g, 'c')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  for (const [canon, aliases] of Object.entries(IMPORT_ALIASES)) {
+    const list = aliases.map((a) => a.toLowerCase()
+      .replace(/ı/g, 'i').replace(/ş/g, 's').replace(/ğ/g, 'g')
+      .replace(/ü/g, 'u').replace(/ö/g, 'o').replace(/ç/g, 'c')
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, ''));
+    if (list.includes(stripped) || stripped === canon.toLowerCase()) return canon;
+  }
+  return null;
+}
+
+/** Map arbitrary header spellings onto template keys; report ignored headers. */
+function normalizeImportRows(rows, headersFromFile = null) {
+  const ignored = [];
+  const headerSource = headersFromFile
+    || (rows[0] ? Object.keys(rows[0]) : []);
+  const map = {};
+  for (const h of headerSource) {
+    const key = importHeaderKey(h);
+    if (key) map[h] = key;
+    else if (String(h || '').trim()) ignored.push(String(h).trim());
+  }
+  const out = rows.map((r) => {
+    const row = {};
     for (const [k, v] of Object.entries(r)) {
-      const key = canon[String(k).replace(/\s+/g, '').toLowerCase()];
-      if (key) out[key] = v;
+      const key = map[k] || importHeaderKey(k);
+      if (key) row[key] = v;
     }
-    return out;
+    return row;
   });
+  return { rows: out, ignoredHeaders: [...new Set(ignored)] };
 }
 
 function showImportModal(onDone) {
-  let rows = null;
-  openModal({
-    title: 'Migrate inventory from Excel / CSV',
-    wide: true,
-    body: `
-      <div class="gs-item" style="align-items:flex-start;margin-bottom:14px">
-        ${iconChip('description', 'indigo')}
-        <div style="flex:1">
-          <div class="cell-title">1 — Download the template</div>
-          <div class="cell-sub">One row per device. Fill the employee columns to auto-assign (zimmet) the device to that
-            person; leave them blank for stock. Employees, brand/model catalog entries, asset tags and handover records
-            are all created automatically.</div>
-          <button class="btn btn-outline btn-sm" id="imp-template" style="margin-top:8px"><span class="ms">download</span> Download template (CSV — opens in Excel)</button>
-        </div>
-      </div>
-      <div class="gs-item" style="align-items:flex-start;margin-bottom:14px">
-        ${iconChip('upload_file', 'emerald')}
-        <div style="flex:1">
-          <div class="cell-title">2 — Upload your filled file</div>
-          <div class="cell-sub">Save from Excel as <strong>CSV</strong> (both ; and , separators work; Turkish characters are fine).</div>
-          <input type="file" id="imp-file" accept=".csv,text/csv" style="margin-top:8px">
-        </div>
-      </div>
-      <div id="imp-preview"></div>`,
-    foot: `<button class="btn btn-outline" data-close>Cancel</button>
-           <button class="btn btn-primary" id="imp-commit" disabled><span class="ms">rocket_launch</span> Import</button>`,
-    onMount(overlay) {
-      const preview = $('#imp-preview', overlay);
-      const commitBtn = $('#imp-commit', overlay);
-      $('#imp-template', overlay).addEventListener('click', downloadImportTemplate);
+  if (!(Auth.profile && (Auth.profile.role === 'Owner' || Auth.profile.role === 'Admin'))) {
+    toast(t('imp.ownerAdminOnly') || 'Inventory import is limited to Owner and Admin.', 'error');
+    return;
+  }
 
-      $('#imp-file', overlay).addEventListener('change', async (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        preview.innerHTML = '<div class="table-empty">Analysing…</div>';
+  let state = {
+    step: 1,
+    fileName: '',
+    rows: null,
+    ignoredHeaders: [],
+    plan: null,
+    result: null,
+    awaitingConfirm: false,
+  };
+
+  const canImport = () => state.plan && state.plan.assets > 0;
+
+  const renderSteps = () => `
+    <div class="imp-steps" aria-hidden="true">
+      ${[1, 2, 3, 4].map((n) => {
+        const labels = [
+          t('imp.stepTemplate') || 'Template',
+          t('imp.stepUpload') || 'Upload',
+          t('imp.stepAnalyse') || 'Analyse',
+          t('imp.stepResult') || 'Result',
+        ];
+        const cls = n < state.step ? 'done' : (n === state.step ? 'active' : '');
+        return `<div class="imp-step ${cls}"><span>${n}</span><b>${esc(labels[n - 1])}</b></div>`;
+      }).join('<i></i>')}
+    </div>`;
+
+  const renderBody = () => {
+    if (state.step === 4 && state.result) {
+      const r = state.result;
+      return `
+        ${renderSteps()}
+        <div class="imp-hero success">
+          <span class="ms">check_circle</span>
+          <div>
+            <div class="cell-title">${esc(t('imp.resultTitle') || 'Import complete')}</div>
+            <div class="cell-sub">${esc(t('imp.resultHint') || 'Devices, employees and zimmet handovers were created in one transaction.')}</div>
+          </div>
+        </div>
+        <div class="imp-metrics">
+          <div class="imp-metric"><span>${r.imported || r.assets || 0}</span><small>${esc(t('imp.devices') || 'Devices')}</small></div>
+          <div class="imp-metric"><span>${r.assigned || 0}</span><small>${esc(t('imp.assigned') || 'Assigned')}</small></div>
+          <div class="imp-metric"><span>${r.inStock || 0}</span><small>${esc(t('imp.inStock') || 'In stock')}</small></div>
+          <div class="imp-metric"><span>${r.handovers || 0}</span><small>${esc(t('imp.handovers') || 'Handovers')}</small></div>
+          <div class="imp-metric"><span>${r.employeesNew || 0}</span><small>${esc(t('imp.newEmployees') || 'New employees')}</small></div>
+          <div class="imp-metric"><span>${r.errorCount || 0}</span><small>${esc(t('imp.skipped') || 'Skipped')}</small></div>
+        </div>
+        <div class="imp-actions-row">
+          <a class="btn btn-outline btn-sm" href="#/employees"><span class="ms">badge</span> ${esc(t('nav.employees') || 'Employees')}</a>
+          <a class="btn btn-outline btn-sm" href="#/handover"><span class="ms">assignment_turned_in</span> ${esc(t('nav.handover') || 'Handover')}</a>
+          <a class="btn btn-outline btn-sm" href="#/assets"><span class="ms">devices</span> ${esc(t('nav.hardware') || 'Hardware')}</a>
+          ${(r.errors && r.errors.length) ? `<button type="button" class="btn btn-outline btn-sm" id="imp-dl-errors"><span class="ms">download</span> ${esc(t('imp.downloadErrors') || 'Download errors CSV')}</button>` : ''}
+        </div>
+        ${(r.errors && r.errors.length) ? `
+          <div class="gs-section">${esc(t('imp.skippedRows') || 'Skipped rows')}</div>
+          <div class="table-wrap imp-table"><table class="data">
+            <thead><tr><th style="width:70px">${esc(t('imp.colRow') || 'Row')}</th><th>${esc(t('imp.colProblem') || 'Problem')}</th></tr></thead>
+            <tbody>${r.errors.slice(0, 80).map((er) => `<tr><td class="mono">${er.row}</td><td class="cell-sub">${esc(er.error)}</td></tr>`).join('')}</tbody>
+          </table></div>` : ''}`;
+    }
+
+    if (state.step >= 3 && state.plan) {
+      const p = state.plan;
+      const preview = p.preview || [];
+      const cats = Object.entries(p.categoryCounts || {}).sort((a, b) => b[1] - a[1]);
+      const confirmCard = state.awaitingConfirm ? `
+        <div class="imp-confirm" role="alertdialog" aria-labelledby="imp-confirm-title">
+          <div class="imp-confirm-icon"><span class="ms">rocket_launch</span></div>
+          <div class="imp-confirm-body">
+            <div class="cell-title" id="imp-confirm-title">${esc(t('imp.confirmTitle') || 'Ready to import?')}</div>
+            <p class="cell-sub" style="margin:6px 0 0">
+              ${(t('imp.confirmMsg') || 'Import {devices} device(s), create {emp} employee(s), {ho} handover(s). Skip {err} error row(s)?')
+                .replace('{devices}', `<strong>${p.assets}</strong>`)
+                .replace('{emp}', `<strong>${p.employeesNew}</strong>`)
+                .replace('{ho}', `<strong>${p.handovers}</strong>`)
+                .replace('{err}', `<strong>${p.errorCount}</strong>`)}
+            </p>
+            <div class="imp-confirm-actions">
+              <button type="button" class="btn btn-outline" id="imp-confirm-cancel">${esc(t('common.cancel') || 'Cancel')}</button>
+              <button type="button" class="btn btn-primary" id="imp-confirm-yes">
+                <span class="ms">check</span> ${esc(t('imp.confirmYes') || 'Yes, import now')}
+              </button>
+            </div>
+          </div>
+        </div>` : '';
+      return `
+        ${renderSteps()}
+        ${confirmCard}
+        <div class="imp-file-chip"><span class="ms">draft</span> ${esc(state.fileName || 'file.csv')}
+          <span class="cell-sub">· ${p.totalRows} ${esc(t('imp.rows') || 'rows')}</span></div>
+        <div class="imp-metrics">
+          <div class="imp-metric"><span>${p.assets}</span><small>${esc(t('imp.devices') || 'Devices')}</small></div>
+          <div class="imp-metric accent"><span>${p.assigned || 0}</span><small>${esc(t('imp.willAssign') || 'Will assign')}</small></div>
+          <div class="imp-metric"><span>${p.inStock || 0}</span><small>${esc(t('imp.willStock') || 'Will stay in stock')}</small></div>
+          <div class="imp-metric"><span>${p.handovers}</span><small>${esc(t('imp.handovers') || 'Handovers')}</small></div>
+          <div class="imp-metric"><span>${p.employeesNew}</span><small>${esc(t('imp.newEmployees') || 'New employees')}</small></div>
+          <div class="imp-metric"><span>${p.employeesExisting || 0}</span><small>${esc(t('imp.existingEmployees') || 'Existing employees')}</small></div>
+          <div class="imp-metric"><span>${p.catalogEntries || 0}</span><small>${esc(t('imp.catalogModels') || 'Catalog models')}</small></div>
+          <div class="imp-metric"><span>${p.autoTagged || 0}</span><small>${esc(t('imp.autoTags') || 'Auto asset tags')}</small></div>
+          <div class="imp-metric ${p.errorCount ? 'warn' : 'ok'}"><span>${p.errorCount}</span><small>${esc(t('imp.errors') || 'Errors')}</small></div>
+        </div>
+        ${cats.length ? `
+          <div class="imp-cat-bar" title="${esc(t('imp.byCategory') || 'By category')}">
+            ${cats.slice(0, 8).map(([name, n]) => {
+              const pct = Math.max(8, Math.round((n / Math.max(1, p.assets)) * 100));
+              return `<div class="imp-cat-chip" style="flex:${n}"><b>${esc(name)}</b><span>${n}</span></div>`;
+            }).join('')}
+          </div>` : ''}
+        ${state.ignoredHeaders.length ? `
+          <div class="imp-warn">
+            <span class="ms">info</span>
+            <div>${esc(t('imp.ignoredHeaders') || 'These columns were ignored (not in the template)')}: 
+              <strong>${state.ignoredHeaders.map(esc).join(', ')}</strong></div>
+          </div>` : ''}
+        ${(p.knownLocations && p.knownLocations.length) ? `
+          <div class="imp-tip">
+            <span class="ms">location_on</span>
+            <div><strong>${esc(t('imp.allowedLocations') || 'Allowed locations')}</strong>
+              (Product Catalog): ${p.knownLocations.map(esc).join(' · ')}</div>
+          </div>` : ''}
+        ${p.errorCount ? `
+          <div class="imp-warn">
+            <span class="ms">warning</span>
+            <div>${esc(t('imp.errorsSkippedHint') || 'Rows with errors will be skipped. Valid rows still import.')}
+              <button type="button" class="btn btn-outline btn-sm" id="imp-dl-errors" style="margin-left:8px">${esc(t('imp.downloadErrors') || 'Download errors CSV')}</button>
+            </div>
+          </div>` : `
+          <div class="imp-ok"><span class="ms">check_circle</span> ${esc(t('imp.allValid') || 'Every row is valid.')}</div>`}
+        <div class="imp-tabs" role="tablist">
+          <button type="button" class="imp-tab active" data-imp-tab="preview">${esc(t('imp.tabPreview') || 'Preview')} (${Math.min(preview.length, 60)})</button>
+          <button type="button" class="imp-tab" data-imp-tab="errors">${esc(t('imp.tabErrors') || 'Errors')} (${p.errorCount})</button>
+        </div>
+        <div id="imp-tab-preview" class="imp-tab-panel">
+          <div class="table-wrap imp-table"><table class="data">
+            <thead><tr>
+              <th>${esc(t('imp.colRow') || 'Row')}</th>
+              <th>${esc(t('imp.colDevice') || 'Device')}</th>
+              <th>${esc(t('imp.colSerial') || 'Serial')}</th>
+              <th>${esc(t('imp.colEmployee') || 'Employee')}</th>
+              <th>${esc(t('imp.colDestination') || 'Destination')}</th>
+            </tr></thead>
+            <tbody>
+              ${preview.length === 0 ? `<tr><td colspan="5" class="table-empty">${esc(t('imp.noValidRows') || 'No valid rows')}</td></tr>` :
+                preview.map((row) => `
+                <tr>
+                  <td class="mono">${row.row}</td>
+                  <td>
+                    <div class="cell-title">${esc(row.brand)} ${esc(row.model)}</div>
+                    <div class="cell-sub">${esc(row.category)}${row.assetTag ? ` · <span class="mono">${esc(row.assetTag)}</span>` : ` · ${esc(t('imp.autoTag') || 'auto tag')}`}</div>
+                  </td>
+                  <td class="mono cell-sub">${esc(row.serialNumber)}</td>
+                  <td>
+                    ${row.employeeEmail
+                      ? `<div>${esc(row.employeeName || '—')}</div>
+                         <div class="cell-sub">${esc(row.employeeEmail)}
+                           ${row.employeeExisting
+                             ? ` · ${esc(t('imp.existing') || 'existing')}`
+                             : ` · ${esc(t('imp.willCreate') || 'will create')}`}</div>`
+                      : `<span class="cell-sub">—</span>`}
+                  </td>
+                  <td>${row.destination === 'Assigned'
+                    ? `<span class="pill pill-blue">${esc(t('imp.assigned') || 'Assigned')}</span>`
+                    : `<span class="pill pill-emerald">${esc(t('imp.inStock') || 'In Stock')}</span>`}</td>
+                </tr>`).join('')}
+            </tbody>
+          </table></div>
+          ${(p.assets || 0) > preview.length ? `<div class="cell-sub" style="margin-top:6px">${esc(t('imp.previewCapped') || 'Showing first rows only — all valid rows will still import.')}</div>` : ''}
+        </div>
+        <div id="imp-tab-errors" class="imp-tab-panel hidden">
+          <div class="table-wrap imp-table"><table class="data">
+            <thead><tr><th style="width:70px">${esc(t('imp.colRow') || 'Row')}</th><th>${esc(t('imp.colProblem') || 'Problem')}</th></tr></thead>
+            <tbody>
+              ${(p.errors || []).length === 0
+                ? `<tr><td colspan="2" class="table-empty">${esc(t('imp.noErrors') || 'No errors')}</td></tr>`
+                : (p.errors || []).slice(0, 100).map((er) => `<tr><td class="mono">${er.row}</td><td class="cell-sub">${esc(er.error)}</td></tr>`).join('')}
+            </tbody>
+          </table></div>
+        </div>`;
+    }
+
+    // Steps 1–2: template + upload
+    return `
+      ${renderSteps()}
+      <div class="imp-split">
+        <div class="imp-card">
+          <div class="imp-card-icon">${iconChip('description', 'indigo')}</div>
+          <div class="cell-title">${esc(t('imp.step1Title') || '1 — Template')}</div>
+          <p class="cell-sub">${esc(t('imp.step1Body') || 'One row per device. Fill employee columns to create zimmet automatically; leave blank for stock.')}</p>
+          <ul class="imp-bullets">
+            <li>${esc(t('imp.bulletEmployees') || 'Creates employees (deduped by email)')}</li>
+            <li>${esc(t('imp.bulletHandover') || 'One handover document per employee')}</li>
+            <li>${esc(t('imp.bulletTags') || 'Auto asset tags when the column is empty')}</li>
+          </ul>
+          <button type="button" class="btn btn-outline" id="imp-template"><span class="ms">download</span> ${esc(t('imp.downloadTemplate') || 'Download CSV template')}</button>
+        </div>
+        <div class="imp-card" id="imp-drop">
+          <div class="imp-card-icon">${iconChip('upload_file', 'emerald')}</div>
+          <div class="cell-title">${esc(t('imp.step2Title') || '2 — Upload CSV')}</div>
+          <p class="cell-sub">${esc(t('imp.step2Body') || 'Save from Excel as CSV (; or ,). Turkish headers like Marka / Seri No are accepted. Locations must match Product Catalog.')}</p>
+          <label class="imp-dropzone" for="imp-file">
+            <span class="ms">cloud_upload</span>
+            <strong>${esc(t('imp.dropHint') || 'Drop CSV here or click to browse')}</strong>
+            <span class="cell-sub">.csv · max 5000 rows</span>
+          </label>
+          <input type="file" id="imp-file" accept=".csv,text/csv" hidden>
+          <div id="imp-upload-status" class="cell-sub" style="margin-top:8px"></div>
+        </div>
+      </div>`;
+  };
+
+  const footForStep = () => {
+    if (state.step === 4) {
+      return `<button class="btn btn-primary" data-close><span class="ms">done</span> ${esc(t('common.close') || 'Close')}</button>`;
+    }
+    if (state.step >= 3) {
+      return `
+        <button class="btn btn-outline" id="imp-back">${esc(t('common.back') || 'Back')}</button>
+        <button class="btn btn-outline" data-close>${esc(t('common.cancel') || 'Cancel')}</button>
+        <button class="btn btn-primary" id="imp-commit" ${canImport() && !state.awaitingConfirm ? '' : 'disabled'}>
+          <span class="ms">rocket_launch</span>
+          ${esc(t('imp.confirmImport') || 'Confirm import')}
+          ${canImport() ? ` (${state.plan.assets})` : ''}
+        </button>`;
+    }
+    return `<button class="btn btn-outline" data-close>${esc(t('common.cancel') || 'Cancel')}</button>`;
+  };
+
+  openModal({
+    title: t('imp.title') || 'Import inventory & zimmet',
+    wide: true,
+    body: `<div id="imp-root">${renderBody()}</div>`,
+    foot: `<div id="imp-foot">${footForStep()}</div>`,
+    onMount(overlay) {
+      const root = () => $('#imp-root', overlay);
+      const foot = () => $('#imp-foot', overlay);
+
+      const redraw = () => {
+        root().innerHTML = renderBody();
+        foot().innerHTML = footForStep();
+        bind();
+      };
+
+      const downloadErrors = () => {
+        const errors = (state.result && state.result.errors) || (state.plan && state.plan.errors) || [];
+        if (!errors.length) return;
+        csvDownload('itacm-import-errors.csv', ['row', 'error'], errors.map((e) => [e.row, e.error]));
+        toast(t('imp.errorsDownloaded') || 'Error report downloaded', 'success');
+      };
+
+      const runAnalyse = async (file) => {
+        const status = $('#imp-upload-status', overlay);
+        if (status) status.textContent = t('imp.analysing') || 'Analysing…';
         try {
           const text = await file.text();
-          rows = normalizeImportRows(parseCsv(text));
-          if (!rows.length) throw new Error('No data rows found — is the header row intact?');
-          const plan = await api('/import/inventory', { method: 'POST', body: { rows, dryRun: true } });
-          preview.innerHTML = `
-            <div class="gs-section" style="margin:4px 0 8px">3 — Review the plan</div>
-            <div class="grid grid-4" style="margin-bottom:10px">
-              <div class="card card-pad metric"><h3 class="card-title">Devices</h3><div class="metric-value">${plan.assets}</div></div>
-              <div class="card card-pad metric"><h3 class="card-title">New employees</h3><div class="metric-value">${plan.employeesNew}</div></div>
-              <div class="card card-pad metric"><h3 class="card-title">Handovers</h3><div class="metric-value">${plan.handovers}</div></div>
-              <div class="card card-pad metric"><h3 class="card-title">Errors</h3><div class="metric-value" style="color:${plan.errorCount ? 'var(--rose-700)' : 'var(--emerald-600)'}">${plan.errorCount}</div></div>
-            </div>
-            ${plan.errorCount ? `
-            <div class="cell-sub" style="margin-bottom:6px">Rows with errors are <strong>skipped</strong>; everything else imports.</div>
-            <div class="table-wrap" style="max-height:200px;overflow-y:auto"><table class="data">
-              <thead><tr><th style="width:70px">Row</th><th>Problem</th></tr></thead>
-              <tbody>${plan.errors.slice(0, 50).map((er) => `<tr><td class="mono">${er.row}</td><td class="cell-sub">${esc(er.error)}</td></tr>`).join('')}</tbody>
-            </table></div>` : '<div class="cell-sub">✓ Every row is valid.</div>'}`;
-          commitBtn.disabled = plan.assets === 0;
+          const parsed = parseCsv(text);
+          if (!parsed.length) throw new Error(t('imp.noDataRows') || 'No data rows found — is the header row intact?');
+          const headers = Object.keys(parsed[0] || {});
+          const norm = normalizeImportRows(parsed, headers);
+          state.rows = norm.rows;
+          state.ignoredHeaders = norm.ignoredHeaders;
+          state.fileName = file.name;
+          const plan = await api('/import/inventory', { method: 'POST', body: { rows: state.rows, dryRun: true } });
+          state.plan = plan;
+          state.step = 3;
+          redraw();
         } catch (err) {
-          preview.innerHTML = `<div class="form-error">${esc(err.message)}</div>`;
-          commitBtn.disabled = true;
-          rows = null;
+          if (status) status.innerHTML = `<span class="form-error">${esc(err.message)}</span>`;
+          else toast(err.message, 'error');
+          state.rows = null;
+          state.plan = null;
         }
-      });
+      };
 
-      commitBtn.addEventListener('click', async () => {
-        if (!rows) return;
-        commitBtn.disabled = true;
-        commitBtn.innerHTML = '<span class="ms">hourglass_top</span> Importing…';
-        try {
-          const r = await api('/import/inventory', { method: 'POST', body: { rows, dryRun: false } });
-          toast(`Imported ${r.imported} device(s), ${r.handovers} handover(s), ${r.employees} employee(s)${r.errorCount ? ` — ${r.errorCount} row(s) skipped` : ''}`, 'success');
-          closeModal();
-          if (onDone) onDone();
-        } catch (err) {
-          toast(err.message, 'error');
-          commitBtn.disabled = false;
-          commitBtn.innerHTML = '<span class="ms">rocket_launch</span> Import';
-        }
-      });
+      const bindDrop = () => {
+        const drop = $('#imp-drop', overlay);
+        const input = $('#imp-file', overlay);
+        if (!drop || !input) return;
+        const onFiles = (files) => {
+          const file = files && files[0];
+          if (!file) return;
+          if (!/\.csv$/i.test(file.name) && file.type && !file.type.includes('csv') && !file.type.includes('text')) {
+            toast(t('imp.csvOnly') || 'Please upload a CSV file (Excel → Save as CSV).', 'error');
+            return;
+          }
+          runAnalyse(file);
+        };
+        input.addEventListener('change', (e) => onFiles(e.target.files));
+        ['dragenter', 'dragover'].forEach((ev) => drop.addEventListener(ev, (e) => {
+          e.preventDefault();
+          drop.classList.add('drag');
+        }));
+        ['dragleave', 'drop'].forEach((ev) => drop.addEventListener(ev, (e) => {
+          e.preventDefault();
+          drop.classList.remove('drag');
+        }));
+        drop.addEventListener('drop', (e) => onFiles(e.dataTransfer.files));
+      };
+
+      const bind = () => {
+        $('#imp-template', overlay)?.addEventListener('click', downloadImportTemplate);
+        bindDrop();
+        overlay.querySelectorAll('[data-imp-tab]').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            overlay.querySelectorAll('.imp-tab').forEach((b) => b.classList.toggle('active', b === btn));
+            const tab = btn.dataset.impTab;
+            $('#imp-tab-preview', overlay)?.classList.toggle('hidden', tab !== 'preview');
+            $('#imp-tab-errors', overlay)?.classList.toggle('hidden', tab !== 'errors');
+          });
+        });
+        $('#imp-dl-errors', overlay)?.addEventListener('click', downloadErrors);
+        $('#imp-back', overlay)?.addEventListener('click', () => {
+          state.step = 1;
+          state.plan = null;
+          state.rows = null;
+          state.result = null;
+          state.awaitingConfirm = false;
+          redraw();
+        });
+        $('#imp-confirm-cancel', overlay)?.addEventListener('click', () => {
+          state.awaitingConfirm = false;
+          redraw();
+        });
+        const runImport = async () => {
+          if (!state.rows || !canImport()) return;
+          state.awaitingConfirm = false;
+          const btn = $('#imp-commit', overlay);
+          const yesBtn = $('#imp-confirm-yes', overlay);
+          if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = `<span class="ms">hourglass_top</span> ${esc(t('imp.importing') || 'Importing…')}`;
+          }
+          if (yesBtn) {
+            yesBtn.disabled = true;
+            yesBtn.innerHTML = `<span class="ms">hourglass_top</span> ${esc(t('imp.importing') || 'Importing…')}`;
+          }
+          try {
+            const r = await api('/import/inventory', { method: 'POST', body: { rows: state.rows, dryRun: false } });
+            state.result = r;
+            state.step = 4;
+            redraw();
+            if (onDone) onDone();
+          } catch (err) {
+            toast(err.message, 'error');
+            state.awaitingConfirm = false;
+            redraw();
+          }
+        };
+        $('#imp-confirm-yes', overlay)?.addEventListener('click', () => { runImport(); });
+        $('#imp-commit', overlay)?.addEventListener('click', () => {
+          if (!state.rows || !canImport()) return;
+          state.awaitingConfirm = true;
+          redraw();
+          $('#imp-confirm-yes', overlay)?.focus();
+        });
+      };
+
+      bind();
     },
   });
 }
+

@@ -139,9 +139,13 @@ async function assertLicensesExist(client, ids) {
 
 /** Replace junction rows + keep legacy assets.license_id as first (compat). */
 async function syncAssetLicenses(client, assetId, licenseIds) {
+  const { assertCanLinkAsset } = require('./licenseService');
   await assertLicensesExist(client, licenseIds);
+  // Drop this asset's links first so re-linking the same licenses doesn't
+  // count against seat capacity, then enforce pool size for each new link.
   await client.query('DELETE FROM asset_licenses WHERE asset_id = $1', [assetId]);
   for (const lid of licenseIds) {
+    await assertCanLinkAsset(client, lid, { excludeAssetId: assetId });
     await client.query(
       'INSERT INTO asset_licenses (asset_id, license_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
       [assetId, lid]

@@ -71,7 +71,7 @@ function mapOnboardingRow(r) {
 }
 
 async function getDashboardStats() {
-  const [statusCounts, lowStock, expiring, recent, eol, locDist, onboardDue, onboardSched] = await Promise.all([
+  const [statusCounts, lowStock, expiring, expired, recent, eol, locDist, onboardDue, onboardSched] = await Promise.all([
     query(`SELECT status, COUNT(*)::int AS n FROM assets GROUP BY status`),
     query(
       `SELECT * FROM consumables
@@ -81,10 +81,19 @@ async function getDashboardStats() {
     query(
       `SELECT *, CEIL(EXTRACT(EPOCH FROM (expiration_date - now())) / 86400)::int AS days_left
        FROM licenses
-       WHERE expiration_date >= now()
+       WHERE COALESCE(status, 'active') = 'active'
+         AND expiration_date >= now()
          AND expiration_date <= now() + ($1 || ' days')::interval
        ORDER BY expiration_date ASC`,
       [LICENSE_EXPIRY_WINDOW_DAYS]
+    ),
+    query(
+      `SELECT *, CEIL(EXTRACT(EPOCH FROM (expiration_date - now())) / 86400)::int AS days_left
+       FROM licenses
+       WHERE COALESCE(status, 'active') = 'active'
+         AND expiration_date < now()
+       ORDER BY expiration_date ASC
+       LIMIT 50`
     ),
     query(`SELECT * FROM handovers ORDER BY transaction_date DESC LIMIT 5`),
     getEolAssets(),
@@ -115,6 +124,7 @@ async function getDashboardStats() {
 
   const lowStockConsumables = mapRows(lowStock.rows);
   const expiringLicenses = mapRows(expiring.rows);
+  const expiredLicenses = mapRows(expired.rows);
   const onboardingDue = onboardDue.rows.map(mapOnboardingRow);
   const onboardingScheduled = onboardSched.rows.map(mapOnboardingRow);
 
@@ -146,6 +156,8 @@ async function getDashboardStats() {
       lowStockCount: lowStockConsumables.length,
       expiringLicenses,
       expiringLicenseCount: expiringLicenses.length,
+      expiredLicenses,
+      expiredLicenseCount: expiredLicenses.length,
       eolOverdueCount: eol.overdue.length,
       eolSoonCount: eol.soon.length,
       eolOverdue: eol.overdue.slice(0, 5),

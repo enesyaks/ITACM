@@ -12,7 +12,7 @@ const write = requireRole('Owner', 'Admin', 'Helpdesk');
 
 /** GET /api/providers/summary — KPI counts. */
 router.get('/summary', asyncHandler(async (req, res) => {
-  res.json({ success: true, data: await providerService.summary() });
+  res.json({ success: true, data: await providerService.summary({ role: req.user.role }) });
 }));
 
 /** GET /api/providers/documents/:docId/download — stream a provider document. */
@@ -31,7 +31,10 @@ router.delete('/documents/:docId', requireRole('Owner', 'Admin'), asyncHandler(a
 
 /** GET /api/providers — list vendors / ISPs / MSPs. */
 router.get('/', asyncHandler(async (req, res) => {
-  res.json({ success: true, data: await providerService.listProviders(req.query) });
+  res.json({
+    success: true,
+    data: await providerService.listProviders({ ...req.query, role: req.user.role }),
+  });
 }));
 
 /** POST /api/providers */
@@ -47,7 +50,7 @@ router.get('/:id/documents', asyncHandler(async (req, res) => {
 /** POST /api/providers/:id/documents — body: { filename, base64 } */
 router.post('/:id/documents', write, express.json({ limit: '12mb' }), asyncHandler(async (req, res) => {
   const { buffer, mime, filename } = validateUpload(req.body || {});
-  const provider = await providerService.getProvider(req.params.id);
+  const provider = await providerService.getProvider(req.params.id, { role: req.user.role });
   const saved = await documentService.saveProviderDoc({
     providerId: provider.id,
     providerName: provider.name,
@@ -62,7 +65,10 @@ router.post('/:id/documents', write, express.json({ limit: '12mb' }), asyncHandl
 
 /** GET /api/providers/:id */
 router.get('/:id', asyncHandler(async (req, res) => {
-  res.json({ success: true, data: await providerService.getProvider(req.params.id) });
+  res.json({
+    success: true,
+    data: await providerService.getProvider(req.params.id, { role: req.user.role }),
+  });
 }));
 
 /** PATCH /api/providers/:id */

@@ -5,10 +5,32 @@ const { HttpError } = require('../../utils/httpError');
 const { DEFAULT_CURRENCY } = require('../../utils/defaults');
 const { getSettings } = require('./settingsService');
 const { sanitizeHttpUrl } = require('../../utils/httpUrl');
+const { canViewConfidentialContracts } = require('../../utils/permissions');
 
 const PROVIDER_STATUSES = new Set(['Active', 'Inactive']);
 const CONTRACT_STATUSES = new Set(['Draft', 'Active', 'Expired', 'Cancelled', 'Renewed']);
 const BILLING_CYCLES = new Set(['Monthly', 'Quarterly', 'Annual', 'One-time', 'Other']);
+const CONTRACT_VISIBILITIES = new Set(['Public', 'Confidential']);
+
+function parseVisibility(raw, { allowConfidential, fallback = 'Public' } = {}) {
+  if (raw == null || raw === '') return fallback;
+  const v = String(raw).trim();
+  if (!CONTRACT_VISIBILITIES.has(v)) {
+    throw HttpError.badRequest('visibility must be Public or Confidential');
+  }
+  if (v === 'Confidential' && !allowConfidential) {
+    throw HttpError.forbidden('Only Owner or Admin can mark a contract Confidential');
+  }
+  return v;
+}
+
+function assertContractReadable(contract, role) {
+  if (!contract) throw HttpError.notFound('Contract not found');
+  if (contract.visibility === 'Confidential' && !canViewConfidentialContracts(role)) {
+    throw HttpError.notFound('Contract not found');
+  }
+  return contract;
+}
 
 async function defaultCostCurrency() {
   try {
@@ -102,6 +124,7 @@ function mapContract(row) {
     contractNumber: row.contract_number,
     category: row.category,
     status: row.status,
+    visibility: row.visibility || 'Public',
     startDate: row.start_date,
     endDate: row.end_date,
     renewalDate: row.renewal_date,
@@ -120,7 +143,7 @@ function mapContract(row) {
   };
 }
 
-async function listProviders({ status, category, search } = {}) {
+async function listProviders({ status, category, search, role } = {}) {
   const where = [];
   const params = [];
   if (status && PROVIDER_STATUSES.has(status)) {
@@ -142,10 +165,13 @@ async function listProviders({ status, category, search } = {}) {
       OR lower(coalesce(p.account_number, '')) LIKE $${i}
     )`);
   }
+  const vis = canViewConfidentialContracts(role)
+    ? ''
+    : ` AND c.visibility = 'Public'`;
   const sql = `
     SELECT p.*,
-      (SELECT COUNT(*)::int FROM contracts c WHERE c.provider_id = p.id) AS contract_count,
-      (SELECT COUNT(*)::int FROM contracts c WHERE c.provider_id = p.id AND c.status = 'Active') AS active_contract_count,
+      (SELECT COUNT(*)::int FROM contracts c WHERE c.provider_id = p.id${vis}) AS contract_count,
+      (SELECT COUNT(*)::int FROM contracts c WHERE c.provider_id = p.id AND c.status = 'Active'${vis}) AS active_contract_count,
       (SELECT COUNT(*)::int FROM provider_documents d WHERE d.provider_id = p.id) AS document_count
     FROM providers p
     ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
@@ -154,12 +180,15 @@ async function listProviders({ status, category, search } = {}) {
   return rows.map(mapProvider);
 }
 
-async function getProvider(id) {
+async function getProvider(id, { role } = {}) {
   if (!isUuid(id)) throw HttpError.notFound(`Provider ${id} not found`);
+  const vis = canViewConfidentialContracts(role)
+    ? ''
+    : ` AND c.visibility = 'Public'`;
   const { rows } = await query(
     `SELECT p.*,
-      (SELECT COUNT(*)::int FROM contracts c WHERE c.provider_id = p.id) AS contract_count,
-      (SELECT COUNT(*)::int FROM contracts c WHERE c.provider_id = p.id AND c.status = 'Active') AS active_contract_count,
+      (SELECT COUNT(*)::int FROM contracts c WHERE c.provider_id = p.id${vis}) AS contract_count,
+      (SELECT COUNT(*)::int FROM contracts c WHERE c.provider_id = p.id AND c.status = 'Active'${vis}) AS active_contract_count,
       (SELECT COUNT(*)::int FROM provider_documents d WHERE d.provider_id = p.id) AS document_count
      FROM providers p WHERE p.id = $1`,
     [id]
@@ -279,7 +308,7 @@ async function resolveOwner(employeeId) {
   return { id: rows[0].id, name: rows[0].full_name };
 }
 
-async function listContracts({ status, providerId, search, expiringWithinDays } = {}) {
+async function listContracts({ status, providerId, search, expiringWithinDays, role } = {}) {
   const where = [];
   const params = [];
   if (status && CONTRACT_STATUSES.has(status)) {
@@ -311,6 +340,9 @@ async function listContracts({ status, providerId, search, expiringWithinDays } 
       AND c.end_date <= CURRENT_DATE + ($${params.length}::int * INTERVAL '1 day')
       AND c.status IN ('Active', 'Draft')`);
   }
+  if (!canViewConfidentialContracts(role)) {
+    where.push(`c.visibility = 'Public'`);
+  }
   const sql = `
     SELECT c.*, p.name AS provider_name, p.category AS provider_category,
       (SELECT COUNT(*)::int FROM contract_documents d WHERE d.contract_id = c.id) AS document_count
@@ -325,7 +357,7 @@ async function listContracts({ status, providerId, search, expiringWithinDays } 
   return rows.map(mapContract);
 }
 
-async function getContract(id) {
+async function getContract(id, { role } = {}) {
   if (!isUuid(id)) throw HttpError.notFound(`Contract ${id} not found`);
   const { rows } = await query(
     `SELECT c.*, p.name AS provider_name, p.category AS provider_category,
@@ -336,10 +368,10 @@ async function getContract(id) {
     [id]
   );
   if (!rows[0]) throw HttpError.notFound(`Contract ${id} not found`);
-  return mapContract(rows[0]);
+  return assertContractReadable(mapContract(rows[0]), role);
 }
 
-async function createContract(body = {}) {
+async function createContract(body = {}, { role } = {}) {
   const title = trimOrNull(body.title, 300);
   if (!title) throw HttpError.badRequest('title is required');
   if (!body.providerId || !isUuid(body.providerId)) {
@@ -352,17 +384,19 @@ async function createContract(body = {}) {
   if (!CONTRACT_STATUSES.has(status)) throw HttpError.badRequest('Invalid status');
   const billingCycle = body.billingCycle || 'Annual';
   if (!BILLING_CYCLES.has(billingCycle)) throw HttpError.badRequest('Invalid billingCycle');
+  const allowConfidential = canViewConfidentialContracts(role);
+  const visibility = parseVisibility(body.visibility, { allowConfidential, fallback: 'Public' });
 
   const owner = await resolveOwner(body.ownerEmployeeId);
   const fallbackCur = await defaultCostCurrency();
 
   const { rows } = await query(
     `INSERT INTO contracts (
-       provider_id, title, contract_number, category, status,
+       provider_id, title, contract_number, category, status, visibility,
        start_date, end_date, renewal_date, notice_days, auto_renew,
        cost_amount, cost_currency, billing_cycle,
        owner_employee_id, owner_employee_name, notes
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
      RETURNING *`,
     [
       body.providerId,
@@ -370,6 +404,7 @@ async function createContract(body = {}) {
       trimOrNull(body.contractNumber, 128),
       category,
       status,
+      visibility,
       parseDate(body.startDate),
       parseDate(body.endDate),
       parseDate(body.renewalDate),
@@ -391,8 +426,8 @@ async function createContract(body = {}) {
   });
 }
 
-async function updateContract(id, body = {}) {
-  const cur = await getContract(id);
+async function updateContract(id, body = {}, { role } = {}) {
+  const cur = await getContract(id, { role });
   const title = body.title !== undefined ? trimOrNull(body.title, 300) : cur.title;
   if (!title) throw HttpError.badRequest('title is required');
 
@@ -408,6 +443,10 @@ async function updateContract(id, body = {}) {
   if (!CONTRACT_STATUSES.has(status)) throw HttpError.badRequest('Invalid status');
   const billingCycle = body.billingCycle !== undefined ? body.billingCycle : cur.billingCycle;
   if (!BILLING_CYCLES.has(billingCycle)) throw HttpError.badRequest('Invalid billingCycle');
+  const allowConfidential = canViewConfidentialContracts(role);
+  const visibility = body.visibility !== undefined
+    ? parseVisibility(body.visibility, { allowConfidential, fallback: cur.visibility || 'Public' })
+    : (cur.visibility || 'Public');
 
   let ownerId = cur.ownerEmployee ? cur.ownerEmployee.id : null;
   let ownerName = cur.ownerEmployee ? cur.ownerEmployee.fullName : null;
@@ -419,10 +458,10 @@ async function updateContract(id, body = {}) {
 
   const { rows } = await query(
     `UPDATE contracts SET
-       provider_id = $2, title = $3, contract_number = $4, category = $5, status = $6,
-       start_date = $7, end_date = $8, renewal_date = $9, notice_days = $10, auto_renew = $11,
-       cost_amount = $12, cost_currency = $13, billing_cycle = $14,
-       owner_employee_id = $15, owner_employee_name = $16, notes = $17, updated_at = now()
+       provider_id = $2, title = $3, contract_number = $4, category = $5, status = $6, visibility = $7,
+       start_date = $8, end_date = $9, renewal_date = $10, notice_days = $11, auto_renew = $12,
+       cost_amount = $13, cost_currency = $14, billing_cycle = $15,
+       owner_employee_id = $16, owner_employee_name = $17, notes = $18, updated_at = now()
      WHERE id = $1 RETURNING *`,
     [
       id,
@@ -431,6 +470,7 @@ async function updateContract(id, body = {}) {
       body.contractNumber !== undefined ? trimOrNull(body.contractNumber, 128) : cur.contractNumber,
       category,
       status,
+      visibility,
       body.startDate !== undefined ? parseDate(body.startDate) : (cur.startDate ? String(cur.startDate).slice(0, 10) : null),
       body.endDate !== undefined ? parseDate(body.endDate) : (cur.endDate ? String(cur.endDate).slice(0, 10) : null),
       body.renewalDate !== undefined ? parseDate(body.renewalDate) : (cur.renewalDate ? String(cur.renewalDate).slice(0, 10) : null),
@@ -456,14 +496,15 @@ async function updateContract(id, body = {}) {
   });
 }
 
-async function deleteContract(id) {
-  if (!isUuid(id)) throw HttpError.notFound(`Contract ${id} not found`);
+async function deleteContract(id, { role } = {}) {
+  await getContract(id, { role });
   const { rowCount } = await query('DELETE FROM contracts WHERE id = $1', [id]);
   if (!rowCount) throw HttpError.notFound(`Contract ${id} not found`);
   return { id, deleted: true };
 }
 
-async function summary() {
+async function summary({ role } = {}) {
+  const visClause = canViewConfidentialContracts(role) ? '' : ` AND visibility = 'Public'`;
   const [{ rows: p }, { rows: c }, { rows: soon }] = await Promise.all([
     query(`SELECT
       COUNT(*)::int AS total,
@@ -473,12 +514,12 @@ async function summary() {
       COUNT(*)::int AS total,
       COUNT(*) FILTER (WHERE status = 'Active')::int AS active,
       COUNT(*) FILTER (WHERE status = 'Expired')::int AS expired
-      FROM contracts`),
+      FROM contracts WHERE true${visClause}`),
     query(`SELECT COUNT(*)::int AS n FROM contracts
       WHERE status IN ('Active', 'Draft')
         AND end_date IS NOT NULL
         AND end_date >= CURRENT_DATE
-        AND end_date <= CURRENT_DATE + INTERVAL '60 days'`),
+        AND end_date <= CURRENT_DATE + INTERVAL '60 days'${visClause}`),
   ]);
   return {
     providers: p[0],
