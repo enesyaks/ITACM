@@ -254,7 +254,7 @@ async function mfaSetupStart(user) {
 function generateBackupCodes(n = 8) {
   const codes = [];
   for (let i = 0; i < n; i++) {
-    codes.push(crypto.randomBytes(4).toString('hex'));
+    codes.push(crypto.randomBytes(16).toString('base64url'));
   }
   return codes;
 }

@@ -2333,7 +2333,164 @@ tr.net-row:hover td { background: var(--surface-low); }
   display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px;
 }
 
-/* Provider multi-contact cards */
+/* Provider list — calm compact cards */
+.pc-provider-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+  max-width: 920px;
+}
+.pc-provider-card {
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  border-color: color-mix(in srgb, var(--outline-variant) 85%, transparent);
+  box-shadow: none;
+}
+.pc-provider-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.pc-provider-identity { min-width: 0; flex: 1; }
+.pc-provider-title-wrap { min-width: 0; }
+.pc-provider-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+}
+.pc-provider-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1.3;
+  color: var(--on-surface);
+  letter-spacing: -0.01em;
+}
+.pc-provider-pills {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.pc-provider-pills .pill {
+  font-weight: 600;
+  opacity: 0.92;
+}
+.pc-provider-actions { flex-shrink: 0; }
+.pc-meta-line {
+  margin-top: 6px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--on-surface-variant);
+}
+.pc-meta-line a {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+}
+.pc-meta-line a:hover {
+  color: var(--primary);
+  border-bottom-color: color-mix(in srgb, var(--primary) 45%, transparent);
+}
+.pc-sep {
+  margin: 0 7px;
+  color: color-mix(in srgb, var(--outline) 70%, transparent);
+  font-weight: 400;
+}
+.pc-provider-notes {
+  margin: 0;
+  padding: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--on-surface-variant);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.pc-contact-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--outline-variant);
+}
+.pc-contact-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.4fr);
+  gap: 6px 16px;
+  align-items: baseline;
+  padding: 9px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--outline-variant) 75%, transparent);
+}
+.pc-contact-item:last-child { border-bottom: 0; padding-bottom: 2px; }
+@media (max-width: 640px) {
+  .pc-contact-item { grid-template-columns: 1fr; gap: 2px; }
+}
+.pc-contact-who {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.pc-contact-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+.pc-contact-item.is-primary .pc-contact-name { font-weight: 650; }
+.pc-primary-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--primary);
+  flex: none;
+  opacity: 0.85;
+}
+.pc-contact-role {
+  font-size: 12.5px;
+  color: var(--on-surface-variant);
+}
+.pc-contact-detail {
+  font-size: 12.5px;
+  color: var(--on-surface-variant);
+  min-width: 0;
+}
+.pc-contact-detail a {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+}
+.pc-contact-detail a:hover {
+  color: var(--primary);
+  border-bottom-color: color-mix(in srgb, var(--primary) 40%, transparent);
+}
+.pc-support-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 10px;
+  padding-top: 2px;
+}
+.pc-support-line .pc-meta-line { margin-top: 0; }
+.pc-support-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--outline);
+  letter-spacing: 0.02em;
+}
+.pc-provider-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+/* Provider multi-contact cards (edit form) */
 .pc-contact-cards {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -2419,6 +2576,129 @@ tr.net-row:hover td { background: var(--surface-low); }
   font-size: 10px;
   padding: 1px 7px;
   vertical-align: middle;
+}
+
+/* IAM permission groups (IT Users list) */
+.iam-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+  margin-bottom: 22px;
+}
+.iam-group-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px 15px;
+  background: #fff;
+  border: 1px solid color-mix(in srgb, var(--outline-variant) 88%, transparent);
+  border-radius: var(--radius-lg);
+  box-shadow: none;
+}
+.iam-group-card.is-system {
+  border-color: color-mix(in srgb, var(--primary) 18%, var(--outline-variant));
+  background: color-mix(in srgb, var(--surface-low, #f5f2ff) 70%, #fff);
+}
+.iam-group-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.iam-group-id {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+.iam-group-icon {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  font-size: 18px !important;
+  color: var(--on-surface-variant);
+  background: color-mix(in srgb, var(--surface-container) 80%, #fff);
+}
+.iam-group-card.is-system .iam-group-icon {
+  color: var(--primary-container);
+  background: color-mix(in srgb, var(--primary-fixed, #e2dfff) 55%, #fff);
+}
+.iam-group-title-wrap { min-width: 0; flex: 1; }
+.iam-group-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin-bottom: 4px;
+}
+.iam-group-name {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.25;
+  color: var(--on-surface);
+  letter-spacing: -0.01em;
+}
+.iam-group-title-row .pill {
+  font-size: 10.5px;
+  font-weight: 650;
+  padding: 2px 8px;
+}
+.iam-group-desc {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--on-surface-variant);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.iam-group-desc.is-empty { opacity: 0.55; font-style: italic; }
+.iam-group-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 4px;
+  align-items: flex-start;
+}
+.iam-group-actions .btn {
+  padding: 2px 6px;
+  min-height: 30px;
+  min-width: 30px;
+  background: #fff;
+}
+.iam-group-actions .ms { font-size: 16px; }
+.iam-group-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid color-mix(in srgb, var(--outline-variant) 75%, transparent);
+  font-size: 12px;
+}
+.iam-group-users {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+.iam-group-hint {
+  color: var(--on-surface-variant);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+.iam-groups-empty {
+  grid-column: 1 / -1;
+  padding: 16px;
+  border: 1px dashed var(--outline-variant);
+  border-radius: var(--radius-lg);
+  text-align: center;
 }
 
 /* IAM permission matrix (IT Users) */

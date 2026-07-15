@@ -147,11 +147,11 @@ Views.network = async function (el, params = {}) {
       <span class="ob-hint"> · Asset tags are entered manually (not auto IT-xxxx).</span></p>
 
     <div class="tabs" id="net-views" role="tablist">
-      <button type="button" class="tab ${view === 'list' ? 'active' : ''}" data-view="list" role="tab">
+      <button type="button" class="tab ${view === 'list' ? 'active' : ''}" data-net-view="list" role="tab">
         <span class="ms">table_rows</span> ${esc(t('network.viewList'))}</button>
-      <button type="button" class="tab ${view === 'topo' ? 'active' : ''}" data-view="topo" role="tab">
+      <button type="button" class="tab ${view === 'topo' ? 'active' : ''}" data-net-view="topo" role="tab">
         <span class="ms">hub</span> ${esc(t('network.viewTopo'))}</button>
-      <button type="button" class="tab ${view === 'racks' ? 'active' : ''}" data-view="racks" role="tab">
+      <button type="button" class="tab ${view === 'racks' ? 'active' : ''}" data-net-view="racks" role="tab">
         <span class="ms">view_column</span> ${esc(t('network.viewRacks'))}</button>
     </div>
 
@@ -245,8 +245,8 @@ Views.network = async function (el, params = {}) {
     toast(`${items.length} ${t('network.exportDone') || 'row(s) exported'}`, 'success');
   });
 
-  el.querySelectorAll('#net-views [data-view]').forEach((b) => {
-    b.addEventListener('click', () => setHash({ ...cur(), view: b.dataset.view }));
+  el.querySelectorAll('#net-views [data-net-view]').forEach((b) => {
+    b.addEventListener('click', () => setHash({ ...cur(), view: b.dataset.netView }));
   });
 
   el.querySelectorAll('[data-clear]').forEach((b) => b.addEventListener('click', () => {
@@ -270,6 +270,8 @@ Views.network = async function (el, params = {}) {
   bindView(el, async (e) => {
     if (e.target.closest('input[type="checkbox"]')) return;
     if (e.target.closest('.msel')) return;
+    // Panel tabs use data-net-view — never treat them as asset ids.
+    if (e.target.closest('#net-views')) return;
     const openId = e.target.closest('[data-open]')?.dataset.open;
     const btn = e.target.closest('button');
     if (btn?.dataset.place && canEdit) {

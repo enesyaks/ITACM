@@ -4,6 +4,17 @@ Views.users = async function (el) {
     api('/auth/permission-groups').catch(() => []),
   ]);
   const groupList = Array.isArray(groups) ? groups : [];
+  const systemOrder = { Owner: 0, Admin: 1, Helpdesk: 2, Viewer: 3 };
+  const sortedGroups = [...groupList].sort((a, b) => {
+    const as = a.is_system ? 0 : 1;
+    const bs = b.is_system ? 0 : 1;
+    if (as !== bs) return as - bs;
+    if (a.is_system && b.is_system) {
+      return (systemOrder[a.name] ?? 50) - (systemOrder[b.name] ?? 50)
+        || String(a.name).localeCompare(String(b.name));
+    }
+    return String(a.name || '').localeCompare(String(b.name || ''));
+  });
   // Only an Owner may assign Owner or Admin; Admin may manage Helpdesk & Viewer.
   const roleOptions = Auth.can('canManageOwner') ? ['Owner', 'Admin', 'Helpdesk', 'Viewer'] : ['Helpdesk', 'Viewer'];
   // Keep current Admin rows selectable when an Admin edits peers' lower roles only;
@@ -30,17 +41,29 @@ Views.users = async function (el) {
     )}
 
     <h3 class="section-title" style="margin:4px 0 10px">${esc('Permission groups')}</h3>
-    <div class="pc-contact-cards" style="margin-bottom:18px">
-      ${groupList.length ? groupList.map((g) => `
-        <div class="pc-contact-card ${g.is_system ? 'is-primary' : ''}">
-          <div class="pc-contact-card-top">
-            <span class="ms">${g.is_system ? 'verified_user' : 'group'}</span>
-            ${g.is_system ? `<span class="pill pill-blue">${esc('System')}</span>` : ''}
-            <div class="pc-contact-card-actions">
+    <div class="iam-groups">
+      ${groupList.length ? sortedGroups.map((g) => {
+        const nUsers = Number(g.user_count || 0);
+        const desc = (g.description || '').trim();
+        return `
+        <article class="iam-group-card${g.is_system ? ' is-system' : ''}">
+          <div class="iam-group-head">
+            <div class="iam-group-id">
+              <span class="iam-group-icon ms" aria-hidden="true">${g.is_system ? 'verified_user' : 'group'}</span>
+              <div class="iam-group-title-wrap">
+                <div class="iam-group-title-row">
+                  <h4 class="iam-group-name">${esc(g.name)}</h4>
+                  ${g.is_system ? `<span class="pill pill-blue">${esc('System')}</span>` : `<span class="pill">${esc('Custom')}</span>`}
+                </div>
+                ${desc ? `<p class="iam-group-desc">${esc(desc)}</p>` : `<p class="iam-group-desc is-empty">${esc('No description')}</p>`}
+              </div>
+            </div>
+            <div class="iam-group-actions">
               <button type="button" class="btn btn-outline btn-sm" data-iam-view="${esc(g.id)}" title="${esc('View & manage entries')}">
                 <span class="ms">visibility</span>
               </button>
-              ${!g.is_system ? `<button type="button" class="btn btn-outline btn-sm" data-iam-edit="${esc(g.id)}" data-gname="${esc(g.name)}" data-gdesc="${esc(g.description || '')}" title="${esc('Rename / edit description')}">
+              ${!g.is_system ? `
+              <button type="button" class="btn btn-outline btn-sm" data-iam-edit="${esc(g.id)}" data-gname="${esc(g.name)}" data-gdesc="${esc(g.description || '')}" title="${esc('Rename / edit description')}">
                 <span class="ms">edit</span>
               </button>
               <button type="button" class="btn btn-outline btn-sm" data-iam-del="${esc(g.id)}" data-gname="${esc(g.name)}" title="${esc('Delete')}">
@@ -48,12 +71,12 @@ Views.users = async function (el) {
               </button>` : ''}
             </div>
           </div>
-          <div class="pc-contact-name">${esc(g.name)}</div>
-          <div class="cell-sub">${esc(g.description || '')}</div>
-          <div class="pc-contact-meta" style="margin-top:8px">
-            <span class="mono">${Number(g.user_count || 0)} ${esc('users')}</span>
+          <div class="iam-group-foot">
+            <span class="iam-group-users">${nUsers} ${esc(nUsers === 1 ? 'user' : 'users')}</span>
+            ${g.is_system ? `<span class="iam-group-hint">${esc('Built-in')}</span>` : ''}
           </div>
-        </div>`).join('') : `<div class="pc-contacts-empty cell-sub">${esc('No permission groups yet. Run migration 022 or create a custom group.')}</div>`}
+        </article>`;
+      }).join('') : `<div class="iam-groups-empty cell-sub">${esc('No permission groups yet. Run migration 022 or create a custom group.')}</div>`}
     </div>
 
     <h3 class="section-title" style="margin:4px 0 10px">${esc('Operators')}</h3>
@@ -309,6 +332,30 @@ Views.users = async function (el) {
         ],
       },
       {
+        key: 'provider',
+        icon: 'apartment',
+        label: 'provider / contract',
+        title: 'Providers & Contracts',
+        lead: 'Same menu, separate permissions. You can open Providers without Contracts.',
+        shot: shot('Providers & Contracts', `
+          <div class="iam-shot-row">
+            <strong>Providers tab</strong>
+            <span class="muted">vendors · contacts · support</span>
+            <span class="iam-shot-callout ok">provider:read</span>
+          </div>
+          <div class="iam-shot-row">
+            <strong>Contracts tab</strong>
+            <div class="iam-shot-btns"><em class="off">Contracts</em><em class="off">Add contract</em></div>
+            <span class="iam-shot-callout warn">needs contract:read</span>
+          </div>`),
+        keys: [
+          keyRow('provider:read', 'Open the page and list providers. Contracts tab stays hidden without contract:read.'),
+          keyRow('provider:create|update|delete', 'Add / edit / remove vendor companies.'),
+          keyRow('contract:read', 'Show Contracts tab, KPIs, and contract buttons on provider cards.'),
+          keyRow('contract:create|update|delete', 'Manage commercial agreements. view_confidential = amounts.'),
+        ],
+      },
+      {
         key: 'catalog',
         icon: 'category',
         label: 'catalog',
@@ -451,8 +498,8 @@ Views.users = async function (el) {
     asset: 'asset',
     license: 'asset',
     line: 'employee',
-    provider: 'document',
-    contract: 'document',
+    provider: 'provider',
+    contract: 'provider',
   };
 
   const refreshDetail = async (groupId, detail) => {
