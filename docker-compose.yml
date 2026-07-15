@@ -17,6 +17,9 @@
 # Tip: only run this compose from ONE working directory per host. Two clones that
 # both resolve to project name "itacm" share the same volumes but may use
 # different .env passwords and cause auth failures.
+#
+# After `git pull`, UI updates apply immediately because ./public is bind-mounted.
+# If the API image itself must refresh: FRONTEND_DIGEST=$(git rev-parse HEAD) docker compose up -d --build
 
 services:
   db:
@@ -38,16 +41,27 @@ services:
     #   - "5432:5432"
 
   api:
-    build: .
+    build:
+      context: .
+      args:
+        # Pass a changing digest so `docker compose build` always copies fresh public/.
+        # Example: FRONTEND_DIGEST=$(git rev-parse HEAD) docker compose up -d --build
+        FRONTEND_DIGEST: ${FRONTEND_DIGEST:-${GIT_COMMIT:-unknown}}
     restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
     # Named volume REQUIRED — without this, uploads die when the container is recreated.
+    # Bind-mount public/ so a fresh git checkout always serves current UI (avoids
+    # stale BuildKit COPY layers that Docker Desktop sometimes reuses across clones).
     volumes:
       - type: volume
         source: app-data
         target: /app/data
+      - type: bind
+        source: ./public
+        target: /app/public
+        read_only: true
     environment:
       DATA_BACKEND: postgres
       DATA_DIR: /app/data

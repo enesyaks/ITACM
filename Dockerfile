@@ -10,6 +10,10 @@ COPY package*.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
 COPY src ./src
+# FRONTEND_DIGEST must change whenever public/ changes so BuildKit does not
+# reuse a stale `COPY public` layer (common on Docker Desktop + multiple clones).
+ARG FRONTEND_DIGEST=unknown
+RUN printf '%s\n' "$FRONTEND_DIGEST" > /tmp/itacm-frontend.digest
 COPY public ./public
 COPY scripts ./scripts
 COPY server.js ./
