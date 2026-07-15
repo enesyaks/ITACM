@@ -16,10 +16,11 @@ Hardware & network inventory · employee handovers with printable PDF receipts �
 [![No build step](https://img.shields.io/badge/Frontend-No%20build%20step-f59e0b?style=flat-square)](#-project-structure)
 [![Mobile ready](https://img.shields.io/badge/Mobile-ready-8b5cf6?style=flat-square)](#-mobile-ready)
 [![i18n](https://img.shields.io/badge/i18n-12%20languages-14b8a6?style=flat-square)](#-feature-highlights)
+[![Website](https://img.shields.io/badge/Website-itacm.site-6366f1?style=flat-square)](https://itacm.site/)
 
 <br />
 
-**🇬🇧 English** · [🇹🇷 Türkçe →](README.tr.md)
+**🇬🇧 English** · [🇹🇷 Türkçe →](README.tr.md) · **🌐 [itacm.site](https://itacm.site/)** — product overview
 
 <br />
 

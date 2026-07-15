@@ -16,10 +16,11 @@ Donanım ve ağ envanteri · yazdırılabilir PDF tutanaklı personel zimmetleri
 [![Build adımı yok](https://img.shields.io/badge/Arayüz-Build%20adımı%20yok-f59e0b?style=flat-square)](#-proje-yapısı)
 [![Mobil uyumlu](https://img.shields.io/badge/Mobil-uyumlu-8b5cf6?style=flat-square)](#-mobil-uyumlu)
 [![i18n](https://img.shields.io/badge/i18n-12%20dil-14b8a6?style=flat-square)](#-öne-çıkan-özellikler)
+[![Web sitesi](https://img.shields.io/badge/Web%20sitesi-itacm.site-6366f1?style=flat-square)](https://itacm.site/)
 
 <br />
 
-[🇬🇧 English →](README.md) · **🇹🇷 Türkçe**
+[🇬🇧 English →](README.md) · **🇹🇷 Türkçe** · **🌐 [itacm.site](https://itacm.site/)** — ürün tanıtımı
 
 <br />
 
