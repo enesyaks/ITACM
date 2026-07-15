@@ -6,6 +6,17 @@
 #
 # The API applies the database schema and seeds the first Admin account on
 # startup — no manual SQL, users, or permissions required.
+#
+# Persistence (DO NOT skip these volumes):
+#   db-data  → PostgreSQL (assets, users, settings, …)
+#   app-data → uploaded documents under /app/data (handover scans, contracts, …)
+#
+# WARNING: `docker compose down -v` DELETES both volumes (DB + document files).
+# Prefer `docker compose down` (no -v) or `docker compose restart` for normal stops.
+#
+# Tip: only run this compose from ONE working directory per host. Two clones that
+# both resolve to project name "itacm" share the same volumes but may use
+# different .env passwords and cause auth failures.
 
 services:
   db:
@@ -32,8 +43,11 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    # Named volume REQUIRED — without this, uploads die when the container is recreated.
     volumes:
-      - app-data:/app/data
+      - type: volume
+        source: app-data
+        target: /app/data
     environment:
       DATA_BACKEND: postgres
       DATA_DIR: /app/data
@@ -61,4 +75,6 @@ services:
 
 volumes:
   db-data:
+    name: itacm_db-data
   app-data:
+    name: itacm_app-data

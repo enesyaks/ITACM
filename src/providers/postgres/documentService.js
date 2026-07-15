@@ -20,6 +20,12 @@ async function saveDocument({
   }
   if (!isUuid(employeeId)) throw HttpError.notFound(`Employee ${employeeId} not found`);
 
+  let resolvedName = (employeeName && String(employeeName).trim()) || null;
+  if (!resolvedName) {
+    const emp = await query('SELECT full_name FROM employees WHERE id = $1', [employeeId]);
+    resolvedName = emp.rows[0] && emp.rows[0].full_name;
+  }
+
   const { rows } = await query(
     `INSERT INTO handover_documents
        (handover_id, employee_id, employee_name, kind, filename, mime, byte_size, content, storage_path,
@@ -27,7 +33,7 @@ async function saveDocument({
      VALUES ($1,$2,$3,$4,$5,$6,$7,NULL,NULL,$8,$9)
      RETURNING id`,
     [
-      handoverId || null, employeeId, employeeName || null, kind || 'scan',
+      handoverId || null, employeeId, resolvedName || null, kind || 'scan',
       filename, mime || 'application/octet-stream', buffer.length,
       uploadedBy || null, uploadedByName || null,
     ]
@@ -35,7 +41,12 @@ async function saveDocument({
   const id = rows[0].id;
   let storagePath;
   try {
-    storagePath = docStorage.writeBuffer('handover', id, buffer);
+    storagePath = docStorage.writeBuffer('handover', id, buffer, {
+      label: resolvedName || uploadedByName || 'handover',
+      ownerId: employeeId,
+      ownerLabel: resolvedName || uploadedByName || 'employee',
+      originalFilename: filename,
+    });
     await query('UPDATE handover_documents SET storage_path = $2 WHERE id = $1', [id, storagePath]);
   } catch (err) {
     await query('DELETE FROM handover_documents WHERE id = $1', [id]).catch(() => {});
@@ -43,7 +54,7 @@ async function saveDocument({
   }
 
   return {
-    id, handoverId: handoverId || null, employeeId, employeeName, kind: kind || 'scan',
+    id, handoverId: handoverId || null, employeeId, employeeName: resolvedName || null, kind: kind || 'scan',
     filename, mime: mime || 'application/octet-stream', byteSize: buffer.length,
     uploadedBy, uploadedByName, createdAt: new Date().toISOString(),
   };
@@ -102,7 +113,12 @@ async function saveMaintenanceDoc({
   const id = rows[0].id;
   let storagePath;
   try {
-    storagePath = docStorage.writeBuffer('maintenance', id, buffer);
+    storagePath = docStorage.writeBuffer('maintenance', id, buffer, {
+      label: assetTag || uploadedByName || 'maintenance',
+      ownerId: assetId,
+      ownerLabel: assetTag || 'asset',
+      originalFilename: filename,
+    });
     await query('UPDATE maintenance_documents SET storage_path = $2 WHERE id = $1', [id, storagePath]);
   } catch (err) {
     await query('DELETE FROM maintenance_documents WHERE id = $1', [id]).catch(() => {});
@@ -178,7 +194,12 @@ async function saveProviderDoc({
   );
   const id = rows[0].id;
   try {
-    const storagePath = docStorage.writeBuffer('provider', id, buffer);
+    const storagePath = docStorage.writeBuffer('provider', id, buffer, {
+      label: providerName || uploadedByName || 'provider',
+      ownerId: providerId,
+      ownerLabel: providerName || 'provider',
+      originalFilename: filename,
+    });
     await query('UPDATE provider_documents SET storage_path = $2 WHERE id = $1', [id, storagePath]);
   } catch (err) {
     await query('DELETE FROM provider_documents WHERE id = $1', [id]).catch(() => {});
@@ -249,7 +270,12 @@ async function saveContractDoc({
   );
   const id = rows[0].id;
   try {
-    const storagePath = docStorage.writeBuffer('contract', id, buffer);
+    const storagePath = docStorage.writeBuffer('contract', id, buffer, {
+      label: contractTitle || providerName || uploadedByName || 'contract',
+      ownerId: providerId,
+      ownerLabel: providerName || 'provider',
+      originalFilename: filename,
+    });
     await query('UPDATE contract_documents SET storage_path = $2 WHERE id = $1', [id, storagePath]);
   } catch (err) {
     await query('DELETE FROM contract_documents WHERE id = $1', [id]).catch(() => {});
@@ -330,7 +356,12 @@ async function saveLicenseDoc({
   );
   const id = rows[0].id;
   try {
-    const storagePath = docStorage.writeBuffer('license', id, buffer);
+    const storagePath = docStorage.writeBuffer('license', id, buffer, {
+      label: uploadedByName || docKind || 'license',
+      ownerId: licenseId,
+      ownerLabel: docKind || 'license',
+      originalFilename: filename,
+    });
     await query('UPDATE license_documents SET storage_path = $2 WHERE id = $1', [id, storagePath]);
   } catch (err) {
     await query('DELETE FROM license_documents WHERE id = $1', [id]).catch(() => {});

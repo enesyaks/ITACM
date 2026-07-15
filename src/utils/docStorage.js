@@ -16,8 +16,55 @@ function absPath(storagePath) {
   return abs;
 }
 
-function writeBuffer(kind, id, buffer) {
-  const rel = path.join('documents', kind, String(id));
+/** Safe filesystem label: "Ayşe Yılmaz" → "Ayse_Yilmaz". */
+function safeLabel(name) {
+  const raw = String(name || '').trim();
+  if (!raw) return 'doc';
+  const tr = {
+    ç: 'c', Ç: 'C', ğ: 'g', Ğ: 'G', ı: 'i', İ: 'I',
+    ö: 'o', Ö: 'O', ş: 's', Ş: 'S', ü: 'u', Ü: 'U',
+  };
+  const ascii = raw.replace(/[çÇğĞıİöÖşŞüÜ]/g, (ch) => tr[ch] || ch);
+  const cleaned = ascii
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\w.\-]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^[_.]+|[_.]+$/g, '')
+    .slice(0, 80);
+  return cleaned || 'doc';
+}
+
+/** Per-person / per-asset folder: Enes(<uuid>) */
+function ownerDirName(ownerLabel, ownerId) {
+  const id = String(ownerId || '').trim();
+  const label = safeLabel(ownerLabel || 'unknown');
+  return id ? `${label}(${id})` : label;
+}
+
+/**
+ * File inside the owner folder: zimmet-HF-xxx(<docId>).pdf
+ * Doc id keeps names unique when the same original filename is uploaded twice.
+ */
+function diskFileName(id, { label, originalFilename } = {}) {
+  const ext = path.extname(String(originalFilename || '')).slice(0, 16);
+  const stem = path.basename(String(originalFilename || ''), ext);
+  const base = safeLabel(stem || label || 'file');
+  return `${base}(${id})${ext}`;
+}
+
+/**
+ * Layout: documents/<kind>/<Name(ownerId)>/<file(docId).ext>
+ *
+ * @param {string} kind
+ * @param {string} id — document UUID
+ * @param {Buffer} buffer
+ * @param {{ label?: string, originalFilename?: string, ownerId?: string, ownerLabel?: string }} [opts]
+ */
+function writeBuffer(kind, id, buffer, opts = {}) {
+  const owner = ownerDirName(opts.ownerLabel || opts.label, opts.ownerId);
+  const file = diskFileName(id, opts);
+  const rel = path.join('documents', kind, owner, file);
   const abs = absPath(rel);
   try {
     fs.mkdirSync(path.dirname(abs), { recursive: true });
@@ -53,4 +100,6 @@ function deleteFile(storagePath) {
   }
 }
 
-module.exports = { writeBuffer, readBuffer, deleteFile, dataRoot };
+module.exports = {
+  writeBuffer, readBuffer, deleteFile, dataRoot, safeLabel, diskFileName, ownerDirName,
+};

@@ -123,16 +123,16 @@ function showApp() {
       localStorage.removeItem('itacm_tips_pending');
       setTimeout(() => {
         openModal({
-          title: 'Quick start tips',
+          title: t('ob.tipsTitle'),
           body: `
-            <p class="ob-slide-desc">Your workspace is ready. Want a short guided tour of the sidebar, plus lightbulb tips on each page?</p>
+            <p class="ob-slide-desc">${esc(t('ob.tipsIntro'))}</p>
             <ul class="ob-bullets">
-              <li><span class="ms">check_circle</span> Page tips appear under the top bar</li>
-              <li><span class="ms">check_circle</span> Help (?) → replay the product intro anytime</li>
-              <li><span class="ms">check_circle</span> Turn tips off with one click on the banner</li>
+              <li><span class="ms">check_circle</span> ${esc(t('ob.tipsBullet1'))}</li>
+              <li><span class="ms">check_circle</span> ${esc(t('ob.tipsBullet2'))}</li>
+              <li><span class="ms">check_circle</span> ${esc(t('ob.tipsBullet3'))}</li>
             </ul>`,
-          foot: `<button class="btn btn-outline" id="tips-later" data-close>Maybe later</button>
-                 <button class="btn btn-primary" id="tips-start"><span class="ms">tour</span> Start sidebar tour</button>`,
+          foot: `<button class="btn btn-outline" id="tips-later" data-close>${esc(t('ob.tipsLater'))}</button>
+                 <button class="btn btn-primary" id="tips-start"><span class="ms">tour</span> ${esc(t('ob.tipsStart'))}</button>`,
           onMount(overlay) {
             $('#tips-later', overlay).addEventListener('click', () => setTipsEnabled(true));
             $('#tips-start', overlay).addEventListener('click', () => {
@@ -916,7 +916,6 @@ function obHowtoMediaHtml() {
       </div>
       <div class="ob-howto-fallback" data-ob-reel>
         ${obDemoReelHtml()}
-        <p class="ob-howto-hint">${esc(t('ob.demoHint'))}</p>
       </div>
       <div class="ob-preview-caption">${esc(t('ob.videoCaption'))}</div>
     </div>`;
@@ -1653,7 +1652,7 @@ function renderPageTip(opts = {}) {
   if (hide) hide.addEventListener('click', () => {
     setTipsEnabled(false);
     el.classList.add('hidden');
-    toast('Tips turned off — re-enable from Help (?)', 'success');
+    toast(t('ob.tipsOffToast'), 'success');
   });
 }
 
@@ -1674,16 +1673,16 @@ function showProductTourModal() {
       </div>`;
     $('#pt-back', overlay).disabled = step === 0;
     $('#pt-next', overlay).innerHTML = step === OB_TOUR.length - 1
-      ? '<span class="ms">check</span> Done'
-      : 'Next <span class="ms">arrow_forward</span>';
+      ? `<span class="ms">check</span> ${esc(t('ob.tourDone'))}`
+      : `${esc(t('ob.next'))} <span class="ms">arrow_forward</span>`;
   };
   openModal({
-    title: 'Product tour',
+    title: t('ob.tourTitle'),
     wide: true,
     body: '<div id="pt-body"></div>',
-    foot: `<button class="btn btn-outline" id="pt-back"><span class="ms">arrow_back</span> Back</button>
-           <button class="btn btn-outline" data-close>Close</button>
-           <button class="btn btn-primary" id="pt-next">Next</button>`,
+    foot: `<button class="btn btn-outline" id="pt-back"><span class="ms">arrow_back</span> ${esc(t('ob.back'))}</button>
+           <button class="btn btn-outline" data-close>${esc(t('common.close'))}</button>
+           <button class="btn btn-primary" id="pt-next">${esc(t('ob.next'))}</button>`,
     onMount(overlay) {
       const repaint = () => { paint(overlay); mountObHowtoMedia(overlay); };
       repaint();
@@ -1711,7 +1710,7 @@ function startUiTour() {
   const show = () => {
     if (i >= steps.length) {
       clear();
-      toast('Sidebar tour complete', 'success');
+      toast(t('ob.sidebarTourDone'), 'success');
       return;
     }
     const s = obItem(steps[i]);

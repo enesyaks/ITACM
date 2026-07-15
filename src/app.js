@@ -117,11 +117,23 @@ function createApp() {
   // Docker/orchestrator healthchecks detect a degraded API (process up, DB down).
   app.get('/api/health', async (req, res) => {
     const connected = await require('./providers').ping();
+    let dataDir = { path: config.dataDir, writable: false };
+    try {
+      const fs = require('fs');
+      const probe = require('path').join(config.dataDir, '.itacm-health');
+      fs.mkdirSync(config.dataDir, { recursive: true });
+      fs.writeFileSync(probe, 'ok');
+      fs.unlinkSync(probe);
+      dataDir.writable = true;
+    } catch (err) {
+      dataDir.error = err.message;
+    }
     res.status(connected ? 200 : 503).json({
       success: connected,
       service: 'itacm-backend',
       backend: config.backend,
       db: { connected },
+      dataDir,
     });
   });
 

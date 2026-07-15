@@ -53,13 +53,16 @@ async function main() {
 
   const fs = require('fs');
   const { dataRoot } = require('./src/utils/docStorage');
-  fs.mkdirSync(dataRoot(), { recursive: true });
+  const root = dataRoot();
+  fs.mkdirSync(root, { recursive: true });
 
   const { createApp } = require('./src/app');
   createApp().listen(config.port, () => {
     console.log(`[itacm] backend=${config.backend} listening on http://localhost:${config.port}`);
+    console.log(`[itacm] DATA_DIR=${root}`);
     console.log('[itacm] health check: GET /api/health');
   });
+
 }
 
 main().catch((err) => {

@@ -22,5 +22,6 @@ RUN chmod +x /docker-entrypoint.sh \
 EXPOSE 8000
 
 # Entrypoint runs as root briefly to chown the data volume, then drops to node.
+# DO NOT set USER node here — the entrypoint must start as root to fix volume perms.
 ENTRYPOINT ["/docker-entrypoint.sh"]
 CMD ["node", "server.js"]
