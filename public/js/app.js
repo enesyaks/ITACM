@@ -873,19 +873,19 @@ function obDemoReelHtml() {
       <div class="ob-demo-stage">
         <div class="ob-demo-scene s1">
           <div class="ob-demo-tag">HW-1042</div>
-          <div class="ob-demo-copy"><b>Register hardware</b><span>MacBook Pro · In Stock · HQ</span></div>
+          <div class="ob-demo-copy"><b>${esc(t('ob.demo.hwTitle'))}</b><span>${esc(t('ob.demo.hwSub'))}</span></div>
         </div>
         <div class="ob-demo-scene s2">
           <div class="ob-demo-avatar"></div>
-          <div class="ob-demo-copy"><b>Assign to people</b><span>Ayşe Yılmaz · IT · Onboard day</span></div>
+          <div class="ob-demo-copy"><b>${esc(t('ob.demo.peopleTitle'))}</b><span>${esc(t('ob.demo.peopleSub'))}</span></div>
         </div>
         <div class="ob-demo-scene s3">
           <div class="ob-demo-doc"><i></i><i></i><i></i></div>
-          <div class="ob-demo-copy"><b>Print zimmet PDF</b><span>Signed handover · Audit logged</span></div>
+          <div class="ob-demo-copy"><b>${esc(t('ob.demo.zimmetTitle'))}</b><span>${esc(t('ob.demo.zimmetSub'))}</span></div>
         </div>
         <div class="ob-demo-scene s4">
           <div class="ob-demo-kpi">12 / 20</div>
-          <div class="ob-demo-copy"><b>Track licenses &amp; vendors</b><span>Seats · Contracts · Alerts</span></div>
+          <div class="ob-demo-copy"><b>${esc(t('ob.demo.licTitle'))}</b><span>${esc(t('ob.demo.licSub'))}</span></div>
         </div>
       </div>
       <div class="ob-demo-dots"><i class="on"></i><i></i><i></i><i></i></div>
@@ -989,25 +989,25 @@ function obPreviewHtml(kind) {
     welcome: `
       <div class="ob-mock-hero rich">
         <strong>IT Asset Control Pro</strong>
-        <span>Self-hosted ITAM · Hardware · People · Zimmet · Audit</span>
+        <span>${esc(t('ob.mock.tagline'))}</span>
       </div>
       <div class="ob-mod-map">
-        <span><i class="ms">devices</i> Hardware</span>
-        <span><i class="ms">badge</i> People</span>
-        <span><i class="ms">assignment_turned_in</i> Zimmet</span>
-        <span><i class="ms">workspace_premium</i> Licenses</span>
-        <span><i class="ms">dns</i> Network</span>
-        <span><i class="ms">apartment</i> Vendors</span>
-        <span><i class="ms">fact_check</i> Counts</span>
-        <span><i class="ms">history</i> Audit</span>
+        <span><i class="ms">devices</i> ${esc(t('ob.mock.hardware'))}</span>
+        <span><i class="ms">badge</i> ${esc(t('ob.mock.people'))}</span>
+        <span><i class="ms">assignment_turned_in</i> ${esc(t('ob.mock.handover'))}</span>
+        <span><i class="ms">workspace_premium</i> ${esc(t('ob.mock.licenses'))}</span>
+        <span><i class="ms">dns</i> ${esc(t('ob.mock.network'))}</span>
+        <span><i class="ms">apartment</i> ${esc(t('ob.mock.vendors'))}</span>
+        <span><i class="ms">fact_check</i> ${esc(t('ob.mock.counts'))}</span>
+        <span><i class="ms">history</i> ${esc(t('ob.mock.audit'))}</span>
       </div>`,
     howto: null, // rendered via obHowtoMediaHtml
     dashboard: `
       <div class="ob-mock-kpis rich">
-        ${kpi('In Stock', '48')}
-        ${kpi('Assigned', '312')}
-        ${kpi('Repair', '7', 'warn')}
-        ${kpi('Licenses', '3⚠', 'warn')}
+        ${kpi(t('ob.mock.inStock'), '48')}
+        ${kpi(t('common.assigned'), '312')}
+        ${kpi(t('ob.mock.repair'), '7', 'warn')}
+        ${kpi(t('ob.mock.licenses'), '3⚠', 'warn')}
       </div>
       ${row('EOL soon', '14 laptops', 'Review')}
       ${row('Onboard due', 'Ayşe Yılmaz', 'Today', 'hi')}
