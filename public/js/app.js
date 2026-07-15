@@ -1235,6 +1235,19 @@ function bindOnboarding() {
   $('#ob-skip').addEventListener('click', () => { obStep = OB_TOUR.length; renderTour(); });
   $('#ob-form-back').addEventListener('click', () => { obStep = OB_TOUR.length - 1; renderTour(); });
 
+  const setupKeyHelpBtn = $('#ob-setup-key-help');
+  const setupKeyHelpPanel = $('#ob-setup-key-help-panel');
+  if (setupKeyHelpBtn && setupKeyHelpPanel) {
+    setupKeyHelpBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      setupKeyHelpPanel.classList.toggle('hidden');
+      setupKeyHelpBtn.setAttribute(
+        'aria-expanded',
+        setupKeyHelpPanel.classList.contains('hidden') ? 'false' : 'true'
+      );
+    });
+  }
+
   form.elements.logoFile.addEventListener('change', () => {
     const file = form.elements.logoFile.files[0];
     obLogoDataUrl = null;

@@ -146,6 +146,24 @@ function sanitizeTemplatesArray(arr) {
   return out;
 }
 
+let setupTokenLogged = false;
+
+function logSetupKey(token, source) {
+  if (setupTokenLogged || !token) return;
+  setupTokenLogged = true;
+  console.log('='.repeat(64));
+  console.log('[itacm] Setup key (one-time, required to finish onboarding):');
+  console.log(`[itacm]   ${token}`);
+  if (source === 'env') {
+    console.log('[itacm] Source: SETUP_TOKEN environment variable');
+  } else if (source === 'existing') {
+    console.log('[itacm] (reprinted — key was created earlier; paste into remote browsers)');
+  }
+  console.log('[itacm] Open the app from this host, or paste the key into the setup form.');
+  console.log('[itacm] Or set SETUP_TOKEN in the environment before first boot.');
+  console.log('='.repeat(64));
+}
+
 async function ensureSetupToken() {
   const { rows } = await query('SELECT setup_token, onboarded FROM app_settings WHERE id = 1');
   if (!rows[0] || rows[0].onboarded) return null;
@@ -155,18 +173,17 @@ async function ensureSetupToken() {
     if (rows[0].setup_token !== envTok) {
       await query('UPDATE app_settings SET setup_token = $1 WHERE id = 1 AND onboarded = FALSE', [envTok]);
     }
+    logSetupKey(envTok, 'env');
     return envTok;
   }
 
-  if (rows[0].setup_token) return rows[0].setup_token;
+  if (rows[0].setup_token) {
+    logSetupKey(rows[0].setup_token, 'existing');
+    return rows[0].setup_token;
+  }
   const token = crypto.randomBytes(24).toString('hex');
   await query('UPDATE app_settings SET setup_token = $1 WHERE id = 1', [token]);
-  console.log('='.repeat(64));
-  console.log('[itacm] Setup key (one-time, required to finish onboarding):');
-  console.log(`[itacm]   ${token}`);
-  console.log('[itacm] Open the app from this host, or paste the key into the setup form.');
-  console.log('[itacm] Or set SETUP_TOKEN in the environment before first boot.');
-  console.log('='.repeat(64));
+  logSetupKey(token, 'new');
   return token;
 }
 
