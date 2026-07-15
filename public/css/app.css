@@ -429,6 +429,7 @@ code, .mono { font-family: var(--mono); font-size: 12px; }
 .tip-coach-head .ms { color: var(--primary-container); }
 .tip-coach-head strong { flex: 1; font-size: 14px; }
 .tip-coach-card p { margin: 0 0 12px; font-size: 13px; color: var(--on-surface-variant); line-height: 1.45; }
+.tip-coach-extra { margin: -6px 0 12px !important; font-size: 12px !important; color: var(--outline) !important; }
 .tip-coach-actions { display: flex; gap: 8px; justify-content: flex-end; }
 
 /* ---------- Reports & Analytics (mockup 2) ---------- */
