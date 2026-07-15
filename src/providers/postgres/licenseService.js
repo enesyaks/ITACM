@@ -63,7 +63,8 @@ async function listLicenses({ limit = 200, privileged = false, includeCancelled 
        COALESCE(al.asset_count, 0)::int AS linked_assets,
        COALESCE(ea.emp_count, 0)::int AS assigned_users,
        (l.used_seats + COALESCE(al.asset_count, 0))::int AS used_seats_total,
-       COALESCE(dc.doc_count, 0)::int AS document_count
+       COALESCE(dc.doc_count, 0)::int AS document_count,
+       COALESCE(si.install_count, 0)::int AS discovered_installs
      FROM licenses l
      LEFT JOIN providers p ON p.id = l.provider_id
      LEFT JOIN contracts c ON c.id = l.contract_id
@@ -80,6 +81,11 @@ async function listLicenses({ limit = 200, privileged = false, includeCancelled 
        SELECT license_id, COUNT(*)::int AS doc_count
        FROM license_documents GROUP BY license_id
      ) dc ON dc.license_id = l.id
+     LEFT JOIN (
+       SELECT lower(software_name) AS sw_key, COUNT(*)::int AS install_count
+       FROM software_installs
+       GROUP BY lower(software_name)
+     ) si ON si.sw_key = lower(l.software_name)
      ${showCancelled ? '' : "WHERE COALESCE(l.status, 'active') <> 'cancelled'"}
      ORDER BY
        CASE WHEN COALESCE(l.status, 'active') = 'cancelled' THEN 1 ELSE 0 END,
@@ -97,6 +103,7 @@ function enrichListRow(r, privileged) {
   mapped.assignedUsers = Number(r.assigned_users) || 0;
   mapped.usedSeats = Number(r.used_seats_total) || 0;
   mapped.documentCount = Number(r.document_count) || 0;
+  mapped.discoveredInstalls = Number(r.discovered_installs) || 0;
   mapped.providerName = r.provider_name || null;
   mapped.contractTitle = r.contract_title || null;
   mapped.contractNumber = r.contract_number || null;

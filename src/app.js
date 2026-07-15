@@ -35,7 +35,8 @@ function createApp() {
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     'font-src https://fonts.gstatic.com',
     "img-src 'self' data: blob:",
-    "frame-src 'self' blob:",
+    "media-src 'self' blob: https:",
+    "frame-src 'self' blob: https://www.youtube-nocookie.com",
     "child-src 'self' blob:",
     "worker-src 'self' blob:",
     "object-src 'self' blob:",
@@ -136,9 +137,10 @@ function createApp() {
     } catch (err) {
       configError = 'Database unavailable: ' + err.message;
     }
+    const onboardingVideoUrl = String(process.env.ONBOARDING_VIDEO_URL || '').trim() || null;
     res.json({
       success: true,
-      data: { backend: config.backend, configError, ...settings },
+      data: { backend: config.backend, configError, onboardingVideoUrl, ...settings },
     });
   });
 
@@ -163,9 +165,15 @@ function createApp() {
   app.use('/api/integrations', require('./routes/integrations.routes'));
   app.use('/api/ack', require('./routes/ack.routes'));
 
-  // API 404s stay JSON; anything else falls back to the SPA shell.
+  // API + missing static assets stay 404; anything else falls back to the SPA shell.
   app.use((req, res, next) => {
-    if (req.path.startsWith('/api')) return notFoundHandler(req, res);
+    if (req.path.startsWith('/api') || req.path.startsWith('/media/')) {
+      return notFoundHandler(req, res);
+    }
+    // Never SPA-fallback known static extensions (avoids HTML as "video" 200s).
+    if (/\.(js|css|map|png|jpe?g|gif|svg|webp|ico|mp4|webm|pdf|woff2?)$/i.test(req.path)) {
+      return notFoundHandler(req, res);
+    }
     return res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
   });
   app.use(errorHandler);

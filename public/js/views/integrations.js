@@ -21,11 +21,12 @@ Views.integrations = async function (el) {
   function renderCfTable(entity, defs) {
     if (!defs.length) return `<p class="cell-sub">No custom fields for ${entity}.</p>`;
     return `<div class="table-wrap"><table class="data"><thead><tr>
-      <th>Key</th><th>Label</th><th>Type</th><th></th></tr></thead><tbody>
+      <th>Key</th><th>Label</th><th>Type</th><th>Options</th><th></th></tr></thead><tbody>
       ${defs.map((d) => `<tr>
         <td class="mono">${esc(d.fieldKey)}</td>
         <td>${esc(d.label)}</td>
         <td>${esc(d.fieldType)}${d.required ? ' *' : ''}</td>
+        <td class="cell-sub">${(d.options && d.options.length) ? esc(d.options.join(', ')) : '—'}</td>
         <td class="actions"><button class="btn btn-outline btn-sm" data-cf-del="${esc(entity)}:${esc(d.fieldKey)}">Delete</button></td>
       </tr>`).join('')}
       </tbody></table></div>`;
@@ -110,6 +111,13 @@ Views.integrations = async function (el) {
 
       <section class="card card-pad" style="margin-bottom:16px">
         <h3 style="margin:0 0 8px">Custom fields</h3>
+        <p class="cell-sub" style="margin:0 0 12px">
+          Fields you add here appear on the matching create/edit forms:
+          <strong>asset</strong> → Hardware / Network device form,
+          <strong>employee</strong> → employee form,
+          <strong>contract</strong> → provider contract form.
+          Values are saved per record.
+        </p>
         <div class="form-grid" style="margin-bottom:12px">
           <div class="form-field"><label>Entity</label>
             <select id="int-cf-entity"><option value="asset">asset</option><option value="employee">employee</option><option value="contract">contract</option></select></div>
@@ -117,6 +125,10 @@ Views.integrations = async function (el) {
           <div class="form-field"><label>Label</label><input id="int-cf-label" placeholder="Cost center"></div>
           <div class="form-field"><label>Type</label>
             <select id="int-cf-type"><option>text</option><option>number</option><option>date</option><option>select</option></select></div>
+          <div class="form-field full" id="int-cf-options-wrap" style="display:none">
+            <label>Select options <span class="ob-hint">(comma-separated — required for dropdown)</span></label>
+            <input id="int-cf-options" placeholder="Alpha, Beta, Gamma">
+          </div>
         </div>
         <button class="btn btn-primary btn-sm" id="int-cf-add">Add field</button>
         <div style="margin-top:16px">
@@ -137,7 +149,8 @@ POST /api/integrations/sync/assets
 POST /api/integrations/sync/software-installs
 { "items": [{ "softwareName":"Microsoft 365", "hostname":"LAP-01", "assetTag":"IT-1", "version":"16" }] }
 
-GET /api/integrations/licenses/:id/sam</pre>
+GET /api/integrations/licenses/:id/sam
+  (SAM button on Licenses appears only after sync data exists for that software)</pre>
       </section>
     </div>`;
 
@@ -274,19 +287,33 @@ GET /api/integrations/licenses/:id/sam</pre>
 
   $('#int-cf-add', el).addEventListener('click', async () => {
     try {
+      const fieldType = $('#int-cf-type', el).value;
+      const optionsRaw = ($('#int-cf-options', el)?.value || '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
       await api('/integrations/custom-fields', {
         method: 'POST',
         body: {
           entity: $('#int-cf-entity', el).value,
           fieldKey: $('#int-cf-key', el).value.trim(),
           label: $('#int-cf-label', el).value.trim(),
-          fieldType: $('#int-cf-type', el).value,
+          fieldType,
+          options: fieldType === 'select' ? optionsRaw : [],
         },
       });
-      toast('Field saved', 'success');
+      toast('Field saved — it will show on the matching form', 'success');
       Views.integrations(el);
     } catch (err) { toast(err.message, 'error'); }
   });
+
+  const syncCfOptions = () => {
+    const wrap = $('#int-cf-options-wrap', el);
+    if (!wrap) return;
+    wrap.style.display = $('#int-cf-type', el).value === 'select' ? '' : 'none';
+  };
+  $('#int-cf-type', el)?.addEventListener('change', syncCfOptions);
+  syncCfOptions();
 
   el.querySelectorAll('[data-cf-del]').forEach((btn) => {
     btn.addEventListener('click', () => {

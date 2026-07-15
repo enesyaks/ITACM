@@ -988,7 +988,8 @@ async function openOffboardWizard(emp) {
   });
 }
 
-function employeeForm(emp, done) {
+async function employeeForm(emp, done) {
+  const { defs: cfDefs, values: cfValues } = await fetchCustomFields('employee', emp?.id);
   formModal({
     title: emp ? `Edit ${emp.fullName}` : 'Add New Employee',
     fields: [
@@ -1002,10 +1003,17 @@ function employeeForm(emp, done) {
           ...(AppConfig.departments || [])] },
       { name: 'title', label: 'Title', value: emp?.title },
       { name: 'status', label: 'Status', type: 'select', value: emp?.status || 'Active', options: ['Active', 'Inactive'] },
+      ...customFieldsAsFormFields(cfDefs, cfValues),
     ],
     async onSubmit(d) {
-      if (emp) await api(`/employees/${emp.id}`, { method: 'PUT', body: d });
-      else await api('/employees', { method: 'POST', body: d });
+      const { body, values } = peelCustomFieldPayload(d, cfDefs);
+      let id = emp?.id;
+      if (emp) await api(`/employees/${emp.id}`, { method: 'PUT', body });
+      else {
+        const created = await api('/employees', { method: 'POST', body });
+        id = created?.id;
+      }
+      if (cfDefs.length && id) await saveCustomFieldValues('employee', id, values);
       toast(emp ? 'Employee updated' : 'Employee created', 'success');
       done();
     },

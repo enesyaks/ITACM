@@ -766,3 +766,119 @@ function mountMultiSelects(root, onChangeMap) {
     });
   });
 }
+
+/** ---------- Custom fields (Integrations → used on asset / employee / contract forms) ---------- */
+
+async function fetchCustomFields(entity, entityId) {
+  const [defs, values] = await Promise.all([
+    api(`/integrations/custom-fields/${entity}`).catch(() => []),
+    entityId
+      ? api(`/integrations/custom-fields/${entity}/${entityId}/values`).catch(() => ({}))
+      : Promise.resolve({}),
+  ]);
+  return {
+    defs: Array.isArray(defs) ? defs : [],
+    values: values && typeof values === 'object' ? values : {},
+  };
+}
+
+function renderCustomFieldsHtml(defs, values = {}) {
+  if (!defs || !defs.length) return '';
+  const fields = defs.map((d) => {
+    const key = d.fieldKey;
+    const val = values[key] != null ? String(values[key]) : '';
+    const req = d.required ? 'required' : '';
+    const opts = Array.isArray(d.options) ? d.options : [];
+    let control;
+    if (d.fieldType === 'select' && opts.length) {
+      const known = !val || opts.map(String).includes(val);
+      control = `<select name="cf__${esc(key)}" data-cf-key="${esc(key)}" ${req}>
+        <option value="">—</option>
+        ${known ? '' : `<option value="${esc(val)}" selected>${esc(val)}</option>`}
+        ${opts.map((o) => `<option value="${esc(o)}" ${val === String(o) ? 'selected' : ''}>${esc(o)}</option>`).join('')}
+      </select>`;
+    } else if (d.fieldType === 'date') {
+      control = `<input type="date" name="cf__${esc(key)}" data-cf-key="${esc(key)}" value="${esc(val)}" ${req}>`;
+    } else if (d.fieldType === 'number') {
+      control = `<input type="number" name="cf__${esc(key)}" data-cf-key="${esc(key)}" value="${esc(val)}" ${req}>`;
+    } else {
+      // text, or select without options yet — free text so the field is still usable
+      control = `<input type="text" name="cf__${esc(key)}" data-cf-key="${esc(key)}" value="${esc(val)}" ${req}
+        placeholder="${d.fieldType === 'select' && !opts.length ? 'Add options under Integrations' : ''}">`;
+    }
+    return `<div class="form-field"><label>${esc(d.label)}${d.required ? ' *' : ''}
+      <span class="ob-hint mono">(${esc(key)})</span></label>${control}</div>`;
+  }).join('');
+  return `
+    <div class="form-field full" style="margin-top:4px;padding-top:10px;border-top:1px solid var(--border,#e8e6f0)">
+      <h4 style="margin:0 0 4px;font-size:13px">Custom fields</h4>
+      <p class="cell-sub" style="margin:0">From Integrations · labels appear when creating or editing this record.</p>
+    </div>
+    ${fields}`;
+}
+
+function collectCustomFieldValues(root, defs) {
+  const out = {};
+  if (!defs || !defs.length) return out;
+  for (const d of defs) {
+    const input = root.querySelector(`[data-cf-key="${CSS.escape ? CSS.escape(d.fieldKey) : d.fieldKey}"]`)
+      || root.querySelector(`[name="cf__${d.fieldKey}"]`);
+    out[d.fieldKey] = input ? String(input.value || '').trim() : '';
+  }
+  return out;
+}
+
+/** Map defs+values into formModal field descriptors (employee / contract). */
+function customFieldsAsFormFields(defs, values = {}) {
+  return (defs || []).map((d) => {
+    const opts = Array.isArray(d.options) ? d.options : [];
+    const base = {
+      name: `cf__${d.fieldKey}`,
+      label: `${d.label}${d.required ? ' *' : ''} (${d.fieldKey})`,
+      required: !!d.required,
+      value: values[d.fieldKey] != null ? values[d.fieldKey] : '',
+    };
+    if (d.fieldType === 'select' && opts.length) {
+      return {
+        ...base,
+        type: 'select',
+        options: [{ value: '', label: '—' }, ...opts.map((o) => ({ value: o, label: o }))],
+      };
+    }
+    if (d.fieldType === 'date') return { ...base, type: 'date' };
+    if (d.fieldType === 'number') return { ...base, type: 'number' };
+    return { ...base, type: 'text' };
+  });
+}
+
+function peelCustomFieldPayload(data, defs) {
+  const values = {};
+  const cleaned = { ...data };
+  for (const d of defs || []) {
+    const k = `cf__${d.fieldKey}`;
+    if (k in cleaned) {
+      values[d.fieldKey] = cleaned[k] != null ? String(cleaned[k]).trim() : '';
+      delete cleaned[k];
+    }
+  }
+  return { body: cleaned, values };
+}
+
+async function saveCustomFieldValues(entity, entityId, values) {
+  if (!entityId || !values || typeof values !== 'object') return;
+  await api(`/integrations/custom-fields/${entity}/${entityId}/values`, {
+    method: 'PUT',
+    body: values,
+  });
+}
+
+function customFieldsDetailHtml(defs, values = {}) {
+  if (!defs || !defs.length) return '';
+  const rows = defs.map((d) => {
+    const v = values[d.fieldKey];
+    if (v == null || String(v).trim() === '') return '';
+    return `<div><span class="cell-sub">${esc(d.label)}</span><div>${esc(v)}</div></div>`;
+  }).filter(Boolean);
+  if (!rows.length) return '';
+  return `<div class="full"><span class="cell-sub">Custom fields</span></div>${rows.join('')}`;
+}

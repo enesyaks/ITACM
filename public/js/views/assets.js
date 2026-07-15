@@ -410,9 +410,30 @@ async function assetForm(asset, done) {
     ? INFRA_CATS.includes(asset.category)
     : INFRA_CATS.includes(seedCat);
   const CATS = infraMode ? INFRA_CATS : HW_CATS;
-  const catalog = await api('/catalog').catch(() => []);
+  const [catalog, cfBundle] = await Promise.all([
+    api('/catalog').catch(() => []),
+    fetchCustomFields('asset', asset && asset.id),
+  ]);
+  const cfDefs = cfBundle.defs;
+  const cfValues = cfBundle.values;
+  // Hardware "Other" opens a free-text category; unknown stored values reopen as Other + text.
+  let categorySelect = CATS[0];
+  let customCategory = '';
+  if (seedCat) {
+    if (infraMode) {
+      categorySelect = CATS.includes(seedCat) ? seedCat : CATS[0];
+    } else if (seedCat === 'Other') {
+      categorySelect = 'Other';
+    } else if (CATS.includes(seedCat)) {
+      categorySelect = seedCat;
+    } else {
+      categorySelect = 'Other';
+      customCategory = seedCat;
+    }
+  }
   const state = {
-    category: seedCat && CATS.includes(seedCat) ? seedCat : CATS[0],
+    category: categorySelect,
+    customCategory,
     brand: (asset && asset.brand) || '',
     model: (asset && asset.model) || '',
     rack: (asset && asset.rack) || '',
@@ -445,7 +466,11 @@ async function assetForm(asset, done) {
         <div class="form-field"><label>Serial number *</label>
           <input name="serialNumber" required value="${esc((asset && asset.serialNumber) || '')}"></div>
         <div class="form-field"><label>Category *</label>
-          <select id="af-cat">${CATS.map((c) => `<option ${state.category === c ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
+          <select id="af-cat">${CATS.map((c) => `<option ${state.category === c ? 'selected' : ''}>${c}</option>`).join('')}</select>
+          ${infraMode ? '' : `<input id="af-cat-other" class="${state.category === 'Other' ? '' : 'hidden'}" style="margin-top:6px"
+            maxlength="60" placeholder="Type custom category — e.g. Projector / Scanner / UPS"
+            value="${esc(state.customCategory || '')}">`}
+        </div>
         <div class="form-field"><label>Purchase date</label>
           <input type="date" name="purchaseDate" value="${asset && asset.purchaseDate ? String(asset.purchaseDate).slice(0, 10) : ''}"></div>
         <div class="form-field"><label>Lifecycle override (months) <span class="ob-hint">(blank = category default, e.g. Mac = 60)</span></label>
@@ -523,6 +548,7 @@ async function assetForm(asset, done) {
         </div>
         <div class="form-field full"><label>Asset note <span class="ob-hint">(shown when adding to handover basket)</span></label>
           <textarea name="notes" rows="3" maxlength="2000" placeholder="e.g. Screen scratch on bottom left / Şarj aleti eksik">${esc((asset && asset.notes) || '')}</textarea></div>
+        ${renderCustomFieldsHtml(cfDefs, cfValues)}
       </div><div id="af-error"></div></form>`,
     foot: `<button class="btn btn-outline" data-close>Cancel</button>
            <button class="btn btn-primary" type="submit" form="af">Save</button>`,
@@ -808,9 +834,26 @@ async function assetForm(asset, done) {
       $('#af-cat', overlay).addEventListener('change', (e) => {
         state.category = e.target.value;
         state.brand = ''; state.model = '';
+        const otherInp = $('#af-cat-other', overlay);
+        if (otherInp) {
+          const show = state.category === 'Other';
+          otherInp.classList.toggle('hidden', !show);
+          if (show) {
+            otherInp.focus();
+          } else {
+            state.customCategory = '';
+            otherInp.value = '';
+          }
+        }
         renderPickers();
         applyFieldRules();
       });
+      const catOther = $('#af-cat-other', overlay);
+      if (catOther) {
+        catOther.addEventListener('input', (e) => {
+          state.customCategory = e.target.value;
+        });
+      }
       $('#af-location', overlay).addEventListener('change', () => {
         renderRackPicker();
       });
@@ -932,11 +975,17 @@ async function assetForm(asset, done) {
         const f = e.target.elements;
         const allowed = allowedFields();
         const take = (name) => (allowed.includes(name) ? f[name].value || null : null);
+        let resolvedCategory = state.category;
+        if (!infraMode && state.category === 'Other') {
+          resolvedCategory = String(
+            state.customCategory || ($('#af-cat-other', overlay) && $('#af-cat-other', overlay).value) || ''
+          ).trim();
+        }
         const body = {
           serialNumber: f.serialNumber.value.trim(),
           brand: state.brand.trim(),
           model: state.model.trim(),
-          category: state.category,
+          category: resolvedCategory,
           assetTag: (infraMode && !isEdit && f.assetTag)
             ? f.assetTag.value.trim()
             : undefined,
@@ -990,6 +1039,16 @@ async function assetForm(asset, done) {
         if (!allowed.includes('relatedLicense')) body.licenseIds = [];
         if (!allowed.includes('responsible')) body.responsibleEmployeeId = null;
         try {
+          if (!infraMode && state.category === 'Other') {
+            if (!resolvedCategory) {
+              throw new Error('Type a custom category name, or pick another category from the list');
+            }
+            if (HW_CATS.includes(resolvedCategory) && resolvedCategory !== 'Other') {
+              body.category = resolvedCategory;
+            } else {
+              body.category = resolvedCategory.slice(0, 60);
+            }
+          }
           if (!body.brand || !body.model) {
             throw new Error('Brand and model are required — pick from the catalog or choose "Other" and type them');
           }
@@ -1013,8 +1072,17 @@ async function assetForm(asset, done) {
             }
           }
           let created;
-          if (asset && asset.id) await api(`/assets/${asset.id}`, { method: 'PUT', body });
-          else created = await api('/assets', { method: 'POST', body });
+          if (asset && asset.id) {
+            await api(`/assets/${asset.id}`, { method: 'PUT', body });
+            if (cfDefs.length) {
+              await saveCustomFieldValues('asset', asset.id, collectCustomFieldValues(overlay, cfDefs));
+            }
+          } else {
+            created = await api('/assets', { method: 'POST', body });
+            if (cfDefs.length && created && created.id) {
+              await saveCustomFieldValues('asset', created.id, collectCustomFieldValues(overlay, cfDefs));
+            }
+          }
           toast(
             isEdit
               ? 'Asset updated'
@@ -1072,10 +1140,11 @@ async function showQrModal(asset) {
 }
 
 async function showAssetDetail(id, onChange) {
-  const [x, repairs, repairDocs] = await Promise.all([
+  const [x, repairs, repairDocs, cfBundle] = await Promise.all([
     api(`/assets/${id}`),
     api(`/maintenance?assetId=${encodeURIComponent(id)}`).catch(() => []), // Viewer role → 403 → []
     api(`/maintenance/asset/${encodeURIComponent(id)}/documents`).catch(() => []),
+    fetchCustomFields('asset', id),
   ]);
   const docsByLog = {};
   repairDocs.forEach((d) => { (docsByLog[d.maintenanceId] = docsByLog[d.maintenanceId] || []).push(d); });
@@ -1083,6 +1152,7 @@ async function showAssetDetail(id, onChange) {
   const canEdit = Auth.can('canManageAssets');
   const refresh = () => { if (onChange) onChange(); };
   const isInfra = x.category === 'Network' || x.category === 'Server';
+  const cfDetail = customFieldsDetailHtml(cfBundle.defs, cfBundle.values);
 
   openModal({
     title: `${x.assetTag} — ${x.brand} ${x.model}`,
@@ -1141,6 +1211,7 @@ async function showAssetDetail(id, onChange) {
         <div class="full"><span class="cell-sub">QR code string</span><div class="mono">${esc(x.qrCodeString)}</div></div>
         ${String(x.notes || '').trim() ? `<div class="full"><span class="cell-sub">Asset note</span>
           <div class="basket-asset-note" style="margin-top:6px"><span class="ms ms-sm">sticky_note_2</span> ${esc(String(x.notes).trim())}</div></div>` : ''}
+        ${cfDetail}
       </div>
       <h3 style="font-size:11px;text-transform:uppercase;color:var(--on-surface-variant);margin:18px 0 6px">
         History — who / when / by whom</h3>

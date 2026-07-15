@@ -276,6 +276,18 @@ const OB_TOUR = [
     preview: 'welcome',
   },
   {
+    id: 'howto', icon: 'play_circle',
+    title: 'See the product in action',
+    desc: 'A short walkthrough of the daily loop: register hardware → assign people → print zimmet → renew licenses and contracts — all with an audit trail.',
+    bullets: [
+      'Watch the animated demo below (no account needed)',
+      'Drop your own video at /media/how-it-works.mp4 if you prefer a recorded tour',
+      'Or set ONBOARDING_VIDEO_URL (YouTube / MP4) in the server environment',
+    ],
+    tip: 'Skip ahead via the left rail anytime — every module has a live-style preview.',
+    preview: 'howto',
+  },
+  {
     id: 'dashboard', icon: 'dashboard', route: '#/dashboard',
     title: 'Dashboard',
     desc: 'Start here every morning — KPIs, recent handovers, EOL warnings, scheduled onboardings and license / stock alerts.',
@@ -444,6 +456,18 @@ const OB_TOUR = [
     preview: 'audit',
   },
   {
+    id: 'integrations', icon: 'hub', route: '#/integrations',
+    title: 'Integrations',
+    desc: 'Webhooks, custom fields, SMTP digests and inbound software-install sync — connect ITACM to your stack.',
+    bullets: [
+      'Outbound webhooks for asset / handover events',
+      'Custom fields on assets, employees and contracts',
+      'Optional SAM seat analytics when installs are synced in',
+    ],
+    tip: 'Custom fields only appear on forms after you define them here.',
+    preview: 'integrations',
+  },
+  {
     id: 'users', icon: 'vpn_key', route: '#/users',
     title: 'IT Users & Security',
     desc: 'Invite your team with the right role. Owner controls branding, zimmet designs and default currency.',
@@ -470,6 +494,26 @@ const OB_TOUR_I18N = {
       'Roller, arama, para birimi ve uyarılar ilk günden hazır',
     ],
     tip: 'Kurulumdan sonra Yardım (?) ile bu turu tekrar oynatabilir veya ipuçlarını açıp kapatabilirsiniz.',
+  },
+  howto: {
+    title: 'Ürünü işleyişte görün',
+    desc: 'Günlük döngünün kısa anlatımı: donanım kaydı → kişiye zimmet → PDF yazdırma → lisans / sözleşme yenileme — hepsi denetim iziyle.',
+    bullets: [
+      'Aşağıdaki animasyonlu demoyu izleyin (hesap gerekmez)',
+      'Kendi kaydınızı kullanmak için /media/how-it-works.mp4 dosyasını koyun',
+      'Veya sunucuda ONBOARDING_VIDEO_URL (YouTube / MP4) ayarlayın',
+    ],
+    tip: 'Soldaki listeden istediğiniz modüle atlayın — her birinin canlı tarzı önizlemesi var.',
+  },
+  integrations: {
+    title: 'Entegrasyonlar',
+    desc: 'Webhook, özel alanlar, SMTP özetleri ve yazılım kurulum senkronu — ITACM\'i kendi stack\'inize bağlayın.',
+    bullets: [
+      'Varlık / zimmet olayları için giden webhook\'lar',
+      'Varlık, çalışan ve sözleşmelerde özel alanlar',
+      'Kurulumlar senkronlanınca isteğe bağlı SAM koltuk analitiği',
+    ],
+    tip: 'Özel alanlar, burada tanımladıktan sonra formlarda görünür.',
   },
   dashboard: {
     title: 'Panel',
@@ -812,75 +856,272 @@ function obItem(s) {
   return loc ? { ...s, ...loc } : s;
 }
 
+function obYoutubeEmbed(url) {
+  try {
+    const u = new URL(url);
+    let id = '';
+    if (u.hostname.includes('youtu.be')) id = u.pathname.replace(/^\//, '');
+    else id = u.searchParams.get('v') || '';
+    if (!id) return null;
+    return `https://www.youtube-nocookie.com/embed/${encodeURIComponent(id)}?rel=0`;
+  } catch { return null; }
+}
+
+function obDemoReelHtml() {
+  return `
+    <div class="ob-demo-reel" aria-hidden="true">
+      <div class="ob-demo-stage">
+        <div class="ob-demo-scene s1">
+          <div class="ob-demo-tag">HW-1042</div>
+          <div class="ob-demo-copy"><b>Register hardware</b><span>MacBook Pro · In Stock · HQ</span></div>
+        </div>
+        <div class="ob-demo-scene s2">
+          <div class="ob-demo-avatar"></div>
+          <div class="ob-demo-copy"><b>Assign to people</b><span>Ayşe Yılmaz · IT · Onboard day</span></div>
+        </div>
+        <div class="ob-demo-scene s3">
+          <div class="ob-demo-doc"><i></i><i></i><i></i></div>
+          <div class="ob-demo-copy"><b>Print zimmet PDF</b><span>Signed handover · Audit logged</span></div>
+        </div>
+        <div class="ob-demo-scene s4">
+          <div class="ob-demo-kpi">12 / 20</div>
+          <div class="ob-demo-copy"><b>Track licenses &amp; vendors</b><span>Seats · Contracts · Alerts</span></div>
+        </div>
+      </div>
+      <div class="ob-demo-dots"><i class="on"></i><i></i><i></i><i></i></div>
+    </div>`;
+}
+
+function obHowtoMediaHtml() {
+  const custom = (typeof AppConfig !== 'undefined' && AppConfig.onboardingVideoUrl)
+    ? String(AppConfig.onboardingVideoUrl).trim()
+    : '';
+  const yt = custom ? obYoutubeEmbed(custom) : null;
+  if (yt) {
+    return `
+      <div class="ob-howto">
+        <div class="ob-howto-frame">
+          <iframe title="Product walkthrough" src="${esc(yt)}" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen loading="lazy"></iframe>
+        </div>
+        <div class="ob-preview-caption">${esc(t('ob.videoCaption'))}</div>
+      </div>`;
+  }
+  const src = custom || '';
+  return `
+    <div class="ob-howto">
+      <div class="ob-howto-video-wrap hidden" data-ob-video>
+        <video class="ob-howto-video" controls playsinline preload="metadata"
+          ${src ? `src="${esc(src)}"` : ''}
+          data-fallbacks="/media/how-it-works.webm,/media/how-it-works.mp4"></video>
+      </div>
+      <div class="ob-howto-fallback" data-ob-reel>
+        ${obDemoReelHtml()}
+        <p class="ob-howto-hint">${esc(t('ob.demoHint'))}</p>
+      </div>
+      <div class="ob-preview-caption">${esc(t('ob.videoCaption'))}</div>
+    </div>`;
+}
+
+function mountObHowtoMedia(root) {
+  const wrap = root && root.querySelector('[data-ob-video]');
+  const reel = root && root.querySelector('[data-ob-reel]');
+  const video = wrap && wrap.querySelector('video');
+  if (!video || !wrap) return;
+
+  const showVideo = () => {
+    wrap.classList.remove('hidden');
+    if (reel) reel.classList.add('hidden');
+  };
+  const showReel = () => {
+    wrap.classList.add('hidden');
+    video.removeAttribute('src');
+    try { video.load(); } catch { /* ignore */ }
+    if (reel) reel.classList.remove('hidden');
+  };
+
+  const custom = (typeof AppConfig !== 'undefined' && AppConfig.onboardingVideoUrl)
+    ? String(AppConfig.onboardingVideoUrl).trim()
+    : '';
+  if (custom && !obYoutubeEmbed(custom)) {
+    video.addEventListener('loadeddata', showVideo, { once: true });
+    video.addEventListener('error', showReel, { once: true });
+    return;
+  }
+  if (custom) return; // YouTube iframe already rendered
+
+  const fallbacks = String(video.dataset.fallbacks || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  let i = 0;
+  const tryNext = () => {
+    if (i >= fallbacks.length) { showReel(); return; }
+    const url = fallbacks[i++];
+    fetch(url, { method: 'HEAD' }).then((r) => {
+      const ct = String(r.headers.get('content-type') || '').toLowerCase();
+      // Missing files fall through to SPA index.html (200) — require video/*.
+      if (r.ok && ct.startsWith('video/')) {
+        video.src = url;
+        showVideo();
+      } else tryNext();
+    }).catch(tryNext);
+  };
+  tryNext();
+}
+
 function obPreviewHtml(kind) {
-  const shell = (main) => `
-    <div class="ob-mock" aria-hidden="true">
+  const shell = (main, extraClass = '') => `
+    <div class="ob-mock ${extraClass}" aria-hidden="true">
       <div class="ob-mock-side">
         <div class="ob-mock-logo"></div>
-        <i></i><i></i><i class="on"></i><i></i><i></i>
+        <i></i><i></i><i class="on"></i><i></i><i></i><i></i>
       </div>
       <div class="ob-mock-main">${main}</div>
     </div>`;
+
+  const kpi = (label, val, tone = '') =>
+    `<div class="ob-kpi ${tone}"><span>${esc(label)}</span><strong>${esc(val)}</strong></div>`;
+  const row = (a, b, c, tone = '') =>
+    `<div class="ob-tr ${tone}"><span>${esc(a)}</span><span>${esc(b)}</span><em>${esc(c)}</em></div>`;
+  const chip = (txt, on = false) =>
+    `<span class="ob-chip ${on ? 'on' : ''}">${esc(txt)}</span>`;
+
   const map = {
     welcome: `
-      <div class="ob-mock-hero">
+      <div class="ob-mock-hero rich">
         <strong>IT Asset Control Pro</strong>
-        <span>Hardware · Network · Onboard · Vendors · Audit</span>
+        <span>Self-hosted ITAM · Hardware · People · Zimmet · Audit</span>
       </div>
-      <div class="ob-mock-chips"><b></b><b></b><b></b><b></b></div>`,
+      <div class="ob-mod-map">
+        <span><i class="ms">devices</i> Hardware</span>
+        <span><i class="ms">badge</i> People</span>
+        <span><i class="ms">assignment_turned_in</i> Zimmet</span>
+        <span><i class="ms">workspace_premium</i> Licenses</span>
+        <span><i class="ms">dns</i> Network</span>
+        <span><i class="ms">apartment</i> Vendors</span>
+        <span><i class="ms">fact_check</i> Counts</span>
+        <span><i class="ms">history</i> Audit</span>
+      </div>`,
+    howto: null, // rendered via obHowtoMediaHtml
     dashboard: `
-      <div class="ob-mock-kpis"><b></b><b></b><b></b><b></b></div>
-      <div class="ob-mock-row"></div><div class="ob-mock-row short"></div>
-      <div class="ob-mock-alert"></div>`,
+      <div class="ob-mock-kpis rich">
+        ${kpi('In Stock', '48')}
+        ${kpi('Assigned', '312')}
+        ${kpi('Repair', '7', 'warn')}
+        ${kpi('Licenses', '3⚠', 'warn')}
+      </div>
+      ${row('EOL soon', '14 laptops', 'Review')}
+      ${row('Onboard due', 'Ayşe Yılmaz', 'Today', 'hi')}
+      <div class="ob-mock-alert rich">⚠ Low stock · HDMI adapters (2 left)</div>`,
     hardware: `
-      <div class="ob-mock-toolbar"><b></b><b></b><span></span></div>
-      <div class="ob-mock-table"><i></i><i></i><i></i><i></i></div>`,
+      <div class="ob-mock-toolbar rich">
+        ${chip('All', true)}${chip('In Stock')}${chip('Assigned')}${chip('Reserved')}
+      </div>
+      ${row('HW-1042', 'MacBook Pro 14"', 'In Stock')}
+      ${row('HW-1043', 'Dell U2723QE', 'Assigned', 'hi')}
+      ${row('HW-0981', 'iPhone 15', 'Repair', 'warn')}
+      ${row('HW-1100', 'ThinkPad T14', 'Reserved')}`,
     network: `
-      <div class="ob-mock-toolbar"><b></b><span></span></div>
-      <div class="ob-mock-grid"><b></b><b></b><b></b><b></b></div>
-      <div class="ob-mock-row short"></div>`,
+      <div class="ob-mock-toolbar rich">${chip('Topology', true)}${chip('Racks')}</div>
+      <div class="ob-topo">
+        <b>Core SW</b><b>Firewall</b><b>Rack A / U12</b>
+      </div>
+      ${row('NW-021', 'Cisco C9300', '10.0.0.1')}
+      ${row('SV-004', 'Dell R750', 'Firmware OK')}`,
     catalog: `
-      <div class="ob-mock-grid"><b></b><b></b><b></b><b></b></div>
-      <div class="ob-mock-row"></div>`,
+      <div class="ob-mock-grid rich">
+        <b>Categories<small>Lifecycle months</small></b>
+        <b>CPU / RAM<small>Dropdown lists</small></b>
+        <b>Locations<small>HQ · Branch</small></b>
+        <b>Departments<small>IT · Sales</small></b>
+      </div>
+      ${row('Laptop', '36 mo default', 'Active')}`,
     employees: `
-      <div class="ob-mock-person"><span></span><div><b></b><i></i></div></div>
-      <div class="ob-mock-tabs"><b class="on"></b><b></b><b></b></div>
-      <div class="ob-mock-row"></div><div class="ob-mock-row short"></div>`,
+      <div class="ob-mock-person rich">
+        <span></span>
+        <div><b>Ayşe Yılmaz</b><i>IT · Start Mon</i></div>
+        <em>Onboard</em>
+      </div>
+      <div class="ob-mock-tabs rich">${chip('Assets', true)}${chip('Licenses')}${chip('Lines')}</div>
+      ${row('HW-1043', 'Dell monitor', 'Assigned')}
+      ${row('LC-MS365', 'E3 seat', 'Active')}`,
     handover: `
-      <div class="ob-mock-split">
-        <div><div class="ob-mock-row"></div><div class="ob-mock-row"></div></div>
-        <div class="ob-mock-basket"><b>Basket</b><i></i><i></i></div>
+      <div class="ob-mock-split rich">
+        <div>
+          ${row('Employee', 'Ayşe Yılmaz', 'IT')}
+          ${row('Add', 'HW-1042', '+')}
+          ${row('Add', '0532…91', 'SIM')}
+        </div>
+        <div class="ob-mock-basket rich">
+          <b>Basket · 2 items</b>
+          <i>MacBook Pro 14"</i>
+          <i>Turkcell business line</i>
+          <em>Confirm &amp; print</em>
+        </div>
       </div>`,
     licenses: `
-      <div class="ob-mock-toolbar"><b></b><span></span></div>
-      <div class="ob-mock-seats"><b></b><b></b><b></b></div>`,
+      <div class="ob-mock-toolbar rich">${chip('Pools', true)}${chip('Expiring')}</div>
+      <div class="ob-mock-seats rich">
+        <b><span>M365 E3</span><strong>47 / 50</strong></b>
+        <b><span>Adobe CC</span><strong>12 / 15</strong></b>
+        <b class="warn"><span>VPN</span><strong>exp 12d</strong></b>
+      </div>`,
     lines: `
-      <div class="ob-mock-table sim"><i></i><i></i><i></i></div>`,
+      ${row('0532 111 22 33', 'Turkcell · Flex', 'Free')}
+      ${row('0533 444 55 66', 'Vodafone · Pro', 'Assigned', 'hi')}
+      ${row('0535 777 88 99', 'Türk Telekom', 'Reserved')}`,
     providers: `
-      <div class="ob-mock-tabs"><b class="on"></b><b></b></div>
-      <div class="ob-mock-person"><span></span><div><b></b><i></i></div></div>
-      <div class="ob-mock-row"></div><div class="ob-mock-row short"></div>`,
+      <div class="ob-mock-tabs rich">${chip('Vendors', true)}${chip('Contracts')}</div>
+      <div class="ob-mock-person rich">
+        <span></span>
+        <div><b>Acme Cloud MSP</b><i>support@acme.example</i></div>
+      </div>
+      ${row('ISP uplink', '₺12.400 / mo', 'Renew 45d', 'warn')}
+      ${row('Helpdesk SLA', 'USD 2.100', 'Auto-renew')}`,
     consumables: `
-      <div class="ob-mock-kpis small"><b></b><b></b></div>
-      <div class="ob-mock-row"></div><div class="ob-mock-row warn"></div>`,
+      <div class="ob-mock-kpis rich small">
+        ${kpi('SKUs', '28')}
+        ${kpi('Low', '3', 'warn')}
+      </div>
+      ${row('Toner 83A', '4 left', 'Min 5', 'warn')}
+      ${row('HDMI 2m', '22', 'OK')}`,
     maintenance: `
-      <div class="ob-mock-row"></div>
-      <div class="ob-mock-note"></div>
-      <div class="ob-mock-row short"></div>`,
+      ${row('HW-0981', 'iPhone 15', 'In repair', 'warn')}
+      <div class="ob-mock-note rich">Screen replacement · quote ₺3.200 · parts ordered</div>
+      ${row('Attach', 'invoice.pdf', 'Add note')}`,
     stockcount: `
-      <div class="ob-mock-scan"><span></span></div>
-      <div class="ob-mock-chips"><b></b><b></b><b></b></div>`,
+      <div class="ob-mock-scan rich"><span>Scan barcode / QR</span></div>
+      <div class="ob-mock-chips rich">${chip('Found 86', true)}${chip('Missing 4')}${chip('Unknown 1')}</div>
+      ${row('HW-1100', 'Found', 'Cam')}`,
     reports: `
-      <div class="ob-mock-grid"><b></b><b></b><b></b></div>
-      <div class="ob-mock-row"></div>`,
+      <div class="ob-mock-grid rich">
+        <b>Assigned by dept</b>
+        <b>EOL next 90d</b>
+        <b>License usage</b>
+        <b>Custom…</b>
+      </div>
+      ${row('Export', 'CSV · Letterhead print', 'Go')}`,
     audit: `
-      <div class="ob-mock-toolbar"><b></b><b></b><span></span></div>
-      <div class="ob-mock-table"><i></i><i></i><i></i><i></i></div>`,
+      <div class="ob-mock-toolbar rich">${chip('All', true)}${chip('Handovers')}${chip('Settings')}</div>
+      ${row('14:02', 'zimmet.complete', 'ayşe@…')}
+      ${row('13:41', 'asset.update', 'admin@…')}
+      ${row('11:05', 'onboard.schedule', 'admin@…')}`,
+    integrations: `
+      <div class="ob-mock-grid rich">
+        <b>Webhooks<small>Asset events</small></b>
+        <b>Custom fields<small>project_alfa</small></b>
+        <b>SMTP digest<small>Daily alerts</small></b>
+        <b>Install sync<small>SAM seats</small></b>
+      </div>
+      ${row('Hook', 'https://hooks…/itacm', 'Active')}`,
     users: `
-      <div class="ob-mock-person"><span></span><div><b></b><i></i></div></div>
-      <div class="ob-mock-person"><span></span><div><b></b><i></i></div></div>`,
+      <div class="ob-mock-person rich"><span></span><div><b>Owner</b><i>Full branding + security</i></div></div>
+      <div class="ob-mock-person rich"><span></span><div><b>Helpdesk</b><i>Handovers · repairs</i></div></div>
+      <div class="ob-mock-person rich"><span></span><div><b>Viewer</b><i>Read-only inventory</i></div></div>`,
   };
-  return shell(map[kind] || map.welcome);
+
+  if (kind === 'howto') return obHowtoMediaHtml();
+  return shell(map[kind] || map.welcome, kind === 'welcome' ? 'ob-mock-welcome' : '');
 }
 
 let obStep = 0;
@@ -911,6 +1152,7 @@ function renderTour() {
 
   const s = obItem(OB_TOUR[obStep]);
   const last = obStep === OB_TOUR.length - 1;
+  const visualFirst = s.preview === 'howto' || s.preview === 'welcome';
   tour.innerHTML = `
     <div class="ob-layout">
       <aside class="ob-rail" aria-label="Features">
@@ -924,9 +1166,9 @@ function renderTour() {
           <span class="ob-rail-label">${esc(t('ob.setup'))}</span>
         </button>
       </aside>
-      <div class="ob-slide ob-slide-rich">
+      <div class="ob-slide ob-slide-rich ${visualFirst ? 'ob-slide-showcase' : ''}">
         <span class="ob-slide-badge"><span class="ms ms-sm">${s.icon}</span> ${esc(s.title)}</span>
-        <div class="ob-slide-grid">
+        <div class="ob-slide-grid ${visualFirst ? 'ob-slide-grid-showcase' : ''}">
           <div>
             <h2 class="ob-slide-title">${esc(s.title)}</h2>
             <p class="ob-slide-desc">${esc(s.desc)}</p>
@@ -937,7 +1179,7 @@ function renderTour() {
           </div>
           <div class="ob-preview-wrap">
             ${obPreviewHtml(s.preview)}
-            <div class="ob-preview-caption">${esc(t('ob.preview'))}</div>
+            ${s.preview !== 'howto' ? `<div class="ob-preview-caption">${esc(t('ob.preview'))}</div>` : ''}
           </div>
         </div>
         <div class="ob-nav">
@@ -953,6 +1195,7 @@ function renderTour() {
   $('#ob-next', tour).addEventListener('click', () => { obStep++; renderTour(); });
   tour.querySelectorAll('[data-dot]').forEach((d) =>
     d.addEventListener('click', () => { obStep = Number(d.dataset.dot); renderTour(); }));
+  mountObHowtoMedia(tour);
 }
 
 function bindOnboarding() {
@@ -1429,11 +1672,12 @@ function showProductTourModal() {
            <button class="btn btn-outline" data-close>Close</button>
            <button class="btn btn-primary" id="pt-next">Next</button>`,
     onMount(overlay) {
-      paint(overlay);
-      $('#pt-back', overlay).addEventListener('click', () => { if (step > 0) { step--; paint(overlay); } });
+      const repaint = () => { paint(overlay); mountObHowtoMedia(overlay); };
+      repaint();
+      $('#pt-back', overlay).addEventListener('click', () => { if (step > 0) { step--; repaint(); } });
       $('#pt-next', overlay).addEventListener('click', () => {
         if (step >= OB_TOUR.length - 1) closeModal();
-        else { step++; paint(overlay); }
+        else { step++; repaint(); }
       });
     },
   });

@@ -81,7 +81,9 @@ Views.licenses = async function (el) {
               <td>${fmtDate(l.expirationDate)}</td>
               <td class="actions">
                 <button class="btn btn-outline btn-sm" data-holders="${esc(l.id)}" title="Assigned"><span class="ms">group</span></button>
-                <button class="btn btn-outline btn-sm" data-sam="${esc(l.id)}" title="SAM vs installs"><span class="ms">analytics</span></button>
+                ${Number(l.discoveredInstalls) > 0
+                  ? `<button class="btn btn-outline btn-sm" data-sam="${esc(l.id)}" title="SAM — discovered installs (${Number(l.discoveredInstalls)})"><span class="ms">analytics</span></button>`
+                  : ''}
                 <button class="btn btn-outline btn-sm" data-docs="${esc(l.id)}" title="Documents">
                   <span class="ms">attach_file</span>${l.documentCount ? ` ${l.documentCount}` : ''}
                 </button>

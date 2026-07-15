@@ -569,13 +569,14 @@ function openProviderForm(provider, done) {
   });
 }
 
-function openContractForm(contract, providers, done) {
+async function openContractForm(contract, providers, done) {
   const isEdit = !!(contract && contract.id);
   if (!providers.length && !isEdit) {
     toast(t('providers.needProviderFirst') || 'Add a provider first, then attach a contract.', 'error');
     return;
   }
   const cats = catalogContractCategories();
+  const { defs: cfDefs, values: cfValues } = await fetchCustomFields('contract', contract?.id);
   formModal({
     title: isEdit ? (t('providers.editContract') || 'Edit contract') : (t('providers.addContract') || 'Add contract'),
     wide: true,
@@ -665,17 +666,22 @@ function openContractForm(contract, providers, done) {
         full: true,
       },
       { name: 'notes', label: 'Notes', type: 'textarea', value: contract?.notes || '', full: true },
+      ...customFieldsAsFormFields(cfDefs, cfValues),
     ],
     async onSubmit(d) {
-      if (!d.providerId) throw new Error('Select a provider');
-      d.autoRenew = d.autoRenew === 'true' || d.autoRenew === true;
+      const { body, values } = peelCustomFieldPayload(d, cfDefs);
+      if (!body.providerId) throw new Error('Select a provider');
+      body.autoRenew = body.autoRenew === 'true' || body.autoRenew === true;
+      let id = contract?.id;
       if (isEdit) {
-        await api(`/contracts/${contract.id}`, { method: 'PATCH', body: d });
+        await api(`/contracts/${contract.id}`, { method: 'PATCH', body });
         toast('Contract updated', 'success');
       } else {
-        await api('/contracts', { method: 'POST', body: d });
+        const created = await api('/contracts', { method: 'POST', body });
+        id = created?.id;
         toast('Contract created', 'success');
       }
+      if (cfDefs.length && id) await saveCustomFieldValues('contract', id, values);
       done();
     },
   });
