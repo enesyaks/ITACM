@@ -1,12 +1,16 @@
 Views.catalog = async function (el) {
-  const canEdit = Auth.can('canManageAssets');
+  const canCreate = Auth.canIam('catalog', 'create');
+  const canUpdate = Auth.canIam('catalog', 'update');
+  const canDelete = Auth.canIam('catalog', 'delete');
+  const canEdit = canCreate || canUpdate || canDelete;
   const items = await api('/catalog');
   const cats = [...new Set(items.map((c) => c.category))];
 
   el.innerHTML = `
-    ${pageHead('Product Catalog', 'Brand & model lists that power the asset form dropdowns.', canEdit ? `
-      <button class="btn btn-outline" id="cat-import"><span class="ms">sync</span> Import from existing assets</button>
-      <button class="btn btn-primary" id="cat-new"><span class="ms">add</span> Add Model</button>` : '')}
+    ${pageHead('Product Catalog', 'Brand & model lists that power the asset form dropdowns.', (canCreate || canUpdate) ? `
+      ${canCreate || canUpdate ? `<button class="btn btn-outline" id="cat-import"><span class="ms">sync</span> Import from existing assets</button>` : ''}
+      ${canCreate ? `<button class="btn btn-primary" id="cat-new"><span class="ms">add</span> Add Model</button>` : ''}
+    ` : '')}
     ${items.length === 0 ? `
       <div class="card card-pad" style="text-align:center;padding:48px">
         <div class="cell-sub" style="margin-bottom:14px">The catalog is empty. Import every brand/model already in your
@@ -22,14 +26,14 @@ Views.catalog = async function (el) {
             <tr>
               <td class="cell-title">${esc(c.brand)}</td>
               <td>${esc(c.model)}</td>
-              <td class="actions">${canEdit ? `<button class="btn btn-outline btn-sm" data-del="${esc(c.id)}">Delete</button>` : ''}</td>
+              <td class="actions">${canDelete ? `<button class="btn btn-outline btn-sm" data-del="${esc(c.id)}">Delete</button>` : ''}</td>
             </tr>`).join('')}
           </tbody>
         </table></div>
       </div>`).join('')}`;
 
-  if (canEdit) {
-    $('#cat-new', el).addEventListener('click', () => formModal({
+  if (canCreate) {
+    $('#cat-new', el)?.addEventListener('click', () => formModal({
       title: 'Add catalog model',
       fields: [
         { name: 'category', label: 'Category *', type: 'select', required: true, value: 'Laptop',
@@ -44,7 +48,9 @@ Views.catalog = async function (el) {
         Views.catalog(el);
       },
     }));
-    $('#cat-import', el).addEventListener('click', async () => {
+  }
+  if (canCreate || canUpdate) {
+    $('#cat-import', el)?.addEventListener('click', async () => {
       try {
         const r = await api('/catalog/import', { method: 'POST' });
         toast(`${r.imported} brand/model entries imported from inventory`, 'success');
@@ -310,8 +316,14 @@ const fmtBytes = (n) => (n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.
 async function showMaintNotes(log, onDone) {
   if (!log) return;
   const notes = log.progressNotes || [];
-  const canDelDoc = Auth.can('canManageUsers');
-  const docs = await api(`/maintenance/${log.id}/documents`).catch(() => []);
+  const canReadDocs = Auth.canIam('document', 'read') || Auth.can('canReadDocuments');
+  const canDownloadDocs = Auth.canIam('document', 'download') || Auth.can('canDownloadDocuments');
+  const canUploadDocs = Auth.canIam('document', 'upload') || Auth.canIam('document', 'create') || Auth.can('canUploadDocuments');
+  const canDelDoc = Auth.canIam('document', 'delete') || Auth.can('canDeleteDocuments');
+  const canNote = Auth.canIam('maintenance', 'update') || Auth.canIam('maintenance', 'manage');
+  const docs = canReadDocs
+    ? await api(`/maintenance/${log.id}/documents`).catch(() => [])
+    : [];
   openModal({
     title: `Repair notes & documents — ${log.assetTag}`,
     wide: true,
@@ -327,40 +339,38 @@ async function showMaintNotes(log, onDone) {
           <span class="cell-sub">by ${esc(n.by || '—')}</span>
           <span style="flex-basis:100%;padding-left:2px">${esc(n.note)}</span>
         </div>`).join('')}
-      <div class="form-field" style="margin-top:14px">
+      ${canNote ? `<div class="form-field" style="margin-top:14px">
         <label>Add progress note <span class="ob-hint">(also recorded in the device history)</span></label>
         <textarea id="mn-new-note" placeholder="e.g. Parça bekleniyor — ekran paneli siparişi verildi"></textarea>
-      </div>
+      </div>` : ''}
 
       <div style="display:flex;align-items:center;justify-content:space-between;margin:18px 0 8px">
-        <h3 style="font-size:11px;text-transform:uppercase;color:var(--on-surface-variant);margin:0">Documents (${docs.length})</h3>
-        <button class="btn btn-outline btn-sm" id="mn-upload-btn"><span class="ms">upload_file</span> Upload document</button>
+        <h3 style="font-size:11px;text-transform:uppercase;color:var(--on-surface-variant);margin:0">Documents (${canReadDocs ? docs.length : '—'})</h3>
+        ${canUploadDocs ? '<button class="btn btn-outline btn-sm" id="mn-upload-btn"><span class="ms">upload_file</span> Upload document</button>' : ''}
       </div>
       <div class="cell-sub" style="margin-bottom:8px">Service invoice, repair report or photos — kept with the device (PDF / PNG / JPEG / WebP, max 8MB).</div>
       <input type="file" id="mn-doc-file" accept="application/pdf,image/png,image/jpeg,image/webp,.pdf,.png,.jpg,.jpeg,.webp" class="hidden">
-      ${docs.length === 0 ? '<div class="table-empty">No documents yet.</div>' : `
+      ${!canReadDocs
+        ? '<div class="table-empty">No permission to view documents (needs <strong>document:read</strong>).</div>'
+        : docs.length === 0 ? '<div class="table-empty">No documents yet.</div>' : `
       <div class="table-wrap" style="border:1px solid var(--outline-variant);border-radius:var(--radius-lg)"><table class="data">
         <thead><tr><th>Document</th><th>Size</th><th>Added</th><th style="text-align:right"></th></tr></thead>
         <tbody>
           ${docs.map((d) => `
           <tr>
-            <td><div style="display:flex;align-items:center;gap:8px">
-              <span class="ms" style="color:var(--on-surface-variant)">${d.mime && d.mime.includes('pdf') ? 'picture_as_pdf' : 'image'}</span>
-              <a href="#" class="cell-title doc-link" data-mdoc-view="${esc(d.id)}" title="Click to view">${esc(d.filename)}</a></div></td>
+            <td>${docFileLabel(d, { canDownload: canDownloadDocs, viewAttr: 'data-mdoc-view' })}</td>
             <td class="cell-sub">${fmtBytes(d.byteSize || 0)}</td>
             <td class="cell-sub">${fmtDateTime(d.createdAt)}${d.uploadedByName ? ' • ' + esc(d.uploadedByName) : ''}</td>
             <td class="actions">
-              <button type="button" class="btn btn-outline btn-sm" data-mdoc-view="${esc(d.id)}" title="View"><span class="ms">visibility</span></button>
-              <button type="button" class="btn btn-outline btn-sm" data-mdoc-dl="${esc(d.id)}" title="Download"><span class="ms">download</span></button>
-              ${canDelDoc ? `<button type="button" class="btn btn-outline btn-sm" data-mdoc-del="${esc(d.id)}"><span class="ms">delete</span></button>` : ''}
+              ${docRowActions(d, { canDownload: canDownloadDocs, canDel: canDelDoc, viewAttr: 'data-mdoc-view', dlAttr: 'data-mdoc-dl', delAttr: 'data-mdoc-del' })}
             </td>
           </tr>`).join('')}
         </tbody>
       </table></div>`}`,
     foot: `<button class="btn btn-outline" data-close>Close</button>
-           <button class="btn btn-primary" id="mn-add-note"><span class="ms">add_comment</span> Add Note</button>`,
+           ${canNote ? '<button class="btn btn-primary" id="mn-add-note"><span class="ms">add_comment</span> Add Note</button>' : ''}`,
     onMount(overlay) {
-      $('#mn-add-note', overlay).addEventListener('click', async () => {
+      $('#mn-add-note', overlay)?.addEventListener('click', async () => {
         const note = $('#mn-new-note', overlay).value.trim();
         if (!note) return toast('Write a note first', 'error');
         try {
@@ -374,7 +384,8 @@ async function showMaintNotes(log, onDone) {
 
       const upBtn = $('#mn-upload-btn', overlay);
       const upFile = $('#mn-doc-file', overlay);
-      upBtn.addEventListener('click', () => upFile.click());
+      if (upBtn && upFile) {
+        upBtn.addEventListener('click', () => upFile.click());
       upFile.addEventListener('change', async () => {
         const file = upFile.files[0];
         if (!file) return;
@@ -392,6 +403,7 @@ async function showMaintNotes(log, onDone) {
           if (onDone) onDone();
         } catch (err) { toast(err.message, 'error'); upBtn.disabled = false; }
       });
+      }
 
       overlay.querySelectorAll('[data-mdoc-view]').forEach((a) => a.addEventListener('click', (e) => {
         e.preventDefault();
@@ -420,6 +432,59 @@ function csvDownload(filename, cols, rows) {
   a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
   a.download = filename;
   a.click();
+}
+
+/** Which IAM resource must allow list/read for each preset report. */
+const REPORT_IAM = {
+  inventory: 'asset',
+  'by-category': 'asset',
+  'by-location': 'asset',
+  'by-status': 'asset',
+  'in-stock': 'asset',
+  eol: 'asset',
+  aging: 'asset',
+  scrap: 'asset',
+  assignments: 'asset',
+  employees: 'employee',
+  'no-assets': 'employee',
+  handovers: 'handover',
+  licenses: 'license',
+  'expiring-licenses': 'license',
+  software: 'license',
+  maintenance: 'maintenance',
+  'open-repairs': 'maintenance',
+  consumables: 'consumable',
+  'low-stock': 'consumable',
+};
+
+const CUSTOM_SOURCE_IAM = {
+  assets: 'asset',
+  employees: 'employee',
+  maintenance: 'maintenance',
+  licenses: 'license',
+  software: 'license',
+  consumables: 'consumable',
+  handovers: 'handover',
+};
+
+function iamCanList(resource) {
+  return Auth.canIamOp(resource, 'read');
+}
+
+function canRunReport(id) {
+  const res = REPORT_IAM[id];
+  return res ? iamCanList(res) : true;
+}
+
+function visibleReportDefs() {
+  return REPORT_DEFS.filter((r) => canRunReport(r.id));
+}
+
+function visibleCustomSourceKeys() {
+  return Object.keys(CUSTOM_SOURCES).filter((k) => {
+    const res = CUSTOM_SOURCE_IAM[k];
+    return res ? iamCanList(res) : true;
+  });
 }
 
 const REPORT_DEFS = [
@@ -676,6 +741,10 @@ const REPORT_BUILDERS = {
 async function buildReport(id) {
   const fn = REPORT_BUILDERS[id];
   if (!fn) throw new Error(`Unknown report: ${id}`);
+  if (!canRunReport(id)) {
+    const res = REPORT_IAM[id] || 'module';
+    throw new Error(`This report requires ${res}:read`);
+  }
   return fn();
 }
 
@@ -847,8 +916,9 @@ function showReportResult(slot, title, rep) {
       <div class="card-head">
         <h3>${esc(title)} — ${new Date().toLocaleDateString()}</h3>
         <div style="display:flex;gap:8px">
-          <button class="btn btn-outline btn-sm" id="rep-print"><span class="ms">print</span> Print</button>
-          <button class="btn btn-primary btn-sm" id="rep-csv"><span class="ms">download</span> Export CSV</button>
+          ${Auth.canIam('report', 'export')
+            ? '<button class="btn btn-outline btn-sm" id="rep-print"><span class="ms">print</span> Print</button><button class="btn btn-primary btn-sm" id="rep-csv"><span class="ms">download</span> Export CSV</button>'
+            : ''}
         </div>
       </div>
       <div class="card-pad" style="padding-bottom:8px"><span class="cell-sub">${esc(rep.summary)}</span></div>
@@ -864,8 +934,13 @@ function showReportResult(slot, title, rep) {
     </div>`;
   slot.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
-  $('#rep-csv', slot).addEventListener('click', () =>
-    csvDownload(`${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${new Date().toISOString().slice(0, 10)}.csv`, rep.cols, rep.rows));
+  $('#rep-csv', slot)?.addEventListener('click', () => {
+    if (!Auth.canIam('report', 'export')) {
+      toast(t('common.forbidden') || 'You do not have permission to export', 'error');
+      return;
+    }
+    csvDownload(`${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${new Date().toISOString().slice(0, 10)}.csv`, rep.cols, rep.rows);
+  });
   $('#rep-print', slot).addEventListener('click', () => {
     $('#print-root').innerHTML = `
       <div class="receipt receipt-v2">

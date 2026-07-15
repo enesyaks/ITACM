@@ -23,7 +23,7 @@ function lineList(res) {
 }
 
 async function openOnboardWizard(existingEmp) {
-  const canEdit = Auth.can('canManageAssets');
+  const canEdit = Auth.canIamOp('onboarding', 'create') || Auth.canIamOp('onboarding', 'update');
   if (!canEdit) return;
 
   const [stockRes, linesRes] = await Promise.all([
@@ -290,7 +290,7 @@ async function openOnboardWizard(existingEmp) {
 }
 
 async function openOnboardingDueModal({ force = false, focusId = null } = {}) {
-  if (!Auth.can('canManageAssets') && !Auth.can('canExecuteHandovers')) return;
+  if (!Auth.canIamOp('onboarding', 'read') && !Auth.canIam('handover', 'create')) return;
   const key = onboardModalStorageKey();
   if (!force && localStorage.getItem(key) === '1') return;
 
@@ -550,7 +550,7 @@ async function refreshOnboardingBell() {
 
 async function checkOnboardingDueOnLogin() {
   if (!Auth.profile) return;
-  if (!Auth.can('canManageAssets') && !Auth.can('canExecuteHandovers')) return;
+  if (!Auth.canIamOp('onboarding', 'read') && !Auth.canIam('handover', 'create')) return;
   await refreshOnboardingBell();
   setTimeout(() => {
     openOnboardingDueModal({ force: false }).catch(() => {});

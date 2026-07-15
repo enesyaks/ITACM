@@ -5,7 +5,7 @@ const { HttpError } = require('../../utils/httpError');
 const { DEFAULT_CURRENCY } = require('../../utils/defaults');
 const { getSettings } = require('./settingsService');
 const { sanitizeHttpUrl } = require('../../utils/httpUrl');
-const { canViewConfidentialContracts } = require('../../utils/permissions');
+const { checkPermission } = require('./permissionService');
 
 const PROVIDER_STATUSES = new Set(['Active', 'Inactive']);
 const CONTRACT_STATUSES = new Set(['Draft', 'Active', 'Expired', 'Cancelled', 'Renewed']);
@@ -19,15 +19,20 @@ function parseVisibility(raw, { allowConfidential, fallback = 'Public' } = {}) {
     throw HttpError.badRequest('visibility must be Public or Confidential');
   }
   if (v === 'Confidential' && !allowConfidential) {
-    throw HttpError.forbidden('Only Owner or Admin can mark a contract Confidential');
+    throw HttpError.forbidden('You do not have permission to set contract visibility to Confidential');
   }
   return v;
 }
 
-function assertContractReadable(contract, role) {
+/**
+ * Check if a user can read a contract, considering IAM view_confidential permission.
+ * Falls back to legacy role check if user has no permission group.
+ */
+async function assertContractReadable(contract, user) {
   if (!contract) throw HttpError.notFound('Contract not found');
-  if (contract.visibility === 'Confidential' && !canViewConfidentialContracts(role)) {
-    throw HttpError.notFound('Contract not found');
+  if (contract.visibility === 'Confidential') {
+    const canView = await checkPermission(user, 'contract', 'view_confidential');
+    if (!canView) throw HttpError.notFound('Contract not found');
   }
   return contract;
 }
@@ -262,7 +267,7 @@ function mapContract(row) {
   };
 }
 
-async function listProviders({ status, category, search, role } = {}) {
+async function listProviders({ status, category, search, user } = {}) {
   const where = [];
   const params = [];
   if (status && PROVIDER_STATUSES.has(status)) {
@@ -293,7 +298,8 @@ async function listProviders({ status, category, search, role } = {}) {
       )
     )`);
   }
-  const vis = canViewConfidentialContracts(role)
+  const canViewConf = user ? await checkPermission(user, 'contract', 'view_confidential') : false;
+  const vis = canViewConf
     ? ''
     : ` AND c.visibility = 'Public'`;
   const sql = `
@@ -308,9 +314,10 @@ async function listProviders({ status, category, search, role } = {}) {
   return attachContacts(rows.map(mapProvider));
 }
 
-async function getProvider(id, { role } = {}) {
+async function getProvider(id, { user } = {}) {
   if (!isUuid(id)) throw HttpError.notFound(`Provider ${id} not found`);
-  const vis = canViewConfidentialContracts(role)
+  const canViewConf = user ? await checkPermission(user, 'contract', 'view_confidential') : false;
+  const vis = canViewConf
     ? ''
     : ` AND c.visibility = 'Public'`;
   const { rows } = await query(
@@ -362,9 +369,9 @@ async function createProvider(body = {}) {
   });
 }
 
-async function updateProvider(id, body = {}) {
+async function updateProvider(id, body = {}, { user } = {}) {
   if (!isUuid(id)) throw HttpError.notFound(`Provider ${id} not found`);
-  const cur = await getProvider(id);
+  const cur = await getProvider(id, { user });
   const name = body.name !== undefined ? trimOrNull(body.name, 200) : cur.name;
   if (!name) throw HttpError.badRequest('name is required');
   const category = body.category !== undefined ? requireCategory(body.category) : cur.category;
@@ -440,7 +447,7 @@ async function resolveOwner(employeeId) {
   return { id: rows[0].id, name: rows[0].full_name };
 }
 
-async function listContracts({ status, providerId, search, expiringWithinDays, role } = {}) {
+async function listContracts({ status, providerId, search, expiringWithinDays, user } = {}) {
   const where = [];
   const params = [];
   if (status && CONTRACT_STATUSES.has(status)) {
@@ -472,7 +479,8 @@ async function listContracts({ status, providerId, search, expiringWithinDays, r
       AND c.end_date <= CURRENT_DATE + ($${params.length}::int * INTERVAL '1 day')
       AND c.status IN ('Active', 'Draft')`);
   }
-  if (!canViewConfidentialContracts(role)) {
+  const canViewConf = user ? await checkPermission(user, 'contract', 'view_confidential') : false;
+  if (!canViewConf) {
     where.push(`c.visibility = 'Public'`);
   }
   const sql = `
@@ -489,7 +497,7 @@ async function listContracts({ status, providerId, search, expiringWithinDays, r
   return rows.map(mapContract);
 }
 
-async function getContract(id, { role } = {}) {
+async function getContract(id, { user } = {}) {
   if (!isUuid(id)) throw HttpError.notFound(`Contract ${id} not found`);
   const { rows } = await query(
     `SELECT c.*, p.name AS provider_name, p.category AS provider_category,
@@ -500,23 +508,23 @@ async function getContract(id, { role } = {}) {
     [id]
   );
   if (!rows[0]) throw HttpError.notFound(`Contract ${id} not found`);
-  return assertContractReadable(mapContract(rows[0]), role);
+  return assertContractReadable(mapContract(rows[0]), user);
 }
 
-async function createContract(body = {}, { role } = {}) {
+async function createContract(body = {}, { user } = {}) {
   const title = trimOrNull(body.title, 300);
   if (!title) throw HttpError.badRequest('title is required');
   if (!body.providerId || !isUuid(body.providerId)) {
     throw HttpError.badRequest('providerId is required');
   }
-  await getProvider(body.providerId);
+  await getProvider(body.providerId, { user });
 
   const category = requireCategory(body.category || 'Other');
   const status = body.status || 'Active';
   if (!CONTRACT_STATUSES.has(status)) throw HttpError.badRequest('Invalid status');
   const billingCycle = body.billingCycle || 'Annual';
   if (!BILLING_CYCLES.has(billingCycle)) throw HttpError.badRequest('Invalid billingCycle');
-  const allowConfidential = canViewConfidentialContracts(role);
+  const allowConfidential = user ? await checkPermission(user, 'contract', 'view_confidential') : false;
   const visibility = parseVisibility(body.visibility, { allowConfidential, fallback: 'Public' });
 
   const owner = await resolveOwner(body.ownerEmployeeId);
@@ -558,15 +566,15 @@ async function createContract(body = {}, { role } = {}) {
   });
 }
 
-async function updateContract(id, body = {}, { role } = {}) {
-  const cur = await getContract(id, { role });
+async function updateContract(id, body = {}, { user } = {}) {
+  const cur = await getContract(id, { user });
   const title = body.title !== undefined ? trimOrNull(body.title, 300) : cur.title;
   if (!title) throw HttpError.badRequest('title is required');
 
   let providerId = cur.providerId;
   if (body.providerId !== undefined) {
     if (!isUuid(body.providerId)) throw HttpError.badRequest('Invalid providerId');
-    await getProvider(body.providerId);
+    await getProvider(body.providerId, { user });
     providerId = body.providerId;
   }
 
@@ -575,7 +583,7 @@ async function updateContract(id, body = {}, { role } = {}) {
   if (!CONTRACT_STATUSES.has(status)) throw HttpError.badRequest('Invalid status');
   const billingCycle = body.billingCycle !== undefined ? body.billingCycle : cur.billingCycle;
   if (!BILLING_CYCLES.has(billingCycle)) throw HttpError.badRequest('Invalid billingCycle');
-  const allowConfidential = canViewConfidentialContracts(role);
+  const allowConfidential = user ? await checkPermission(user, 'contract', 'view_confidential') : false;
   const visibility = body.visibility !== undefined
     ? parseVisibility(body.visibility, { allowConfidential, fallback: cur.visibility || 'Public' })
     : (cur.visibility || 'Public');
@@ -628,15 +636,16 @@ async function updateContract(id, body = {}, { role } = {}) {
   });
 }
 
-async function deleteContract(id, { role } = {}) {
-  await getContract(id, { role });
+async function deleteContract(id, { user } = {}) {
+  await getContract(id, { user });
   const { rowCount } = await query('DELETE FROM contracts WHERE id = $1', [id]);
   if (!rowCount) throw HttpError.notFound(`Contract ${id} not found`);
   return { id, deleted: true };
 }
 
-async function summary({ role } = {}) {
-  const visClause = canViewConfidentialContracts(role) ? '' : ` AND visibility = 'Public'`;
+async function summary({ user } = {}) {
+  const canViewConf = user ? await checkPermission(user, 'contract', 'view_confidential') : false;
+  const visClause = canViewConf ? '' : ` AND visibility = 'Public'`;
   const [{ rows: p }, { rows: c }, { rows: soon }] = await Promise.all([
     query(`SELECT
       COUNT(*)::int AS total,

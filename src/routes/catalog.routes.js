@@ -1,41 +1,41 @@
 const router = require('express').Router();
-const { authenticate, requireRole } = require('../middleware/auth');
+const { authenticate, requireRole, requirePermission } = require('../middleware/auth');
 const { asyncHandler } = require('../utils/asyncHandler');
 const { catalogService, settingsService } = require('../services');
 const { HttpError } = require('../utils/httpError');
 
 router.use(authenticate);
 
-/** GET /api/catalog — brand/model catalog feeding the asset form (all roles). */
-router.get('/', asyncHandler(async (req, res) => {
+/** GET /api/catalog — brand/model catalog feeding the asset form. İzin: catalog:read */
+router.get('/', requirePermission('catalog', 'read'), asyncHandler(async (req, res) => {
   res.json({ success: true, data: await catalogService.listCatalog() });
 }));
 
-/** POST /api/catalog — add a brand/model entry (Admin/Helpdesk). */
-router.post('/', requireRole('Owner', 'Admin', 'Helpdesk'), asyncHandler(async (req, res) => {
+/** POST /api/catalog — add a brand/model entry. İzin: catalog:create */
+router.post('/', requirePermission('catalog', 'create'), asyncHandler(async (req, res) => {
   res.status(201).json({ success: true, data: await catalogService.addCatalogEntry(req.body) });
 }));
 
-/** POST /api/catalog/import — bootstrap the catalog from existing assets (Admin/Helpdesk). */
-router.post('/import', requireRole('Owner', 'Admin', 'Helpdesk'), asyncHandler(async (req, res) => {
+/** POST /api/catalog/import — bootstrap the catalog from existing assets. İzin: catalog:create */
+router.post('/import', requirePermission('catalog', 'create'), asyncHandler(async (req, res) => {
   res.json({ success: true, data: await catalogService.importFromAssets() });
 }));
 
-/** DELETE /api/catalog/:id — remove an entry (Admin/Helpdesk). */
-router.delete('/:id', requireRole('Owner', 'Admin', 'Helpdesk'), asyncHandler(async (req, res) => {
+/** DELETE /api/catalog/:id — remove an entry. İzin: catalog:delete */
+router.delete('/:id', requirePermission('catalog', 'delete'), asyncHandler(async (req, res) => {
   res.json({ success: true, data: await catalogService.removeCatalogEntry(req.params.id) });
 }));
 
 /* ---- Office locations (stored in settings, managed from the Catalog UI) ---- */
 
-/** GET /api/catalog/locations — location list + default (all roles). */
-router.get('/locations', asyncHandler(async (req, res) => {
+/** GET /api/catalog/locations — location list + default. İzin: catalog:read */
+router.get('/locations', requirePermission('catalog', 'read'), asyncHandler(async (req, res) => {
   const s = await settingsService.getSettings();
   res.json({ success: true, data: { locations: s.locations, defaultLocation: s.defaultLocation } });
 }));
 
-/** POST /api/catalog/locations — add a location (Admin/Helpdesk). */
-router.post('/locations', requireRole('Owner', 'Admin', 'Helpdesk'), asyncHandler(async (req, res) => {
+/** POST /api/catalog/locations — add a location. İzin: catalog:create */
+router.post('/locations', requirePermission('catalog', 'create'), asyncHandler(async (req, res) => {
   const name = String((req.body || {}).name || '').trim();
   if (!name || name.length > 60) throw HttpError.badRequest('Location name is required (max 60 chars)');
   const s = await settingsService.getSettings();
@@ -46,8 +46,8 @@ router.post('/locations', requireRole('Owner', 'Admin', 'Helpdesk'), asyncHandle
   res.status(201).json({ success: true, data: { locations: saved.locations, defaultLocation: saved.defaultLocation } });
 }));
 
-/** PUT /api/catalog/locations/default — set the default location (Admin/Helpdesk). */
-router.put('/locations/default', requireRole('Owner', 'Admin', 'Helpdesk'), asyncHandler(async (req, res) => {
+/** PUT /api/catalog/locations/default — set the default location. İzin: catalog:update */
+router.put('/locations/default', requirePermission('catalog', 'update'), asyncHandler(async (req, res) => {
   const name = (req.body || {}).name ?? null;
   const s = await settingsService.getSettings();
   if (name !== null && !s.locations.includes(name)) throw HttpError.badRequest('Unknown location');
@@ -55,8 +55,8 @@ router.put('/locations/default', requireRole('Owner', 'Admin', 'Helpdesk'), asyn
   res.json({ success: true, data: { locations: saved.locations, defaultLocation: saved.defaultLocation } });
 }));
 
-/** DELETE /api/catalog/locations/:name — remove a location (Admin/Helpdesk). */
-router.delete('/locations/:name', requireRole('Owner', 'Admin', 'Helpdesk'), asyncHandler(async (req, res) => {
+/** DELETE /api/catalog/locations/:name — remove a location. İzin: catalog:delete */
+router.delete('/locations/:name', requirePermission('catalog', 'delete'), asyncHandler(async (req, res) => {
   const name = req.params.name;
   const s = await settingsService.getSettings();
   if (!s.locations.includes(name)) throw HttpError.notFound(`Location "${name}" not found`);
@@ -70,26 +70,26 @@ router.delete('/locations/:name', requireRole('Owner', 'Admin', 'Helpdesk'), asy
 
 /* ---- Hardware spec lists (cpu / ram / storage) — feed the asset form ---- */
 
-/** GET /api/catalog/lifecycles — per-category lifecycle durations (all roles). */
-router.get('/lifecycles', asyncHandler(async (req, res) => {
+/** GET /api/catalog/lifecycles — per-category lifecycle durations. İzin: catalog:read */
+router.get('/lifecycles', requirePermission('catalog', 'read'), asyncHandler(async (req, res) => {
   const st = await settingsService.getSettings();
   res.json({ success: true, data: st.lifecycles });
 }));
 
-/** PUT /api/catalog/lifecycles — update lifecycle durations (Owner/Admin/Helpdesk). */
-router.put('/lifecycles', requireRole('Owner', 'Admin', 'Helpdesk'), asyncHandler(async (req, res) => {
+/** PUT /api/catalog/lifecycles — update lifecycle durations. İzin: catalog:update */
+router.put('/lifecycles', requirePermission('catalog', 'update'), asyncHandler(async (req, res) => {
   const saved = await settingsService.saveSettings({ lifecycles: req.body || {} });
   res.json({ success: true, data: saved.lifecycles });
 }));
 
-/** GET /api/catalog/specs — all three lists (all roles). */
-router.get('/specs', asyncHandler(async (req, res) => {
+/** GET /api/catalog/specs — all three lists. İzin: catalog:read */
+router.get('/specs', requirePermission('catalog', 'read'), asyncHandler(async (req, res) => {
   const s = await settingsService.getSettings();
   res.json({ success: true, data: s.specOptions });
 }));
 
-/** POST /api/catalog/specs — add an entry; body: { type: cpu|ram|storage, value } (Admin/Helpdesk). */
-router.post('/specs', requireRole('Owner', 'Admin', 'Helpdesk'), asyncHandler(async (req, res) => {
+/** POST /api/catalog/specs — add an entry; body: { type: cpu|ram|storage, value }. İzin: catalog:create */
+router.post('/specs', requirePermission('catalog', 'create'), asyncHandler(async (req, res) => {
   const { type, value } = req.body || {};
   const val = String(value || '').trim();
   if (!['cpu', 'ram', 'storage'].includes(type)) throw HttpError.badRequest('type must be cpu, ram or storage');
@@ -104,8 +104,8 @@ router.post('/specs', requireRole('Owner', 'Admin', 'Helpdesk'), asyncHandler(as
   res.status(201).json({ success: true, data: saved.specOptions });
 }));
 
-/** DELETE /api/catalog/specs/:type/:value — remove an entry (Admin/Helpdesk). */
-router.delete('/specs/:type/:value', requireRole('Owner', 'Admin', 'Helpdesk'), asyncHandler(async (req, res) => {
+/** DELETE /api/catalog/specs/:type/:value — remove an entry. İzin: catalog:delete */
+router.delete('/specs/:type/:value', requirePermission('catalog', 'delete'), asyncHandler(async (req, res) => {
   const { type, value } = req.params;
   if (!['cpu', 'ram', 'storage'].includes(type)) throw HttpError.badRequest('type must be cpu, ram or storage');
   const s = await settingsService.getSettings();
@@ -119,14 +119,14 @@ router.delete('/specs/:type/:value', requireRole('Owner', 'Admin', 'Helpdesk'), 
 
 /* ---- Company departments (stored in settings, feed the employee form) ---- */
 
-/** GET /api/catalog/departments — department list (all roles). */
-router.get('/departments', asyncHandler(async (req, res) => {
+/** GET /api/catalog/departments — department list. İzin: catalog:read */
+router.get('/departments', requirePermission('catalog', 'read'), asyncHandler(async (req, res) => {
   const s = await settingsService.getSettings();
   res.json({ success: true, data: s.departments });
 }));
 
-/** POST /api/catalog/departments — add a department (Admin/Helpdesk). */
-router.post('/departments', requireRole('Owner', 'Admin', 'Helpdesk'), asyncHandler(async (req, res) => {
+/** POST /api/catalog/departments — add a department. İzin: catalog:create */
+router.post('/departments', requirePermission('catalog', 'create'), asyncHandler(async (req, res) => {
   const name = String((req.body || {}).name || '').trim();
   if (!name || name.length > 60) throw HttpError.badRequest('Department name is required (max 60 chars)');
   const s = await settingsService.getSettings();
@@ -137,8 +137,8 @@ router.post('/departments', requireRole('Owner', 'Admin', 'Helpdesk'), asyncHand
   res.status(201).json({ success: true, data: saved.departments });
 }));
 
-/** DELETE /api/catalog/departments/:name — remove a department (Admin/Helpdesk). */
-router.delete('/departments/:name', requireRole('Owner', 'Admin', 'Helpdesk'), asyncHandler(async (req, res) => {
+/** DELETE /api/catalog/departments/:name — remove a department. İzin: catalog:delete */
+router.delete('/departments/:name', requirePermission('catalog', 'delete'), asyncHandler(async (req, res) => {
   const name = req.params.name;
   const s = await settingsService.getSettings();
   if (!s.departments.includes(name)) throw HttpError.notFound(`Department "${name}" not found`);
@@ -179,12 +179,12 @@ function listCrud(key, label) {
 const providerCats = listCrud('providerCategories', 'Provider category');
 const contractCats = listCrud('contractCategories', 'Contract category');
 
-router.get('/provider-categories', asyncHandler(providerCats.get));
-router.post('/provider-categories', requireRole('Owner', 'Admin', 'Helpdesk'), asyncHandler(providerCats.post));
-router.delete('/provider-categories/:name', requireRole('Owner', 'Admin', 'Helpdesk'), asyncHandler(providerCats.del));
+router.get('/provider-categories', requirePermission('catalog', 'read'), asyncHandler(providerCats.get));
+router.post('/provider-categories', requirePermission('catalog', 'create'), asyncHandler(providerCats.post));
+router.delete('/provider-categories/:name', requirePermission('catalog', 'delete'), asyncHandler(providerCats.del));
 
-router.get('/contract-categories', asyncHandler(contractCats.get));
-router.post('/contract-categories', requireRole('Owner', 'Admin', 'Helpdesk'), asyncHandler(contractCats.post));
-router.delete('/contract-categories/:name', requireRole('Owner', 'Admin', 'Helpdesk'), asyncHandler(contractCats.del));
+router.get('/contract-categories', requirePermission('catalog', 'read'), asyncHandler(contractCats.get));
+router.post('/contract-categories', requirePermission('catalog', 'create'), asyncHandler(contractCats.post));
+router.delete('/contract-categories/:name', requirePermission('catalog', 'delete'), asyncHandler(contractCats.del));
 
 module.exports = router;

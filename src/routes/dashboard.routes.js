@@ -1,5 +1,5 @@
 const router = require('express').Router();
-const { authenticate, requireRole } = require('../middleware/auth');
+const { authenticate, requireRole, requirePermission } = require('../middleware/auth');
 const { asyncHandler } = require('../utils/asyncHandler');
 const { dashboardService } = require('../services');
 
@@ -7,7 +7,7 @@ const { dashboardService } = require('../services');
 router.get(
   '/stats',
   authenticate,
-  requireRole('Owner', 'Admin', 'Helpdesk', 'Viewer'),
+  requirePermission('dashboard', 'read'),
   asyncHandler(async (req, res) => {
     res.json({ success: true, data: await dashboardService.getDashboardStats() });
   })

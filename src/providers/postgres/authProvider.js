@@ -396,24 +396,116 @@ async function setUserRole(uid, role, actor) {
 
 async function getVerifiedProfile(user) {
   const { rows } = await query(
-    'SELECT username, mfa_enabled FROM users WHERE id = $1',
+    'SELECT username, mfa_enabled, permission_group_id AS "permissionGroupId", custom_constraints AS "customConstraints" FROM users WHERE id = $1',
     [user.uid]
   );
+  const row = rows[0];
+  const enriched = {
+    ...user,
+    permissionGroupId: row?.permissionGroupId || user.permissionGroupId || null,
+    customConstraints: row?.customConstraints || user.customConstraints || null,
+  };
+
+  let iamPermissions = [];
+  try {
+    const permissionService = require('./permissionService');
+    iamPermissions = await permissionService.getUserPermissions(enriched);
+  } catch { /* ignore if permission service not available */ }
+
   return {
-    uid: user.uid,
-    email: user.email,
-    username: rows[0]?.username || user.email,
-    role: user.role,
-    mfaEnabled: !!rows[0]?.mfa_enabled,
-    permissions: buildPermissions(user.role),
+    uid: enriched.uid,
+    email: enriched.email,
+    username: row?.username || enriched.email,
+    role: enriched.role,
+    mfaEnabled: !!row?.mfa_enabled,
+    permissionGroupId: enriched.permissionGroupId,
+    customConstraints: enriched.customConstraints,
+    permissions: uiPermissionsFromIam(iamPermissions, enriched.role),
+    iamPermissions,
+  };
+}
+
+/** Map IAM entries → legacy Auth.can() flags used by the SPA. */
+function uiPermissionsFromIam(iamPermissions, role) {
+  const legacy = buildPermissions(role);
+  if (role === 'Owner') return legacy;
+
+  const list = Array.isArray(iamPermissions) ? iamPermissions : [];
+  const has = (resource, action) =>
+    list.some((p) => p.resource === resource && p.action === action && p.allowed !== false);
+
+  return {
+    ...legacy,
+    canViewDashboard: has('dashboard', 'read') || legacy.canViewDashboard,
+    // manage = full ops; create/update stay granular; listing needs read (or manage/assign/unassign)
+    canManageAssets: has('asset', 'manage') || has('asset', 'create') || has('asset', 'update'),
+    canCreateAssets: has('asset', 'create'),
+    canUpdateAssets: has('asset', 'manage') || has('asset', 'update'),
+    canAssignAssets: has('asset', 'manage') || has('asset', 'assign'),
+    canUnassignAssets: has('asset', 'manage') || has('asset', 'unassign'),
+    canListAssets:
+      has('asset', 'read')
+      || has('asset', 'manage')
+      || has('asset', 'assign')
+      || has('asset', 'unassign'),
+    // Scoped views when inventory is not fully opened by read/manage
+    assetUnassignScopeOnly:
+      has('asset', 'unassign')
+      && !has('asset', 'assign')
+      && !has('asset', 'manage')
+      && !has('asset', 'read'),
+    assetAssignScopeOnly:
+      has('asset', 'assign')
+      && !has('asset', 'unassign')
+      && !has('asset', 'manage')
+      && !has('asset', 'read'),
+    assetAssignUnassignScopeOnly:
+      has('asset', 'assign')
+      && has('asset', 'unassign')
+      && !has('asset', 'manage')
+      && !has('asset', 'read'),
+    canExecuteHandovers: has('handover', 'create'),
+    canManageMaintenance: has('maintenance', 'create') || has('maintenance', 'update'),
+    canManageUsers:
+      has('user_management', 'read')
+      || has('user_management', 'create')
+      || has('user_management', 'update'),
+    canViewAudit: has('audit', 'read'),
+    canViewConfidentialContracts: has('contract', 'view_confidential'),
+    // Financial amounts (masraf / fatura tutarı / sözleşme bedeli)
+    canViewContractCosts: has('contract', 'view_confidential'),
+    canViewLineCosts: has('line', 'view_confidential'),
+    canViewLicenseCosts: has('license', 'view_confidential'),
+    canViewMaintenanceCosts: has('maintenance', 'view_confidential'),
+    // Invoices / PDFs
+    canReadDocuments: has('document', 'read'),
+    canDownloadDocuments: has('document', 'download'),
+    canUploadDocuments: has('document', 'upload') || has('document', 'create'),
+    canDeleteDocuments: has('document', 'delete'),
+    canManageBranding: has('settings', 'manage'),
+    canManageOwner: role === 'Owner',
+    isOwner: role === 'Owner',
+    canAccessIntegrations:
+      has('integration', 'read')
+      || has('integration', 'update')
+      || has('integration', 'manage'),
+    // export/import are explicit IAM toggles — manage does not imply them
+    canExportAssets: has('asset', 'export'),
+    canExportNetwork: has('asset', 'export') || has('report', 'export'),
+    canExportReports: has('report', 'export'),
+    canImportAssets: has('asset', 'import'),
   };
 }
 
 async function listUsers() {
   const { rows } = await query(
-    `SELECT id AS uid, username, email, role, status, mfa_enabled AS "mfaEnabled",
-            created_at AS "createdAt", last_login_at AS "lastLoginAt"
-     FROM users ORDER BY created_at DESC`
+    `SELECT u.id AS uid, u.username, u.email, u.role, u.status, u.mfa_enabled AS "mfaEnabled",
+            u.created_at AS "createdAt", u.last_login_at AS "lastLoginAt",
+            u.permission_group_id AS "permissionGroupId",
+            pg.name AS "permissionGroupName"
+     FROM users u
+     LEFT JOIN permission_groups pg ON u.permission_group_id = pg.id
+     ORDER BY u.created_at DESC`
   );
   return rows;
 }

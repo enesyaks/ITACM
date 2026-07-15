@@ -20,7 +20,7 @@ const ROUTES = {
   '#/stockcount': { title: 'Stock Count', view: 'stockcount', icon: 'fact_check' },
   '#/reports': { title: 'Reports', view: 'reports', icon: 'summarize' },
   '#/audit': { title: 'Audit Log', view: 'audit', icon: 'history', perm: 'canViewAudit' },
-  '#/integrations': { title: 'Integrations', view: 'integrations', icon: 'hub', perm: 'canManageBranding' },
+  '#/integrations': { title: 'Integrations', view: 'integrations', icon: 'hub', perm: 'canAccessIntegrations' },
   '#/users': { title: 'IT Users', view: 'users', icon: 'vpn_key', perm: 'canManageUsers' },
 };
 
@@ -111,7 +111,7 @@ function showApp() {
   $('#user-role').textContent = Auth.profile.role;
   $('#user-avatar').textContent = initials(name);
   $('#topbar-avatar').textContent = initials(name);
-  $('#sidebar-new-asset').style.display = Auth.can('canManageAssets') ? '' : 'none';
+  $('#sidebar-new-asset').style.display = Auth.canIam('asset', 'create') ? '' : 'none';
   applyBranding();
   if (typeof initMobileShell === 'function' && !window.__mobileShellReady) {
     window.__mobileShellReady = true;

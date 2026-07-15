@@ -1,12 +1,30 @@
 Views.assets = async function (el, params = {}) {
   if (isStaleView(el)) return;
-  const canEdit = Auth.can('canManageAssets');
+  const canCreate = Auth.canIam('asset', 'create');
+  const canUpdate = Auth.canIam('asset', 'update') || Auth.canIam('asset', 'manage');
+  const canUnassign = Auth.canIam('asset', 'unassign') || Auth.canIam('asset', 'manage');
+  const canAssign = Auth.canIam('asset', 'assign') || Auth.canIam('asset', 'manage');
+  const canRepair = Auth.canIam('maintenance', 'create');
+  const perms = Auth.profile?.permissions || {};
+  const unassignScopeOnly = !!(perms.assetUnassignScopeOnly
+    || (Auth.canIam('asset', 'unassign') && !Auth.canIam('asset', 'assign') && !Auth.canIam('asset', 'manage') && !Auth.canIam('asset', 'read')));
+  const assignScopeOnly = !!(perms.assetAssignScopeOnly
+    || (Auth.canIam('asset', 'assign') && !Auth.canIam('asset', 'unassign') && !Auth.canIam('asset', 'manage') && !Auth.canIam('asset', 'read')));
+  const assignUnassignScopeOnly = !!(perms.assetAssignUnassignScopeOnly
+    || (Auth.canIam('asset', 'assign') && Auth.canIam('asset', 'unassign') && !Auth.canIam('asset', 'manage') && !Auth.canIam('asset', 'read')));
+  const scopedView = unassignScopeOnly || assignScopeOnly || assignUnassignScopeOnly;
+  const forcedStatuses = unassignScopeOnly
+    ? ['In Stock']
+    : (assignScopeOnly ? ['Assigned'] : (assignUnassignScopeOnly ? ['In Stock', 'Assigned'] : null));
+  const canEdit = canCreate || canUpdate;
   const PAGE_SIZE = 50;
   const useLifecycle = params.lifecycle === 'overdue' || params.lifecycle === 'soon';
   const page = Math.max(1, Number(params.page) || 1);
   const HW_CATS = ['Laptop', 'Desktop', 'Monitor', 'Television', 'Phone', 'Tablet', 'Printer', 'Keyboard', 'Mouse', 'Headset', 'Docking Station', 'Webcam', 'Peripheral', 'Accessory', 'Other'];
   const STATUSES = ['In Stock', 'Assigned', 'In Repair', 'Reserved', 'Scrap', 'Sold'];
-  const selectedStatus = csvList(params.status).filter((s) => STATUSES.includes(s));
+  const selectedStatus = forcedStatuses
+    ? forcedStatuses
+    : csvList(params.status).filter((s) => STATUSES.includes(s));
   const selectedCats = csvList(params.category).filter((c) => HW_CATS.includes(c));
   const selectedLocs = csvList(params.location).filter((l) => (AppConfig.locations || []).includes(l));
 
@@ -24,8 +42,32 @@ Views.assets = async function (el, params = {}) {
   }
   let [{ items, total }, stats] = await Promise.all([
     api('/assets?' + q.toString()),
-    api('/dashboard/stats'),
+    scopedView
+      ? Promise.resolve({ assets: { total: 0, inStock: 0, inRepair: 0, assigned: 0 } })
+      : api('/dashboard/stats').catch(() => ({ assets: { total: 0, inStock: 0, inRepair: 0, assigned: 0 } })),
   ]);
+  const scopeTitle = unassignScopeOnly
+    ? 'In Stock — Unassign scope'
+    : (assignScopeOnly
+      ? 'Assigned — Assign scope'
+      : (assignUnassignScopeOnly ? 'Stock & Assigned — Assign/Unassign scope' : 'Hardware Inventory'));
+  const scopeSubtitle = unassignScopeOnly
+    ? 'Unassign scope: only In Stock devices are listed. Other statuses stay hidden.'
+    : (assignScopeOnly
+      ? 'Assign scope: only Assigned devices are listed. Other statuses stay hidden.'
+      : (assignUnassignScopeOnly
+        ? 'Assign/Unassign scope: only In Stock and Assigned devices are listed.'
+        : 'Endpoint devices for personal zimmet — laptops, phones, monitors and accessories.'));
+  const scopeNote = unassignScopeOnly
+    ? 'Other statuses (Assigned, Repair, Scrap…) are hidden for this permission.'
+    : (assignScopeOnly
+      ? 'Other statuses (In Stock, Repair, Scrap…) are hidden for this permission.'
+      : (assignUnassignScopeOnly
+        ? 'Other statuses (Repair, Scrap, Reserved…) are hidden for this permission.'
+        : null));
+  const statusPill = forcedStatuses
+    ? `<span class="pill pill-emerald">Status: ${esc(forcedStatuses.join(' / '))}</span>`
+    : null;
   if (isStaleView(el)) return;
   const a = stats.assets;
 
@@ -69,19 +111,26 @@ Views.assets = async function (el, params = {}) {
   });
 
   el.innerHTML = `
-    ${pageHead('Hardware Inventory', 'Endpoint devices for personal zimmet — laptops, phones, monitors and accessories.', canEdit ? `
-      ${(Auth.profile && (Auth.profile.role === 'Owner' || Auth.profile.role === 'Admin'))
+    ${pageHead(
+      scopeTitle,
+      scopeSubtitle,
+      `
+      ${(Auth.canIam('asset', 'import'))
         ? `<button class="btn btn-outline" id="asset-import"><span class="ms">upload_file</span> ${esc(t('common.importExcel'))}</button>` : ''}
-      <button class="btn btn-outline" id="asset-export"><span class="ms">download</span> ${esc(t('common.export'))}</button>
-      <button class="btn btn-primary" id="asset-new"><span class="ms">add</span> ${esc(t('common.addNewAsset'))}</button>` : `
-      <button class="btn btn-outline" id="asset-export"><span class="ms">download</span> ${esc(t('common.export'))}</button>`)}
+      ${Auth.canIam('asset', 'export')
+        ? `<button class="btn btn-outline" id="asset-export"><span class="ms">download</span> ${esc(t('common.export'))}</button>` : ''}
+      ${canCreate
+        ? `<button class="btn btn-primary" id="asset-new"><span class="ms">add</span> ${esc(t('common.addNewAsset'))}</button>` : ''}
+    `)}
 
     <p class="cell-sub" style="margin:-8px 0 16px">
-      Network &amp; Server gear is managed separately —
+      ${scopeNote
+        || `Network &amp; Server gear is managed separately —
       <a href="#/network">${esc(t('nav.network') || 'Network & Server')}</a>
-      (manual asset tags, site placement, cabinets).
+      (manual asset tags, site placement, cabinets).`}
     </p>
 
+    ${scopedView ? '' : `
     <div class="grid grid-4" style="margin-bottom:20px">
       <div class="card card-pad metric">
         <div class="metric-top"><h3 class="card-title">${esc(t('common.totalHardware'))}</h3>${iconChip('devices', 'indigo')}</div>
@@ -100,17 +149,18 @@ Views.assets = async function (el, params = {}) {
         <div class="metric-top"><h3 class="card-title">${esc(t('common.assigned'))}</h3>${iconChip('handshake', 'blue')}</div>
         <div class="metric-value">${a.assigned.toLocaleString()}</div>
       </div>
-    </div>
+    </div>`}
 
     <div class="toolbar" id="asset-filters">
       <div class="search-box"><span class="ms">search</span>
         <input type="search" id="asset-search" placeholder="Search tag, serial, brand, MAC…" value="${esc(params.search || '')}"></div>
-      ${multiSelectHtml({
-        id: 'status',
-        allLabel: t('network.allStatuses'),
-        selected: selectedStatus,
-        options: STATUSES.map((s) => ({ value: s, label: s })),
-      })}
+      ${statusPill
+        || multiSelectHtml({
+          id: 'status',
+          allLabel: t('network.allStatuses'),
+          selected: selectedStatus,
+          options: STATUSES.map((s) => ({ value: s, label: s })),
+        })}
       ${multiSelectHtml({
         id: 'category',
         allLabel: t('hw.allCategories') || 'All hardware categories',
@@ -150,17 +200,16 @@ Views.assets = async function (el, params = {}) {
             <div class="cell-sub">${esc(x.location || '—')} · <span class="mono">${esc(x.serialNumber)}</span></div>
             <div class="m-asset-actions">
               <button class="btn btn-outline btn-sm" data-view="${esc(x.id)}">${esc(t('common.view'))}</button>
-              ${canEdit ? `
-                <button class="btn btn-outline btn-sm" data-edit="${esc(x.id)}">${esc(t('common.edit'))}</button>
-                ${x.status === 'Assigned' ? `<button class="btn btn-outline btn-sm" data-return="${esc(x.id)}">${esc(t('common.return'))}</button>` : ''}
-                ${x.status === 'In Stock' || x.status === 'Assigned' ? `<button class="btn btn-outline btn-sm" data-repair="${esc(x.id)}">${esc(t('common.repair'))}</button>` : ''}` : ''}
+              ${canUpdate ? `<button class="btn btn-outline btn-sm" data-edit="${esc(x.id)}">${esc(t('common.edit'))}</button>` : ''}
+              ${canUnassign && x.status === 'Assigned' ? `<button class="btn btn-outline btn-sm" data-return="${esc(x.id)}">${esc(t('common.return'))}</button>` : ''}
+              ${canRepair && (x.status === 'In Stock' || x.status === 'Assigned') ? `<button class="btn btn-outline btn-sm" data-repair="${esc(x.id)}">${esc(t('common.repair'))}</button>` : ''}
             </div>
           </div>`;
         }).join('')}
     </div>
     <div class="table-wrap"><table class="data">
       <thead><tr>
-        <th style="width:34px"><input type="checkbox" id="sel-all" style="width:15px;height:15px" ${!canEdit ? 'disabled' : ''}></th>
+        <th style="width:34px"><input type="checkbox" id="sel-all" style="width:15px;height:15px" ${!(canUpdate || canUnassign || canRepair) ? 'disabled' : ''}></th>
         <th style="width:44px">QR</th><th>Asset ID</th><th>Brand &amp; Model</th><th>Serial No</th>
         <th>MAC Address</th><th>Location</th><th>Status</th><th style="text-align:right">Actions</th>
       </tr></thead>
@@ -170,7 +219,7 @@ Views.assets = async function (el, params = {}) {
             const specsBits = x.specs ? [x.specs.cpu, x.specs.ram].filter(Boolean).join(', ') : '';
             return `
             <tr class="asset-row ${x.status === 'Scrap' || x.status === 'Sold' ? 'row-scrap' : ''}" data-open-asset="${esc(x.id)}" style="cursor:pointer">
-              <td><input type="checkbox" data-sel="${esc(x.id)}" style="width:15px;height:15px" ${!canEdit ? 'disabled' : ''}></td>
+              <td><input type="checkbox" data-sel="${esc(x.id)}" style="width:15px;height:15px" ${!(canUpdate || canUnassign || canRepair) ? 'disabled' : ''}></td>
               <td class="qr-cell"><button class="icon-btn" data-qr="${esc(x.id)}" title="Show QR code" style="width:30px;height:30px"><span class="ms">qr_code_2</span></button></td>
               <td class="mono">${esc(x.assetTag)}</td>
               <td><div class="cell-title">${esc(x.brand)} ${esc(x.model)}</div>
@@ -183,10 +232,9 @@ Views.assets = async function (el, params = {}) {
                   : (l.pct != null && l.pct >= 90 && x.status !== 'Scrap' ? ' <span class="pill pill-amber" title="Approaching end of lifecycle">EOL soon</span>' : ''); })()}</td>
               <td class="actions">
                 <button class="btn btn-outline btn-sm" data-view="${esc(x.id)}">${esc(t('common.view'))}</button>
-                ${canEdit ? `
-                  <button class="btn btn-outline btn-sm" data-edit="${esc(x.id)}">${esc(t('common.edit'))}</button>
-                  ${x.status === 'Assigned' ? `<button class="btn btn-outline btn-sm" data-return="${esc(x.id)}">${esc(t('common.return'))}</button>` : ''}
-                  ${x.status === 'In Stock' || x.status === 'Assigned' ? `<button class="btn btn-outline btn-sm" data-repair="${esc(x.id)}">${esc(t('common.repair'))}</button>` : ''}` : ''}
+                ${canUpdate ? `<button class="btn btn-outline btn-sm" data-edit="${esc(x.id)}">${esc(t('common.edit'))}</button>` : ''}
+                ${canUnassign && x.status === 'Assigned' ? `<button class="btn btn-outline btn-sm" data-return="${esc(x.id)}">${esc(t('common.return'))}</button>` : ''}
+                ${canRepair && (x.status === 'In Stock' || x.status === 'Assigned') ? `<button class="btn btn-outline btn-sm" data-repair="${esc(x.id)}">${esc(t('common.repair'))}</button>` : ''}
               </td>
             </tr>`;
           }).join('')}
@@ -213,9 +261,9 @@ Views.assets = async function (el, params = {}) {
         <strong>${selected.size} selected</strong>
         <span class="spacer"></span>
         <button class="btn btn-outline btn-sm" id="bulk-labels"><span class="ms">barcode</span> Print Labels</button>
-        <button class="btn btn-outline btn-sm" id="bulk-return"><span class="ms">undo</span> Return to Stock</button>
-        <button class="btn btn-outline btn-sm" id="bulk-repair"><span class="ms">build</span> Send to Repair</button>
-        <button class="btn btn-danger btn-sm" id="bulk-scrap"><span class="ms">delete</span> Scrap</button>
+        ${canUnassign ? '<button class="btn btn-outline btn-sm" id="bulk-return"><span class="ms">undo</span> Return to Stock</button>' : ''}
+        ${canRepair ? '<button class="btn btn-outline btn-sm" id="bulk-repair"><span class="ms">build</span> Send to Repair</button>' : ''}
+        ${canUpdate ? '<button class="btn btn-danger btn-sm" id="bulk-scrap"><span class="ms">delete</span> Scrap</button>' : ''}
         <button class="btn btn-outline btn-sm" id="bulk-clear">Clear</button>
       </div>`;
 
@@ -230,7 +278,7 @@ Views.assets = async function (el, params = {}) {
       renderBulkBar();
     });
 
-    $('#bulk-return', slot).addEventListener('click', async () => {
+    $('#bulk-return', slot)?.addEventListener('click', async () => {
       const targets = pick().filter((x) => x.status === 'Assigned');
       if (!targets.length) return toast('None of the selected assets are Assigned', 'error');
       let ok = 0;
@@ -242,7 +290,7 @@ Views.assets = async function (el, params = {}) {
       rerender({});
     });
 
-    $('#bulk-repair', slot).addEventListener('click', () => {
+    $('#bulk-repair', slot)?.addEventListener('click', () => {
       const targets = pick().filter((x) => x.status === 'In Stock' || x.status === 'Assigned');
       if (!targets.length) return toast('Selected assets cannot be sent to repair', 'error');
       formModal({
@@ -265,7 +313,7 @@ Views.assets = async function (el, params = {}) {
       });
     });
 
-    $('#bulk-scrap', slot).addEventListener('click', () => {
+    $('#bulk-scrap', slot)?.addEventListener('click', () => {
       const targets = pick().filter((x) => x.status === 'In Stock' || x.status === 'In Repair');
       const skipped = selected.size - targets.length;
       if (!targets.length) return toast('Only In Stock / In Repair assets can be scrapped (return assigned ones first)', 'error');
@@ -306,18 +354,26 @@ Views.assets = async function (el, params = {}) {
     apply: (search) => rerender({ search, page: 1 }),
   });
   mountMultiSelects($('#asset-filters', el), {
-    status: (vals) => rerender({ status: vals.join(','), page: 1 }),
+    status: scopedView ? undefined : (vals) => rerender({ status: vals.join(','), page: 1 }),
     category: (vals) => rerender({ category: vals.join(','), page: 1 }),
     location: (vals) => rerender({ location: vals.join(','), page: 1 }),
   });
-  if (canEdit) {
-    $('#asset-new', el).addEventListener('click', () => assetForm(null, () => rerender({})));
-    if ($('#asset-import', el)) {
-      $('#asset-import', el).addEventListener('click', () => showImportModal(() => rerender({})));
-    }
+  if (canCreate) {
+    $('#asset-new', el)?.addEventListener('click', () => assetForm(null, () => rerender({})));
+  }
+  if ($('#asset-import', el)) {
+    $('#asset-import', el).addEventListener('click', () => showImportModal(() => rerender({})));
   }
   const expBtn = $('#asset-export', el);
-  if (expBtn) expBtn.addEventListener('click', () => exportCsv(items));
+  if (expBtn) {
+    expBtn.addEventListener('click', () => {
+      if (!Auth.canIam('asset', 'export')) {
+        toast(t('common.forbidden') || 'You do not have permission to export', 'error');
+        return;
+      }
+      exportCsv(items);
+    });
+  }
   const clearAll = $('#clear-all', el);
   if (clearAll) clearAll.addEventListener('click', (e) => {
     e.preventDefault();
@@ -1149,7 +1205,11 @@ async function showAssetDetail(id, onChange) {
   const docsByLog = {};
   repairDocs.forEach((d) => { (docsByLog[d.maintenanceId] = docsByLog[d.maintenanceId] || []).push(d); });
   const s = x.specs || {};
-  const canEdit = Auth.can('canManageAssets');
+  const canUpdate = Auth.canIam('asset', 'update') || Auth.canIam('asset', 'manage');
+  const canUnassign = Auth.canIam('asset', 'unassign') || Auth.canIam('asset', 'manage');
+  const canRepair = Auth.canIam('maintenance', 'create');
+  const canDownloadDocs = Auth.canIam('document', 'download') || Auth.can('canDownloadDocuments');
+  const canEdit = canUpdate;
   const refresh = () => { if (onChange) onChange(); };
   const isInfra = x.category === 'Network' || x.category === 'Server';
   const cfDetail = customFieldsDetailHtml(cfBundle.defs, cfBundle.values);
@@ -1248,22 +1308,22 @@ async function showAssetDetail(id, onChange) {
             ${m.resolutionNote ? `<span class="cell-sub" style="flex-basis:100%;padding-left:2px">↳ Resolution: ${esc(m.resolutionNote)}</span>` : ''}
             ${notes.length ? `<span class="cell-sub" style="flex-basis:100%;padding-left:2px">↳ Notes: ${notes.map((n) => esc(n)).join(' · ')}</span>` : ''}
             ${(docsByLog[m.id] || []).length ? `<span class="cell-sub" style="flex-basis:100%;padding-left:2px">
-              <span class="ms ms-sm" style="vertical-align:-2px">attach_file</span> ${(docsByLog[m.id] || []).map((d) =>
-                `<a href="#" data-mdoc-dl="${esc(d.id)}" style="color:var(--primary)">${esc(d.filename)}</a>`).join(' · ')}</span>` : ''}
+              <span class="ms ms-sm" style="vertical-align:-2px">attach_file</span> ${docInlineLinks(docsByLog[m.id], { canDownload: canDownloadDocs, viewAttr: 'data-mdoc-dl' })}</span>` : ''}
           </div>`;
         }).join('')}`,
     foot: `
       <button class="btn btn-outline" data-close>Close</button>
       <button class="btn btn-outline" id="ad-qr"><span class="ms">qr_code_2</span> QR</button>
       <button class="btn btn-outline" id="ad-label"><span class="ms">barcode</span> Label</button>
-      ${canEdit ? `
-        <button class="btn btn-outline" id="ad-edit"><span class="ms">edit</span> Edit</button>
-        ${!isInfra && x.status === 'Assigned' ? '<button class="btn btn-outline" id="ad-return"><span class="ms">undo</span> Return</button>' : ''}
-        ${x.status === 'In Stock' || x.status === 'Assigned' ? '<button class="btn btn-primary" id="ad-repair"><span class="ms">build</span> Repair</button>' : ''}
-        ${isInfra
-          ? `<button class="btn btn-primary" id="ad-responsible"><span class="ms">person_search</span> ${esc(t('network.setResponsible') || 'Set responsible')}</button>`
-          : (x.status === 'In Stock' ? '<button class="btn btn-primary" id="ad-handover"><span class="ms">assignment_turned_in</span> Handover</button>' : '')
-        }` : ''}`,
+      ${canUpdate ? `<button class="btn btn-outline" id="ad-edit"><span class="ms">edit</span> Edit</button>` : ''}
+      ${canUnassign && !isInfra && x.status === 'Assigned' ? '<button class="btn btn-outline" id="ad-return"><span class="ms">undo</span> Return</button>' : ''}
+      ${canRepair && (x.status === 'In Stock' || x.status === 'Assigned') ? '<button class="btn btn-primary" id="ad-repair"><span class="ms">build</span> Repair</button>' : ''}
+      ${canUpdate && isInfra
+        ? `<button class="btn btn-primary" id="ad-responsible"><span class="ms">person_search</span> ${esc(t('network.setResponsible') || 'Set responsible')}</button>`
+        : ''}
+      ${Auth.canIam('handover', 'create') && !isInfra && x.status === 'In Stock'
+        ? '<button class="btn btn-primary" id="ad-handover"><span class="ms">assignment_turned_in</span> Handover</button>'
+        : ''}`,
     onMount(overlay) {
       $('#ad-qr', overlay).addEventListener('click', () => showQrModal(x));
       $('#ad-label', overlay).addEventListener('click', () => printAssetLabels([x]));

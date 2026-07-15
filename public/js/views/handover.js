@@ -1,6 +1,6 @@
 /* =============================== HANDOVERS =============================== */
 Views.handover = async function (el) {
-  const canDo = Auth.can('canExecuteHandovers');
+  const canDo = Auth.canIam('handover', 'create');
   const [initialEmpsRes, past] = await Promise.all([
     api('/employees?status=Active&limit=50'),
     api('/handovers?limit=8'),

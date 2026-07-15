@@ -14,7 +14,8 @@ const UNPLACED_LOC = '__unplaced__';
 
 Views.network = async function (el, params = {}) {
   if (isStaleView(el)) return;
-  const canEdit = Auth.can('canManageAssets');
+  const canEdit = Auth.canIam('asset', 'create') || Auth.canIam('asset', 'update') || Auth.canIam('asset', 'manage');
+  const canCreate = Auth.canIam('asset', 'create');
   const INFRA = ['Network', 'Server'];
   const STATUSES = ['In Stock', 'Assigned', 'In Repair', 'Scrap'];
   const view = ['list', 'topo', 'racks'].includes(params.view) ? params.view : 'list';
@@ -119,8 +120,9 @@ Views.network = async function (el, params = {}) {
 
   el.innerHTML = `
     ${pageHead('nav.network', 'network.sub', `
-      <button class="btn btn-outline" id="net-export"><span class="ms">download</span> ${esc(t('common.export'))}</button>
-      ${canEdit ? `<button class="btn btn-primary" id="net-new"><span class="ms">add</span> ${esc(t('network.addDevice'))}</button>` : ''}`)}
+      ${Auth.canIam('asset', 'export')
+        ? `<button class="btn btn-outline" id="net-export"><span class="ms">download</span> ${esc(t('common.export'))}</button>` : ''}
+      ${canCreate ? `<button class="btn btn-primary" id="net-new"><span class="ms">add</span> ${esc(t('network.addDevice'))}</button>` : ''}`)}
 
     <div class="grid grid-4" style="margin-bottom:20px">
       <div class="card card-pad metric">
@@ -230,7 +232,11 @@ Views.network = async function (el, params = {}) {
   $('#net-m-eol', el).addEventListener('click', () => setHash({ ...cur(), alert: 'eol', view: 'list' }));
   $('#net-m-warranty', el).addEventListener('click', () => setHash({ ...cur(), alert: 'warrantySoon', view: 'list' }));
 
-  $('#net-export', el).addEventListener('click', () => {
+  $('#net-export', el)?.addEventListener('click', () => {
+    if (!Auth.canIam('asset', 'export')) {
+      toast(t('common.forbidden') || 'You do not have permission to export', 'error');
+      return;
+    }
     if (!items.length) {
       toast(t('network.exportEmpty') || 'Nothing to export with the current filters', 'error');
       return;
@@ -255,7 +261,7 @@ Views.network = async function (el, params = {}) {
     setHash(next);
   }));
 
-  if (canEdit) {
+  if (canCreate) {
     $('#net-new', el).addEventListener('click', () => {
       assetForm({ category: 'Network' }, refresh);
     });

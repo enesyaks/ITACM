@@ -1,10 +1,20 @@
 
 Views.reports = async function (el) {
-  /* ---- data for the analytics layer (all from existing endpoints) ---- */
+  if (!Auth.canIam('report', 'read') && !Auth.canIam('report', 'export')) {
+    el.innerHTML = `<div class="card card-pad"><p class="cell-sub">Reports requires <strong>report:read</strong>.</p></div>`;
+    return;
+  }
+  const canExport = Auth.canIam('report', 'export');
+  const canMaintList = iamCanList('maintenance');
+  const canHandoverList = iamCanList('handover');
+  const canAssetList = iamCanList('asset');
+  const presetReports = visibleReportDefs();
+  const customSourceKeys = visibleCustomSourceKeys();
+  /* ---- data for the analytics layer (only fetch modules the user may list) ---- */
   const [assetsRes, maintenance, handovers] = await Promise.all([
-    api('/assets?limit=2000'),
-    api('/maintenance?limit=2000'),
-    api('/handovers?limit=200'),
+    canAssetList ? api('/assets?limit=2000').catch(() => ({ items: [] })) : Promise.resolve({ items: [] }),
+    canMaintList ? api('/maintenance?limit=2000').catch(() => []) : Promise.resolve([]),
+    canHandoverList ? api('/handovers?limit=200').catch(() => []) : Promise.resolve([]),
   ]);
   const assets = assetsRes.items;
   const state = { range: 30, page: 1 };
@@ -83,18 +93,21 @@ Views.reports = async function (el) {
         <option value="365">Last 12 Months</option>
         <option value="0">All Time</option>
       </select>
-      <button class="btn btn-outline" id="rep-export-events"><span class="ms">download</span> Export Report</button>`)}
+      ${canExport ? '<button class="btn btn-outline" id="rep-export-events"><span class="ms">download</span> Export Report</button>' : ''}
+    `)}
 
     <div id="rep-analytics"></div>
 
     <div class="gs-section" style="margin:24px 0 8px">Custom Report Builder</div>
     <div class="card" style="margin-bottom:20px">
       <div class="card-pad">
-        <div class="form-grid">
+        ${customSourceKeys.length === 0
+          ? '<div class="cell-sub">No data sources available — enable read on asset, employee, license, etc.</div>'
+          : `<div class="form-grid">
           <div class="form-field">
             <label>Data source</label>
             <select id="crb-source">
-              ${Object.entries(CUSTOM_SOURCES).map(([k, s]) => `<option value="${k}">${esc(s.label)}</option>`).join('')}
+              ${customSourceKeys.map((k) => `<option value="${k}">${esc(CUSTOM_SOURCES[k].label)}</option>`).join('')}
             </select>
           </div>
           <div class="form-field"><label>Filters <span class="ob-hint">(leave empty to include everything)</span></label>
@@ -103,15 +116,17 @@ Views.reports = async function (el) {
             <div id="crb-cols" style="display:flex;flex-wrap:wrap;gap:8px"></div></div>
         </div>
         <button id="crb-generate" class="btn btn-primary" style="margin-top:14px">
-          <span class="ms">table_view</span> Generate Report</button>
+          <span class="ms">table_view</span> Generate Report</button>`}
       </div>
     </div>
 
-    <div class="gs-section" style="margin-bottom:8px">Preset Reports <span class="ob-hint">(${REPORT_DEFS.length} ready-made — click to preview, then export CSV or print)</span></div>
-    ${[...new Set(REPORT_DEFS.map((r) => r.group))].map((group) => `
+    <div class="gs-section" style="margin-bottom:8px">Preset Reports <span class="ob-hint">(${presetReports.length} available — click to preview, then export CSV or print)</span></div>
+    ${presetReports.length === 0
+      ? '<div class="card card-pad"><p class="cell-sub">No preset reports available for your permissions. <strong>report:read</strong> opens this page; each report also needs the matching module read (e.g. <strong>maintenance:read</strong> for repair reports).</p></div>'
+      : [...new Set(presetReports.map((r) => r.group))].map((group) => `
       <div class="rep-group-label">${esc(group)}</div>
       <div class="grid grid-2" style="margin-bottom:14px">
-        ${REPORT_DEFS.filter((r) => r.group === group).map((r) => `
+        ${presetReports.filter((r) => r.group === group).map((r) => `
         <div class="card card-pad gs-item" data-report="${r.id}" style="align-items:flex-start;cursor:pointer">
           ${iconChip(r.icon, r.tone)}
           <div style="flex:1">
@@ -174,8 +189,8 @@ Views.reports = async function (el) {
         </div>
         <div class="card rep-kpi">
           <div class="rep-kpi-head"><span class="rep-kpi-label">Maintenance<br>Spend</span>${iconChip('build', 'amber')}</div>
-          <div class="rep-kpi-value">${fmtMoney(a.spend)}
-            <span class="trend-chip ${a.openRepairs ? 'down' : 'flat'}"><span class="ms">build</span> ${a.openRepairs} open</span></div>
+          <div class="rep-kpi-value">${canMaintList ? fmtMoney(a.spend) : '—'}
+            <span class="trend-chip ${canMaintList && a.openRepairs ? 'down' : 'flat'}"><span class="ms">build</span> ${canMaintList ? `${a.openRepairs} open` : 'locked'}</span></div>
         </div>
       </div>
 
@@ -246,7 +261,7 @@ Views.reports = async function (el) {
     state.page = 1;
     renderAnalytics();
   });
-  $('#rep-export-events', el).addEventListener('click', () => {
+  $('#rep-export-events', el)?.addEventListener('click', () => {
     const a = computeAnalytics();
     csvDownload(
       `analytics-report-${new Date().toISOString().slice(0, 10)}.csv`,
@@ -261,7 +276,9 @@ Views.reports = async function (el) {
   /* ---- custom builder wiring (unchanged behaviour) ---- */
   const srcSel = $('#crb-source', el);
   function renderBuilder() {
+    if (!srcSel) return;
     const def = CUSTOM_SOURCES[srcSel.value];
+    if (!def) return;
     $('#crb-cols', el).innerHTML = def.columns.map(([k, label]) => `
       <label class="chip" style="cursor:pointer"><input type="checkbox" value="${k}" checked
         style="width:14px;height:14px;accent-color:var(--primary-container)"> ${esc(label)}</label>`).join('');
@@ -277,10 +294,10 @@ Views.reports = async function (el) {
       return `<input type="${f.type}" data-filter="${f.key}" placeholder="${esc(f.label)}" title="${esc(f.label)}">`;
     }).join('') || '<span class="cell-sub">No filters for this source.</span>';
   }
-  srcSel.addEventListener('change', renderBuilder);
+  srcSel?.addEventListener('change', renderBuilder);
   renderBuilder();
 
-  $('#crb-generate', el).addEventListener('click', async () => {
+  $('#crb-generate', el)?.addEventListener('click', async () => {
     const def = CUSTOM_SOURCES[srcSel.value];
     const slot = $('#report-result', el);
     slot.innerHTML = '<div class="table-empty">Generating custom report…</div>';

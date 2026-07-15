@@ -34,7 +34,9 @@ Views.dashboard = async function (el) {
   el.innerHTML = `
     ${pageHead('Dashboard Overview', 'System status, hardware distribution, and operational metrics.', `
       <span class="cell-sub" style="display:flex;align-items:center;gap:6px"><span class="ms ms-sm">sync</span> Last updated: Just now</span>
-      <button class="btn btn-outline" data-go="#/reports"><span class="ms">download</span> Export Report</button>`)}
+      ${Auth.canIam('report', 'read') || Auth.canIam('report', 'export')
+        ? '<button class="btn btn-outline" data-go="#/reports"><span class="ms">download</span> Export Report</button>'
+        : ''}`)}
 
     <div class="dash-grid">
       <div>
