@@ -146,7 +146,8 @@ Atomik al/bırak ve 30 günlük süre uyarılı koltuk havuzları. Taranabilir *
 </table>
 
 > 🚀 **İlk çalıştırma sihirbazı** şirket adınızı, logonuzu ve Owner hesabınızı ayarlar; marka arayüze ve her yazdırılan tutanağa yansır.
-> 🧪 **Demo veri seti** — `npm run seed:demo` Postgres'i gerçekçi bir şirketle doldurur; `SEED_EMPLOYEES=2000 npm run seed:demo -- --reset` ile ölçekleyin, ağ cihazları ve tedarikçiler için `npm run seed:infra` / `npm run seed:providers` ekleyin.
+> 🧪 **Demo veri seti** — Docker Compose’ta Postgres varsayılan olarak host’a açılmaz; seed’i **API container içinde** çalıştırın:
+> `docker compose exec api npm run seed:demo`, ardından `seed:infra` / `seed:providers`. Ölçek için `docker compose exec -e SEED_EMPLOYEES=2000 api npm run seed:demo -- --reset`.
 
 ---
 
@@ -383,11 +384,11 @@ npm run dev        # otomatik yeniden başlayan yerel sunucu
 npm run lint       # sözdizimi kontrolü (server + tüm src/scripts)
 npm run migrate    # şema + bekleyen migration'ları elle uygula (opsiyonel)
 
-# Demo veri
-npm run seed:demo                                  # ~500 personel
-SEED_EMPLOYEES=2000 npm run seed:demo -- --reset   # daha büyük, geçmişli veri seti
-npm run seed:infra                                 # ağ/sunucu cihazları + topoloji
-npm run seed:providers                             # tedarikçi + sözleşmeler
+# Demo veri (API container içinde — host’ta `npm run seed:*` için DB portunu açmanız gerekir)
+docker compose exec api npm run seed:demo                        # ~500 personel
+docker compose exec -e SEED_EMPLOYEES=2000 api npm run seed:demo -- --reset
+docker compose exec api npm run seed:infra                       # ağ/sunucu cihazları + topoloji
+docker compose exec api npm run seed:providers                   # tedarikçi + sözleşmeler
 ```
 
 ---
