@@ -188,11 +188,15 @@ function renderProvidersTab(el, providers, canEdit, refresh, setTab) {
   el.innerHTML = `
     <div class="grid grid-2" style="gap:16px">
       ${providers.map((p) => {
-        const contactBits = [
-          p.contactName && `<strong>${esc(p.contactName)}</strong>${p.contactRole ? ` · ${esc(p.contactRole)}` : ''}`,
-          p.contactEmail && `<a href="mailto:${esc(p.contactEmail)}">${esc(p.contactEmail)}</a>`,
-          p.contactPhone && `<span class="mono">${esc(p.contactPhone)}</span>`,
-        ].filter(Boolean);
+        const contactList = (Array.isArray(p.contacts) && p.contacts.length)
+          ? p.contacts
+          : (p.contactName ? [{
+            name: p.contactName,
+            role: p.contactRole,
+            email: p.contactEmail,
+            phone: p.contactPhone,
+            isPrimary: true,
+          }] : []);
         const supportBits = [
           p.supportEmail && `<a href="mailto:${esc(p.supportEmail)}">${esc(p.supportEmail)}</a>`,
           p.supportPhone && `<span class="mono">${esc(p.supportPhone)}</span>`,
@@ -244,9 +248,19 @@ function renderProvidersTab(el, providers, canEdit, refresh, setTab) {
               ${p.accountNumber ? `<div class="cell-sub" style="margin-top:6px">Acct <span class="mono">${esc(p.accountNumber)}</span></div>` : ''}
             </div>
             <div>
-              <div class="cell-sub" style="margin-bottom:4px">${esc(t('providers.primaryContact') || 'Primary contact')}</div>
-              ${contactBits.length
-                ? contactBits.map((b) => `<div style="margin-top:2px">${b}</div>`).join('')
+              <div class="cell-sub" style="margin-bottom:6px">${esc(t('providers.contacts') || 'Contacts')}</div>
+              ${contactList.length
+                ? `<div class="pc-contact-cards pc-contact-cards-compact">
+                    ${contactList.map((c) => `
+                      <div class="pc-contact-card ${c.isPrimary ? 'is-primary' : ''}">
+                        <div class="pc-contact-name">${esc(c.name)}${c.isPrimary ? ` <span class="pill pill-blue pill-xs">${esc(t('providers.primaryBadge') || 'Primary')}</span>` : ''}</div>
+                        ${c.role ? `<div class="cell-sub">${esc(c.role)}</div>` : ''}
+                        <div class="pc-contact-meta">
+                          ${c.email ? `<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>` : ''}
+                          ${c.phone ? `<span class="mono">${esc(c.phone)}</span>` : ''}
+                        </div>
+                      </div>`).join('')}
+                  </div>`
                 : '<span class="cell-sub">—</span>'}
               ${supportBits.length ? `
                 <div class="cell-sub" style="margin:10px 0 4px">${esc(t('providers.support') || 'Support')}</div>
@@ -525,6 +539,111 @@ function wireContractFilters(el, { setContractFilters, clearFilter, searchQ }) {
 function openProviderForm(provider, done) {
   const isEdit = !!(provider && provider.id);
   const cats = catalogProviderCategories();
+  let contacts = Array.isArray(provider?.contacts) && provider.contacts.length
+    ? provider.contacts.map((c, i) => ({
+      key: c.id || `n${i}`,
+      name: c.name || '',
+      role: c.role || '',
+      email: c.email || '',
+      phone: c.phone || '',
+      isPrimary: !!c.isPrimary,
+    }))
+    : (provider?.contactName
+      ? [{
+        key: 'legacy',
+        name: provider.contactName || '',
+        role: provider.contactRole || '',
+        email: provider.contactEmail || '',
+        phone: provider.contactPhone || '',
+        isPrimary: true,
+      }]
+      : []);
+
+  const syncContactsFromDom = (host) => {
+    host.querySelectorAll('[data-pc-idx]').forEach((card) => {
+      const i = Number(card.dataset.pcIdx);
+      if (!contacts[i]) return;
+      contacts[i].name = card.querySelector('[data-pc-field="name"]')?.value?.trim() || '';
+      contacts[i].role = card.querySelector('[data-pc-field="role"]')?.value?.trim() || '';
+      contacts[i].email = card.querySelector('[data-pc-field="email"]')?.value?.trim() || '';
+      contacts[i].phone = card.querySelector('[data-pc-field="phone"]')?.value?.trim() || '';
+      contacts[i].isPrimary = !!card.querySelector('[data-pc-field="primary"]')?.checked;
+    });
+  };
+
+  const renderContactsHtml = () => {
+    if (!contacts.length) {
+      return `<div class="pc-contacts-empty cell-sub">${esc(t('providers.contactsEmpty') || 'No contacts yet. Add account managers, sales, or technical contacts.')}</div>
+        <button type="button" class="btn btn-outline btn-sm" data-pc-add><span class="ms">person_add</span> ${esc(t('providers.addContact') || 'Add contact')}</button>`;
+    }
+    const rolePh = t('providers.contactRolePh') || 'Account manager';
+    return `
+      <div class="pc-contact-cards">
+        ${contacts.map((c, idx) => `
+          <div class="pc-contact-card ${c.isPrimary ? 'is-primary' : ''}" data-pc-idx="${idx}">
+            <div class="pc-contact-card-top">
+              <span class="ms">person</span>
+              <label class="pc-primary-toggle">
+                <input type="radio" name="pc-primary" data-pc-field="primary" ${c.isPrimary ? 'checked' : ''}>
+                <span>${esc(t('providers.primaryBadge') || 'Primary')}</span>
+              </label>
+              <div class="pc-contact-card-actions">
+                <button type="button" class="btn btn-outline btn-sm" data-pc-del="${idx}" title="${esc(t('common.delete') || 'Delete')}"><span class="ms">delete</span></button>
+              </div>
+            </div>
+            <div class="pc-contact-fields">
+              <input type="text" data-pc-field="name" value="${esc(c.name)}" placeholder="${esc(t('providers.contactName') || 'Name *')}" autocomplete="off">
+              <input type="text" data-pc-field="role" value="${esc(c.role)}" placeholder="${esc(rolePh)}" autocomplete="off">
+              <input type="email" data-pc-field="email" value="${esc(c.email)}" placeholder="${esc(t('providers.contactEmail') || 'Email')}" autocomplete="off">
+              <input type="text" data-pc-field="phone" value="${esc(c.phone)}" placeholder="${esc(t('providers.contactPhone') || 'Phone')}" autocomplete="off">
+            </div>
+          </div>`).join('')}
+      </div>
+      <button type="button" class="btn btn-outline btn-sm" data-pc-add style="margin-top:10px"><span class="ms">person_add</span> ${esc(t('providers.addContact') || 'Add contact')}</button>`;
+  };
+
+  const refreshContacts = (host) => {
+    host.innerHTML = renderContactsHtml();
+    bindContactHost(host);
+  };
+
+  const bindContactHost = (host) => {
+    host.querySelector('[data-pc-add]')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      syncContactsFromDom(host);
+      const makePrimary = !contacts.length;
+      contacts.push({
+        key: `n${Date.now()}`,
+        name: '', role: '', email: '', phone: '',
+        isPrimary: makePrimary,
+      });
+      refreshContacts(host);
+      host.querySelector('[data-pc-idx]:last-child [data-pc-field="name"]')?.focus();
+    });
+    host.querySelectorAll('[data-pc-del]').forEach((b) => {
+      b.addEventListener('click', (e) => {
+        e.preventDefault();
+        syncContactsFromDom(host);
+        const i = Number(b.dataset.pcDel);
+        const wasPrimary = contacts[i]?.isPrimary;
+        contacts.splice(i, 1);
+        if (wasPrimary && contacts[0]) contacts[0].isPrimary = true;
+        refreshContacts(host);
+      });
+    });
+    host.querySelectorAll('[data-pc-field="primary"]').forEach((r) => {
+      r.addEventListener('change', () => {
+        syncContactsFromDom(host);
+        contacts.forEach((c, j) => {
+          c.isPrimary = host.querySelector(`[data-pc-idx="${j}"] [data-pc-field="primary"]`)?.checked || false;
+        });
+        host.querySelectorAll('.pc-contact-card').forEach((card) => {
+          card.classList.toggle('is-primary', !!card.querySelector('[data-pc-field="primary"]')?.checked);
+        });
+      });
+    });
+  };
+
   formModal({
     title: isEdit ? (t('providers.editProvider') || 'Edit provider') : (t('providers.addProvider') || 'Add provider'),
     wide: true,
@@ -547,21 +666,43 @@ function openProviderForm(provider, done) {
       { name: 'phone', label: 'Company phone', value: provider?.phone || '' },
       { name: 'accountNumber', label: 'Account / customer #', value: provider?.accountNumber || '' },
       { name: 'taxId', label: 'Tax / VAT ID', value: provider?.taxId || '' },
-      { name: 'contactName', label: 'Primary contact', value: provider?.contactName || '' },
-      { name: 'contactRole', label: 'Contact role', value: provider?.contactRole || '', placeholder: 'Account manager' },
-      { name: 'contactEmail', label: 'Contact email', value: provider?.contactEmail || '' },
-      { name: 'contactPhone', label: 'Contact phone', value: provider?.contactPhone || '' },
+      {
+        type: 'html', full: true, id: 'pc-contacts-host',
+        label: 'providers.contacts',
+        html: `<div id="pc-contacts-list">${renderContactsHtml()}</div>`,
+      },
       { name: 'supportEmail', label: 'Support email', value: provider?.supportEmail || '' },
       { name: 'supportPhone', label: 'Support phone', value: provider?.supportPhone || '' },
       { name: 'supportPortal', label: 'Support portal URL', value: provider?.supportPortal || '', full: true },
       { name: 'notes', label: 'Notes', type: 'textarea', value: provider?.notes || '', full: true },
     ],
+    onMount(overlay) {
+      const list = overlay.querySelector('#pc-contacts-list');
+      if (list) bindContactHost(list);
+    },
     async onSubmit(d) {
+      const list = document.getElementById('pc-contacts-list');
+      if (list) syncContactsFromDom(list);
+      const cleaned = contacts
+        .map((c, i) => ({
+          name: String(c.name || '').trim(),
+          role: String(c.role || '').trim(),
+          email: String(c.email || '').trim(),
+          phone: String(c.phone || '').trim(),
+          isPrimary: !!c.isPrimary,
+          sortOrder: i,
+        }))
+        .filter((c) => c.name);
+      if (contacts.some((c) => String(c.name || '').trim() === '' && (c.role || c.email || c.phone))) {
+        throw new Error(t('providers.contactNameRequired') || 'Contact name is required');
+      }
+      if (cleaned.length && !cleaned.some((c) => c.isPrimary)) cleaned[0].isPrimary = true;
+      const body = { ...d, contacts: cleaned };
       if (isEdit) {
-        await api(`/providers/${provider.id}`, { method: 'PATCH', body: d });
+        await api(`/providers/${provider.id}`, { method: 'PATCH', body });
         toast('Provider updated', 'success');
       } else {
-        await api('/providers', { method: 'POST', body: d });
+        await api('/providers', { method: 'POST', body });
         toast('Provider created', 'success');
       }
       done();

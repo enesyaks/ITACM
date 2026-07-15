@@ -476,6 +476,21 @@ CREATE TABLE IF NOT EXISTS providers (
 CREATE INDEX IF NOT EXISTS idx_providers_status ON providers (status, name);
 CREATE INDEX IF NOT EXISTS idx_providers_category ON providers (category, name);
 
+CREATE TABLE IF NOT EXISTS provider_contacts (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  provider_id   UUID NOT NULL REFERENCES providers(id) ON DELETE CASCADE,
+  name          TEXT NOT NULL,
+  role          TEXT,
+  email         TEXT,
+  phone         TEXT,
+  is_primary    BOOLEAN NOT NULL DEFAULT false,
+  sort_order    INT NOT NULL DEFAULT 0,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_provider_contacts_provider
+  ON provider_contacts (provider_id, sort_order, name);
+
 CREATE TABLE IF NOT EXISTS contracts (
   id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   provider_id           UUID NOT NULL REFERENCES providers(id) ON DELETE RESTRICT,

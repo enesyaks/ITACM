@@ -1,5 +1,5 @@
 /** Providers & contracts — vendor contacts and commercial agreements. */
-const { query } = require('./pool');
+const { query, withTransaction } = require('./pool');
 const { isUuid } = require('./rowMapper');
 const { HttpError } = require('../../utils/httpError');
 const { DEFAULT_CURRENCY } = require('../../utils/defaults');
@@ -104,6 +104,7 @@ function mapProvider(row) {
     contactRole: row.contact_role,
     contactEmail: row.contact_email,
     contactPhone: row.contact_phone,
+    contacts: Array.isArray(row.contacts) ? row.contacts : undefined,
     notes: row.notes || '',
     contractCount: row.contract_count != null ? Number(row.contract_count) : undefined,
     activeContractCount: row.active_contract_count != null ? Number(row.active_contract_count) : undefined,
@@ -111,6 +112,124 @@ function mapProvider(row) {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+function mapContact(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    providerId: row.provider_id,
+    name: row.name,
+    role: row.role || '',
+    email: row.email || '',
+    phone: row.phone || '',
+    isPrimary: !!row.is_primary,
+    sortOrder: row.sort_order != null ? Number(row.sort_order) : 0,
+  };
+}
+
+function normalizeContactsInput(body, fallbackPrimary = null) {
+  if (Array.isArray(body.contacts)) {
+    const out = [];
+    for (let i = 0; i < body.contacts.length; i++) {
+      const c = body.contacts[i] || {};
+      const name = trimOrNull(c.name, 200);
+      if (!name) continue;
+      out.push({
+        name,
+        role: trimOrNull(c.role, 120),
+        email: trimOrNull(c.email, 200),
+        phone: trimOrNull(c.phone, 64),
+        isPrimary: !!c.isPrimary,
+        sortOrder: Number.isFinite(Number(c.sortOrder)) ? Number(c.sortOrder) : i,
+      });
+    }
+    if (out.length && !out.some((c) => c.isPrimary)) out[0].isPrimary = true;
+    let sawPrimary = false;
+    for (const c of out) {
+      if (c.isPrimary) {
+        if (sawPrimary) c.isPrimary = false;
+        else sawPrimary = true;
+      }
+    }
+    return out;
+  }
+
+  const touchedLegacy = ['contactName', 'contactRole', 'contactEmail', 'contactPhone']
+    .some((k) => Object.prototype.hasOwnProperty.call(body, k));
+  if (!touchedLegacy) {
+    // PATCH without contacts: leave existing rows alone
+    return fallbackPrimary ? null : [];
+  }
+
+  const name = trimOrNull(body.contactName, 200);
+  if (!name) return [];
+  return [{
+    name,
+    role: trimOrNull(body.contactRole, 120),
+    email: trimOrNull(body.contactEmail, 200),
+    phone: trimOrNull(body.contactPhone, 64),
+    isPrimary: true,
+    sortOrder: 0,
+  }];
+}
+
+async function listContactsForProviders(providerIds) {
+  if (!providerIds.length) return new Map();
+  const { rows } = await query(
+    `SELECT * FROM provider_contacts
+     WHERE provider_id = ANY($1::uuid[])
+     ORDER BY is_primary DESC, sort_order ASC, name ASC`,
+    [providerIds]
+  );
+  const map = new Map();
+  for (const row of rows) {
+    const c = mapContact(row);
+    if (!map.has(c.providerId)) map.set(c.providerId, []);
+    map.get(c.providerId).push(c);
+  }
+  return map;
+}
+
+async function attachContacts(providers) {
+  const list = Array.isArray(providers) ? providers : [providers];
+  const ids = list.map((p) => p.id).filter(Boolean);
+  const byId = await listContactsForProviders(ids);
+  for (const p of list) {
+    const contacts = byId.get(p.id) || [];
+    p.contacts = contacts;
+    const primary = contacts.find((c) => c.isPrimary) || contacts[0] || null;
+    if (primary) {
+      p.contactName = primary.name;
+      p.contactRole = primary.role || '';
+      p.contactEmail = primary.email || '';
+      p.contactPhone = primary.phone || '';
+    }
+  }
+  return Array.isArray(providers) ? list : list[0];
+}
+
+async function replaceContacts(client, providerId, contacts) {
+  await client.query('DELETE FROM provider_contacts WHERE provider_id = $1', [providerId]);
+  let primary = { name: null, role: null, email: null, phone: null };
+  for (let i = 0; i < contacts.length; i++) {
+    const c = contacts[i];
+    await client.query(
+      `INSERT INTO provider_contacts
+         (provider_id, name, role, email, phone, is_primary, sort_order)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [providerId, c.name, c.role, c.email, c.phone, !!c.isPrimary, c.sortOrder ?? i]
+    );
+    if (c.isPrimary) primary = c;
+  }
+  if (!primary.name && contacts[0]) primary = contacts[0];
+  await client.query(
+    `UPDATE providers SET
+       contact_name = $2, contact_role = $3, contact_email = $4, contact_phone = $5,
+       updated_at = now()
+     WHERE id = $1`,
+    [providerId, primary.name || null, primary.role || null, primary.email || null, primary.phone || null]
+  );
 }
 
 function mapContract(row) {
@@ -163,6 +282,15 @@ async function listProviders({ status, category, search, role } = {}) {
       OR lower(coalesce(p.email, '')) LIKE $${i}
       OR lower(coalesce(p.phone, '')) LIKE $${i}
       OR lower(coalesce(p.account_number, '')) LIKE $${i}
+      OR EXISTS (
+        SELECT 1 FROM provider_contacts pc
+        WHERE pc.provider_id = p.id
+          AND (
+            lower(pc.name) LIKE $${i}
+            OR lower(coalesce(pc.email, '')) LIKE $${i}
+            OR lower(coalesce(pc.phone, '')) LIKE $${i}
+          )
+      )
     )`);
   }
   const vis = canViewConfidentialContracts(role)
@@ -177,7 +305,7 @@ async function listProviders({ status, category, search, role } = {}) {
     ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
     ORDER BY p.name`;
   const { rows } = await query(sql, params);
-  return rows.map(mapProvider);
+  return attachContacts(rows.map(mapProvider));
 }
 
 async function getProvider(id, { role } = {}) {
@@ -194,7 +322,7 @@ async function getProvider(id, { role } = {}) {
     [id]
   );
   if (!rows[0]) throw HttpError.notFound(`Provider ${id} not found`);
-  return mapProvider(rows[0]);
+  return attachContacts(mapProvider(rows[0]));
 }
 
 async function createProvider(body = {}) {
@@ -203,33 +331,35 @@ async function createProvider(body = {}) {
   const category = requireCategory(body.category || 'Other');
   const status = body.status || 'Active';
   if (!PROVIDER_STATUSES.has(status)) throw HttpError.badRequest('Invalid status');
+  const contacts = normalizeContactsInput(body) || [];
 
-  const { rows } = await query(
-    `INSERT INTO providers (
-       name, category, status, website, phone, email,
-       support_email, support_phone, support_portal,
-       account_number, tax_id,
-       contact_name, contact_role, contact_email, contact_phone, notes
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
-     RETURNING *`,
-    [
-      name, category, status,
-      sanitizeHttpUrl(body.website, { max: 500, field: 'website' }),
-      trimOrNull(body.phone, 64),
-      trimOrNull(body.email, 200),
-      trimOrNull(body.supportEmail, 200),
-      trimOrNull(body.supportPhone, 64),
-      sanitizeHttpUrl(body.supportPortal, { max: 500, field: 'supportPortal' }),
-      trimOrNull(body.accountNumber, 128),
-      trimOrNull(body.taxId, 64),
-      trimOrNull(body.contactName, 200),
-      trimOrNull(body.contactRole, 120),
-      trimOrNull(body.contactEmail, 200),
-      trimOrNull(body.contactPhone, 64),
-      trimOrNull(body.notes, 4000) || '',
-    ]
-  );
-  return mapProvider({ ...rows[0], contract_count: 0, active_contract_count: 0 });
+  return withTransaction(async (client) => {
+    const { rows } = await client.query(
+      `INSERT INTO providers (
+         name, category, status, website, phone, email,
+         support_email, support_phone, support_portal,
+         account_number, tax_id,
+         contact_name, contact_role, contact_email, contact_phone, notes
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+       RETURNING *`,
+      [
+        name, category, status,
+        sanitizeHttpUrl(body.website, { max: 500, field: 'website' }),
+        trimOrNull(body.phone, 64),
+        trimOrNull(body.email, 200),
+        trimOrNull(body.supportEmail, 200),
+        trimOrNull(body.supportPhone, 64),
+        sanitizeHttpUrl(body.supportPortal, { max: 500, field: 'supportPortal' }),
+        trimOrNull(body.accountNumber, 128),
+        trimOrNull(body.taxId, 64),
+        null, null, null, null,
+        trimOrNull(body.notes, 4000) || '',
+      ]
+    );
+    await replaceContacts(client, rows[0].id, contacts);
+    const mapped = mapProvider({ ...rows[0], contract_count: 0, active_contract_count: 0 });
+    return attachContacts(mapped);
+  });
 }
 
 async function updateProvider(id, body = {}) {
@@ -248,36 +378,38 @@ async function updateProvider(id, body = {}) {
       ? sanitizeHttpUrl(body[key], { max: 500, field: key })
       : cur[curKey]);
 
-  const { rows } = await query(
-    `UPDATE providers SET
-       name = $2, category = $3, status = $4,
-       website = $5, phone = $6, email = $7,
-       support_email = $8, support_phone = $9, support_portal = $10,
-       account_number = $11, tax_id = $12,
-       contact_name = $13, contact_role = $14, contact_email = $15, contact_phone = $16,
-       notes = $17, updated_at = now()
-     WHERE id = $1 RETURNING *`,
-    [
-      id, name, category, status,
-      pickUrl('website', 'website'),
-      pick('phone', 'phone', 64),
-      pick('email', 'email', 200),
-      pick('supportEmail', 'supportEmail', 200),
-      pick('supportPhone', 'supportPhone', 64),
-      pickUrl('supportPortal', 'supportPortal'),
-      pick('accountNumber', 'accountNumber', 128),
-      pick('taxId', 'taxId', 64),
-      pick('contactName', 'contactName', 200),
-      pick('contactRole', 'contactRole', 120),
-      pick('contactEmail', 'contactEmail', 200),
-      pick('contactPhone', 'contactPhone', 64),
-      body.notes !== undefined ? (trimOrNull(body.notes, 4000) || '') : cur.notes,
-    ]
-  );
-  return mapProvider({
-    ...rows[0],
-    contract_count: cur.contractCount,
-    active_contract_count: cur.activeContractCount,
+  const contacts = normalizeContactsInput(body, cur);
+
+  return withTransaction(async (client) => {
+    const { rows } = await client.query(
+      `UPDATE providers SET
+         name = $2, category = $3, status = $4,
+         website = $5, phone = $6, email = $7,
+         support_email = $8, support_phone = $9, support_portal = $10,
+         account_number = $11, tax_id = $12,
+         notes = $13, updated_at = now()
+       WHERE id = $1 RETURNING *`,
+      [
+        id, name, category, status,
+        pickUrl('website', 'website'),
+        pick('phone', 'phone', 64),
+        pick('email', 'email', 200),
+        pick('supportEmail', 'supportEmail', 200),
+        pick('supportPhone', 'supportPhone', 64),
+        pickUrl('supportPortal', 'supportPortal'),
+        pick('accountNumber', 'accountNumber', 128),
+        pick('taxId', 'taxId', 64),
+        body.notes !== undefined ? (trimOrNull(body.notes, 4000) || '') : cur.notes,
+      ]
+    );
+    if (contacts) await replaceContacts(client, id, contacts);
+    const mapped = mapProvider({
+      ...rows[0],
+      contract_count: cur.contractCount,
+      active_contract_count: cur.activeContractCount,
+      document_count: cur.documentCount,
+    });
+    return attachContacts(mapped);
   });
 }
 

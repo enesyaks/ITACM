@@ -270,9 +270,14 @@ async function viewAuthed(url, title) {
  *            options: [{value,label}], required, value, placeholder, full,
  *            selected: { id, fullName } // for employeeSearch }]
  */
-function formModal({ title, fields, submitLabel, wide, onSubmit }) {
+function formModal({ title, fields, submitLabel, wide, onSubmit, onMount: extraMount }) {
   const saveLbl = t(submitLabel || 'Save');
   const inputs = fields.map((f) => {
+    if (f.type === 'html') {
+      return `<div class="form-field ${f.full ? 'full' : ''}" ${f.id ? `id="${esc(f.id)}"` : ''}>${
+        f.label ? `<label>${esc(t(f.label))}</label>` : ''
+      }${f.html || ''}</div>`;
+    }
     const val = f.value != null ? esc(f.value) : '';
     let control;
     if (f.type === 'employeeSearch') {
@@ -343,10 +348,12 @@ function formModal({ title, fields, submitLabel, wide, onSubmit }) {
         };
         sel.addEventListener('change', sync);
       });
+      if (typeof extraMount === 'function') extraMount(overlay, form);
       form.addEventListener('submit', async (e) => {
         e.preventDefault();
         const data = {};
         for (const f of fields) {
+          if (f.type === 'html') continue;
           if (f.type === 'employeeSearch') {
             const picker = pickers[f.name];
             if (picker && f.required && !picker.validate()) {
