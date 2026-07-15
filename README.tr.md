@@ -20,7 +20,7 @@ Donanım ve ağ envanteri · yazdırılabilir PDF tutanaklı personel zimmetleri
 
 <br />
 
-[🇬🇧 English →](README.md) · **🇹🇷 Türkçe** · **🌐 [itacm.site](https://itacm.site/)** — ürün tanıtımı
+[🇬🇧 English →](README.md) · **🇹🇷 Türkçe**
 
 <br />
 

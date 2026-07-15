@@ -20,7 +20,7 @@ Hardware & network inventory · employee handovers with printable PDF receipts �
 
 <br />
 
-**🇬🇧 English** · [🇹🇷 Türkçe →](README.tr.md) · **🌐 [itacm.site](https://itacm.site/)** — product overview
+**🇬🇧 English** · [🇹🇷 Türkçe →](README.tr.md)
 
 <br />
 
