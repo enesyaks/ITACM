@@ -234,145 +234,176 @@ function renderProvidersTab(el, providers, opts = {}) {
     return;
   }
 
-  const joinMeta = (parts) => parts.filter(Boolean).join('<span class="pc-sep" aria-hidden="true">·</span>');
+  const providerContacts = (p) => (Array.isArray(p.contacts) && p.contacts.length)
+    ? p.contacts
+    : (p.contactName ? [{
+      name: p.contactName,
+      role: p.contactRole,
+      email: p.contactEmail,
+      phone: p.contactPhone,
+      isPrimary: true,
+    }] : []);
 
   el.innerHTML = `
-    <div class="pc-provider-list">
+    <div class="pc-mini-grid">
       ${providers.map((p) => {
-        const contactList = (Array.isArray(p.contacts) && p.contacts.length)
-          ? p.contacts
-          : (p.contactName ? [{
-            name: p.contactName,
-            role: p.contactRole,
-            email: p.contactEmail,
-            phone: p.contactPhone,
-            isPrimary: true,
-          }] : []);
-        const siteHref = p.website ? safeHref(p.website) : null;
-        const siteLabel = p.website ? esc(String(p.website).replace(/^https?:\/\//, '')) : '';
-        const companyMeta = joinMeta([
-          p.email && `<a href="mailto:${esc(p.email)}">${esc(p.email)}</a>`,
-          p.phone && `<span class="mono">${esc(p.phone)}</span>`,
-          p.website && (siteHref
-            ? `<a href="${esc(siteHref)}" target="_blank" rel="noopener noreferrer">${siteLabel}</a>`
-            : `<span>${siteLabel}</span>`),
-          p.accountNumber && `<span class="mono">${esc(p.accountNumber)}</span>`,
-        ]);
-        const supportMeta = joinMeta([
-          p.supportEmail && `<a href="mailto:${esc(p.supportEmail)}">${esc(p.supportEmail)}</a>`,
-          p.supportPhone && `<span class="mono">${esc(p.supportPhone)}</span>`,
-          p.supportPortal && (() => {
-            const href = safeHref(p.supportPortal);
-            return href
-              ? `<a href="${esc(href)}" target="_blank" rel="noopener noreferrer">${esc(t('providers.portal') || 'Support portal')}</a>`
-              : `<span>${esc(p.supportPortal)}</span>`;
-          })(),
-        ]);
+        const contacts = providerContacts(p);
+        const primary = contacts.find((c) => c.isPrimary) || contacts[0];
+        const initials = String(p.name).trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
+        const counts = [
+          canReadContract ? `<span class="pc-mini-count" title="${esc(t('providers.tabContracts') || 'Contracts')}"><span class="ms">description</span>${p.contractCount || 0}</span>` : '',
+          canReadDocs ? `<span class="pc-mini-count" title="${esc(t('common.documents') || 'Documents')}"><span class="ms">attach_file</span>${p.documentCount || 0}</span>` : '',
+          contacts.length ? `<span class="pc-mini-count" title="${esc(t('providers.contacts') || 'Contacts')}"><span class="ms">group</span>${contacts.length}</span>` : '',
+        ].filter(Boolean).join('');
         return `
-        <article class="card pc-provider-card" data-provider-card="${esc(p.id)}">
-          <header class="pc-provider-head">
-            <div class="pc-provider-identity">
-              <div class="pc-provider-title-wrap">
-                <div class="pc-provider-title-row">
-                  <h3 class="pc-provider-title">${esc(p.name)}</h3>
-                  <span class="pc-provider-pills">
-                    <span class="pill pill-blue">${esc(p.category)}</span>
-                    ${statusPill(p.status)}
-                  </span>
-                </div>
-                ${companyMeta ? `<div class="pc-meta-line">${companyMeta}</div>` : ''}
-              </div>
+        <button type="button" class="card pc-mini-card ${p.status !== 'Active' ? 'is-inactive' : ''}" data-open-provider="${esc(p.id)}">
+          <div class="pc-mini-top">
+            <span class="pc-mini-avatar">${esc(initials)}</span>
+            <div class="pc-mini-id">
+              <span class="pc-mini-name" title="${esc(p.name)}">${esc(p.name)}</span>
+              <span class="pc-mini-cat">${esc(p.category)}${p.status !== 'Active' ? ` · ${esc(p.status)}` : ''}</span>
             </div>
-            ${(canEditProvider || canDeleteProvider) ? `
-            <div class="actions pc-provider-actions">
-              ${canEditProvider ? `<button class="btn btn-outline btn-sm" data-edit-provider="${esc(p.id)}" title="Edit"><span class="ms">edit</span></button>` : ''}
-              ${canDeleteProvider ? `<button class="btn btn-outline btn-sm" data-del-provider="${esc(p.id)}" title="Delete"><span class="ms">delete</span></button>` : ''}
-            </div>` : ''}
-          </header>
-
-          ${p.notes ? `<p class="pc-provider-notes" title="${esc(p.notes)}">${esc(p.notes)}</p>` : ''}
-
-          ${contactList.length ? `
-          <ul class="pc-contact-list">
-            ${contactList.map((c) => {
-              const detail = joinMeta([
-                c.email && `<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>`,
-                c.phone && `<span class="mono">${esc(c.phone)}</span>`,
-              ]);
-              return `
-              <li class="pc-contact-item ${c.isPrimary ? 'is-primary' : ''}">
-                <div class="pc-contact-who">
-                  <span class="pc-contact-name">${esc(c.name)}</span>
-                  ${c.isPrimary ? `<span class="pc-primary-dot" title="${esc(t('providers.primaryBadge') || 'Primary')}"></span>` : ''}
-                  ${c.role ? `<span class="pc-contact-role">${esc(c.role)}</span>` : ''}
-                </div>
-                ${detail ? `<div class="pc-contact-detail">${detail}</div>` : ''}
-              </li>`;
-            }).join('')}
-          </ul>` : ''}
-
-          ${supportMeta ? `
-          <div class="pc-support-line">
-            <span class="pc-support-label">${esc(t('providers.support') || 'Support')}</span>
-            <span class="pc-meta-line">${supportMeta}</span>
+            <span class="pc-mini-dot ${p.status === 'Active' ? 'is-active' : ''}" title="${esc(p.status)}"></span>
+          </div>
+          ${primary ? `<div class="pc-mini-contact" title="${esc(primary.name)}${primary.role ? ' — ' + esc(primary.role) : ''}">
+            <span class="ms">person</span>${esc(primary.name)}${primary.role ? ` <span class="pc-mini-role">· ${esc(primary.role)}</span>` : ''}
           </div>` : ''}
-
-          <footer class="pc-provider-foot">
-            ${canReadDocs || canUploadDocs ? `
-            <button class="btn btn-outline btn-sm" data-provider-docs="${esc(p.id)}">
-              <span class="ms">attach_file</span>
-              ${esc(t('common.documents') || 'Documents')}${canReadDocs ? ` (${p.documentCount || 0})` : ''}
-            </button>` : ''}
-            ${canReadContract ? `
-            <button class="btn btn-outline btn-sm" data-show-contracts="${esc(p.id)}">
-              <span class="ms">description</span>
-              ${esc(t('providers.viewContracts') || 'Contracts')} (${p.contractCount || 0})
-            </button>` : ''}
-            ${canCreateContract ? `
-            <button class="btn btn-primary btn-sm" data-add-contract-for="${esc(p.id)}">
-              <span class="ms">add</span> ${esc(t('providers.addContract') || 'Add contract')}
-            </button>` : ''}
-          </footer>
-        </article>`;
+          <div class="pc-mini-foot">${counts}<span class="pc-mini-open"><span class="ms">arrow_forward</span></span></div>
+        </button>`;
       }).join('')}
     </div>`;
 
-  el.querySelectorAll('[data-edit-provider]').forEach((b) => {
-    b.addEventListener('click', () => {
-      const p = providers.find((x) => x.id === b.dataset.editProvider);
-      if (p) openProviderForm(p, refresh);
+  const openDetail = (p) => openProviderDetail(p, {
+    contacts: providerContacts(p),
+    canEditProvider,
+    canDeleteProvider,
+    canReadContract,
+    canCreateContract,
+    canReadDocs,
+    canUploadDocs,
+    refresh,
+    setTab,
+  });
+
+  el.querySelectorAll('[data-open-provider]').forEach((card) => {
+    card.addEventListener('click', () => {
+      const p = providers.find((x) => x.id === card.dataset.openProvider);
+      if (p) openDetail(p);
     });
   });
-  el.querySelectorAll('[data-del-provider]').forEach((b) => {
-    b.addEventListener('click', async () => {
-      const p = providers.find((x) => x.id === b.dataset.delProvider);
-      if (!p) return;
-      if (!confirm(`Delete provider “${p.name}”?`)) return;
-      try {
-        await api(`/providers/${p.id}`, { method: 'DELETE' });
-        toast('Provider deleted', 'success');
-        refresh();
-      } catch (err) { toast(err.message, 'error'); }
-    });
-  });
-  el.querySelectorAll('[data-show-contracts]').forEach((b) => {
-    b.addEventListener('click', () => setTab('contracts', { providerId: b.dataset.showContracts }));
-  });
-  el.querySelectorAll('[data-provider-docs]').forEach((b) => {
-    b.addEventListener('click', () => {
-      const p = providers.find((x) => x.id === b.dataset.providerDocs);
-      if (p) openEntityDocs({
-        kind: 'provider',
-        id: p.id,
-        title: p.name,
-        onDone: refresh,
+}
+
+/** Full provider details in a modal — contacts, support, notes, docs/contracts shortcuts. */
+function openProviderDetail(p, opts = {}) {
+  const {
+    contacts = [],
+    canEditProvider = false,
+    canDeleteProvider = false,
+    canReadContract = false,
+    canCreateContract = false,
+    canReadDocs = false,
+    canUploadDocs = false,
+    refresh,
+    setTab,
+  } = opts;
+
+  const joinMeta = (parts) => parts.filter(Boolean).join('<span class="pc-sep" aria-hidden="true">·</span>');
+  const siteHref = p.website ? safeHref(p.website) : null;
+  const siteLabel = p.website ? esc(String(p.website).replace(/^https?:\/\//, '')) : '';
+  const companyMeta = joinMeta([
+    p.email && `<a href="mailto:${esc(p.email)}">${esc(p.email)}</a>`,
+    p.phone && `<span class="mono">${esc(p.phone)}</span>`,
+    p.website && (siteHref
+      ? `<a href="${esc(siteHref)}" target="_blank" rel="noopener noreferrer">${siteLabel}</a>`
+      : `<span>${siteLabel}</span>`),
+    p.accountNumber && `<span class="mono">${esc(p.accountNumber)}</span>`,
+    p.taxId && `<span class="mono">${esc(p.taxId)}</span>`,
+  ]);
+  const supportMeta = joinMeta([
+    p.supportEmail && `<a href="mailto:${esc(p.supportEmail)}">${esc(p.supportEmail)}</a>`,
+    p.supportPhone && `<span class="mono">${esc(p.supportPhone)}</span>`,
+    p.supportPortal && (() => {
+      const href = safeHref(p.supportPortal);
+      return href
+        ? `<a href="${esc(href)}" target="_blank" rel="noopener noreferrer">${esc(t('providers.portal') || 'Support portal')}</a>`
+        : `<span>${esc(p.supportPortal)}</span>`;
+    })(),
+  ]);
+
+  openModal({
+    title: p.name,
+    wide: true,
+    body: `
+      <div class="pc-detail">
+        <div class="pc-provider-title-row" style="margin-bottom:4px">
+          <span class="pc-provider-pills">
+            <span class="pill pill-blue">${esc(p.category)}</span>
+            ${statusPill(p.status)}
+          </span>
+        </div>
+        ${companyMeta ? `<div class="pc-meta-line">${companyMeta}</div>` : ''}
+        ${p.notes ? `<p class="pc-provider-notes" style="-webkit-line-clamp:unset">${esc(p.notes)}</p>` : ''}
+
+        ${contacts.length ? `
+        <h4 class="pc-detail-label">${esc(t('providers.contacts') || 'Contacts')}</h4>
+        <ul class="pc-contact-list">
+          ${contacts.map((c) => {
+            const detail = joinMeta([
+              c.email && `<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>`,
+              c.phone && `<span class="mono">${esc(c.phone)}</span>`,
+            ]);
+            return `
+            <li class="pc-contact-item ${c.isPrimary ? 'is-primary' : ''}">
+              <div class="pc-contact-who">
+                <span class="pc-contact-name">${esc(c.name)}</span>
+                ${c.isPrimary ? `<span class="pc-primary-dot" title="${esc(t('providers.primaryBadge') || 'Primary')}"></span>` : ''}
+                ${c.role ? `<span class="pc-contact-role">${esc(c.role)}</span>` : ''}
+              </div>
+              ${detail ? `<div class="pc-contact-detail">${detail}</div>` : ''}
+            </li>`;
+          }).join('')}
+        </ul>` : ''}
+
+        ${supportMeta ? `
+        <div class="pc-support-line">
+          <span class="pc-support-label">${esc(t('providers.support') || 'Support')}</span>
+          <span class="pc-meta-line">${supportMeta}</span>
+        </div>` : ''}
+      </div>`,
+    foot: `
+      ${canDeleteProvider ? `<button class="btn btn-outline" id="pcd-del" style="margin-right:auto;color:var(--rose-700)"><span class="ms">delete</span> ${esc(t('common.delete') || 'Delete')}</button>` : ''}
+      ${canReadDocs || canUploadDocs ? `<button class="btn btn-outline" id="pcd-docs"><span class="ms">attach_file</span> ${esc(t('common.documents') || 'Documents')}${canReadDocs ? ` (${p.documentCount || 0})` : ''}</button>` : ''}
+      ${canReadContract ? `<button class="btn btn-outline" id="pcd-contracts"><span class="ms">description</span> ${esc(t('providers.viewContracts') || 'Contracts')} (${p.contractCount || 0})</button>` : ''}
+      ${canCreateContract ? `<button class="btn btn-outline" id="pcd-add-contract"><span class="ms">add</span> ${esc(t('providers.addContract') || 'Add contract')}</button>` : ''}
+      ${canEditProvider ? `<button class="btn btn-primary" id="pcd-edit"><span class="ms">edit</span> ${esc(t('common.edit') || 'Edit')}</button>` : ''}
+      <button class="btn btn-outline" data-close>${esc(t('common.close') || 'Close')}</button>`,
+    onMount(overlay) {
+      $('#pcd-edit', overlay)?.addEventListener('click', () => {
+        closeModal();
+        openProviderForm(p, refresh);
       });
-    });
-  });
-  el.querySelectorAll('[data-add-contract-for]').forEach((b) => {
-    b.addEventListener('click', () => {
-      openContractForm({ providerId: b.dataset.addContractFor }, providers, refresh);
-    });
+      $('#pcd-del', overlay)?.addEventListener('click', () => {
+        confirmModal(`Delete provider “${p.name}”?`, async () => {
+          await api(`/providers/${p.id}`, { method: 'DELETE' });
+          toast('Provider deleted', 'success');
+          closeModal();
+          refresh();
+        });
+      });
+      $('#pcd-docs', overlay)?.addEventListener('click', () => {
+        closeModal();
+        openEntityDocs({ kind: 'provider', id: p.id, title: p.name, onDone: refresh });
+      });
+      $('#pcd-contracts', overlay)?.addEventListener('click', () => {
+        closeModal();
+        setTab('contracts', { providerId: p.id });
+      });
+      $('#pcd-add-contract', overlay)?.addEventListener('click', async () => {
+        closeModal();
+        const providers = await api('/providers').catch(() => [p]);
+        openContractForm({ providerId: p.id }, providers, refresh);
+      });
+    },
   });
 }
 
