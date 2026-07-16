@@ -40,20 +40,43 @@ function statusPill(status) {
 
 Views.providers = async function (el, params = {}) {
   if (isStaleView(el)) return;
-  const canEdit = Auth.can('canManageAssets');
-  const tab = params.tab === 'contracts' ? 'contracts' : 'providers';
+  const canReadProvider = Auth.canIamOp('provider', 'read');
+  const canReadContract = Auth.canIamOp('contract', 'read');
+  if (!canReadProvider && !canReadContract) {
+    el.innerHTML = `<div class="card card-pad"><p class="cell-sub">${esc(t('common.forbidden') || 'Access denied')}: needs <strong>provider:read</strong> or <strong>contract:read</strong>.</p></div>`;
+    return;
+  }
+
+  const canEditProvider = Auth.canIam('provider', 'create') || Auth.canIam('provider', 'update') || Auth.canIam('provider', 'manage');
+  const canEditContract = Auth.canIam('contract', 'create') || Auth.canIam('contract', 'update') || Auth.canIam('contract', 'manage');
+  const canDeleteProvider = Auth.canIam('provider', 'delete') || Auth.canIam('provider', 'manage');
+  const canDeleteContract = Auth.canIam('contract', 'delete') || Auth.canIam('contract', 'manage');
+  const canCreateProvider = Auth.canIam('provider', 'create');
+  const canCreateContract = Auth.canIam('contract', 'create');
+  const emptySummary = {
+    providers: { active: 0, total: 0 },
+    contracts: { active: 0, total: 0, expired: 0 },
+    expiringWithin60Days: 0,
+  };
+
+  let tab = params.tab === 'contracts' ? 'contracts' : 'providers';
+  if (tab === 'contracts' && !canReadContract) tab = 'providers';
+  if (tab === 'providers' && !canReadProvider && canReadContract) tab = 'contracts';
+
   const providerFilterId = params.providerId || '';
   const statusFilter = params.status || '';
   const searchQ = (params.q || '').trim();
 
   const [summary, providers, contracts] = await Promise.all([
-    api('/providers/summary'),
-    api('/providers'),
-    api('/contracts'),
+    canReadProvider ? api('/providers/summary').catch(() => emptySummary) : Promise.resolve(emptySummary),
+    canReadProvider ? api('/providers') : Promise.resolve([]),
+    canReadContract ? api('/contracts') : Promise.resolve([]),
   ]);
   if (isStaleView(el)) return;
 
   const setTab = (next, extra = {}) => {
+    if (next === 'contracts' && !canReadContract) return;
+    if (next === 'providers' && !canReadProvider) return;
     const q = new URLSearchParams();
     if (next === 'contracts') {
       q.set('tab', 'contracts');
@@ -97,37 +120,42 @@ Views.providers = async function (el, params = {}) {
   }
 
   const filtersActive = !!(providerFilterId || statusFilter || searchQ);
+  const headActions = [
+    canCreateProvider ? `<button class="btn btn-outline" id="pc-new-provider"><span class="ms">apartment</span> ${esc(t('providers.addProvider') || 'Add provider')}</button>` : '',
+    canCreateContract && canReadContract ? `<button class="btn btn-primary" id="pc-new-contract"><span class="ms">description</span> ${esc(t('providers.addContract') || 'Add contract')}</button>` : '',
+  ].filter(Boolean).join('');
 
   el.innerHTML = `
     ${pageHead(
       t('nav.providers') || 'Providers & Contracts',
       t('providers.sub') || 'Keep vendor contacts and commercial agreements in one place — renewals, support lines, account numbers.',
-      canEdit ? `
-        <button class="btn btn-outline" id="pc-new-provider"><span class="ms">apartment</span> ${esc(t('providers.addProvider') || 'Add provider')}</button>
-        <button class="btn btn-primary" id="pc-new-contract"><span class="ms">description</span> ${esc(t('providers.addContract') || 'Add contract')}</button>` : ''
+      headActions
     )}
 
-    <div class="grid grid-4" style="margin-bottom:20px">
+    <div class="grid ${canReadContract && canReadProvider ? 'grid-4' : 'grid-2'}" style="margin-bottom:20px">
+      ${canReadProvider ? `
       <div class="card card-pad metric">
         <div class="metric-top"><h3 class="card-title">${esc(t('providers.metricProviders') || 'Active providers')}</h3>${iconChip('apartment', 'indigo')}</div>
-        <div class="metric-value">${summary.providers.active}</div>
-        <div class="cell-sub">${summary.providers.total} total</div>
-      </div>
+        <div class="metric-value">${summary.providers?.active ?? 0}</div>
+        <div class="cell-sub">${summary.providers?.total ?? 0} total</div>
+      </div>` : ''}
+      ${canReadContract ? `
       <div class="card card-pad metric">
         <div class="metric-top"><h3 class="card-title">${esc(t('providers.metricContracts') || 'Active contracts')}</h3>${iconChip('description', 'blue')}</div>
-        <div class="metric-value">${summary.contracts.active}</div>
-        <div class="cell-sub">${summary.contracts.total} total</div>
+        <div class="metric-value">${summary.contracts?.active ?? 0}</div>
+        <div class="cell-sub">${summary.contracts?.total ?? 0} total</div>
       </div>
       <div class="card card-pad metric">
         <div class="metric-top"><h3 class="card-title">${esc(t('providers.metricExpiring') || 'Expiring ≤60 days')}</h3>${iconChip('event_upcoming', summary.expiringWithin60Days ? 'amber' : 'emerald')}</div>
-        <div class="metric-value">${summary.expiringWithin60Days}</div>
+        <div class="metric-value">${summary.expiringWithin60Days ?? 0}</div>
       </div>
       <div class="card card-pad metric">
-        <div class="metric-top"><h3 class="card-title">${esc(t('providers.metricExpired') || 'Expired')}</h3>${iconChip('event_busy', summary.contracts.expired ? 'rose' : 'slate')}</div>
-        <div class="metric-value">${summary.contracts.expired}</div>
-      </div>
+        <div class="metric-top"><h3 class="card-title">${esc(t('providers.metricExpired') || 'Expired')}</h3>${iconChip('event_busy', summary.contracts?.expired ? 'rose' : 'slate')}</div>
+        <div class="metric-value">${summary.contracts?.expired ?? 0}</div>
+      </div>` : ''}
     </div>
 
+    ${(canReadProvider && canReadContract) ? `
     <div class="tabs" id="pc-tabs" role="tablist">
       <button type="button" class="tab ${tab === 'providers' ? 'active' : ''}" data-tab="providers" role="tab">
         <span class="ms">apartment</span> ${esc(t('providers.tabProviders') || 'Providers')}
@@ -137,16 +165,27 @@ Views.providers = async function (el, params = {}) {
         <span class="ms">description</span> ${esc(t('providers.tabContracts') || 'Contracts')}
         <span class="cell-sub" style="margin-left:6px">${filtersActive ? `${visibleContracts.length}/${contracts.length}` : contracts.length}</span>
       </button>
-    </div>
+    </div>` : ''}
 
     <div id="pc-body"></div>`;
 
   const body = $('#pc-body', el);
 
   if (tab === 'providers') {
-    renderProvidersTab(body, providers, canEdit, refresh, setTab);
+    renderProvidersTab(body, providers, {
+      canEditProvider,
+      canDeleteProvider,
+      canEditContract: canEditContract && canReadContract,
+      canReadContract,
+      canCreateContract: canCreateContract && canReadContract,
+      refresh,
+      setTab,
+    });
   } else {
-    renderContractsTab(body, visibleContracts, providers, canEdit, refresh, {
+    renderContractsTab(body, visibleContracts, providers, {
+      canEditContract,
+      canDeleteContract,
+      refresh,
       filterProvider,
       providerFilterId,
       statusFilter,
@@ -155,6 +194,7 @@ Views.providers = async function (el, params = {}) {
       allCount: contracts.length,
       setContractFilters,
       clearFilter: () => setTab('contracts'),
+      canReadProvider,
     });
   }
 
@@ -162,17 +202,26 @@ Views.providers = async function (el, params = {}) {
     b.addEventListener('click', () => setTab(b.dataset.tab));
   });
 
-  if (canEdit) {
-    $('#pc-new-provider', el)?.addEventListener('click', () => openProviderForm(null, refresh));
-    $('#pc-new-contract', el)?.addEventListener('click', () => openContractForm(
-      filterProvider ? { providerId: filterProvider.id } : null,
-      providers,
-      refresh
-    ));
-  }
+  $('#pc-new-provider', el)?.addEventListener('click', () => openProviderForm(null, refresh));
+  $('#pc-new-contract', el)?.addEventListener('click', () => openContractForm(
+    filterProvider ? { providerId: filterProvider.id } : null,
+    providers,
+    refresh
+  ));
 };
 
-function renderProvidersTab(el, providers, canEdit, refresh, setTab) {
+function renderProvidersTab(el, providers, opts = {}) {
+  const {
+    canEditProvider = false,
+    canDeleteProvider = false,
+    canEditContract = false,
+    canReadContract = false,
+    canCreateContract = false,
+    refresh,
+    setTab,
+  } = opts;
+  const canReadDocs = Auth.canIam('document', 'read') || Auth.can('canReadDocuments');
+  const canUploadDocs = Auth.canIam('document', 'upload') || Auth.canIam('document', 'create') || Auth.can('canUploadDocuments');
   if (!providers.length) {
     el.innerHTML = `
       <div class="card card-pad" style="text-align:center;padding:40px 24px">
@@ -185,151 +234,187 @@ function renderProvidersTab(el, providers, canEdit, refresh, setTab) {
     return;
   }
 
+  const providerContacts = (p) => (Array.isArray(p.contacts) && p.contacts.length)
+    ? p.contacts
+    : (p.contactName ? [{
+      name: p.contactName,
+      role: p.contactRole,
+      email: p.contactEmail,
+      phone: p.contactPhone,
+      isPrimary: true,
+    }] : []);
+
   el.innerHTML = `
-    <div class="grid grid-2" style="gap:16px">
+    <div class="pc-mini-grid">
       ${providers.map((p) => {
-        const contactList = (Array.isArray(p.contacts) && p.contacts.length)
-          ? p.contacts
-          : (p.contactName ? [{
-            name: p.contactName,
-            role: p.contactRole,
-            email: p.contactEmail,
-            phone: p.contactPhone,
-            isPrimary: true,
-          }] : []);
-        const supportBits = [
-          p.supportEmail && `<a href="mailto:${esc(p.supportEmail)}">${esc(p.supportEmail)}</a>`,
-          p.supportPhone && `<span class="mono">${esc(p.supportPhone)}</span>`,
-          p.supportPortal && (() => {
-            const href = safeHref(p.supportPortal);
-            return href
-              ? `<a href="${esc(href)}" target="_blank" rel="noopener noreferrer">${esc(t('providers.portal') || 'Support portal')}</a>`
-              : `<span class="cell-sub">${esc(p.supportPortal)}</span>`;
-          })(),
-        ].filter(Boolean);
+        const contacts = providerContacts(p);
+        const primary = contacts.find((c) => c.isPrimary) || contacts[0];
+        const initials = String(p.name).trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
+        const counts = [
+          canReadContract ? `<span class="pc-mini-count" title="${esc(t('providers.tabContracts') || 'Contracts')}"><span class="ms">description</span>${p.contractCount || 0}</span>` : '',
+          canReadDocs ? `<span class="pc-mini-count" title="${esc(t('common.documents') || 'Documents')}"><span class="ms">attach_file</span>${p.documentCount || 0}</span>` : '',
+          contacts.length ? `<span class="pc-mini-count" title="${esc(t('providers.contacts') || 'Contacts')}"><span class="ms">group</span>${contacts.length}</span>` : '',
+        ].filter(Boolean).join('');
         return `
-        <div class="card card-pad" data-provider-card="${esc(p.id)}">
-          <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start">
-            <div style="display:flex;gap:12px;align-items:flex-start;min-width:0">
-              ${iconChip('apartment', p.status === 'Active' ? 'indigo' : 'slate')}
-              <div style="min-width:0">
-                <div class="cell-title" style="font-size:16px">${esc(p.name)}</div>
-                <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">
-                  <span class="pill pill-blue">${esc(p.category)}</span>
-                  ${statusPill(p.status)}
-                  ${(p.activeContractCount || 0) > 0
-                    ? `<span class="pill pill-emerald">${p.activeContractCount} ${esc(t('providers.activeContractsShort') || 'active')}</span>`
-                    : ''}
-                  ${(p.documentCount || 0) > 0
-                    ? `<span class="pill pill-slate"><span class="ms" style="font-size:14px;vertical-align:middle">attach_file</span> ${p.documentCount}</span>`
-                    : ''}
-                </div>
-              </div>
+        <button type="button" class="card pc-mini-card ${p.status !== 'Active' ? 'is-inactive' : ''}" data-open-provider="${esc(p.id)}">
+          <div class="pc-mini-top">
+            <span class="pc-mini-avatar">${esc(initials)}</span>
+            <div class="pc-mini-id">
+              <span class="pc-mini-name" title="${esc(p.name)}">${esc(p.name)}</span>
+              <span class="pc-mini-cat">${esc(p.category)}${p.status !== 'Active' ? ` · ${esc(p.status)}` : ''}</span>
             </div>
-            ${canEdit ? `
-            <div class="actions" style="flex-shrink:0">
-              <button class="btn btn-outline btn-sm" data-edit-provider="${esc(p.id)}" title="Edit"><span class="ms">edit</span></button>
-              <button class="btn btn-outline btn-sm" data-del-provider="${esc(p.id)}" title="Delete"><span class="ms">delete</span></button>
-            </div>` : ''}
+            <span class="pc-mini-dot ${p.status === 'Active' ? 'is-active' : ''}" title="${esc(p.status)}"></span>
           </div>
-
-          <div class="grid grid-2" style="gap:12px;margin-top:16px;font-size:13px">
-            <div>
-              <div class="cell-sub" style="margin-bottom:4px">${esc(t('providers.companyContact') || 'Company')}</div>
-              <div>${p.email ? `<a href="mailto:${esc(p.email)}">${esc(p.email)}</a>` : '<span class="cell-sub">—</span>'}</div>
-              <div class="mono" style="margin-top:2px">${esc(p.phone || '—')}</div>
-              ${p.website ? (() => {
-                const href = safeHref(p.website);
-                const label = esc(String(p.website).replace(/^https?:\/\//, ''));
-                return href
-                  ? `<div style="margin-top:2px"><a href="${esc(href)}" target="_blank" rel="noopener noreferrer">${label}</a></div>`
-                  : `<div style="margin-top:2px" class="cell-sub">${label}</div>`;
-              })() : ''}
-              ${p.accountNumber ? `<div class="cell-sub" style="margin-top:6px">Acct <span class="mono">${esc(p.accountNumber)}</span></div>` : ''}
-            </div>
-            <div>
-              <div class="cell-sub" style="margin-bottom:6px">${esc(t('providers.contacts') || 'Contacts')}</div>
-              ${contactList.length
-                ? `<div class="pc-contact-cards pc-contact-cards-compact">
-                    ${contactList.map((c) => `
-                      <div class="pc-contact-card ${c.isPrimary ? 'is-primary' : ''}">
-                        <div class="pc-contact-name">${esc(c.name)}${c.isPrimary ? ` <span class="pill pill-blue pill-xs">${esc(t('providers.primaryBadge') || 'Primary')}</span>` : ''}</div>
-                        ${c.role ? `<div class="cell-sub">${esc(c.role)}</div>` : ''}
-                        <div class="pc-contact-meta">
-                          ${c.email ? `<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>` : ''}
-                          ${c.phone ? `<span class="mono">${esc(c.phone)}</span>` : ''}
-                        </div>
-                      </div>`).join('')}
-                  </div>`
-                : '<span class="cell-sub">—</span>'}
-              ${supportBits.length ? `
-                <div class="cell-sub" style="margin:10px 0 4px">${esc(t('providers.support') || 'Support')}</div>
-                ${supportBits.map((b) => `<div style="margin-top:2px">${b}</div>`).join('')}` : ''}
-            </div>
-          </div>
-
-          ${p.notes ? `<p class="cell-sub" style="margin:14px 0 0;white-space:pre-wrap">${esc(p.notes)}</p>` : ''}
-
-          <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
-            <button class="btn btn-outline btn-sm" data-provider-docs="${esc(p.id)}">
-              <span class="ms">attach_file</span>
-              ${esc(t('common.documents') || 'Documents')} (${p.documentCount || 0})
-            </button>
-            <button class="btn btn-outline btn-sm" data-show-contracts="${esc(p.id)}">
-              <span class="ms">description</span>
-              ${esc(t('providers.viewContracts') || 'Contracts')} (${p.contractCount || 0})
-            </button>
-            ${canEdit ? `
-            <button class="btn btn-primary btn-sm" data-add-contract-for="${esc(p.id)}">
-              <span class="ms">add</span> ${esc(t('providers.addContract') || 'Add contract')}
-            </button>` : ''}
-          </div>
-        </div>`;
+          ${primary ? `<div class="pc-mini-contact" title="${esc(primary.name)}${primary.role ? ' — ' + esc(primary.role) : ''}">
+            <span class="ms">person</span>${esc(primary.name)}${primary.role ? ` <span class="pc-mini-role">· ${esc(primary.role)}</span>` : ''}
+          </div>` : ''}
+          <div class="pc-mini-foot">${counts}<span class="pc-mini-open"><span class="ms">arrow_forward</span></span></div>
+        </button>`;
       }).join('')}
     </div>`;
 
-  el.querySelectorAll('[data-edit-provider]').forEach((b) => {
-    b.addEventListener('click', () => {
-      const p = providers.find((x) => x.id === b.dataset.editProvider);
-      if (p) openProviderForm(p, refresh);
-    });
+  const openDetail = (p) => openProviderDetail(p, {
+    contacts: providerContacts(p),
+    canEditProvider,
+    canDeleteProvider,
+    canReadContract,
+    canCreateContract,
+    canReadDocs,
+    canUploadDocs,
+    refresh,
+    setTab,
   });
-  el.querySelectorAll('[data-del-provider]').forEach((b) => {
-    b.addEventListener('click', async () => {
-      const p = providers.find((x) => x.id === b.dataset.delProvider);
-      if (!p) return;
-      if (!confirm(`Delete provider “${p.name}”?`)) return;
-      try {
-        await api(`/providers/${p.id}`, { method: 'DELETE' });
-        toast('Provider deleted', 'success');
-        refresh();
-      } catch (err) { toast(err.message, 'error'); }
-    });
-  });
-  el.querySelectorAll('[data-show-contracts]').forEach((b) => {
-    b.addEventListener('click', () => setTab('contracts', { providerId: b.dataset.showContracts }));
-  });
-  el.querySelectorAll('[data-provider-docs]').forEach((b) => {
-    b.addEventListener('click', () => {
-      const p = providers.find((x) => x.id === b.dataset.providerDocs);
-      if (p) openEntityDocs({
-        kind: 'provider',
-        id: p.id,
-        title: p.name,
-        canEdit,
-        onDone: refresh,
-      });
-    });
-  });
-  el.querySelectorAll('[data-add-contract-for]').forEach((b) => {
-    b.addEventListener('click', () => {
-      openContractForm({ providerId: b.dataset.addContractFor }, providers, refresh);
+
+  el.querySelectorAll('[data-open-provider]').forEach((card) => {
+    card.addEventListener('click', () => {
+      const p = providers.find((x) => x.id === card.dataset.openProvider);
+      if (p) openDetail(p);
     });
   });
 }
 
-function renderContractsTab(el, contracts, providers, canEdit, refresh, opts = {}) {
+/** Full provider details in a modal — contacts, support, notes, docs/contracts shortcuts. */
+function openProviderDetail(p, opts = {}) {
   const {
+    contacts = [],
+    canEditProvider = false,
+    canDeleteProvider = false,
+    canReadContract = false,
+    canCreateContract = false,
+    canReadDocs = false,
+    canUploadDocs = false,
+    refresh,
+    setTab,
+  } = opts;
+
+  const joinMeta = (parts) => parts.filter(Boolean).join('<span class="pc-sep" aria-hidden="true">·</span>');
+  const siteHref = p.website ? safeHref(p.website) : null;
+  const siteLabel = p.website ? esc(String(p.website).replace(/^https?:\/\//, '')) : '';
+  const companyMeta = joinMeta([
+    p.email && `<a href="mailto:${esc(p.email)}">${esc(p.email)}</a>`,
+    p.phone && `<span class="mono">${esc(p.phone)}</span>`,
+    p.website && (siteHref
+      ? `<a href="${esc(siteHref)}" target="_blank" rel="noopener noreferrer">${siteLabel}</a>`
+      : `<span>${siteLabel}</span>`),
+    p.accountNumber && `<span class="mono">${esc(p.accountNumber)}</span>`,
+    p.taxId && `<span class="mono">${esc(p.taxId)}</span>`,
+  ]);
+  const supportMeta = joinMeta([
+    p.supportEmail && `<a href="mailto:${esc(p.supportEmail)}">${esc(p.supportEmail)}</a>`,
+    p.supportPhone && `<span class="mono">${esc(p.supportPhone)}</span>`,
+    p.supportPortal && (() => {
+      const href = safeHref(p.supportPortal);
+      return href
+        ? `<a href="${esc(href)}" target="_blank" rel="noopener noreferrer">${esc(t('providers.portal') || 'Support portal')}</a>`
+        : `<span>${esc(p.supportPortal)}</span>`;
+    })(),
+  ]);
+
+  openModal({
+    title: p.name,
+    wide: true,
+    body: `
+      <div class="pc-detail">
+        <div class="pc-provider-title-row" style="margin-bottom:4px">
+          <span class="pc-provider-pills">
+            <span class="pill pill-blue">${esc(p.category)}</span>
+            ${statusPill(p.status)}
+          </span>
+        </div>
+        ${companyMeta ? `<div class="pc-meta-line">${companyMeta}</div>` : ''}
+        ${p.notes ? `<p class="pc-provider-notes" style="-webkit-line-clamp:unset">${esc(p.notes)}</p>` : ''}
+
+        ${contacts.length ? `
+        <h4 class="pc-detail-label">${esc(t('providers.contacts') || 'Contacts')}</h4>
+        <ul class="pc-contact-list">
+          ${contacts.map((c) => {
+            const detail = joinMeta([
+              c.email && `<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>`,
+              c.phone && `<span class="mono">${esc(c.phone)}</span>`,
+            ]);
+            return `
+            <li class="pc-contact-item ${c.isPrimary ? 'is-primary' : ''}">
+              <div class="pc-contact-who">
+                <span class="pc-contact-name">${esc(c.name)}</span>
+                ${c.isPrimary ? `<span class="pc-primary-dot" title="${esc(t('providers.primaryBadge') || 'Primary')}"></span>` : ''}
+                ${c.role ? `<span class="pc-contact-role">${esc(c.role)}</span>` : ''}
+              </div>
+              ${detail ? `<div class="pc-contact-detail">${detail}</div>` : ''}
+            </li>`;
+          }).join('')}
+        </ul>` : ''}
+
+        ${supportMeta ? `
+        <div class="pc-support-line">
+          <span class="pc-support-label">${esc(t('providers.support') || 'Support')}</span>
+          <span class="pc-meta-line">${supportMeta}</span>
+        </div>` : ''}
+      </div>`,
+    foot: `
+      ${canDeleteProvider ? `<button class="btn btn-outline" id="pcd-del" style="margin-right:auto;color:var(--rose-700)"><span class="ms">delete</span> ${esc(t('common.delete') || 'Delete')}</button>` : ''}
+      ${canReadDocs || canUploadDocs ? `<button class="btn btn-outline" id="pcd-docs"><span class="ms">attach_file</span> ${esc(t('common.documents') || 'Documents')}${canReadDocs ? ` (${p.documentCount || 0})` : ''}</button>` : ''}
+      ${canReadContract ? `<button class="btn btn-outline" id="pcd-contracts"><span class="ms">description</span> ${esc(t('providers.viewContracts') || 'Contracts')} (${p.contractCount || 0})</button>` : ''}
+      ${canCreateContract ? `<button class="btn btn-outline" id="pcd-add-contract"><span class="ms">add</span> ${esc(t('providers.addContract') || 'Add contract')}</button>` : ''}
+      ${canEditProvider ? `<button class="btn btn-primary" id="pcd-edit"><span class="ms">edit</span> ${esc(t('common.edit') || 'Edit')}</button>` : ''}
+      <button class="btn btn-outline" data-close>${esc(t('common.close') || 'Close')}</button>`,
+    onMount(overlay) {
+      $('#pcd-edit', overlay)?.addEventListener('click', () => {
+        closeModal();
+        openProviderForm(p, refresh);
+      });
+      $('#pcd-del', overlay)?.addEventListener('click', () => {
+        confirmModal(`Delete provider “${p.name}”?`, async () => {
+          await api(`/providers/${p.id}`, { method: 'DELETE' });
+          toast('Provider deleted', 'success');
+          closeModal();
+          refresh();
+        });
+      });
+      $('#pcd-docs', overlay)?.addEventListener('click', () => {
+        closeModal();
+        openEntityDocs({ kind: 'provider', id: p.id, title: p.name, onDone: refresh });
+      });
+      $('#pcd-contracts', overlay)?.addEventListener('click', () => {
+        closeModal();
+        setTab('contracts', { providerId: p.id });
+      });
+      $('#pcd-add-contract', overlay)?.addEventListener('click', async () => {
+        closeModal();
+        const providers = await api('/providers').catch(() => [p]);
+        openContractForm({ providerId: p.id }, providers, refresh);
+      });
+    },
+  });
+}
+
+function renderContractsTab(el, contracts, providers, opts = {}) {
+  const canViewCosts = Auth.canIam('contract', 'view_confidential') || Auth.can('canViewContractCosts');
+  const canReadDocs = Auth.canIam('document', 'read') || Auth.can('canReadDocuments');
+  const canUploadDocs = Auth.canIam('document', 'upload') || Auth.canIam('document', 'create') || Auth.can('canUploadDocuments');
+  const {
+    canEditContract = false,
+    canDeleteContract = false,
+    refresh,
     filterProvider = null,
     providerFilterId = '',
     statusFilter = '',
@@ -429,7 +514,7 @@ function renderContractsTab(el, contracts, providers, canEdit, refresh, opts = {
                 ${esc(c.category)}
                 ${c.contractNumber ? ` · <span class="mono">${esc(c.contractNumber)}</span>` : ''}
                 ${c.autoRenew ? ` · ${esc(t('providers.autoRenew') || 'Auto-renew')}` : ''}
-                ${(c.documentCount || 0) > 0 ? ` · ${c.documentCount} doc` : ''}
+                ${canReadDocs && (c.documentCount || 0) > 0 ? ` · ${c.documentCount} doc` : ''}
               </div>
             </td>
             <td>
@@ -442,8 +527,8 @@ function renderContractsTab(el, contracts, providers, canEdit, refresh, opts = {
               ${endExtra ? `<div style="margin-top:4px">${endExtra}</div>` : ''}
             </td>
             <td>
-              <div>${fmtMoney(c.costAmount, c.costCurrency)}</div>
-              <div class="cell-sub">${esc(c.billingCycle || '')}</div>
+              <div>${canViewCosts && c.costAmount != null ? fmtMoney(c.costAmount, c.costCurrency) : '—'}</div>
+              <div class="cell-sub">${canViewCosts ? esc(c.billingCycle || '') : ''}</div>
             </td>
             <td>${esc((c.ownerEmployee && c.ownerEmployee.fullName) || '—')}</td>
             <td>
@@ -453,11 +538,13 @@ function renderContractsTab(el, contracts, providers, canEdit, refresh, opts = {
                 : ''}
             </td>
             <td class="actions">
+              ${canReadDocs || canUploadDocs ? `
               <button class="btn btn-outline btn-sm" data-contract-docs="${esc(c.id)}" title="${esc(t('common.documents') || 'Documents')}">
-                <span class="ms">attach_file</span>${(c.documentCount || 0) ? ` ${c.documentCount}` : ''}
-              </button>
-              ${canEdit ? `
-              <button class="btn btn-outline btn-sm" data-edit-contract="${esc(c.id)}"><span class="ms">edit</span></button>
+                <span class="ms">attach_file</span>${canReadDocs && (c.documentCount || 0) ? ` ${c.documentCount}` : ''}
+              </button>` : ''}
+              ${canEditContract ? `
+              <button class="btn btn-outline btn-sm" data-edit-contract="${esc(c.id)}"><span class="ms">edit</span></button>` : ''}
+              ${canDeleteContract ? `
               <button class="btn btn-outline btn-sm" data-del-contract="${esc(c.id)}"><span class="ms">delete</span></button>` : ''}
             </td>
           </tr>`;
@@ -480,7 +567,6 @@ function renderContractsTab(el, contracts, providers, canEdit, refresh, opts = {
         kind: 'contract',
         id: c.id,
         title: c.title,
-        canEdit,
         onDone: refresh,
       });
     });
@@ -787,18 +873,20 @@ async function openContractForm(contract, providers, done) {
           { value: 'true', label: 'Yes' },
         ],
       },
-      {
-        name: 'costAmount', label: 'Cost amount', type: 'number', step: '0.01',
-        value: contract?.costAmount != null ? contract.costAmount : '',
-      },
-      {
-        name: 'costCurrency', label: 'Currency', type: 'selectOther',
-        value: contract?.costCurrency || appCurrency(),
-        options: currencyOptionsForSelect(contract?.costCurrency || appCurrency()),
-        otherLabel: 'Other ISO code…',
-        otherPlaceholder: 'e.g. USD',
-        otherRequiredMsg: 'Enter a 3-letter currency code',
-      },
+      ...((Auth.canIam('contract', 'view_confidential') || Auth.can('canViewContractCosts')) ? [
+        {
+          name: 'costAmount', label: 'Cost amount', type: 'number', step: '0.01',
+          value: contract?.costAmount != null ? contract.costAmount : '',
+        },
+        {
+          name: 'costCurrency', label: 'Currency', type: 'selectOther',
+          value: contract?.costCurrency || appCurrency(),
+          options: currencyOptionsForSelect(contract?.costCurrency || appCurrency()),
+          otherLabel: 'Other ISO code…',
+          otherPlaceholder: 'e.g. USD',
+          otherRequiredMsg: 'Enter a 3-letter currency code',
+        },
+      ] : []),
       {
         name: 'ownerEmployeeId', label: 'Internal owner', type: 'employeeSearch',
         value: contract?.ownerEmployee?.id || '',
@@ -829,8 +917,15 @@ async function openContractForm(contract, providers, done) {
 }
 
 /** Documents archive modal for a provider or contract (PDF / PNG / JPEG / WebP). */
-async function openEntityDocs({ kind, id, title, canEdit, onDone }) {
-  const canDel = Auth.can('canManageUsers');
+async function openEntityDocs({ kind, id, title, onDone }) {
+  const canRead = Auth.canIam('document', 'read') || Auth.can('canReadDocuments');
+  const canDownload = Auth.canIam('document', 'download') || Auth.can('canDownloadDocuments');
+  const canUpload = Auth.canIam('document', 'upload') || Auth.canIam('document', 'create') || Auth.can('canUploadDocuments');
+  const canDel = Auth.canIam('document', 'delete') || Auth.can('canDeleteDocuments');
+  if (!canRead && !canUpload) {
+    toast(t('common.forbidden') || 'You do not have permission to view documents', 'error');
+    return;
+  }
   const base = kind === 'provider' ? `/providers/${id}` : `/contracts/${id}`;
   const dlBase = kind === 'provider'
     ? '/api/providers/documents'
@@ -842,41 +937,34 @@ async function openEntityDocs({ kind, id, title, canEdit, onDone }) {
     : `${Math.max(1, Math.round(n / 1024))} KB`);
 
   try {
-    const documents = await api(`${base}/documents`).catch(() => []);
-    const canOpenDocs = Auth.can('canExecuteHandovers');
+    const documents = canRead ? await api(`${base}/documents`).catch(() => []) : [];
     openModal({
       title: `${title} — ${t('common.documents') || 'Documents'} (${documents.length})`,
       wide: true,
       body: `
         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;flex-wrap:wrap">
           <div class="cell-sub">${esc(t('providers.docsHint') || 'Upload signed contracts, SLAs, invoices or account forms (PDF, PNG, JPEG, WebP — max 8MB).')}</div>
-          ${canEdit ? `<button class="btn btn-primary btn-sm" id="pc-doc-upload"><span class="ms">upload_file</span> ${esc(t('common.upload') || 'Upload')}</button>` : ''}
+          ${canUpload ? `<button class="btn btn-primary btn-sm" id="pc-doc-upload"><span class="ms">upload_file</span> ${esc(t('common.upload') || 'Upload')}</button>` : ''}
         </div>
         <input type="file" id="pc-doc-file" accept="application/pdf,image/png,image/jpeg,image/webp,.pdf,.png,.jpg,.jpeg,.webp" class="hidden">
-        ${documents.length === 0
+        ${!canRead
+          ? `<div class="table-empty">${esc(t('providers.docsNoRead') || 'Upload allowed — listing requires document:read.')}</div>`
+          : (documents.length === 0
           ? `<div class="table-empty">${esc(t('providers.docsEmpty') || 'No documents yet.')}</div>`
           : `<div class="table-wrap" style="border:1px solid var(--outline-variant);border-radius:var(--radius-lg)"><table class="data">
               <thead><tr><th>Document</th><th>Size</th><th>Added</th><th style="text-align:right"></th></tr></thead>
               <tbody>
                 ${documents.map((d) => `
                 <tr>
-                  <td><div style="display:flex;align-items:center;gap:8px">
-                    <span class="ms" style="color:var(--on-surface-variant)">${d.mime && d.mime.includes('pdf') ? 'picture_as_pdf' : 'image'}</span>
-                    ${canOpenDocs
-                      ? `<a href="#" class="cell-title" data-pc-view="${esc(d.id)}">${esc(d.filename)}</a>`
-                      : `<span class="cell-title">${esc(d.filename)}</span>`}
-                  </div></td>
+                  <td>${docFileLabel(d, { canDownload, viewAttr: 'data-pc-view' })}</td>
                   <td class="cell-sub">${fmtKB(d.byteSize || 0)}</td>
                   <td class="cell-sub">${fmtDateTime(d.createdAt)}${d.uploadedByName ? ' · ' + esc(d.uploadedByName) : ''}</td>
                   <td class="actions">
-                    ${canOpenDocs ? `
-                    <button type="button" class="btn btn-outline btn-sm" data-pc-view="${esc(d.id)}" title="${esc(t('common.view') || 'View')}"><span class="ms">visibility</span></button>
-                    <button type="button" class="btn btn-outline btn-sm" data-pc-dl="${esc(d.id)}" title="${esc(t('common.download') || 'Download')}"><span class="ms">download</span></button>` : ''}
-                    ${canDel ? `<button type="button" class="btn btn-outline btn-sm" data-pc-del="${esc(d.id)}"><span class="ms">delete</span></button>` : ''}
+                    ${docRowActions(d, { canDownload, canDel, viewAttr: 'data-pc-view', dlAttr: 'data-pc-dl', delAttr: 'data-pc-del' })}
                   </td>
                 </tr>`).join('')}
               </tbody>
-            </table></div>`}`,
+            </table></div>`)}`,
       foot: `<button class="btn btn-outline" data-close>${esc(t('common.close') || 'Close')}</button>`,
       onMount(overlay) {
         overlay.querySelectorAll('[data-pc-view]').forEach((a) => a.addEventListener('click', (e) => {
@@ -914,7 +1002,7 @@ async function openEntityDocs({ kind, id, title, canEdit, onDone }) {
               toast(`"${file.name}" uploaded`, 'success');
               closeModal();
               if (onDone) onDone();
-              openEntityDocs({ kind, id, title, canEdit, onDone });
+              openEntityDocs({ kind, id, title, onDone });
             } catch (err) {
               toast(err.message, 'error');
               upBtn.disabled = false;
@@ -929,7 +1017,7 @@ async function openEntityDocs({ kind, id, title, canEdit, onDone }) {
               toast('Document deleted', 'success');
               closeModal();
               if (onDone) onDone();
-              openEntityDocs({ kind, id, title, canEdit, onDone });
+              openEntityDocs({ kind, id, title, onDone });
             });
           });
         });

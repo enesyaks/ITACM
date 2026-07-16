@@ -20,7 +20,7 @@ const ROUTES = {
   '#/stockcount': { title: 'Stock Count', view: 'stockcount', icon: 'fact_check' },
   '#/reports': { title: 'Reports', view: 'reports', icon: 'summarize' },
   '#/audit': { title: 'Audit Log', view: 'audit', icon: 'history', perm: 'canViewAudit' },
-  '#/integrations': { title: 'Integrations', view: 'integrations', icon: 'hub', perm: 'canManageBranding' },
+  '#/integrations': { title: 'Integrations', view: 'integrations', icon: 'hub', perm: 'canAccessIntegrations' },
   '#/users': { title: 'IT Users', view: 'users', icon: 'vpn_key', perm: 'canManageUsers' },
 };
 
@@ -102,7 +102,98 @@ function applyBranding() {
 }
 
 /* ---- screens ---- */
+function ownerNeedsMfaSetup(profile) {
+  return !!(profile && profile.role === 'Owner' && !profile.mfaEnabled);
+}
+
+async function showMandatoryOwnerMfa() {
+  $('#onboarding-screen').classList.add('hidden');
+  $('#login-screen').classList.add('hidden');
+  $('#app').classList.add('hidden');
+
+  openModal({
+    title: t('account.mfaOwnerTitle') || 'MFA required for Owners',
+    dismissible: false,
+    body: `
+      <p class="cell-sub" style="margin:0 0 12px">
+        ${esc(t('account.mfaOwnerBody') || 'Owner accounts must enable authenticator-app MFA before using the app. Scan the QR code, then confirm with a 6-digit code.')}
+      </p>
+      <div id="owner-mfa-enroll">
+        <button type="button" class="btn btn-primary" id="owner-mfa-start">
+          <span class="ms">phonelink_lock</span> ${esc(t('account.mfaSetup') || 'Set up MFA')}
+        </button>
+      </div>`,
+    foot: `<button type="button" class="btn btn-outline" id="owner-mfa-signout">
+             <span class="ms">logout</span> ${esc(t('common.signout') || 'Sign out')}</button>`,
+    onMount(overlay) {
+      $('#owner-mfa-signout', overlay).addEventListener('click', () => {
+        closeModal();
+        logout();
+      });
+      const start = async () => {
+        const box = $('#owner-mfa-enroll', overlay);
+        try {
+          const setup = await api('/auth/mfa/setup', { method: 'POST' });
+          box.innerHTML = `
+            <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
+              <img src="${esc(setup.qrDataUrl)}" alt="MFA QR" width="160" height="160"
+                   style="border-radius:8px;border:1px solid var(--outline-variant)">
+              <div style="flex:1;min-width:180px">
+                <p class="cell-sub" style="margin:0 0 8px">${esc(t('account.mfaScanHint') || 'Scan with Google Authenticator, 1Password, Authy…')}</p>
+                <div class="mono cell-sub" style="word-break:break-all;margin-bottom:8px">${esc(setup.secret)}</div>
+                <div class="form-field"><label>${esc(t('login.mfaCode') || 'Authentication code')}</label>
+                  <input type="text" id="owner-mfa-code" inputmode="numeric" maxlength="8" autocomplete="one-time-code"></div>
+                <button type="button" class="btn btn-primary btn-sm" id="owner-mfa-confirm" style="margin-top:8px">
+                  ${esc(t('account.mfaEnable') || 'Enable MFA')}
+                </button>
+                <div id="owner-mfa-err" class="login-error hidden" style="margin-top:8px"></div>
+              </div>
+            </div>`;
+          $('#owner-mfa-confirm', box).addEventListener('click', async () => {
+            const err = $('#owner-mfa-err', box);
+            err.classList.add('hidden');
+            try {
+              const res = await api('/auth/mfa/enable', {
+                method: 'POST',
+                body: { code: ($('#owner-mfa-code', box).value || '').trim() },
+              });
+              const codes = (res.backupCodes || []).join('\n');
+              box.innerHTML = `
+                <p class="pill pill-emerald">${esc(t('account.mfaEnabled') || 'MFA enabled')}</p>
+                <p class="cell-sub">${esc(t('account.mfaBackupSave') || 'Save these backup codes somewhere safe — each works once:')}</p>
+                <pre class="mono" style="background:var(--surface-low);padding:12px;border-radius:8px;white-space:pre-wrap;max-height:160px;overflow:auto">${esc(codes)}</pre>
+                <button type="button" class="btn btn-primary" id="owner-mfa-continue" style="margin-top:12px">
+                  ${esc(t('account.mfaContinue') || 'Continue to app')}
+                </button>`;
+              if (Auth.profile) {
+                Auth.profile.mfaEnabled = true;
+                Auth.profile.mfaEnrollmentRequired = false;
+                localStorage.setItem('itacm_profile', JSON.stringify(Auth.profile));
+              }
+              $('#owner-mfa-continue', box).addEventListener('click', () => {
+                closeModal();
+                showApp();
+              });
+            } catch (e) {
+              err.textContent = e.message || 'Failed';
+              err.classList.remove('hidden');
+            }
+          });
+        } catch (e) {
+          toast(e.message, 'error');
+        }
+      };
+      $('#owner-mfa-start', overlay).addEventListener('click', start);
+      start();
+    },
+  });
+}
+
 function showApp() {
+  if (ownerNeedsMfaSetup(Auth.profile)) {
+    showMandatoryOwnerMfa();
+    return;
+  }
   $('#onboarding-screen').classList.add('hidden');
   $('#login-screen').classList.add('hidden');
   $('#app').classList.remove('hidden');
@@ -111,7 +202,7 @@ function showApp() {
   $('#user-role').textContent = Auth.profile.role;
   $('#user-avatar').textContent = initials(name);
   $('#topbar-avatar').textContent = initials(name);
-  $('#sidebar-new-asset').style.display = Auth.can('canManageAssets') ? '' : 'none';
+  $('#sidebar-new-asset').style.display = Auth.canIam('asset', 'create') ? '' : 'none';
   applyBranding();
   if (typeof initMobileShell === 'function' && !window.__mobileShellReady) {
     window.__mobileShellReady = true;
@@ -1758,8 +1849,9 @@ function startUiTour() {
 }
 
 async function showAccountSecurity() {
-  let status = { enabled: false, backupCodesRemaining: 0 };
+  let status = { enabled: false, backupCodesRemaining: 0, mandatory: false };
   try { status = await api('/auth/mfa'); } catch { /* ignore */ }
+  const mandatory = !!(status.mandatory || (Auth.profile && Auth.profile.role === 'Owner'));
 
   openModal({
     title: t('account.security') || 'Account security',
@@ -1781,15 +1873,21 @@ async function showAccountSecurity() {
           <header class="settings-panel-head">
             <h3>Two-factor authentication (TOTP)</h3>
             <span class="pill ${status.enabled ? 'pill-emerald' : 'pill-slate'}">${status.enabled ? 'Enabled' : 'Off'}</span>
+            ${mandatory ? '<span class="pill pill-amber">Required</span>' : ''}
           </header>
-          <p class="cell-sub" style="margin:0 0 10px">Use an authenticator app (Google Authenticator, 1Password, Authy…). Backup codes remaining: <strong>${status.backupCodesRemaining || 0}</strong></p>
+          <p class="cell-sub" style="margin:0 0 10px">${mandatory
+            ? esc(t('account.mfaOwnerNote') || 'MFA is mandatory for Owner accounts and cannot be turned off.')
+            : 'Use an authenticator app (Google Authenticator, 1Password, Authy…).'}
+            Backup codes remaining: <strong>${status.backupCodesRemaining || 0}</strong></p>
           <div id="sec-mfa-body">
             ${status.enabled
-              ? `<div class="form-grid" style="grid-template-columns:1fr 1fr">
+              ? (mandatory
+                ? `<p class="cell-sub">${esc(t('account.mfaOwnerLocked') || 'Disable is not available for Owner accounts.')}</p>`
+                : `<div class="form-grid" style="grid-template-columns:1fr 1fr">
                    <div class="form-field"><label>Password</label><input type="password" id="sec-dis-pwd"></div>
                    <div class="form-field"><label>Authenticator code</label><input type="text" id="sec-dis-code" inputmode="numeric" maxlength="8"></div>
                  </div>
-                 <button class="btn btn-danger btn-sm" id="sec-mfa-off" style="margin-top:8px">Disable MFA</button>`
+                 <button class="btn btn-danger btn-sm" id="sec-mfa-off" style="margin-top:8px">Disable MFA</button>`)
               : `<button class="btn btn-primary btn-sm" id="sec-mfa-on">Set up MFA</button>`}
           </div>
         </section>

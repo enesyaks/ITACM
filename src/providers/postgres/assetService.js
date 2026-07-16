@@ -223,9 +223,11 @@ const ASSET_SELECT = `SELECT a.*,
   p.brand AS parent_brand,
   p.model AS parent_model,
   p.category AS parent_category,
+  cm.lifecycle_months AS model_lifecycle_months,
   COALESCE(lic.related_licenses, '[]'::json) AS related_licenses_json
  FROM assets a
  LEFT JOIN assets p ON p.id = a.parent_asset_id
+ LEFT JOIN catalog_models cm ON cm.category = a.category AND cm.brand = a.brand AND cm.model = a.model
  LEFT JOIN LATERAL (
    SELECT json_agg(json_build_object(
      'id', lx.id,

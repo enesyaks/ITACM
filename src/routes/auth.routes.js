@@ -1,7 +1,7 @@
 const router = require('express').Router();
-const { authenticate, requireRole } = require('../middleware/auth');
+const { authenticate, requireRole, requirePermission } = require('../middleware/auth');
 const { asyncHandler } = require('../utils/asyncHandler');
-const { authProvider } = require('../services');
+const { authProvider, permissionService } = require('../services');
 const { HttpError } = require('../utils/httpError');
 const { rateLimitIp } = require('../utils/setupAccess');
 
@@ -107,34 +107,120 @@ function guardPrivilegedRoleAssignment(req) {
   }
 }
 
-router.get('/users', authenticate, requireRole('Owner', 'Admin'), asyncHandler(async (req, res) => {
+/** GET /api/auth/users — list IT users. İzin: user_management:read */
+router.get('/users', authenticate, requirePermission('user_management', 'read'), asyncHandler(async (req, res) => {
   res.json({ success: true, data: await authProvider.listUsers() });
 }));
 
-router.post('/users', authenticate, requireRole('Owner', 'Admin'), asyncHandler(async (req, res) => {
+/** POST /api/auth/users — create IT user. İzin: user_management:create */
+router.post('/users', authenticate, requirePermission('user_management', 'create'), asyncHandler(async (req, res) => {
   guardPrivilegedRoleAssignment(req);
   res.status(201).json({ success: true, data: await authProvider.createItUser(req.body, req.user) });
 }));
 
-router.put('/users/:uid/role', authenticate, requireRole('Owner', 'Admin'), asyncHandler(async (req, res) => {
+/** PUT /api/auth/users/:uid/role — change user role. İzin: user_management:update */
+router.put('/users/:uid/role', authenticate, requirePermission('user_management', 'update'), asyncHandler(async (req, res) => {
   guardPrivilegedRoleAssignment(req);
   res.json({ success: true, data: await authProvider.setUserRole(req.params.uid, req.body.role, req.user) });
 }));
 
-router.get('/users/admin-logs', authenticate, requireRole('Owner', 'Admin'), asyncHandler(async (req, res) => {
+/** GET /api/auth/users/admin-logs — admin action logs. İzin: user_management:read */
+router.get('/users/admin-logs', authenticate, requirePermission('user_management', 'read'), asyncHandler(async (req, res) => {
   res.json({ success: true, data: await authProvider.getAdminLogs(String(req.query.email || ''), req.query.limit) });
 }));
 
-router.put('/users/:uid/status', authenticate, requireRole('Owner'), asyncHandler(async (req, res) => {
+/** PUT /api/auth/users/:uid/status — disable/enable user. İzin: user_management:update */
+router.put('/users/:uid/status', authenticate, requirePermission('user_management', 'update'), asyncHandler(async (req, res) => {
   res.json({ success: true, data: await authProvider.setUserStatus(req.params.uid, req.body.status, req.user) });
 }));
 
-router.delete('/users/:uid', authenticate, requireRole('Owner'), asyncHandler(async (req, res) => {
+/** DELETE /api/auth/users/:uid — delete user. İzin: user_management:delete */
+router.delete('/users/:uid', authenticate, requirePermission('user_management', 'delete'), asyncHandler(async (req, res) => {
   res.json({ success: true, data: await authProvider.deleteUser(req.params.uid, req.user) });
 }));
 
-router.get('/users/:uid/logins', authenticate, requireRole('Owner', 'Admin'), asyncHandler(async (req, res) => {
+/** GET /api/auth/users/:uid/logins — login logs. İzin: user_management:read */
+router.get('/users/:uid/logins', authenticate, requirePermission('user_management', 'read'), asyncHandler(async (req, res) => {
   res.json({ success: true, data: await authProvider.getLoginLogs(req.params.uid, req.query.limit) });
+}));
+
+/** ================================================================ */
+/** IAM PERMISSION YÖNETİM ROUTE'LARI */
+/** ================================================================ */
+
+/** GET /api/auth/iam-schema — canonical resource→actions matrix (for UI). */
+router.get('/iam-schema', authenticate, requirePermission('user_management', 'read'), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: permissionService.getIamSchema() });
+}));
+
+/** GET /api/auth/permission-groups — list all permission groups. İzin: user_management:read */
+router.get('/permission-groups', authenticate, requirePermission('user_management', 'read'), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await permissionService.listPermissionGroups() });
+}));
+
+/** GET /api/auth/permission-groups/:id — get group details. İzin: user_management:read */
+router.get('/permission-groups/:id', authenticate, requirePermission('user_management', 'read'), asyncHandler(async (req, res) => {
+  const data = await permissionService.getPermissionGroup(req.params.id);
+  if (!data) return res.status(404).json({ success: false, error: 'Permission group not found' });
+  res.json({ success: true, data });
+}));
+
+/** POST /api/auth/permission-groups — create custom group. İzin: user_management:create */
+router.post('/permission-groups', authenticate, requirePermission('user_management', 'create'), asyncHandler(async (req, res) => {
+  res.status(201).json({ success: true, data: await permissionService.createPermissionGroup(req.body || {}, req.user) });
+}));
+
+/** PUT /api/auth/permission-groups/:id — update group. İzin: user_management:update */
+router.put('/permission-groups/:id', authenticate, requirePermission('user_management', 'update'), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await permissionService.updatePermissionGroup(req.params.id, req.body || {}, req.user) });
+}));
+
+/** DELETE /api/auth/permission-groups/:id — delete custom group. İzin: user_management:delete */
+router.delete('/permission-groups/:id', authenticate, requirePermission('user_management', 'delete'), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await permissionService.deletePermissionGroup(req.params.id, req.user) });
+}));
+
+/** POST /api/auth/permission-groups/:id/entries — add permission entry. İzin: user_management:update */
+router.post('/permission-groups/:id/entries', authenticate, requirePermission('user_management', 'update'), asyncHandler(async (req, res) => {
+  res.status(201).json({ success: true, data: await permissionService.addPermissionEntry(req.params.id, req.body || {}, req.user) });
+}));
+
+/** PUT /api/auth/permission-groups/:groupId/entries/:entryId — update entry. İzin: user_management:update */
+router.put('/permission-groups/:groupId/entries/:entryId', authenticate, requirePermission('user_management', 'update'), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await permissionService.updatePermissionEntry(req.params.entryId, req.body || {}, req.user) });
+}));
+
+/** DELETE /api/auth/permission-groups/:groupId/entries/:entryId — delete entry. İzin: user_management:update */
+router.delete('/permission-groups/:groupId/entries/:entryId', authenticate, requirePermission('user_management', 'update'), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await permissionService.deletePermissionEntry(req.params.entryId, req.user) });
+}));
+
+/** DELETE /api/auth/permission-groups/:id/entries?resource=&action= — remove all entries for resource+action (matrix toggle). */
+router.delete('/permission-groups/:id/entries', authenticate, requirePermission('user_management', 'update'), asyncHandler(async (req, res) => {
+  const resource = String(req.query.resource || '');
+  const action = String(req.query.action || '');
+  if (!resource || !action) {
+    return res.status(400).json({ success: false, error: 'resource and action query params are required' });
+  }
+  res.json({
+    success: true,
+    data: await permissionService.deletePermissionEntriesForAction(req.params.id, resource, action, req.user),
+  });
+}));
+
+/** PUT /api/auth/users/:uid/permission-group — set user's permission group. İzin: user_management:update */
+router.put('/users/:uid/permission-group', authenticate, requirePermission('user_management', 'update'), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await permissionService.setUserPermissionGroup(req.params.uid, (req.body || {}).groupId, req.user) });
+}));
+
+/** PUT /api/auth/users/:uid/custom-constraints — set user's custom constraints. İzin: user_management:update */
+router.put('/users/:uid/custom-constraints', authenticate, requirePermission('user_management', 'update'), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await permissionService.setUserCustomConstraints(req.params.uid, req.body || {}, req.user) });
+}));
+
+/** GET /api/auth/my-permissions — current user's effective permissions. Oturum açan kullanıcı her zaman erişebilir. */
+router.get('/my-permissions', authenticate, asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await permissionService.getUserPermissions(req.user) });
 }));
 
 module.exports = router;

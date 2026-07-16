@@ -51,7 +51,7 @@ async function resolveScannedAsset(raw) {
 
 function showQuickAssetCard(asset) {
   if (!asset) return;
-  const canEdit = Auth.can('canManageAssets');
+  const canEdit = Auth.canIamOp('asset', 'update');
   const emp = asset.currentEmployee;
   const specs = asset.specs || {};
   const specsLine = [specs.cpu, specs.ram, specs.storage].filter(Boolean).join(' · ');

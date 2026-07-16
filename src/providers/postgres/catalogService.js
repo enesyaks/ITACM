@@ -8,18 +8,41 @@ async function listCatalog() {
   return mapRows(rows);
 }
 
-async function addCatalogEntry({ category, brand, model }) {
+/** null (inherit) or an integer 1..240; anything else is rejected. */
+function normalizeLifecycleMonths(v) {
+  if (v === undefined || v === null || v === '') return null;
+  const m = Number(v);
+  if (!Number.isInteger(m) || m < 1 || m > 240) {
+    throw HttpError.badRequest('lifecycleMonths must be an integer between 1 and 240 (or blank to inherit the category default)');
+  }
+  return m;
+}
+
+async function addCatalogEntry({ category, brand, model, lifecycleMonths }) {
   if (!category || !brand || !model) throw HttpError.badRequest('category, brand and model are required');
+  const months = normalizeLifecycleMonths(lifecycleMonths);
   try {
     const { rows } = await query(
-      `INSERT INTO catalog_models (category, brand, model) VALUES ($1, $2, $3) RETURNING *`,
-      [category.trim(), brand.trim(), model.trim()]
+      `INSERT INTO catalog_models (category, brand, model, lifecycle_months) VALUES ($1, $2, $3, $4) RETURNING *`,
+      [category.trim(), brand.trim(), model.trim(), months]
     );
     return mapRows(rows)[0];
   } catch (err) {
     if (err.code === '23505') throw HttpError.conflict(`${brand} ${model} already exists in ${category}`);
     throw err;
   }
+}
+
+/** Update a catalog model's lifecycle (months). Pass null/'' to clear (inherit). */
+async function updateCatalogEntry(id, { lifecycleMonths }) {
+  if (!isUuid(id)) throw HttpError.notFound('Catalog entry not found');
+  const months = normalizeLifecycleMonths(lifecycleMonths);
+  const { rows } = await query(
+    `UPDATE catalog_models SET lifecycle_months = $2 WHERE id = $1 RETURNING *`,
+    [id, months]
+  );
+  if (!rows[0]) throw HttpError.notFound('Catalog entry not found');
+  return mapRows(rows)[0];
 }
 
 async function removeCatalogEntry(id) {
@@ -40,4 +63,4 @@ async function importFromAssets() {
   return { imported: rows.length };
 }
 
-module.exports = { listCatalog, addCatalogEntry, removeCatalogEntry, importFromAssets };
+module.exports = { listCatalog, addCatalogEntry, updateCatalogEntry, removeCatalogEntry, importFromAssets };

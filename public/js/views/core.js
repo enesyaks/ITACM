@@ -28,10 +28,10 @@ const catIcon = (c) => CATEGORY_ICONS[c] || 'devices_other';
 /** Lifecycle: centrally-managed months per category, applied to every asset. */
 function lifecycleInfo(x) {
   const lc = AppConfig.lifecycles || {};
-  // Per-asset override wins over the category default; a category set to 0 in
-  // the Product Catalog is excluded from EOL tracking.
+  // Resolution: per-asset override -> catalog model default -> category default.
+  // A category set to 0 in the Product Catalog is excluded from EOL tracking.
   const catMonths = lc[x.category] != null ? lc[x.category] : (lc.Other || 48);
-  const months = x.lifecycleMonths || catMonths;
+  const months = x.lifecycleMonths || x.modelLifecycleMonths || catMonths;
   if (!months) return { months: 0, eol: null, pct: null, overdue: false, excluded: true };
   if (!x.purchaseDate) return { months, eol: null, pct: null, overdue: false };
   const start = new Date(x.purchaseDate._seconds ? x.purchaseDate._seconds * 1000 : x.purchaseDate);

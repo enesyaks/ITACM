@@ -1,5 +1,11 @@
 Views.licenses = async function (el) {
-  const canEdit = Auth.can('canManageAssets');
+  const canEdit = Auth.canIamOp('license', 'create') || Auth.canIamOp('license', 'update');
+  const canAssign = Auth.canIam('license', 'assign') || Auth.canIam('license', 'manage');
+  const canRevoke = Auth.canIam('license', 'unassign') || canAssign;
+  const canViewCosts = Auth.canIam('license', 'view_confidential') || Auth.can('canViewLicenseCosts');
+  const canReadDocs = Auth.canIam('document', 'read') || Auth.can('canReadDocuments');
+  const canDownloadDocs = Auth.canIam('document', 'download') || Auth.can('canDownloadDocuments');
+  const canUploadDocs = Auth.canIam('document', 'upload') || Auth.canIam('document', 'create') || Auth.can('canUploadDocuments');
   const [items, providers, contracts] = await Promise.all([
     api('/licenses'),
     api('/providers').catch(() => []),
@@ -68,7 +74,7 @@ Views.licenses = async function (el) {
               <td>
                 <div class="cell-title" style="font-size:13px">${esc(purchaseLabel)}</div>
                 ${l.purchaseAmount != null
-                  ? `<div class="cell-sub">${esc(fmtMoney(l.purchaseAmount, l.purchaseCurrency))}</div>` : ''}
+                  ? `<div class="cell-sub">${canViewCosts ? esc(fmtMoney(l.purchaseAmount, l.purchaseCurrency)) : '—'}</div>` : ''}
               </td>
               <td>
                 <div style="display:flex;align-items:center;gap:8px">
@@ -84,17 +90,19 @@ Views.licenses = async function (el) {
                 ${Number(l.discoveredInstalls) > 0
                   ? `<button class="btn btn-outline btn-sm" data-sam="${esc(l.id)}" title="SAM — discovered installs (${Number(l.discoveredInstalls)})"><span class="ms">analytics</span></button>`
                   : ''}
+                ${(canReadDocs || canUploadDocs) ? `
                 <button class="btn btn-outline btn-sm" data-docs="${esc(l.id)}" title="Documents">
-                  <span class="ms">attach_file</span>${l.documentCount ? ` ${l.documentCount}` : ''}
-                </button>
+                  <span class="ms">attach_file</span>${canReadDocs && l.documentCount ? ` ${l.documentCount}` : ''}
+                </button>` : ''}
                 ${canEdit ? `
                 <button class="btn btn-outline btn-sm" data-edit="${esc(l.id)}" title="Edit"><span class="ms">edit</span></button>
                 ${!cancelled ? `
-                <button class="btn btn-primary btn-sm" data-assign="${esc(l.id)}" title="Assign"><span class="ms">person_add</span></button>
                 <button class="btn btn-outline btn-sm" data-renew="${esc(l.id)}" title="Renew"><span class="ms">autorenew</span></button>
                 <button class="btn btn-outline btn-sm" data-cancel-lic="${esc(l.id)}" title="Cancel"><span class="ms">cancel</span></button>` : `
                 <button class="btn btn-primary btn-sm" data-renew="${esc(l.id)}"><span class="ms">autorenew</span> Renew</button>`}
                 ` : ''}
+                ${canAssign && !cancelled ? `
+                <button class="btn btn-primary btn-sm" data-assign="${esc(l.id)}" title="Assign"><span class="ms">person_add</span></button>` : ''}
               </td>
             </tr>`;
           }).join('')}
@@ -122,10 +130,7 @@ Views.licenses = async function (el) {
     }
 
     if (b.dataset.docs) {
-      openLicenseDocs({
-        license: lic(b.dataset.docs),
-        canEdit,
-        onDone: () => Views.licenses(el),
+      openLicenseDocs({ license: lic(b.dataset.docs), onDone: () => Views.licenses(el),
       });
       return;
     }
@@ -206,7 +211,7 @@ Views.licenses = async function (el) {
       });
     }
 
-    if (b.dataset.assign && canEdit) {
+    if (b.dataset.assign && canAssign) {
       const l = lic(b.dataset.assign);
       const employees = employeeList(await api('/employees?status=Active&limit=500')).items;
       formModal({
@@ -241,7 +246,7 @@ Views.licenses = async function (el) {
             <span><span class="avatar" style="width:26px;height:26px;font-size:10px;margin-right:8px">${esc(initials(a.employeeName))}</span>
               <strong>${esc(a.employeeName)}</strong></span>
             <span class="cell-sub">${fmtDate(a.assignedAt)} • by ${esc(a.assignedByName || '—')}</span>
-            ${canEdit ? `<button class="btn btn-outline btn-sm" data-revoke-lic="${esc(a.id)}">Revoke</button>` : ''}
+            ${canRevoke ? `<button class="btn btn-outline btn-sm" data-revoke-lic="${esc(a.id)}">Revoke</button>` : ''}
           </div>`).join('')}`;
       const devicesBlock = devices.length === 0 ? '' : `
         <div class="cell-sub" style="margin:${assignments.length ? '16px' : '4px'} 0 8px;font-weight:600">Devices (${devices.length})</div>
@@ -322,6 +327,7 @@ function openLicenseForm({ license = null, providers = [], contracts = [], onDon
           <input name="invoiceNumber" value="${esc(license?.invoiceNumber || '')}" placeholder="e.g. INV-2026-0142"></div>
         <div class="form-field"><label>Purchase date</label>
           <input name="purchaseDate" type="date" value="${esc(toDate(license?.purchaseDate))}"></div>
+        ${(Auth.canIam('license', 'view_confidential') || Auth.can('canViewLicenseCosts')) ? `
         <div class="form-field"><label>Amount</label>
           <input name="purchaseAmount" type="number" step="0.01" min="0" value="${esc(license?.purchaseAmount ?? '')}"></div>
         <div class="form-field"><label>Currency</label>
@@ -329,7 +335,9 @@ function openLicenseForm({ license = null, providers = [], contracts = [], onDon
             ${currencyOptionsForSelect(license?.purchaseCurrency || appCurrency()).map((o) =>
               `<option value="${esc(o.value)}" ${(license?.purchaseCurrency || appCurrency()) === o.value ? 'selected' : ''}>${esc(o.label)}</option>`
             ).join('')}
-          </select></div>
+          </select></div>` : `
+        <input type="hidden" name="purchaseAmount" value="">
+        <input type="hidden" name="purchaseCurrency" value="">`}
       </form>`,
     foot: `
       <button class="btn btn-outline" data-close>Cancel</button>
@@ -394,14 +402,21 @@ function openLicenseForm({ license = null, providers = [], contracts = [], onDon
   });
 }
 
-async function openLicenseDocs({ license, canEdit, onDone }) {
-  const canDel = Auth.can('canManageUsers');
+async function openLicenseDocs({ license, onDone }) {
+  const canRead = Auth.canIam('document', 'read') || Auth.can('canReadDocuments');
+  const canDownload = Auth.canIam('document', 'download') || Auth.can('canDownloadDocuments');
+  const canUpload = Auth.canIam('document', 'upload') || Auth.canIam('document', 'create') || Auth.can('canUploadDocuments');
+  const canDel = Auth.canIam('document', 'delete') || Auth.can('canDeleteDocuments');
+  if (!canRead && !canUpload) {
+    toast(t('common.forbidden') || 'You do not have permission to view documents', 'error');
+    return;
+  }
   const fmtKB = (n) => (n >= 1024 * 1024
     ? `${(n / 1048576).toFixed(1)} MB`
     : `${Math.max(1, Math.round(n / 1024))} KB`);
 
   try {
-    const documents = await api(`/licenses/${license.id}/documents`).catch(() => []);
+    const documents = canRead ? await api(`/licenses/${license.id}/documents`).catch(() => []) : [];
     openModal({
       title: `${license.softwareName} — Documents (${documents.length})`,
       wide: true,
@@ -412,12 +427,9 @@ async function openLicenseDocs({ license, canEdit, onDone }) {
             ? `Contract: <strong>${esc(license.contractTitle)}</strong>. `
             : ''}
           Upload invoice PDF or signed agreement (PDF, PNG, JPEG, WebP — max 8MB).
-          ${license.contractId
-            ? ` You can also manage files on the linked contract under <a href="#/providers">Providers → Contracts</a>.`
-            : ''}
         </div>
         <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
-          ${canEdit ? `
+          ${canUpload ? `
           <select id="lic-doc-kind" style="max-width:160px">
             <option value="invoice">Invoice</option>
             <option value="contract">Contract</option>
@@ -426,28 +438,25 @@ async function openLicenseDocs({ license, canEdit, onDone }) {
           <button class="btn btn-primary btn-sm" id="lic-doc-upload"><span class="ms">upload_file</span> Upload</button>` : ''}
         </div>
         <input type="file" id="lic-doc-file" accept="application/pdf,image/png,image/jpeg,image/webp,.pdf,.png,.jpg,.jpeg,.webp" class="hidden">
-        ${documents.length === 0
+        ${!canRead
+          ? '<div class="table-empty">Upload allowed — viewing requires document:read.</div>'
+          : (documents.length === 0
           ? '<div class="table-empty">No documents yet.</div>'
           : `<div class="table-wrap" style="border:1px solid var(--outline-variant);border-radius:var(--radius-lg)"><table class="data">
               <thead><tr><th>Document</th><th>Type</th><th>Size</th><th>Added</th><th style="text-align:right"></th></tr></thead>
               <tbody>
                 ${documents.map((d) => `
                 <tr>
-                  <td><div style="display:flex;align-items:center;gap:8px">
-                    <span class="ms" style="color:var(--on-surface-variant)">${d.mime && d.mime.includes('pdf') ? 'picture_as_pdf' : 'image'}</span>
-                    <a href="#" class="cell-title" data-lic-view="${esc(d.id)}">${esc(d.filename)}</a>
-                  </div></td>
+                  <td>${docFileLabel(d, { canDownload, viewAttr: 'data-lic-view' })}</td>
                   <td><span class="pill pill-slate">${esc(d.kind || 'other')}</span></td>
                   <td class="cell-sub">${fmtKB(d.byteSize || 0)}</td>
                   <td class="cell-sub">${fmtDateTime(d.createdAt)}${d.uploadedByName ? ' · ' + esc(d.uploadedByName) : ''}</td>
                   <td class="actions">
-                    <button type="button" class="btn btn-outline btn-sm" data-lic-view="${esc(d.id)}"><span class="ms">visibility</span></button>
-                    <button type="button" class="btn btn-outline btn-sm" data-lic-dl="${esc(d.id)}"><span class="ms">download</span></button>
-                    ${canDel ? `<button type="button" class="btn btn-outline btn-sm" data-lic-del="${esc(d.id)}"><span class="ms">delete</span></button>` : ''}
+                    ${docRowActions(d, { canDownload, canDel, viewAttr: 'data-lic-view', dlAttr: 'data-lic-dl', delAttr: 'data-lic-del' })}
                   </td>
                 </tr>`).join('')}
               </tbody>
-            </table></div>`}`,
+            </table></div>`)}`,
       foot: `<button class="btn btn-outline" data-close>Close</button>`,
       onMount(overlay) {
         overlay.querySelectorAll('[data-lic-view]').forEach((a) => a.addEventListener('click', (e) => {
@@ -464,7 +473,7 @@ async function openLicenseDocs({ license, canEdit, onDone }) {
             await api(`/licenses/documents/${btn.dataset.licDel}`, { method: 'DELETE' });
             toast('Document deleted', 'success');
             closeModal();
-            openLicenseDocs({ license, canEdit, onDone });
+            openLicenseDocs({ license, onDone });
             if (onDone) onDone();
           } catch (err) { toast(err.message, 'error'); }
         }));
@@ -495,7 +504,7 @@ async function openLicenseDocs({ license, canEdit, onDone }) {
               });
               toast('Document uploaded', 'success');
               closeModal();
-              openLicenseDocs({ license, canEdit, onDone });
+              openLicenseDocs({ license, onDone });
               if (onDone) onDone();
             } catch (err) {
               toast(err.message, 'error');

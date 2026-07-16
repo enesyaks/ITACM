@@ -66,11 +66,20 @@ async function verifyRawKey(raw) {
   if (!raw || !String(raw).startsWith('itacm_')) return null;
   const prefix = String(raw).slice(0, 14);
   const { rows } = await query(
-    `SELECT * FROM api_keys WHERE key_prefix = $1 AND revoked_at IS NULL`,
+    `SELECT ak.*,
+            u.status AS linked_user_status,
+            u.permission_group_id AS linked_permission_group_id,
+            u.custom_constraints AS linked_custom_constraints
+     FROM api_keys ak
+     LEFT JOIN users u ON u.email = ak.created_by
+     WHERE ak.key_prefix = $1 AND ak.revoked_at IS NULL`,
     [prefix]
   );
   for (const row of rows) {
     if (await bcrypt.compare(raw, row.key_hash)) {
+      // Disabled kullanıcıya bağlı API key çalışmasın
+      if (row.linked_user_status === 'Disabled') return null;
+
       await query('UPDATE api_keys SET last_used_at = now() WHERE id = $1', [row.id]).catch(() => {});
       return {
         uid: `apikey:${row.id}`,
@@ -83,6 +92,8 @@ async function verifyRawKey(raw) {
         actorType: 'service',
         scopes: row.scopes || ['*'],
         apiKeyId: row.id,
+        permissionGroupId: row.linked_permission_group_id || null,
+        customConstraints: row.linked_custom_constraints || null,
       };
     }
   }
@@ -90,3 +101,4 @@ async function verifyRawKey(raw) {
 }
 
 module.exports = { listKeys, createKey, revokeKey, verifyRawKey };
+

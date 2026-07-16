@@ -16,7 +16,33 @@ const Auth = {
     localStorage.removeItem('itacm_token');
     localStorage.removeItem('itacm_profile');
   },
+  /** Legacy UI flags (now derived from IAM on the server). */
   can(perm) { return !!(this.profile && this.profile.permissions && this.profile.permissions[perm]); },
+  /**
+   * IAM resource+action check (from profile.iamPermissions).
+   * Owner always allowed. Without an IAM list, falls back to role-derived flags only for known mappings.
+   */
+  canIam(resource, action) {
+    if (!this.profile) return false;
+    if (this.profile.role === 'Owner' || this.profile.permissions?.isOwner) return true;
+    const list = this.profile.iamPermissions;
+    if (!Array.isArray(list) || !list.length) {
+      // Pre-IAM profile / offline: do not invent export rights
+      if (action === 'export' || action === 'import') return false;
+      return false;
+    }
+    return list.some((p) => p.resource === resource && p.action === action && p.allowed !== false);
+  },
+  /**
+   * Ops check: exact action OR resource:manage (for read/create/update/delete/assign/unassign).
+   * Never treats manage as export/import/view_confidential/view_*.
+   */
+  canIamOp(resource, action) {
+    if (this.canIam(resource, action)) return true;
+    const covered = ['read', 'create', 'update', 'delete', 'assign', 'unassign'];
+    if (covered.includes(action) && this.canIam(resource, 'manage')) return true;
+    return false;
+  },
 };
 
 let AppConfig = { backend: 'postgres' };

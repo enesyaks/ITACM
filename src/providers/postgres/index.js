@@ -23,6 +23,7 @@ module.exports = {
   apiKeyService: require('./apiKeyService'),
   webhookService: require('./webhookService'),
   syncService: require('./syncService'),
+  permissionService: require('./permissionService'),
   ensureDatabase: () => require('./migrate').ensureDatabase(),
   ping: (timeoutMs) => require('./pool').ping(timeoutMs),
   isAuthError: (err) => require('./pool').isAuthError(err),

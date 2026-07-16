@@ -30,6 +30,8 @@ function describeRequest(req) {
 
   const rules = [
     { m: 'POST', re: /^\/api\/auth\/login$/, action: 'auth.login', source: 'auth', summary: () => `Sign-in: ${body.email || '—'}` },
+    { m: 'POST', re: /^\/api\/auth\/verify-token$/, action: 'auth.verify_token', source: 'auth',
+      summary: () => 'Session verified' },
     { m: 'POST', re: /^\/api\/auth\/users$/, action: 'user.create', source: 'users', summary: () => `Created IT user ${body.email || body.username || ''}`.trim() },
     { m: 'PATCH', re: /^\/api\/auth\/users\/[^/]+\/role$/, action: 'user.role_change', source: 'users', summary: () => `Role → ${body.role || '—'}` },
     { m: 'PATCH', re: /^\/api\/auth\/users\/[^/]+\/status$/, action: 'user.status', source: 'users', summary: () => `User status changed` },

@@ -8,8 +8,12 @@ const LICENSE_EXPIRY_WINDOW_DAYS = 30;
 async function getEolAssets() {
   const [lcRes, assetsRes] = await Promise.all([
     query('SELECT lifecycles FROM app_settings WHERE id = 1'),
-    query(`SELECT id, asset_tag, brand, model, category, location, current_employee_id, current_employee_name, purchase_date, lifecycle_months
-           FROM assets WHERE status IN ('In Stock', 'Assigned', 'In Repair')`)
+    query(`SELECT a.id, a.asset_tag, a.brand, a.model, a.category, a.location,
+                  a.current_employee_id, a.current_employee_name, a.purchase_date, a.lifecycle_months,
+                  cm.lifecycle_months AS model_lifecycle_months
+           FROM assets a
+           LEFT JOIN catalog_models cm ON cm.category = a.category AND cm.brand = a.brand AND cm.model = a.model
+           WHERE a.status IN ('In Stock', 'Assigned', 'In Repair')`)
   ]);
 
   const lc = {
@@ -27,10 +31,10 @@ async function getEolAssets() {
     const purchaseMs = new Date(pd).getTime();
     if (!purchaseMs) return;
 
-    // Per-asset override wins over the category default; a category set to 0
-    // in the Product Catalog is excluded from EOL tracking entirely.
+    // Resolution: per-asset override -> catalog model default -> category
+    // default. A category set to 0 in the Product Catalog is excluded from EOL.
     const catMonths = lc[row.category] != null ? lc[row.category] : (lc.Other || 48);
-    const months = row.lifecycle_months || catMonths;
+    const months = row.lifecycle_months || row.model_lifecycle_months || catMonths;
     if (!months) return;
     const eolMs = purchaseMs + months * 30.4375 * 24 * 3600 * 1000;
     const pct = ((now - purchaseMs) / (eolMs - purchaseMs)) * 100;

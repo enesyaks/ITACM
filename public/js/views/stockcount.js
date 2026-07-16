@@ -1,289 +1,261 @@
 
 Views.reports = async function (el) {
-  /* ---- data for the analytics layer (all from existing endpoints) ---- */
-  const [assetsRes, maintenance, handovers] = await Promise.all([
-    api('/assets?limit=2000'),
-    api('/maintenance?limit=2000'),
-    api('/handovers?limit=200'),
+  if (!Auth.canIam('report', 'read') && !Auth.canIam('report', 'export')) {
+    el.innerHTML = `<div class="card card-pad"><p class="cell-sub">Reports requires <strong>report:read</strong>.</p></div>`;
+    return;
+  }
+  const canExport = Auth.canIam('report', 'export');
+  const canMaintList = iamCanList('maintenance');
+  const canAssetList = iamCanList('asset');
+  const presetReports = visibleReportDefs();
+  const customSourceKeys = visibleCustomSourceKeys();
+  const FEATURED = new Set(['inventory', 'eol', 'in-stock', 'assignments', 'open-repairs', 'expiring-licenses', 'low-stock']);
+
+  const [assetsRes, maintenance] = await Promise.all([
+    canAssetList ? api('/assets?limit=2000').catch(() => ({ items: [] })) : Promise.resolve({ items: [] }),
+    canMaintList ? api('/maintenance?limit=2000').catch(() => []) : Promise.resolve([]),
   ]);
-  const assets = assetsRes.items;
-  const state = { range: 30, page: 1 };
-  const PAGE = 8;
+  const assets = assetsRes.items || [];
+  const state = { range: 30, tab: 'ready', group: 'all', q: '' };
   const toDate = (v) => new Date(v && v._seconds ? v._seconds * 1000 : v);
   const MONTH_MS = 30.44 * 86400000;
 
-  function computeAnalytics() {
+  function computeKpis() {
     const now = Date.now();
     const rangeMs = state.range ? state.range * 86400000 : Infinity;
-    const inRange = (d) => d && (now - toDate(d).getTime()) <= rangeMs && toDate(d).getTime() <= now + 86400000;
-
+    const inRange = (d) => d && (now - toDate(d).getTime()) <= rangeMs;
     const active = assets.filter((x) => x.status !== 'Scrap');
     const purchased = assets.filter((x) => x.purchaseDate && inRange(x.purchaseDate));
-    const prior = state.range ? assets.filter((x) => {
-      if (!x.purchaseDate) return false;
-      const age = now - toDate(x.purchaseDate).getTime();
-      return age > rangeMs && age <= rangeMs * 2;
-    }) : [];
-    const procTrend = prior.length ? Math.round(((purchased.length - prior.length) / prior.length) * 100) : null;
-
     const lc = AppConfig.lifecycles || {};
-    const avgLifecycle = active.length
-      ? Math.round(active.reduce((s, x) => s + (lc[x.category] || lc.Other || 48), 0) / active.length) : 0;
     const withPd = active.filter((x) => x.purchaseDate);
     const avgAge = withPd.length
       ? Math.round(withPd.reduce((s, x) => s + (now - toDate(x.purchaseDate).getTime()), 0) / withPd.length / MONTH_MS) : 0;
-
-    const maintInRange = maintenance.filter((m) => inRange(m.sentDate));
+    const avgLifecycle = active.length
+      ? Math.round(active.reduce((s, x) => s + (lc[x.category] || lc.Other || 48), 0) / active.length) : 0;
+    const maintInRange = (maintenance || []).filter((m) => inRange(m.sentDate));
     const spend = maintInRange.reduce((s, m) => s + Number(m.cost || 0), 0);
-    const openRepairs = maintenance.filter((m) => !m.returnDate).length;
-
-    // Inventory growth: cumulative fleet size at each of the last 10 month-ends
-    const growth = [];
-    const base = new Date(); base.setDate(1);
-    for (let i = 9; i >= 0; i--) {
-      const m = new Date(base.getFullYear(), base.getMonth() - i, 1);
-      const end = new Date(m.getFullYear(), m.getMonth() + 1, 1).getTime();
-      growth.push({
-        label: m.toLocaleString('en', { month: 'short' }),
-        value: assets.filter((x) => x.purchaseDate && toDate(x.purchaseDate).getTime() < end).length,
-      });
-    }
-
-    const STATUSES = [
-      ['Assigned', '#3525cd'], ['In Stock', '#c3c0ff'], ['In Repair', '#565e74'], ['Scrap', '#ffb4ab'],
-    ];
-    const statusData = STATUSES.map(([s, color]) => ({
-      status: s, color, count: assets.filter((x) => x.status === s).length,
-    }));
-
-    const events = [
-      ...handovers.flatMap((h) => (h.items || []).map((i) => ({
-        date: toDate(h.transactionDate), type: 'Handover',
-        model: `${i.brand} ${i.model}`, tag: i.assetTag, who: h.employeeName, cost: null,
-      }))),
-      ...assets.filter((x) => x.purchaseDate).map((x) => ({
-        date: toDate(x.purchaseDate), type: 'Procurement',
-        model: `${x.brand} ${x.model}`, tag: x.assetTag, who: 'IT Stock', cost: null,
-      })),
-      ...maintenance.map((m) => ({
-        date: toDate(m.sentDate), type: 'Repair',
-        model: m.assetTag, tag: m.assetTag, who: m.serviceCompany, cost: Number(m.cost || 0),
-      })),
-    ].filter((e) => inRange(e.date)).sort((a, b) => b.date - a.date);
-
-    return { totalActive: active.length, purchased, procTrend, avgLifecycle, avgAge, spend, openRepairs, growth, statusData, events };
+    const openRepairs = (maintenance || []).filter((m) => !m.returnDate).length;
+    const eolSoon = active.filter((x) => {
+      const l = lifecycleInfo(x);
+      return l.eol && l.pct >= 90;
+    }).length;
+    return {
+      totalActive: active.length,
+      purchased: purchased.length,
+      avgLifecycle,
+      avgAge,
+      spend,
+      openRepairs,
+      eolSoon,
+      inStock: active.filter((x) => x.status === 'In Stock').length,
+      assigned: active.filter((x) => x.status === 'Assigned').length,
+    };
   }
 
-  /* ---- static shell: analytics slot + existing builder/presets kept below ---- */
+  const groups = [...new Set(presetReports.map((r) => r.group))];
+
   el.innerHTML = `
-    ${pageHead('Reports & Analytics', 'Comprehensive view of your IT asset landscape.', `
-      <select id="rep-range" style="width:auto">
-        <option value="30">Last 30 Days</option>
-        <option value="90">Last 90 Days</option>
-        <option value="365">Last 12 Months</option>
-        <option value="0">All Time</option>
+    ${pageHead('Reports', 'Ready-made lists for common questions — or build your own.', `
+      <select id="rep-range" class="rep-range" title="KPI window">
+        <option value="30">Last 30 days</option>
+        <option value="90">Last 90 days</option>
+        <option value="365">Last 12 months</option>
+        <option value="0">All time</option>
       </select>
-      <button class="btn btn-outline" id="rep-export-events"><span class="ms">download</span> Export Report</button>`)}
+    `)}
 
-    <div id="rep-analytics"></div>
+    <div id="rep-kpis" class="rep-kpi-row"></div>
 
-    <div class="gs-section" style="margin:24px 0 8px">Custom Report Builder</div>
-    <div class="card" style="margin-bottom:20px">
-      <div class="card-pad">
-        <div class="form-grid">
-          <div class="form-field">
-            <label>Data source</label>
-            <select id="crb-source">
-              ${Object.entries(CUSTOM_SOURCES).map(([k, s]) => `<option value="${k}">${esc(s.label)}</option>`).join('')}
-            </select>
-          </div>
-          <div class="form-field"><label>Filters <span class="ob-hint">(leave empty to include everything)</span></label>
-            <div id="crb-filters" style="display:grid;grid-template-columns:1fr 1fr;gap:8px"></div></div>
-          <div class="form-field full"><label>Columns</label>
-            <div id="crb-cols" style="display:flex;flex-wrap:wrap;gap:8px"></div></div>
-        </div>
-        <button id="crb-generate" class="btn btn-primary" style="margin-top:14px">
-          <span class="ms">table_view</span> Generate Report</button>
-      </div>
+    <div class="rep-tabs" role="tablist">
+      <button type="button" class="rep-tab on" data-rep-tab="ready" role="tab">
+        <span class="ms">folder_open</span> Ready reports
+        <em>${presetReports.length}</em>
+      </button>
+      <button type="button" class="rep-tab" data-rep-tab="custom" role="tab">
+        <span class="ms">tune</span> Build your own
+      </button>
     </div>
 
-    <div class="gs-section" style="margin-bottom:8px">Preset Reports <span class="ob-hint">(${REPORT_DEFS.length} ready-made — click to preview, then export CSV or print)</span></div>
-    ${[...new Set(REPORT_DEFS.map((r) => r.group))].map((group) => `
-      <div class="rep-group-label">${esc(group)}</div>
-      <div class="grid grid-2" style="margin-bottom:14px">
-        ${REPORT_DEFS.filter((r) => r.group === group).map((r) => `
-        <div class="card card-pad gs-item" data-report="${r.id}" style="align-items:flex-start;cursor:pointer">
-          ${iconChip(r.icon, r.tone)}
-          <div style="flex:1">
-            <div class="cell-title" style="font-size:15px">${esc(r.title)}</div>
-            <div class="cell-sub">${esc(r.desc)}</div>
-          </div>
-          <span class="ms" style="color:var(--outline)">chevron_right</span>
-        </div>`).join('')}
-      </div>`).join('')}
-    <div id="report-result" style="margin-top:20px"></div>`;
-
-  /* ---- analytics renderer (re-runs on range / page change only) ---- */
-  function renderAnalytics() {
-    const a = computeAnalytics();
-    const rangeLabel = state.range === 0 ? 'all time' : `last ${state.range} days`;
-
-    const maxG = Math.max(...a.growth.map((g) => g.value), 1);
-    const barsHtml = a.growth.map((g, i) => `
-      <div class="bar-col" title="${esc(g.label)}: ${g.value} assets">
-        <div class="bar ${i === a.growth.length - 1 ? 'hot' : ''}" style="height:${Math.max(3, (g.value / maxG) * 100)}%"></div>
-        <span class="bar-label">${esc(g.label)}</span>
-      </div>`).join('');
-
-    const totalStatus = a.statusData.reduce((s, x) => s + x.count, 0) || 1;
-    let acc = 0;
-    const R = 74, C = 2 * Math.PI * R;
-    const segs = a.statusData.map((x) => {
-      const frac = x.count / totalStatus;
-      const seg = `<circle cx="100" cy="100" r="${R}" fill="none" stroke="${x.color}" stroke-width="22"
-        stroke-dasharray="${(frac * C).toFixed(1)} ${C.toFixed(1)}"
-        stroke-dashoffset="${(-acc * C).toFixed(1)}" transform="rotate(-90 100 100)"/>`;
-      acc += frac;
-      return seg;
-    }).join('');
-
-    const pages = Math.max(1, Math.ceil(a.events.length / PAGE));
-    state.page = Math.min(state.page, pages);
-    const rows = a.events.slice((state.page - 1) * PAGE, state.page * PAGE);
-    const evtPill = { Procurement: 'pill-indigo', Handover: 'pill-blue', Repair: 'pill-rose' };
-    const pageBtns = [];
-    for (let p = Math.max(1, state.page - 2); p <= Math.min(pages, Math.max(1, state.page - 2) + 4); p++) pageBtns.push(p);
-
-    $('#rep-analytics', el).innerHTML = `
-      <div class="grid grid-4" style="margin-bottom:20px">
-        <div class="card rep-kpi">
-          <div class="rep-kpi-head"><span class="rep-kpi-label">Total Active<br>Inventory</span>${iconChip('devices', 'indigo')}</div>
-          <div class="rep-kpi-value">${a.totalActive.toLocaleString()}
-            <span class="trend-chip up"><span class="ms">trending_up</span> +${a.purchased.length} ${rangeLabel}</span></div>
+    <div id="rep-panel-ready" class="rep-panel">
+      <div class="rep-ready-toolbar">
+        <div class="search-box rep-ready-search">
+          <span class="ms">search</span>
+          <input type="search" id="rep-q" placeholder="Search reports…" autocomplete="off">
         </div>
-        <div class="card rep-kpi">
-          <div class="rep-kpi-head"><span class="rep-kpi-label">Avg Asset<br>Lifecycle</span>${iconChip('history_toggle_off', 'blue')}</div>
-          <div class="rep-kpi-value">${a.avgLifecycle} <small>months</small>
-            <span class="trend-chip flat"><span class="ms">schedule</span> avg age ${a.avgAge} mo</span></div>
-        </div>
-        <div class="card rep-kpi">
-          <div class="rep-kpi-head"><span class="rep-kpi-label">Procurement<br>(${esc(rangeLabel)})</span>${iconChip('shopping_cart', 'emerald')}</div>
-          <div class="rep-kpi-value">${a.purchased.length} <small>assets</small>
-            ${a.procTrend != null ? `<span class="trend-chip ${a.procTrend >= 0 ? 'up' : 'down'}">
-              <span class="ms">${a.procTrend >= 0 ? 'trending_up' : 'trending_down'}</span> ${a.procTrend >= 0 ? '+' : ''}${a.procTrend}%</span>` : ''}</div>
-        </div>
-        <div class="card rep-kpi">
-          <div class="rep-kpi-head"><span class="rep-kpi-label">Maintenance<br>Spend</span>${iconChip('build', 'amber')}</div>
-          <div class="rep-kpi-value">${fmtMoney(a.spend)}
-            <span class="trend-chip ${a.openRepairs ? 'down' : 'flat'}"><span class="ms">build</span> ${a.openRepairs} open</span></div>
+        <div class="rep-group-pills" id="rep-groups">
+          <button type="button" class="rep-pill on" data-group="all">All</button>
+          <button type="button" class="rep-pill" data-group="featured">Recommended</button>
+          ${groups.map((g) => `<button type="button" class="rep-pill" data-group="${esc(g)}">${esc(g)}</button>`).join('')}
         </div>
       </div>
+      <div id="rep-preset-grid" class="rep-preset-grid"></div>
+      ${presetReports.length === 0
+        ? `<div class="card card-pad"><p class="cell-sub">No preset reports for your permissions. You need <strong>report:read</strong> plus the matching module read (e.g. <strong>maintenance:read</strong> for repair reports).</p></div>`
+        : ''}
+    </div>
 
-      <div class="dash-grid" style="margin-bottom:20px">
-        <div class="card">
-          <div class="card-head"><h3 style="font-size:16px;text-transform:none;letter-spacing:0;color:var(--on-surface)">Inventory Growth</h3>
-            <span class="cell-sub">cumulative fleet size, last 10 months</span></div>
-          <div style="display:flex">
-            <div class="bar-axis"><span>${maxG}</span><span>${Math.round(maxG / 2)}</span><span>0</span></div>
-            <div class="bars" style="flex:1">${barsHtml}</div>
+    <div id="rep-panel-custom" class="rep-panel hidden">
+      ${customSourceKeys.length === 0
+        ? `<div class="card card-pad"><p class="cell-sub">No data sources available — enable read on asset, employee, license, etc.</p></div>`
+        : `<div class="rep-builder">
+          <div class="rep-builder-step">
+            <div class="rep-builder-step-label"><span>1</span> Choose data source</div>
+            <div class="rep-source-grid" id="crb-sources">
+              ${customSourceKeys.map((k, i) => `
+                <button type="button" class="rep-source-card${i === 0 ? ' on' : ''}" data-source="${esc(k)}">
+                  <strong>${esc(CUSTOM_SOURCES[k].label)}</strong>
+                  <span>${CUSTOM_SOURCES[k].columns.length} columns</span>
+                </button>`).join('')}
+            </div>
+            <input type="hidden" id="crb-source" value="${esc(customSourceKeys[0] || '')}">
           </div>
-        </div>
-        <div class="card">
-          <div class="card-head"><h3 style="font-size:16px;text-transform:none;letter-spacing:0;color:var(--on-surface)">Asset Status</h3></div>
-          <div class="donut-wrap" style="padding-top:14px">
-            <svg width="190" height="190" viewBox="0 0 200 200" role="img" aria-label="Asset status distribution">
-              ${segs}
-              <text x="100" y="98" text-anchor="middle" font-size="26" font-weight="800" fill="#1b1b24">${totalStatus.toLocaleString()}</text>
-              <text x="100" y="118" text-anchor="middle" font-size="12" fill="#777587">Total</text>
-            </svg>
+          <div class="rep-builder-step">
+            <div class="rep-builder-step-label"><span>2</span> Filters <em>optional</em></div>
+            <div id="crb-filters" class="rep-builder-filters"></div>
           </div>
-          <div style="padding-bottom:12px">
-            ${a.statusData.map((x) => `
-            <div class="status-legend">
-              <span class="sw" style="background:${x.color}"></span>${esc(x.status)}
-              <strong>${Math.round((x.count / totalStatus) * 100)}%</strong>
-            </div>`).join('')}
+          <div class="rep-builder-step">
+            <div class="rep-builder-step-label"><span>3</span> Columns
+              <button type="button" class="btn btn-outline btn-sm" id="crb-all">All</button>
+              <button type="button" class="btn btn-outline btn-sm" id="crb-none">None</button>
+            </div>
+            <div id="crb-cols" class="rep-builder-cols"></div>
           </div>
-        </div>
+          <div class="rep-builder-actions">
+            <button id="crb-generate" class="btn btn-primary">
+              <span class="ms">table_view</span> Generate report
+            </button>
+            <span class="cell-sub">Preview up to 100 rows · CSV export includes everything</span>
+          </div>
+        </div>`}
+    </div>
+
+    <div id="report-result" class="rep-result"></div>`;
+
+  function renderKpis() {
+    const a = computeKpis();
+    const rangeLabel = state.range === 0 ? 'all time' : `last ${state.range}d`;
+    $('#rep-kpis', el).innerHTML = `
+      <div class="card rep-kpi">
+        <div class="rep-kpi-head"><span class="rep-kpi-label">Active inventory</span>${iconChip('devices', 'indigo')}</div>
+        <div class="rep-kpi-value">${a.totalActive.toLocaleString()}
+          <span class="trend-chip flat">${a.assigned} assigned · ${a.inStock} in stock</span></div>
       </div>
-
-      <div class="card">
-        <div class="card-head"><h3 style="font-size:16px;text-transform:none;letter-spacing:0;color:var(--on-surface)">Recent Procurement &amp; Handover Trends</h3>
-          <span class="cell-sub">${a.events.length} events • ${esc(rangeLabel)}</span></div>
-        <div class="table-wrap"><table class="data">
-          <thead><tr><th>Date</th><th>Event Type</th><th>Asset Model</th><th>Assigned To</th><th style="text-align:right">Value/Cost</th></tr></thead>
-          <tbody>
-            ${rows.length === 0 ? '<tr><td colspan="5" class="table-empty">No events in this window.</td></tr>' :
-              rows.map((e) => `
-              <tr>
-                <td class="mono">${toDate(e.date).toISOString().slice(0, 10)}</td>
-                <td><span class="pill ${evtPill[e.type]}">${e.type}</span></td>
-                <td><span class="cell-title">${esc(e.model)}</span> <span class="cell-sub mono">${esc(e.tag)}</span></td>
-                <td>${esc(e.who)}</td>
-                <td style="text-align:right" class="mono">${e.cost != null ? fmtMoney(e.cost) : '—'}</td>
-              </tr>`).join('')}
-          </tbody>
-        </table></div>
-        <div class="table-foot">
-          Showing ${a.events.length === 0 ? 0 : (state.page - 1) * PAGE + 1} to ${Math.min(state.page * PAGE, a.events.length)} of ${a.events.length} entries
-          <span class="spacer"></span>
-          <div class="pager">
-            <button data-pg="${state.page - 1}" ${state.page <= 1 ? 'disabled' : ''}>Prev</button>
-            ${pageBtns.map((p) => `<button data-pg="${p}" class="${p === state.page ? 'on' : ''}">${p}</button>`).join('')}
-            <button data-pg="${state.page + 1}" ${state.page >= pages ? 'disabled' : ''}>Next</button>
-          </div>
-        </div>
+      <div class="card rep-kpi">
+        <div class="rep-kpi-head"><span class="rep-kpi-label">New assets</span>${iconChip('shopping_cart', 'emerald')}</div>
+        <div class="rep-kpi-value">${a.purchased}
+          <span class="trend-chip flat">${esc(rangeLabel)}</span></div>
+      </div>
+      <div class="card rep-kpi">
+        <div class="rep-kpi-head"><span class="rep-kpi-label">Lifecycle</span>${iconChip('timelapse', 'amber')}</div>
+        <div class="rep-kpi-value">${a.avgAge}<small>mo avg age</small>
+          <span class="trend-chip ${a.eolSoon ? 'down' : 'flat'}">${a.eolSoon} near EOL</span></div>
+      </div>
+      <div class="card rep-kpi">
+        <div class="rep-kpi-head"><span class="rep-kpi-label">Repairs</span>${iconChip('build', 'rose')}</div>
+        <div class="rep-kpi-value">${canMaintList ? a.openRepairs : '—'}
+          <span class="trend-chip flat">${canMaintList ? `${fmtMoney(a.spend)} · ${esc(rangeLabel)}` : 'no access'}</span></div>
       </div>`;
+  }
 
-    $('#rep-analytics', el).querySelectorAll('[data-pg]').forEach((b) => b.addEventListener('click', () => {
-      state.page = Number(b.dataset.pg);
-      renderAnalytics();
-    }));
+  function filteredPresets() {
+    const q = state.q.trim().toLowerCase();
+    return presetReports.filter((r) => {
+      if (state.group === 'featured' && !FEATURED.has(r.id)) return false;
+      if (state.group !== 'all' && state.group !== 'featured' && r.group !== state.group) return false;
+      if (!q) return true;
+      return `${r.title} ${r.desc} ${r.group}`.toLowerCase().includes(q);
+    });
+  }
+
+  function renderPresets() {
+    const grid = $('#rep-preset-grid', el);
+    if (!grid) return;
+    const list = filteredPresets();
+    if (!list.length) {
+      grid.innerHTML = `<div class="rep-empty cell-sub">No reports match this filter.</div>`;
+      return;
+    }
+    // Featured first when showing all
+    const ordered = state.group === 'all'
+      ? [...list].sort((a, b) => Number(FEATURED.has(b.id)) - Number(FEATURED.has(a.id)) || a.group.localeCompare(b.group) || a.title.localeCompare(b.title))
+      : list;
+    grid.innerHTML = ordered.map((r) => `
+      <button type="button" class="rep-preset-card${FEATURED.has(r.id) ? ' is-featured' : ''}" data-report="${esc(r.id)}">
+        <div class="rep-preset-top">
+          ${iconChip(r.icon, r.tone)}
+          ${FEATURED.has(r.id) ? '<span class="rep-badge">Recommended</span>' : `<span class="rep-badge muted">${esc(r.group)}</span>`}
+        </div>
+        <div class="rep-preset-title">${esc(r.title)}</div>
+        <div class="rep-preset-desc">${esc(r.desc)}</div>
+        <div class="rep-preset-go"><span>Open</span><span class="ms">arrow_forward</span></div>
+      </button>`).join('');
+  }
+
+  function setTab(tab) {
+    state.tab = tab;
+    el.querySelectorAll('.rep-tab').forEach((b) => b.classList.toggle('on', b.dataset.repTab === tab));
+    $('#rep-panel-ready', el).classList.toggle('hidden', tab !== 'ready');
+    $('#rep-panel-custom', el).classList.toggle('hidden', tab !== 'custom');
+  }
+
+  function renderBuilder() {
+    const srcSel = $('#crb-source', el);
+    if (!srcSel) return;
+    const def = CUSTOM_SOURCES[srcSel.value];
+    if (!def) return;
+    el.querySelectorAll('.rep-source-card').forEach((b) =>
+      b.classList.toggle('on', b.dataset.source === srcSel.value));
+    $('#crb-cols', el).innerHTML = def.columns.map(([k, label]) => `
+      <label class="rep-col-chip">
+        <input type="checkbox" value="${esc(k)}" checked>
+        <span>${esc(label)}</span>
+      </label>`).join('');
+    $('#crb-filters', el).innerHTML = def.filters.length
+      ? def.filters.map((f) => {
+        if (f.type === 'select') {
+          return `<div class="form-field"><label>${esc(f.label)}</label>
+            <select data-filter="${esc(f.key)}">
+              ${f.options.map((o) => {
+                const v = typeof o === 'object' ? o.value : o;
+                const l = typeof o === 'object' ? o.label : (o === '' ? 'All' : o);
+                return `<option value="${esc(v)}">${esc(l)}</option>`;
+              }).join('')}
+            </select></div>`;
+        }
+        return `<div class="form-field"><label>${esc(f.label)}</label>
+          <input type="${esc(f.type)}" data-filter="${esc(f.key)}" placeholder="${esc(f.label)}"></div>`;
+      }).join('')
+      : '<div class="cell-sub">No filters for this source — all rows will be included.</div>';
   }
 
   $('#rep-range', el).addEventListener('change', (e) => {
     state.range = Number(e.target.value);
-    state.page = 1;
-    renderAnalytics();
+    renderKpis();
   });
-  $('#rep-export-events', el).addEventListener('click', () => {
-    const a = computeAnalytics();
-    csvDownload(
-      `analytics-report-${new Date().toISOString().slice(0, 10)}.csv`,
-      ['Date', 'Event Type', 'Asset Model', 'Asset Tag', 'Assigned To', 'Cost'],
-      a.events.map((e) => [toDate(e.date).toISOString().slice(0, 10), e.type, e.model, e.tag, e.who,
-        e.cost != null ? fmtMoney(e.cost) : ''])
-    );
-    toast('Analytics report exported as CSV', 'success');
+  el.querySelectorAll('[data-rep-tab]').forEach((b) => b.addEventListener('click', () => setTab(b.dataset.repTab)));
+  $('#rep-q', el)?.addEventListener('input', (e) => { state.q = e.target.value; renderPresets(); });
+  el.querySelectorAll('[data-group]').forEach((b) => b.addEventListener('click', () => {
+    state.group = b.dataset.group;
+    el.querySelectorAll('[data-group]').forEach((x) => x.classList.toggle('on', x === b));
+    renderPresets();
+  }));
+
+  el.querySelectorAll('.rep-source-card').forEach((b) => b.addEventListener('click', () => {
+    $('#crb-source', el).value = b.dataset.source;
+    renderBuilder();
+  }));
+  $('#crb-all', el)?.addEventListener('click', () => {
+    el.querySelectorAll('#crb-cols input').forEach((c) => { c.checked = true; });
   });
-  renderAnalytics();
+  $('#crb-none', el)?.addEventListener('click', () => {
+    el.querySelectorAll('#crb-cols input').forEach((c) => { c.checked = false; });
+  });
 
-  /* ---- custom builder wiring (unchanged behaviour) ---- */
-  const srcSel = $('#crb-source', el);
-  function renderBuilder() {
-    const def = CUSTOM_SOURCES[srcSel.value];
-    $('#crb-cols', el).innerHTML = def.columns.map(([k, label]) => `
-      <label class="chip" style="cursor:pointer"><input type="checkbox" value="${k}" checked
-        style="width:14px;height:14px;accent-color:var(--primary-container)"> ${esc(label)}</label>`).join('');
-    $('#crb-filters', el).innerHTML = def.filters.map((f) => {
-      if (f.type === 'select') {
-        return `<select data-filter="${f.key}" title="${esc(f.label)}">
-          ${f.options.map((o) => {
-            const v = typeof o === 'object' ? o.value : o;
-            const l = typeof o === 'object' ? o.label : (o === '' ? `${f.label}: all` : o);
-            return `<option value="${esc(v)}">${esc(l)}</option>`;
-          }).join('')}</select>`;
-      }
-      return `<input type="${f.type}" data-filter="${f.key}" placeholder="${esc(f.label)}" title="${esc(f.label)}">`;
-    }).join('') || '<span class="cell-sub">No filters for this source.</span>';
-  }
-  srcSel.addEventListener('change', renderBuilder);
-  renderBuilder();
-
-  $('#crb-generate', el).addEventListener('click', async () => {
+  $('#crb-generate', el)?.addEventListener('click', async () => {
+    const srcSel = $('#crb-source', el);
     const def = CUSTOM_SOURCES[srcSel.value];
     const slot = $('#report-result', el);
-    slot.innerHTML = '<div class="table-empty">Generating custom report…</div>';
+    slot.innerHTML = '<div class="table-empty">Generating report…</div>';
     try {
       let rows = await def.fetch();
       const activeFilters = [];
@@ -295,23 +267,23 @@ Views.reports = async function (el) {
         activeFilters.push(`${f.label}: ${v}`);
       });
       const selCols = def.columns.filter(([k]) =>
-        el.querySelector(`#crb-cols input[value="${k}"]`).checked);
+        el.querySelector(`#crb-cols input[value="${k}"]`)?.checked);
       if (selCols.length === 0) throw new Error('Select at least one column');
       showReportResult(slot, `Custom — ${def.label}`, {
         cols: selCols.map(([, label]) => label),
         rows: rows.map((r) => selCols.map(([, , get]) => get(r))),
-        summary: `${rows.length} rows • ${def.label}` +
-          (activeFilters.length ? ` • filters: ${activeFilters.join('; ')}` : ' • no filters'),
+        summary: `${rows.length} rows • ${def.label}`
+          + (activeFilters.length ? ` • ${activeFilters.join('; ')}` : ''),
       });
     } catch (err) {
       slot.innerHTML = `<div class="card card-pad"><div class="form-error">${esc(err.message)}</div></div>`;
     }
   });
 
-  /* ---- preset cards ---- */
   bindView(el, async (e) => {
     const card = e.target.closest('[data-report]'); if (!card) return;
     const def = REPORT_DEFS.find((r) => r.id === card.dataset.report);
+    if (!def) return;
     const slot = $('#report-result', el);
     slot.innerHTML = '<div class="table-empty">Generating report…</div>';
     try {
@@ -320,6 +292,10 @@ Views.reports = async function (el) {
       slot.innerHTML = `<div class="card card-pad"><div class="form-error">${esc(err.message)}</div></div>`;
     }
   });
+
+  renderKpis();
+  renderPresets();
+  renderBuilder();
 };
 
 /* ============================== STOCK COUNT ============================== */

@@ -14,7 +14,8 @@ const UNPLACED_LOC = '__unplaced__';
 
 Views.network = async function (el, params = {}) {
   if (isStaleView(el)) return;
-  const canEdit = Auth.can('canManageAssets');
+  const canEdit = Auth.canIam('asset', 'create') || Auth.canIam('asset', 'update') || Auth.canIam('asset', 'manage');
+  const canCreate = Auth.canIam('asset', 'create');
   const INFRA = ['Network', 'Server'];
   const STATUSES = ['In Stock', 'Assigned', 'In Repair', 'Scrap'];
   const view = ['list', 'topo', 'racks'].includes(params.view) ? params.view : 'list';
@@ -119,8 +120,9 @@ Views.network = async function (el, params = {}) {
 
   el.innerHTML = `
     ${pageHead('nav.network', 'network.sub', `
-      <button class="btn btn-outline" id="net-export"><span class="ms">download</span> ${esc(t('common.export'))}</button>
-      ${canEdit ? `<button class="btn btn-primary" id="net-new"><span class="ms">add</span> ${esc(t('network.addDevice'))}</button>` : ''}`)}
+      ${Auth.canIam('asset', 'export')
+        ? `<button class="btn btn-outline" id="net-export"><span class="ms">download</span> ${esc(t('common.export'))}</button>` : ''}
+      ${canCreate ? `<button class="btn btn-primary" id="net-new"><span class="ms">add</span> ${esc(t('network.addDevice'))}</button>` : ''}`)}
 
     <div class="grid grid-4" style="margin-bottom:20px">
       <div class="card card-pad metric">
@@ -145,11 +147,11 @@ Views.network = async function (el, params = {}) {
       <span class="ob-hint"> · Asset tags are entered manually (not auto IT-xxxx).</span></p>
 
     <div class="tabs" id="net-views" role="tablist">
-      <button type="button" class="tab ${view === 'list' ? 'active' : ''}" data-view="list" role="tab">
+      <button type="button" class="tab ${view === 'list' ? 'active' : ''}" data-net-view="list" role="tab">
         <span class="ms">table_rows</span> ${esc(t('network.viewList'))}</button>
-      <button type="button" class="tab ${view === 'topo' ? 'active' : ''}" data-view="topo" role="tab">
+      <button type="button" class="tab ${view === 'topo' ? 'active' : ''}" data-net-view="topo" role="tab">
         <span class="ms">hub</span> ${esc(t('network.viewTopo'))}</button>
-      <button type="button" class="tab ${view === 'racks' ? 'active' : ''}" data-view="racks" role="tab">
+      <button type="button" class="tab ${view === 'racks' ? 'active' : ''}" data-net-view="racks" role="tab">
         <span class="ms">view_column</span> ${esc(t('network.viewRacks'))}</button>
     </div>
 
@@ -230,7 +232,11 @@ Views.network = async function (el, params = {}) {
   $('#net-m-eol', el).addEventListener('click', () => setHash({ ...cur(), alert: 'eol', view: 'list' }));
   $('#net-m-warranty', el).addEventListener('click', () => setHash({ ...cur(), alert: 'warrantySoon', view: 'list' }));
 
-  $('#net-export', el).addEventListener('click', () => {
+  $('#net-export', el)?.addEventListener('click', () => {
+    if (!Auth.canIam('asset', 'export')) {
+      toast(t('common.forbidden') || 'You do not have permission to export', 'error');
+      return;
+    }
     if (!items.length) {
       toast(t('network.exportEmpty') || 'Nothing to export with the current filters', 'error');
       return;
@@ -239,8 +245,8 @@ Views.network = async function (el, params = {}) {
     toast(`${items.length} ${t('network.exportDone') || 'row(s) exported'}`, 'success');
   });
 
-  el.querySelectorAll('#net-views [data-view]').forEach((b) => {
-    b.addEventListener('click', () => setHash({ ...cur(), view: b.dataset.view }));
+  el.querySelectorAll('#net-views [data-net-view]').forEach((b) => {
+    b.addEventListener('click', () => setHash({ ...cur(), view: b.dataset.netView }));
   });
 
   el.querySelectorAll('[data-clear]').forEach((b) => b.addEventListener('click', () => {
@@ -255,7 +261,7 @@ Views.network = async function (el, params = {}) {
     setHash(next);
   }));
 
-  if (canEdit) {
+  if (canCreate) {
     $('#net-new', el).addEventListener('click', () => {
       assetForm({ category: 'Network' }, refresh);
     });
@@ -264,6 +270,8 @@ Views.network = async function (el, params = {}) {
   bindView(el, async (e) => {
     if (e.target.closest('input[type="checkbox"]')) return;
     if (e.target.closest('.msel')) return;
+    // Panel tabs use data-net-view — never treat them as asset ids.
+    if (e.target.closest('#net-views')) return;
     const openId = e.target.closest('[data-open]')?.dataset.open;
     const btn = e.target.closest('button');
     if (btn?.dataset.place && canEdit) {

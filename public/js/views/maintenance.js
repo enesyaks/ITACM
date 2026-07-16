@@ -1,5 +1,7 @@
 Views.maintenance = async function (el, params = {}) {
   const openOnly = params.open !== 'false';
+  const canEdit = Auth.canIam('maintenance', 'update') || Auth.canIam('maintenance', 'manage');
+  const canViewCosts = Auth.canIam('maintenance', 'view_confidential') || Auth.can('canViewMaintenanceCosts');
   const logs = await api('/maintenance' + (openOnly ? '?open=true' : ''));
 
   el.innerHTML = `
@@ -21,13 +23,13 @@ Views.maintenance = async function (el, params = {}) {
             <td class="mono">${esc(m.assetTag)}</td>
             <td class="cell-title">${esc(m.serviceCompany)}</td>
             <td>${esc(m.issueDescription)}</td>
-            <td>${m.cost != null ? fmtMoney(m.cost) : '—'}</td>
+            <td>${canViewCosts && m.cost != null ? fmtMoney(m.cost) : '—'}</td>
             <td>${fmtDate(m.sentDate)}</td>
             <td>${m.returnDate ? fmtDate(m.returnDate) : badge('In Repair')}</td>
             <td class="actions">
               <button class="btn btn-outline btn-sm" data-notes="${esc(m.id)}">
                 <span class="ms">chat</span> Notes (${(m.progressNotes || []).length})</button>
-              ${!m.returnDate ? `<button class="btn btn-outline btn-sm" data-closelog="${esc(m.id)}">Close</button>` : ''}</td>
+              ${canEdit && !m.returnDate ? `<button class="btn btn-outline btn-sm" data-closelog="${esc(m.id)}">Close</button>` : ''}</td>
           </tr>`).join('')}
       </tbody>
     </table></div></div>`;

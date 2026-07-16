@@ -1,6 +1,6 @@
 
 Views.stockcount = async function (el, params = {}) {
-  const canDo = Auth.can('canManageAssets');
+  const canDo = Auth.canIamOp('stock_count', 'create') || Auth.canIamOp('stock_count', 'update');
   const counts = await api('/counts');
   const openId = params.open || (counts.find((c) => c.status === 'open') || {}).id;
 
@@ -324,13 +324,18 @@ function pickEmployee(title, onPick) {
 }
 
 Views.lines = async function (el, params = {}) {
-  const canEdit = Auth.can('canManageAssets');
+  const canEdit = Auth.canIam('line', 'create') || Auth.canIam('line', 'update') || Auth.canIam('line', 'manage');
+  const canAssign = Auth.canIam('line', 'assign') || Auth.canIam('line', 'manage');
+  const canUnassign = Auth.canIam('line', 'unassign') || Auth.canIam('line', 'manage');
+  const canViewCosts = Auth.canIam('line', 'view_confidential') || Auth.can('canViewLineCosts');
   const q = new URLSearchParams();
   if (params.search) q.set('search', params.search);
   if (params.status) q.set('status', params.status);
   const items = await api('/lines?' + q.toString());
   const assigned = items.filter((l) => l.currentEmployeeId).length;
-  const monthly = items.filter((l) => l.status === 'Active').reduce((s2, l) => s2 + Number(l.monthlyCost || 0), 0);
+  const monthly = canViewCosts
+    ? items.filter((l) => l.status === 'Active').reduce((s2, l) => s2 + Number(l.monthlyCost || 0), 0)
+    : null;
 
   el.innerHTML = `
     ${pageHead('Mobile Lines', 'Company SIM cards & phone numbers — who holds which line.', canEdit
@@ -343,7 +348,7 @@ Views.lines = async function (el, params = {}) {
       <div class="card card-pad metric"><div class="metric-top"><h3 class="card-title">Free</h3>${iconChip('sim_card_download', 'emerald')}</div>
         <div class="metric-value">${items.filter((l) => !l.currentEmployeeId && l.status === 'Active').length}</div></div>
       <div class="card card-pad metric"><div class="metric-top"><h3 class="card-title">Monthly Cost</h3>${iconChip('payments', 'amber')}</div>
-        <div class="metric-value">${fmtMoney(monthly)}</div></div>
+        <div class="metric-value">${canViewCosts ? fmtMoney(monthly) : '—'}</div></div>
     </div>
     <div class="card">
       <div class="card-pad" style="padding-bottom:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
@@ -363,16 +368,17 @@ Views.lines = async function (el, params = {}) {
               <td class="mono cell-title">${esc(l.phoneNumber)}</td>
               <td>${esc(l.operator || '—')}<div class="cell-sub">${esc(l.plan || '')}</div></td>
               <td class="mono cell-sub">${esc(l.simSerial || '—')}</td>
-              <td>${l.monthlyCost != null ? fmtMoney(l.monthlyCost) : '—'}</td>
+              <td>${canViewCosts && l.monthlyCost != null ? fmtMoney(l.monthlyCost) : '—'}</td>
               <td>${l.status === 'Active' ? '<span class="pill pill-emerald">Active</span>'
                 : l.status === 'Suspended' ? '<span class="pill pill-amber">Suspended</span>'
                 : '<span class="pill pill-rose">Cancelled</span>'}</td>
               <td>${l.currentEmployeeName ? esc(l.currentEmployeeName) : '<span class="cell-sub">—</span>'}</td>
-              <td class="actions">${canEdit ? `
+              <td class="actions">
                 ${l.currentEmployeeId
-                  ? `<button class="btn btn-outline btn-sm" data-line-unassign="${esc(l.id)}"><span class="ms">undo</span> Take back</button>`
-                  : (l.status === 'Active' ? `<button class="btn btn-primary btn-sm" data-line-assign="${esc(l.id)}" data-num="${esc(l.phoneNumber)}"><span class="ms">person_add</span> Assign</button>` : '')}
-                <button class="btn btn-outline btn-sm" data-line-edit="${esc(l.id)}">Edit</button>` : ''}</td>
+                  ? (canUnassign ? `<button class="btn btn-outline btn-sm" data-line-unassign="${esc(l.id)}"><span class="ms">undo</span> Take back</button>` : '')
+                  : (canAssign && l.status === 'Active' ? `<button class="btn btn-primary btn-sm" data-line-assign="${esc(l.id)}" data-num="${esc(l.phoneNumber)}"><span class="ms">person_add</span> Assign</button>` : '')}
+                ${canEdit ? `<button class="btn btn-outline btn-sm" data-line-edit="${esc(l.id)}">Edit</button>` : ''}
+              </td>
             </tr>`).join('')}
         </tbody>
       </table></div>
@@ -390,7 +396,9 @@ Views.lines = async function (el, params = {}) {
       { name: 'operator', label: 'Operator', value: line?.operator, placeholder: 'Turkcell / Vodafone / Türk Telekom' },
       { name: 'plan', label: 'Plan / tariff', value: line?.plan, placeholder: 'e.g. Kurumsal 20GB' },
       { name: 'simSerial', label: 'SIM serial (ICCID)', value: line?.simSerial },
-      { name: 'monthlyCost', label: `Monthly cost (${appCurrency()})`, type: 'number', step: '0.01', value: line?.monthlyCost },
+      ...((Auth.canIam('line', 'view_confidential') || Auth.can('canViewLineCosts'))
+        ? [{ name: 'monthlyCost', label: `Monthly cost (${appCurrency()})`, type: 'number', step: '0.01', value: line?.monthlyCost }]
+        : []),
       { name: 'status', label: 'Status', type: 'select', value: line?.status || 'Active', options: ['Active', 'Suspended', 'Cancelled'] },
       { name: 'notes', label: 'Notes', type: 'textarea', full: true, value: line?.notes },
     ],
@@ -500,6 +508,10 @@ function normalizeImportRows(rows, headersFromFile = null) {
 }
 
 function showImportModal(onDone) {
+  if (!Auth.canIam('asset', 'import')) {
+    toast('Import requires asset:import permission', 'error');
+    return;
+  }
   if (!(Auth.profile && (Auth.profile.role === 'Owner' || Auth.profile.role === 'Admin'))) {
     toast(t('imp.ownerAdminOnly') || 'Inventory import is limited to Owner and Admin.', 'error');
     return;

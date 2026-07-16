@@ -1,7 +1,9 @@
 /* =============================== EMPLOYEES =============================== */
 Views.employees = async function (el, params = {}) {
   if (isStaleView(el)) return;
-  const canEdit = Auth.can('canManageAssets');
+  const canCreate = Auth.canIam('employee', 'create');
+  const canUpdate = Auth.canIam('employee', 'update') || Auth.canIam('employee', 'manage');
+  const canOnboard = Auth.canIam('onboarding', 'create') || Auth.canIam('onboarding', 'update');
   const PAGE = 50;
   const page = Math.max(1, Number(params.page) || 1);
   const EMP_STATUSES = ['Active', 'Inactive'];
@@ -42,9 +44,10 @@ Views.employees = async function (el, params = {}) {
   });
 
   el.innerHTML = `
-    ${pageHead('Employee Directory', 'Manage personnel and their assigned IT assets.', canEdit ?
-      `<button class="btn btn-outline" id="emp-onboard"><span class="ms">person_add</span> ${esc(t('emp.onboard'))}</button>
-       <button class="btn btn-primary" id="emp-new"><span class="ms">person_add</span> ${esc(t('common.addNewEmployee'))}</button>` : '')}
+    ${pageHead('Employee Directory', 'Manage personnel and their assigned IT assets.', `
+      ${canOnboard ? `<button class="btn btn-outline" id="emp-onboard"><span class="ms">person_add</span> ${esc(t('emp.onboard'))}</button>` : ''}
+      ${canCreate ? `<button class="btn btn-primary" id="emp-new"><span class="ms">person_add</span> ${esc(t('common.addNewEmployee'))}</button>` : ''}
+    `)}
 
     <div class="grid grid-4" style="margin-bottom:20px">
       <div class="card card-pad metric">
@@ -115,7 +118,7 @@ Views.employees = async function (el, params = {}) {
           <td>${badge(x.status)}</td>
           <td class="actions">
             <button class="btn btn-outline btn-sm" data-assets="${esc(x.id)}"><span class="ms">devices</span> ${esc(t('common.assets'))}</button>
-            ${canEdit ? `<button class="btn btn-outline btn-sm" data-edit="${esc(x.id)}">${esc(t('common.edit'))}</button>` : ''}
+            ${canUpdate ? `<button class="btn btn-outline btn-sm" data-edit="${esc(x.id)}">${esc(t('common.edit'))}</button>` : ''}
           </td>
         </tr>`).join('');
     $('#emp-tbody', el).innerHTML = empty;
@@ -138,7 +141,7 @@ Views.employees = async function (el, params = {}) {
             <div class="cell-sub">${esc(t('common.assets'))}: <strong>${x.activeAssetCount}</strong></div>
             <div class="m-emp-actions">
               <button class="btn btn-outline btn-sm" data-assets="${esc(x.id)}"><span class="ms">devices</span> ${esc(t('common.assets'))}</button>
-              ${canEdit ? `<button class="btn btn-outline btn-sm" data-edit="${esc(x.id)}">${esc(t('common.edit'))}</button>` : ''}
+              ${canUpdate ? `<button class="btn btn-outline btn-sm" data-edit="${esc(x.id)}">${esc(t('common.edit'))}</button>` : ''}
             </div>
           </div>`).join('');
     }
@@ -185,14 +188,17 @@ Views.employees = async function (el, params = {}) {
     next.page = 1;
     setHash(next);
   }));
-  if (canEdit) {
-    $('#emp-new', el).addEventListener('click', () => employeeForm(null, () => setHash(cur())));
+  if (canCreate) {
+    $('#emp-new', el)?.addEventListener('click', () => employeeForm(null, () => setHash(cur())));
+  }
+  if (canOnboard) {
     $('#emp-onboard', el)?.addEventListener('click', () => openOnboardWizard(null));
   }
   bindView(el, (e) => {
     if (e.target.closest('.msel')) return;
     const btn = e.target.closest('button');
     if (btn && btn.dataset.edit) {
+      if (!canUpdate) return;
       employeeForm(items.find((x) => x.id === btn.dataset.edit), () => setHash(cur()));
       return;
     }
@@ -226,21 +232,57 @@ function empDeviceHistoryBadge(type) {
 
 async function showEmployeeDetail(emp) {
   if (!emp) return;
-  const canEdit = Auth.can('canManageAssets');
-  const canDelDoc = Auth.can('canManageUsers');
+  const canEdit = Auth.canIam('employee', 'update') || Auth.canIam('employee', 'manage');
+  // Explicit detail toggles — manage does NOT imply these (same as export).
+  const canViewInventory = Auth.canIam('employee', 'view_inventory');
+  const canViewHistory = Auth.canIam('employee', 'view_history');
+  const canViewHandover = Auth.canIam('employee', 'view_handover');
+  // Print a fresh form for currently assigned assets/lines (not a past receipt reprint)
+  const canGenerateForm = Auth.canIam('handover', 'create');
+  const canReprintForm = Auth.canIam('handover', 'read') || canViewHandover;
+  // Assign actions come from the TARGET resource matrix (not employee.*):
+  //   license:assign → Assign / Revoke software
+  //   line:assign    → Assign / Unassign mobile line
+  //   asset:unassign → Return device
+  const canAssignSoftware = Auth.canIamOp('license', 'assign');
+  const canAssignLine = Auth.canIamOp('line', 'assign');
+  const canUnassignLine = Auth.canIam('line', 'unassign') || Auth.canIam('line', 'manage');
+  const canReturnAsset = Auth.canIamOp('asset', 'unassign');
+  const canReadDocs = Auth.canIam('document', 'read') || Auth.can('canReadDocuments');
+  const canDownloadDocs = Auth.canIam('document', 'download') || Auth.can('canDownloadDocuments');
+  const canUploadDocs = (Auth.canIam('document', 'upload') || Auth.canIam('document', 'create') || Auth.can('canUploadDocuments'))
+    && canViewHandover;
+  const canDelDoc = Auth.canIam('document', 'delete') || Auth.can('canDeleteDocuments');
+  const canSeeDocsTab = canViewHandover && (canReadDocs || canDownloadDocs || canUploadDocs);
+  const emptyList = () => [];
+  const emptyItems = () => ({ items: [] });
+  // Soft-fail every nested call — missing perms must not block opening the profile card.
   const [assetsRes, infraRes, receipts, allSoftware, history, documents, lines] = await Promise.all([
-    api(`/assets?employeeId=${encodeURIComponent(emp.id)}&status=Assigned&limit=500`),
-    api(`/assets?responsibleEmployeeId=${encodeURIComponent(emp.id)}&categories=Network,Server&limit=500`).catch(() => ({ items: [] })),
-    api(`/handovers?employeeId=${encodeURIComponent(emp.id)}&limit=20`),
-    // includeRevoked so past software zimmet also shows in the history timeline.
-    api(`/licenses/assignments?employeeId=${encodeURIComponent(emp.id)}&includeRevoked=true`),
-    api(`/employees/${encodeURIComponent(emp.id)}/history?limit=50`).catch(() => []),
-    api(`/employees/${encodeURIComponent(emp.id)}/documents`).catch(() => []),
-    api(`/lines?employeeId=${encodeURIComponent(emp.id)}`).catch(() => []),
+    canViewInventory
+      ? api(`/assets?employeeId=${encodeURIComponent(emp.id)}&status=Assigned&limit=500`).catch(emptyItems)
+      : Promise.resolve({ items: [] }),
+    canViewInventory
+      ? api(`/assets?responsibleEmployeeId=${encodeURIComponent(emp.id)}&categories=Network,Server&limit=500`).catch(emptyItems)
+      : Promise.resolve({ items: [] }),
+    canViewHandover
+      ? api(`/handovers?employeeId=${encodeURIComponent(emp.id)}&limit=20`).catch(emptyList)
+      : Promise.resolve([]),
+    canViewInventory
+      ? api(`/licenses/assignments?employeeId=${encodeURIComponent(emp.id)}&includeRevoked=true`).catch(emptyList)
+      : Promise.resolve([]),
+    canViewHistory
+      ? api(`/employees/${encodeURIComponent(emp.id)}/history?limit=50`).catch(emptyList)
+      : Promise.resolve([]),
+    (canSeeDocsTab && canReadDocs)
+      ? api(`/employees/${encodeURIComponent(emp.id)}/documents`).catch(emptyList)
+      : Promise.resolve([]),
+    canViewInventory
+      ? api(`/lines?employeeId=${encodeURIComponent(emp.id)}`).catch(emptyList)
+      : Promise.resolve([]),
   ]);
-  const assets = assetsRes.items;
+  const assets = (assetsRes && assetsRes.items) || [];
   const infra = (infraRes && infraRes.items) || [];
-  const software = allSoftware.filter((s) => !s.revokedAt); // active only, for the overview
+  const software = (allSoftware || []).filter((s) => !s.revokedAt);
 
   // Merge device + software + mobile-line events into one activity timeline.
   const swEvents = [];
@@ -262,7 +304,7 @@ async function showEmployeeDetail(emp) {
   const fmtKB = (n) => (n >= 1024 * 1024 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB');
 
   openModal({
-    title: `${emp.fullName} — Assigned Assets`,
+    title: `${emp.fullName}`,
     wide: true,
     body: `
       <div style="display:flex;align-items:center;gap:14px;margin-bottom:18px">
@@ -276,16 +318,19 @@ async function showEmployeeDetail(emp) {
 
       <div class="tabs">
         <button class="tab active" data-tab="overview">${esc(t('common.overview'))}</button>
-        <button class="tab" data-tab="history">${esc(t('common.history'))} (${timeline.length})</button>
-        <button class="tab" data-tab="documents">${esc(t('common.documents'))} (${documents.length})</button>
+        ${canViewHistory ? `<button class="tab" data-tab="history">${esc(t('common.history'))} (${timeline.length})</button>` : ''}
+        ${canSeeDocsTab ? `<button class="tab" data-tab="documents">${esc(t('common.documents'))}${canReadDocs ? ` (${documents.length})` : ''}</button>` : ''}
       </div>
       <div id="tab-overview">
+      ${!canViewInventory ? `
+        <div class="cell-sub" style="margin-bottom:12px">Inventory is hidden — grant <strong>employee:view_inventory</strong> to see devices, software and lines.</div>
+      ` : `
       <h3 style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--on-surface-variant);margin:0 0 8px">
         ${esc(t('emp.assignedAssets'))} (${assets.length})</h3>
       ${assets.length === 0 ? `<div class="cell-sub" style="margin-bottom:16px">${esc(t('emp.noAssets'))}</div>` : `
       <div class="table-wrap" style="margin-bottom:18px;border:1px solid var(--outline-variant);border-radius:var(--radius-lg)">
         <table class="data">
-          <thead><tr><th>Asset Tag</th><th>Brand &amp; Model</th><th>Serial No</th><th>Category</th>${canEdit ? '<th style="text-align:right"></th>' : ''}</tr></thead>
+          <thead><tr><th>Asset Tag</th><th>Brand &amp; Model</th><th>Serial No</th><th>Category</th>${canReturnAsset ? '<th style="text-align:right"></th>' : ''}</tr></thead>
           <tbody>
             ${assets.map((a) => `
             <tr>
@@ -295,14 +340,16 @@ async function showEmployeeDetail(emp) {
                 <span class="cell-title">${esc(a.brand)} ${esc(a.model)}</span></div></td>
               <td class="mono">${esc(a.serialNumber)}</td>
               <td class="cell-sub">${esc(a.category)}</td>
-              ${canEdit ? `<td class="actions">
+              ${canReturnAsset ? `<td class="actions">
                 <button class="btn btn-outline btn-sm" data-return-asset="${esc(a.id)}">
                   <span class="ms">undo</span> Return</button></td>` : ''}
             </tr>`).join('')}
           </tbody>
         </table>
       </div>`}
+      `}
 
+      ${canViewInventory ? `
       <h3 style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--on-surface-variant);margin:0 0 8px">
         ${esc(t('emp.infraResponsible'))} (${infra.length})</h3>
       ${infra.length === 0 ? `<div class="cell-sub" style="margin-bottom:16px">${esc(t('emp.noInfra'))}</div>` : `
@@ -326,7 +373,7 @@ async function showEmployeeDetail(emp) {
       <div style="display:flex;align-items:center;justify-content:space-between;margin:0 0 8px">
         <h3 style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--on-surface-variant);margin:0">
           ${esc(t('emp.assignedSoftware'))} (${software.length})</h3>
-        ${canEdit ? `<button class="btn btn-outline btn-sm" id="emp-assign-sw"><span class="ms">add</span> ${esc(t('emp.assignSoftware'))}</button>` : ''}
+        ${canAssignSoftware ? `<button class="btn btn-outline btn-sm" id="emp-assign-sw"><span class="ms">add</span> ${esc(t('emp.assignSoftware'))}</button>` : ''}
       </div>
       ${software.length === 0 ? `<div class="cell-sub" style="margin-bottom:16px">${esc(t('emp.noSoftware'))}</div>` : `
       <div style="margin-bottom:18px">
@@ -335,19 +382,19 @@ async function showEmployeeDetail(emp) {
           <span><span class="ms" style="color:var(--on-surface-variant);margin-right:8px">vpn_key</span>
             <strong>${esc(s.softwareName)}</strong></span>
           <span class="cell-sub">${fmtDate(s.assignedAt)} • by ${esc(s.assignedByName || '—')}</span>
-          ${canEdit ? `<button class="btn btn-outline btn-sm" data-revoke-sw="${esc(s.id)}">Revoke</button>` : ''}
+          ${canAssignSoftware ? `<button class="btn btn-outline btn-sm" data-revoke-sw="${esc(s.id)}">Revoke</button>` : ''}
         </div>`).join('')}
       </div>`}
 
       <div style="display:flex;align-items:center;justify-content:space-between;margin:0 0 8px">
         <h3 style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--on-surface-variant);margin:0">
           ${esc(t('emp.mobileLines'))} (${lines.length})</h3>
-        ${canEdit ? `<button class="btn btn-outline btn-sm" id="emp-assign-line"><span class="ms">add</span> ${esc(t('emp.assignLine'))}</button>` : ''}
+        ${canAssignLine ? `<button class="btn btn-outline btn-sm" id="emp-assign-line"><span class="ms">add</span> ${esc(t('emp.assignLine'))}</button>` : ''}
       </div>
       ${lines.length === 0 ? `<div class="cell-sub" style="margin-bottom:16px">${esc(t('emp.noLines'))}</div>` : `
       <div class="table-wrap" style="margin-bottom:18px;border:1px solid var(--outline-variant);border-radius:var(--radius-lg)">
         <table class="data">
-          <thead><tr><th>${esc(t('lines.phone'))}</th><th>${esc(t('lines.operator'))}</th><th>${esc(t('lines.plan'))}</th><th>${esc(t('lines.sim'))}</th>${canEdit ? '<th style="text-align:right"></th>' : ''}</tr></thead>
+          <thead><tr><th>${esc(t('lines.phone'))}</th><th>${esc(t('lines.operator'))}</th><th>${esc(t('lines.plan'))}</th><th>${esc(t('lines.sim'))}</th>${(canAssignLine || canUnassignLine) ? '<th style="text-align:right"></th>' : ''}</tr></thead>
           <tbody>
             ${lines.map((l) => `
             <tr>
@@ -355,14 +402,16 @@ async function showEmployeeDetail(emp) {
               <td>${esc(l.operator || '—')}</td>
               <td class="cell-sub">${esc(l.plan || '—')}</td>
               <td class="mono cell-sub">${esc(l.simSerial || '—')}</td>
-              ${canEdit ? `<td class="actions">
+              ${canUnassignLine ? `<td class="actions">
                 <button class="btn btn-outline btn-sm" data-return-line="${esc(l.id)}">
-                  <span class="ms">undo</span> ${esc(t('emp.unassign'))}</button></td>` : ''}
+                  <span class="ms">undo</span> ${esc(t('emp.unassign'))}</button></td>` : (canAssignLine ? '<td></td>' : '')}
             </tr>`).join('')}
           </tbody>
         </table>
       </div>`}
+      ` : ''}
 
+      ${canViewHandover ? `
       <h3 style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--on-surface-variant);margin:0 0 8px">
         ${esc(t('emp.handoverReceipts'))} (${receipts.length})</h3>
       ${receipts.length === 0 ? '<div class="cell-sub">No handover receipts yet.</div>' :
@@ -370,10 +419,12 @@ async function showEmployeeDetail(emp) {
         <div class="history-item" style="justify-content:space-between">
           <span class="when">${fmtDateTime(h.transactionDate)}</span>
           <span>${(h.items || []).length} item(s) • <span class="cell-sub">${esc(h.documentType)}</span></span>
-          <button class="btn btn-outline btn-sm" data-reprint="${esc(h.id)}"><span class="ms">print</span> Reprint Form</button>
+          ${canReprintForm ? `<button class="btn btn-outline btn-sm" data-reprint="${esc(h.id)}"><span class="ms">print</span> Reprint Form</button>` : ''}
         </div>`).join('')}
+      ` : ''}
 
       </div>
+      ${canViewHistory ? `
       <div id="tab-history" class="hidden">
         <div class="cell-sub" style="margin-bottom:10px">${esc(t('emp.historyHint'))}</div>
         ${timeline.length === 0 ? `<div class="table-empty">${esc(t('emp.noHistory'))}</div>` :
@@ -390,49 +441,54 @@ async function showEmployeeDetail(emp) {
             <span class="cell-sub">by ${esc(ev.by || '—')}</span>
             ${ev.notes ? `<span class="cell-sub" style="flex-basis:100%;padding-left:2px">↳ ${esc(ev.notes)}</span>` : ''}
           </div>`).join('') + '</div>'}
-      </div>
+      </div>` : ''}
 
+      ${canSeeDocsTab ? `
       <div id="tab-documents" class="hidden">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
           <div class="cell-sub">Handover forms are auto-archived here. Upload signed/scanned copies (PDF or image).</div>
-          ${canEdit ? '<button class="btn btn-primary btn-sm" id="doc-upload-btn"><span class="ms">upload_file</span> Upload scan</button>' : ''}
+          ${canUploadDocs ? '<button class="btn btn-primary btn-sm" id="doc-upload-btn"><span class="ms">upload_file</span> Upload scan</button>' : ''}
         </div>
         <input type="file" id="doc-file" accept="application/pdf,image/png,image/jpeg,image/webp,.pdf,.png,.jpg,.jpeg,.webp" class="hidden">
-        ${documents.length === 0 ? '<div class="table-empty">No documents yet. Execute a handover or upload a signed scan.</div>' : `
+        ${!canReadDocs
+          ? '<div class="table-empty">No permission to view documents (needs <strong>document:read</strong>).</div>'
+          : documents.length === 0
+            ? '<div class="table-empty">No documents yet. Execute a handover or upload a signed scan.</div>'
+            : `
         <div class="table-wrap" style="border:1px solid var(--outline-variant);border-radius:var(--radius-lg)"><table class="data">
           <thead><tr><th>Document</th><th>Type</th><th>Size</th><th>Added</th><th style="text-align:right"></th></tr></thead>
           <tbody>
             ${documents.map((d) => `
             <tr>
-              <td><div style="display:flex;align-items:center;gap:8px">
-                <span class="ms" style="color:var(--on-surface-variant)">${d.mime && d.mime.includes('pdf') ? 'picture_as_pdf' : 'image'}</span>
-                <a href="#" class="cell-title doc-link" data-doc-view="${esc(d.id)}" title="Click to view">${esc(d.filename)}</a></div></td>
+              <td>${docFileLabel(d, { canDownload: canDownloadDocs, viewAttr: 'data-doc-view' })}</td>
               <td>${d.kind === 'scan' ? '<span class="pill pill-emerald">Signed scan</span>' : '<span class="pill pill-indigo">Generated</span>'}</td>
               <td class="cell-sub">${fmtKB(d.byteSize || 0)}</td>
               <td class="cell-sub">${fmtDateTime(d.createdAt)}${d.uploadedByName ? ' • ' + esc(d.uploadedByName) : ''}</td>
               <td class="actions">
-                <button type="button" class="btn btn-outline btn-sm" data-doc-view="${esc(d.id)}" title="${esc(t('common.view'))}"><span class="ms">visibility</span></button>
-                <button type="button" class="btn btn-outline btn-sm" data-doc-dl="${esc(d.id)}" title="${esc(t('common.download'))}"><span class="ms">download</span></button>
-                ${canDelDoc ? `<button type="button" class="btn btn-outline btn-sm" data-doc-del="${esc(d.id)}"><span class="ms">delete</span></button>` : ''}
+                ${docRowActions(d, { canDownload: canDownloadDocs, canDel: canDelDoc, viewAttr: 'data-doc-view', dlAttr: 'data-doc-dl', delAttr: 'data-doc-del' })}
               </td>
             </tr>`).join('')}
           </tbody>
         </table></div>`}
-      </div>`,
+      </div>` : ''}
+`,
     foot: `
       <button class="btn btn-outline" data-close>Close</button>
       ${canEdit && emp.status === 'Active' ? `
         <button class="btn btn-outline" id="emp-onboard-one"><span class="ms">event_available</span> ${esc(t('emp.onboard'))}</button>
         <button class="btn btn-outline" id="emp-offboard"><span class="ms">person_off</span> ${esc(t('emp.offboard'))}</button>` : ''}
-      <button class="btn btn-primary" id="emp-print-current" ${assets.length === 0 ? 'disabled' : ''}>
-        <span class="ms">print</span> Generate Current Asset Form</button>`,
+      ${canGenerateForm ? `<button class="btn btn-primary" id="emp-print-current" ${assets.length === 0 ? 'disabled' : ''}>
+        <span class="ms">print</span> Generate Current Asset Form</button>` : ''}`,
     onMount(overlay) {
       // Tab switching
       overlay.querySelectorAll('.tab').forEach((tb) => tb.addEventListener('click', () => {
         overlay.querySelectorAll('.tab').forEach((t2) => t2.classList.toggle('active', t2 === tb));
-        $('#tab-overview', overlay).classList.toggle('hidden', tb.dataset.tab !== 'overview');
-        $('#tab-history', overlay).classList.toggle('hidden', tb.dataset.tab !== 'history');
-        $('#tab-documents', overlay).classList.toggle('hidden', tb.dataset.tab !== 'documents');
+        const ov = $('#tab-overview', overlay);
+        const hi = $('#tab-history', overlay);
+        const doc = $('#tab-documents', overlay);
+        if (ov) ov.classList.toggle('hidden', tb.dataset.tab !== 'overview');
+        if (hi) hi.classList.toggle('hidden', tb.dataset.tab !== 'history');
+        if (doc) doc.classList.toggle('hidden', tb.dataset.tab !== 'documents');
       }));
 
       const obnBtn = $('#emp-onboard-one', overlay);

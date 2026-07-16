@@ -29,14 +29,13 @@ function peerIp(req) {
 }
 
 /**
- * IP key for rate limits.
- * When TRUST_PROXY is on, Express `req.ip` reflects the reverse-proxy hop.
- * Otherwise use the TCP peer so clients cannot rotate X-Forwarded-For.
+ * IP key for rate limits and brute-force protection.
+ *
+ * ALWAYS uses the TCP peer address — never trusts X-Forwarded-For
+ * regardless of TRUST_PROXY. This prevents attackers from rotating
+ * spoofed headers to bypass rate limits or brute-force detection.
  */
 function rateLimitIp(req) {
-  if (envFlag('TRUST_PROXY') || /^\d+$/.test(String(process.env.TRUST_PROXY || '').trim())) {
-    return normalizeIp(req && req.ip) || peerIp(req) || 'unknown';
-  }
   return peerIp(req) || 'unknown';
 }
 

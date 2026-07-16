@@ -13,6 +13,7 @@ const { query } = require('./pool');
 const config = require('../../config');
 const { HttpError } = require('../../utils/httpError');
 const { ROLES, buildPermissions } = require('../../utils/permissions');
+const { roleRequiresMfa } = require('../../utils/mfaPolicy');
 
 authenticator.options = { window: 1 };
 
@@ -63,6 +64,9 @@ async function issueSession(user, meta = {}) {
       role: user.role,
       mfaEnabled: !!user.mfa_enabled,
     },
+    ...(roleRequiresMfa(user.role) && !user.mfa_enabled
+      ? { mfaEnrollmentRequired: true }
+      : {}),
   };
 }
 
@@ -254,7 +258,7 @@ async function mfaSetupStart(user) {
 function generateBackupCodes(n = 8) {
   const codes = [];
   for (let i = 0; i < n; i++) {
-    codes.push(crypto.randomBytes(4).toString('hex'));
+    codes.push(crypto.randomBytes(16).toString('base64url'));
   }
   return codes;
 }
@@ -282,6 +286,9 @@ async function mfaSetupConfirm(user, { code }) {
 }
 
 async function mfaDisable(user, { password, code }) {
+  if (roleRequiresMfa(user.role)) {
+    throw HttpError.forbidden('MFA is mandatory for Owner accounts and cannot be disabled');
+  }
   const { rows } = await query(
     'SELECT password_hash, mfa_secret, mfa_enabled FROM users WHERE id = $1',
     [user.uid]
@@ -310,9 +317,12 @@ async function mfaStatus(user) {
     'SELECT mfa_enabled, cardinality(mfa_backup_hashes) AS backup_left FROM users WHERE id = $1',
     [user.uid]
   );
+  const enabled = !!rows[0]?.mfa_enabled;
   return {
-    enabled: !!rows[0]?.mfa_enabled,
+    enabled,
     backupCodesRemaining: Number(rows[0]?.backup_left || 0),
+    mandatory: roleRequiresMfa(user.role),
+    enrollmentRequired: roleRequiresMfa(user.role) && !enabled,
   };
 }
 
@@ -376,7 +386,7 @@ async function upsertAdminTx(client, { username, email, password }) {
 async function setUserRole(uid, role, actor) {
   assertValidRole(role);
   const { rows: existing } = await query(
-    'SELECT id, role, email, username FROM users WHERE id = $1',
+    'SELECT id, role, email, username, mfa_enabled FROM users WHERE id = $1',
     [uid]
   );
   if (!existing[0]) throw HttpError.notFound(`No user with id ${uid}`);
@@ -385,6 +395,9 @@ async function setUserRole(uid, role, actor) {
   }
   if ((role === 'Owner' || role === 'Admin') && (!actor || actor.role !== 'Owner')) {
     throw HttpError.forbidden('Only an Owner can assign the Owner or Admin role');
+  }
+  if (role === 'Owner' && !existing[0].mfa_enabled) {
+    throw HttpError.badRequest('Enable MFA on this account before assigning the Owner role');
   }
   const { rows } = await query(
     'UPDATE users SET role = $2 WHERE id = $1 RETURNING id, role, email, username',
@@ -396,24 +409,118 @@ async function setUserRole(uid, role, actor) {
 
 async function getVerifiedProfile(user) {
   const { rows } = await query(
-    'SELECT username, mfa_enabled FROM users WHERE id = $1',
+    'SELECT username, mfa_enabled, permission_group_id AS "permissionGroupId", custom_constraints AS "customConstraints" FROM users WHERE id = $1',
     [user.uid]
   );
+  const row = rows[0];
+  const enriched = {
+    ...user,
+    permissionGroupId: row?.permissionGroupId || user.permissionGroupId || null,
+    customConstraints: row?.customConstraints || user.customConstraints || null,
+  };
+
+  let iamPermissions = [];
+  try {
+    const permissionService = require('./permissionService');
+    iamPermissions = await permissionService.getUserPermissions(enriched);
+  } catch { /* ignore if permission service not available */ }
+
   return {
-    uid: user.uid,
-    email: user.email,
-    username: rows[0]?.username || user.email,
-    role: user.role,
-    mfaEnabled: !!rows[0]?.mfa_enabled,
-    permissions: buildPermissions(user.role),
+    uid: enriched.uid,
+    email: enriched.email,
+    username: row?.username || enriched.email,
+    role: enriched.role,
+    mfaEnabled: !!row?.mfa_enabled,
+    mfaMandatory: roleRequiresMfa(enriched.role),
+    mfaEnrollmentRequired: roleRequiresMfa(enriched.role) && !row?.mfa_enabled,
+    permissionGroupId: enriched.permissionGroupId,
+    customConstraints: enriched.customConstraints,
+    permissions: uiPermissionsFromIam(iamPermissions, enriched.role),
+    iamPermissions,
+  };
+}
+
+/** Map IAM entries → legacy Auth.can() flags used by the SPA. */
+function uiPermissionsFromIam(iamPermissions, role) {
+  const legacy = buildPermissions(role);
+  if (role === 'Owner') return legacy;
+
+  const list = Array.isArray(iamPermissions) ? iamPermissions : [];
+  const has = (resource, action) =>
+    list.some((p) => p.resource === resource && p.action === action && p.allowed !== false);
+
+  return {
+    ...legacy,
+    canViewDashboard: has('dashboard', 'read') || legacy.canViewDashboard,
+    // manage = full ops; create/update stay granular; listing needs read (or manage/assign/unassign)
+    canManageAssets: has('asset', 'manage') || has('asset', 'create') || has('asset', 'update'),
+    canCreateAssets: has('asset', 'create'),
+    canUpdateAssets: has('asset', 'manage') || has('asset', 'update'),
+    canAssignAssets: has('asset', 'manage') || has('asset', 'assign'),
+    canUnassignAssets: has('asset', 'manage') || has('asset', 'unassign'),
+    canListAssets:
+      has('asset', 'read')
+      || has('asset', 'manage')
+      || has('asset', 'assign')
+      || has('asset', 'unassign'),
+    // Scoped views when inventory is not fully opened by read/manage
+    assetUnassignScopeOnly:
+      has('asset', 'unassign')
+      && !has('asset', 'assign')
+      && !has('asset', 'manage')
+      && !has('asset', 'read'),
+    assetAssignScopeOnly:
+      has('asset', 'assign')
+      && !has('asset', 'unassign')
+      && !has('asset', 'manage')
+      && !has('asset', 'read'),
+    assetAssignUnassignScopeOnly:
+      has('asset', 'assign')
+      && has('asset', 'unassign')
+      && !has('asset', 'manage')
+      && !has('asset', 'read'),
+    canExecuteHandovers: has('handover', 'create'),
+    canManageMaintenance: has('maintenance', 'create') || has('maintenance', 'update'),
+    canManageUsers:
+      has('user_management', 'read')
+      || has('user_management', 'create')
+      || has('user_management', 'update'),
+    canViewAudit: has('audit', 'read'),
+    canViewConfidentialContracts: has('contract', 'view_confidential'),
+    // Financial amounts (masraf / fatura tutarı / sözleşme bedeli)
+    canViewContractCosts: has('contract', 'view_confidential'),
+    canViewLineCosts: has('line', 'view_confidential'),
+    canViewLicenseCosts: has('license', 'view_confidential'),
+    canViewMaintenanceCosts: has('maintenance', 'view_confidential'),
+    // Invoices / PDFs
+    canReadDocuments: has('document', 'read'),
+    canDownloadDocuments: has('document', 'download'),
+    canUploadDocuments: has('document', 'upload') || has('document', 'create'),
+    canDeleteDocuments: has('document', 'delete'),
+    canManageBranding: has('settings', 'manage'),
+    canManageOwner: role === 'Owner',
+    isOwner: role === 'Owner',
+    canAccessIntegrations:
+      has('integration', 'read')
+      || has('integration', 'update')
+      || has('integration', 'manage'),
+    // export/import are explicit IAM toggles — manage does not imply them
+    canExportAssets: has('asset', 'export'),
+    canExportNetwork: has('asset', 'export') || has('report', 'export'),
+    canExportReports: has('report', 'export'),
+    canImportAssets: has('asset', 'import'),
   };
 }
 
 async function listUsers() {
   const { rows } = await query(
-    `SELECT id AS uid, username, email, role, status, mfa_enabled AS "mfaEnabled",
-            created_at AS "createdAt", last_login_at AS "lastLoginAt"
-     FROM users ORDER BY created_at DESC`
+    `SELECT u.id AS uid, u.username, u.email, u.role, u.status, u.mfa_enabled AS "mfaEnabled",
+            u.created_at AS "createdAt", u.last_login_at AS "lastLoginAt",
+            u.permission_group_id AS "permissionGroupId",
+            pg.name AS "permissionGroupName"
+     FROM users u
+     LEFT JOIN permission_groups pg ON u.permission_group_id = pg.id
+     ORDER BY u.created_at DESC`
   );
   return rows;
 }

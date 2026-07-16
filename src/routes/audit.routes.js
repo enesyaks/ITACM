@@ -1,11 +1,11 @@
 const express = require('express');
-const { authenticate, requireRole } = require('../middleware/auth');
+const { authenticate, requireRole, requirePermission } = require('../middleware/auth');
 const { auditService } = require('../providers');
 
 const router = express.Router();
 
-/** Owner/Admin only — full instance audit trail. */
-router.get('/', authenticate, requireRole('Owner', 'Admin'), async (req, res, next) => {
+/** Audit trail. İzin: audit:read */
+router.get('/', authenticate, requirePermission('audit', 'read'), async (req, res, next) => {
   try {
     const data = await auditService.listEvents({
       limit: req.query.limit,
@@ -22,7 +22,7 @@ router.get('/', authenticate, requireRole('Owner', 'Admin'), async (req, res, ne
   }
 });
 
-router.get('/:bucket/:id', authenticate, requireRole('Owner', 'Admin'), async (req, res, next) => {
+router.get('/:bucket/:id', authenticate, requirePermission('audit', 'read'), async (req, res, next) => {
   try {
     const event = await auditService.getEvent(req.params.bucket, req.params.id);
     if (!event) return res.status(404).json({ success: false, error: 'Audit event not found' });

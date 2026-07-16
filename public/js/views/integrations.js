@@ -1,9 +1,13 @@
 /** Owner Integrations: SMTP, API keys, webhooks, custom fields, sync docs. */
 Views.integrations = async function (el) {
-  if (!Auth.profile || Auth.profile.role !== 'Owner') {
-    el.innerHTML = `<div class="card card-pad"><p class="cell-sub">Owner role required.</p></div>`;
+  if (!Auth.can('canAccessIntegrations') && !Auth.canIam('integration', 'read') && !Auth.canIam('integration', 'update') && !Auth.canIam('integration', 'manage')) {
+    el.innerHTML = `<div class="card card-pad"><p class="cell-sub">Integrations requires <strong>integration:read</strong>.</p></div>`;
     return;
   }
+  const canManage = Auth.canIam('integration', 'manage');
+  const canRead = Auth.can('canAccessIntegrations') || Auth.canIam('integration', 'read') || Auth.canIam('integration', 'update') || canManage;
+  const readOnly = canRead && !canManage;
+  const lockedTip = esc(t('integration.viewLocked') || 'Saved — editing requires integration:manage');
 
   const [mail, keys, hooks, cfAsset, cfEmp, cfContract] = await Promise.all([
     api('/integrations/notifications'),
@@ -17,23 +21,37 @@ Views.integrations = async function (el) {
   const smtp = mail.smtp || {};
   const notify = mail.notify || {};
   const webhookList = Array.isArray(hooks) ? hooks : [];
+  const inputDis = readOnly ? ' disabled' : '';
+  const chkDis = readOnly ? ' disabled' : '';
+
+  function secretLocked(label, hasValue) {
+    if (!readOnly || !hasValue) return '';
+    return `<div class="doc-locked" style="max-width:100%;margin-top:4px" title="${lockedTip}">
+      <span class="doc-locked-filename">${esc(label)}</span>
+      <span class="doc-locked-badge"><span class="ms ms-sm">lock</span>${lockedTip}</span>
+    </div>`;
+  }
 
   function renderCfTable(entity, defs) {
     if (!defs.length) return `<p class="cell-sub">No custom fields for ${entity}.</p>`;
     return `<div class="table-wrap"><table class="data"><thead><tr>
-      <th>Key</th><th>Label</th><th>Type</th><th>Options</th><th></th></tr></thead><tbody>
+      <th>Key</th><th>Label</th><th>Type</th><th>Options</th>${canManage ? '<th></th>' : ''}</tr></thead><tbody>
       ${defs.map((d) => `<tr>
         <td class="mono">${esc(d.fieldKey)}</td>
         <td>${esc(d.label)}</td>
         <td>${esc(d.fieldType)}${d.required ? ' *' : ''}</td>
         <td class="cell-sub">${(d.options && d.options.length) ? esc(d.options.join(', ')) : '—'}</td>
-        <td class="actions"><button class="btn btn-outline btn-sm" data-cf-del="${esc(entity)}:${esc(d.fieldKey)}">Delete</button></td>
+        ${canManage ? `<td class="actions"><button class="btn btn-outline btn-sm" data-cf-del="${esc(entity)}:${esc(d.fieldKey)}">Delete</button></td>` : ''}
       </tr>`).join('')}
       </tbody></table></div>`;
   }
 
   el.innerHTML = `
     ${pageHead('Integrations', 'SMTP alerts, API keys, webhooks, custom fields, and sync connectors.', '')}
+    ${readOnly ? `<div class="card card-pad" style="margin-bottom:16px;border-style:dashed">
+      <span class="ms" style="vertical-align:-3px;color:var(--on-surface-variant)">lock</span>
+      <span class="cell-sub">${lockedTip}</span>
+    </div>` : ''}
     <div class="settings-shell">
 
       <section class="card card-pad" style="margin-bottom:16px">
@@ -42,47 +60,52 @@ Views.integrations = async function (el) {
           iCloud/Gmail: Apple/Google hesabı şifresi değil, <strong>app-specific password</strong> kullanın.
           iCloud: host <code>smtp.mail.me.com</code>, port <code>465</code>, TLS açık.</p>
         <div class="form-grid">
-          <div class="form-field"><label>Host</label><input id="int-smtp-host" value="${esc(smtp.host || '')}" placeholder="smtp.mail.me.com"></div>
-          <div class="form-field"><label>Port</label><input id="int-smtp-port" type="number" value="${esc(smtp.port || 587)}"></div>
-          <div class="form-field"><label>User</label><input id="int-smtp-user" value="${esc(smtp.user || '')}" autocomplete="off"></div>
+          <div class="form-field"><label>Host</label><input id="int-smtp-host" value="${esc(smtp.host || '')}" placeholder="smtp.mail.me.com"${inputDis}></div>
+          <div class="form-field"><label>Port</label><input id="int-smtp-port" type="number" value="${esc(smtp.port || 587)}"${inputDis}></div>
+          <div class="form-field"><label>User</label><input id="int-smtp-user" value="${esc(smtp.user || '')}" autocomplete="off"${inputDis}></div>
           <div class="form-field"><label>Password ${smtp.pass ? '<span class="ob-hint">(saved — leave blank to keep)</span>' : ''}</label>
-            <input id="int-smtp-pass" type="password" value="" placeholder="${smtp.pass ? '••••••••  leave blank to keep' : 'app-specific password'}" autocomplete="new-password"></div>
-          <div class="form-field"><label>From</label><input id="int-smtp-from" value="${esc(smtp.from || '')}" placeholder="itacm@company.com"></div>
+            ${readOnly && smtp.pass
+              ? secretLocked('••••••••••••')
+              : `<input id="int-smtp-pass" type="password" value="" placeholder="${smtp.pass ? '••••••••  leave blank to keep' : 'app-specific password'}" autocomplete="new-password"${inputDis}>`}
+          </div>
+          <div class="form-field"><label>From</label><input id="int-smtp-from" value="${esc(smtp.from || '')}" placeholder="itacm@company.com"${inputDis}></div>
           <div class="form-field"><label>Recipients (comma-separated)</label>
-            <input id="int-notify-to" value="${esc((notify.to || []).join(', '))}" placeholder="ops@company.com"></div>
+            <input id="int-notify-to" value="${esc((notify.to || []).join(', '))}" placeholder="ops@company.com"${inputDis}></div>
           <div class="form-field full" style="display:flex;flex-wrap:wrap;gap:12px;align-items:center">
-            <label><input type="checkbox" id="int-notify-on" ${notify.enabled ? 'checked' : ''}> Enable digests</label>
-            <label><input type="checkbox" id="int-smtp-secure" ${smtp.secure ? 'checked' : ''}> TLS (port 465)</label>
-            <label><input type="checkbox" id="int-notify-ho" ${notify.handoverCompleted ? 'checked' : ''}> Email on handover</label>
+            <label><input type="checkbox" id="int-notify-on" ${notify.enabled ? 'checked' : ''}${chkDis}> Enable digests</label>
+            <label><input type="checkbox" id="int-smtp-secure" ${smtp.secure ? 'checked' : ''}${chkDis}> TLS (port 465)</label>
+            <label><input type="checkbox" id="int-notify-ho" ${notify.handoverCompleted ? 'checked' : ''}${chkDis}> Email on handover</label>
           </div>
         </div>
         <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
-          <button class="btn btn-primary" id="int-smtp-save">Save SMTP</button>
+          ${canManage ? `<button class="btn btn-primary" id="int-smtp-save">Save SMTP</button>
           <button class="btn btn-outline" id="int-smtp-test">Send test email</button>
-          <button class="btn btn-outline" id="int-digest">Run digest now</button>
-          <button class="btn btn-outline" id="int-smtp-clear" style="margin-left:auto;color:var(--rose,#be123c)">Clear SMTP &amp; recipients</button>
+          <button class="btn btn-outline" id="int-smtp-clear" style="margin-left:auto;color:var(--rose,#be123c)">Clear SMTP &amp; recipients</button>` : ''}
+          ${canRead ? `<button class="btn btn-outline" id="int-digest">Run digest now</button>` : ''}
         </div>
       </section>
 
       <section class="card card-pad" style="margin-bottom:16px">
         <h3 style="margin:0 0 8px">API keys</h3>
         <p class="cell-sub" style="margin:0 0 12px">Use <code>Authorization: Bearer itacm_…</code> or <code>X-Api-Key</code> for HR / discovery sync.</p>
-        <div class="form-grid" style="margin-bottom:12px">
+        ${canManage ? `<div class="form-grid" style="margin-bottom:12px">
           <div class="form-field"><label>Name</label><input id="int-key-name" placeholder="HR sync"></div>
           <div class="form-field"><label>Role</label>
             <select id="int-key-role"><option>Helpdesk</option><option>Admin</option><option>Viewer</option></select></div>
         </div>
-        <button class="btn btn-primary btn-sm" id="int-key-create">Create key</button>
+        <button class="btn btn-primary btn-sm" id="int-key-create">Create key</button>` : ''}
         <div class="table-wrap" style="margin-top:12px"><table class="data">
-          <thead><tr><th>Name</th><th>Prefix</th><th>Role</th><th>Last used</th><th></th></tr></thead>
+          <thead><tr><th>Name</th><th>Prefix</th><th>Role</th><th>Last used</th>${canManage ? '<th></th>' : ''}</tr></thead>
           <tbody>
-            ${(keys || []).length === 0 ? '<tr><td colspan="5" class="table-empty">No keys yet.</td></tr>' :
+            ${(keys || []).length === 0 ? `<tr><td colspan="${canManage ? 5 : 4}" class="table-empty">No keys yet.</td></tr>` :
               keys.map((k) => `<tr style="${k.revokedAt ? 'opacity:.5' : ''}">
                 <td>${esc(k.name)}</td>
-                <td class="mono">${esc(k.keyPrefix)}…</td>
+                <td class="mono">${readOnly && k.keyPrefix
+                  ? `<span class="doc-locked doc-locked-inline" style="max-width:120px" title="${lockedTip}"><span class="doc-locked-filename">${esc(k.keyPrefix)}…</span><span class="doc-locked-badge"><span class="ms ms-sm">lock</span></span></span>`
+                  : `${esc(k.keyPrefix)}…`}</td>
                 <td>${esc(k.role)}</td>
                 <td class="cell-sub">${k.lastUsedAt ? fmtDate(k.lastUsedAt) : '—'}</td>
-                <td class="actions">${!k.revokedAt ? `<button class="btn btn-outline btn-sm" data-key-revoke="${esc(k.id)}">Revoke</button>` : 'revoked'}</td>
+                ${canManage ? `<td class="actions">${!k.revokedAt ? `<button class="btn btn-outline btn-sm" data-key-revoke="${esc(k.id)}">Revoke</button>` : 'revoked'}</td>` : ''}
               </tr>`).join('')}
           </tbody>
         </table></div>
@@ -94,19 +117,22 @@ Views.integrations = async function (el) {
         <div id="int-hooks">
           ${webhookList.map((w, i) => `
             <div class="form-grid hook-row" data-i="${i}" style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--border,#e8e6f0)">
-              <div class="form-field"><label>URL</label><input data-h="url" value="${esc(w.url || '')}"></div>
+              <div class="form-field"><label>URL</label><input data-h="url" value="${esc(w.url || '')}"${inputDis}></div>
               <div class="form-field"><label>Secret ${w.hasSecret || w.secret ? '<span class="ob-hint">(saved — leave blank to keep)</span>' : ''}</label>
-                <input data-h="secret" type="password" value="" placeholder="${w.hasSecret || w.secret ? '••••••••  leave blank to keep' : 'auto if empty'}" autocomplete="new-password"></div>
+                ${readOnly && (w.hasSecret || w.secret)
+                  ? secretLocked('••••••••••••')
+                  : `<input data-h="secret" type="password" value="" placeholder="${w.hasSecret || w.secret ? '••••••••  leave blank to keep' : 'auto if empty'}" autocomplete="new-password"${inputDis}>`}
+              </div>
               <div class="form-field full"><label>Events (comma)</label>
-                <input data-h="events" value="${esc((w.events || []).join(', '))}"></div>
-              <label><input type="checkbox" data-h="active" ${w.active !== false ? 'checked' : ''}> Active</label>
+                <input data-h="events" value="${esc((w.events || []).join(', '))}"${inputDis}></div>
+              <label><input type="checkbox" data-h="active" ${w.active !== false ? 'checked' : ''}${chkDis}> Active</label>
               <input type="hidden" data-h="id" value="${esc(w.id || '')}">
             </div>`).join('') || '<p class="cell-sub">No webhooks — add one below.</p>'}
         </div>
-        <div style="display:flex;gap:8px;margin-top:8px">
+        ${canManage ? `<div style="display:flex;gap:8px;margin-top:8px">
           <button class="btn btn-outline btn-sm" id="int-hook-add">Add webhook</button>
           <button class="btn btn-primary btn-sm" id="int-hook-save">Save webhooks</button>
-        </div>
+        </div>` : ''}
       </section>
 
       <section class="card card-pad" style="margin-bottom:16px">
@@ -118,7 +144,7 @@ Views.integrations = async function (el) {
           <strong>contract</strong> → provider contract form.
           Values are saved per record.
         </p>
-        <div class="form-grid" style="margin-bottom:12px">
+        ${canManage ? `<div class="form-grid" style="margin-bottom:12px">
           <div class="form-field"><label>Entity</label>
             <select id="int-cf-entity"><option value="asset">asset</option><option value="employee">employee</option><option value="contract">contract</option></select></div>
           <div class="form-field"><label>Key</label><input id="int-cf-key" placeholder="cost_center"></div>
@@ -130,7 +156,7 @@ Views.integrations = async function (el) {
             <input id="int-cf-options" placeholder="Alpha, Beta, Gamma">
           </div>
         </div>
-        <button class="btn btn-primary btn-sm" id="int-cf-add">Add field</button>
+        <button class="btn btn-primary btn-sm" id="int-cf-add">Add field</button>` : ''}
         <div style="margin-top:16px">
           <h4>Assets</h4>${renderCfTable('asset', cfAsset || [])}
           <h4 style="margin-top:12px">Employees</h4>${renderCfTable('employee', cfEmp || [])}
@@ -154,7 +180,7 @@ GET /api/integrations/licenses/:id/sam
       </section>
     </div>`;
 
-  $('#int-smtp-save', el).addEventListener('click', async () => {
+  $('#int-smtp-save', el)?.addEventListener('click', async () => {
     try {
       const to = $('#int-notify-to', el).value.split(/[,;\s]+/).map((s) => s.trim()).filter(Boolean);
       await api('/integrations/notifications', {
@@ -179,7 +205,7 @@ GET /api/integrations/licenses/:id/sam
     } catch (err) { toast(err.message, 'error'); }
   });
 
-  $('#int-smtp-test', el).addEventListener('click', async () => {
+  $('#int-smtp-test', el)?.addEventListener('click', async () => {
     const btn = $('#int-smtp-test', el);
     try {
       btn.disabled = true;
@@ -211,14 +237,14 @@ GET /api/integrations/licenses/:id/sam
     finally { btn.disabled = false; }
   });
 
-  $('#int-digest', el).addEventListener('click', async () => {
+  $('#int-digest', el)?.addEventListener('click', async () => {
     try {
       const r = await api('/integrations/notifications/digest', { method: 'POST', body: {} });
       toast(r.skipped ? `Digest skipped: ${r.reason}` : `Digest sent (${r.alertItems} items)`, r.skipped ? 'info' : 'success');
     } catch (err) { toast(err.message, 'error'); }
   });
 
-  $('#int-smtp-clear', el).addEventListener('click', () => {
+  $('#int-smtp-clear', el)?.addEventListener('click', () => {
     confirmModal(
       'Clear SMTP host/credentials and all notification recipients / toggles?',
       async () => {
@@ -229,7 +255,7 @@ GET /api/integrations/licenses/:id/sam
     );
   });
 
-  $('#int-key-create', el).addEventListener('click', async () => {
+  $('#int-key-create', el)?.addEventListener('click', async () => {
     try {
       const data = await api('/integrations/api-keys', {
         method: 'POST',
@@ -256,7 +282,7 @@ GET /api/integrations/licenses/:id/sam
     });
   });
 
-  $('#int-hook-add', el).addEventListener('click', () => {
+  $('#int-hook-add', el)?.addEventListener('click', () => {
     const box = $('#int-hooks', el);
     const row = document.createElement('div');
     row.className = 'form-grid hook-row';
@@ -270,7 +296,7 @@ GET /api/integrations/licenses/:id/sam
     box.appendChild(row);
   });
 
-  $('#int-hook-save', el).addEventListener('click', async () => {
+  $('#int-hook-save', el)?.addEventListener('click', async () => {
     try {
       const webhooks = [...el.querySelectorAll('.hook-row')].map((row) => ({
         id: $('[data-h=id]', row)?.value || undefined,
@@ -285,7 +311,7 @@ GET /api/integrations/licenses/:id/sam
     } catch (err) { toast(err.message, 'error'); }
   });
 
-  $('#int-cf-add', el).addEventListener('click', async () => {
+  $('#int-cf-add', el)?.addEventListener('click', async () => {
     try {
       const fieldType = $('#int-cf-type', el).value;
       const optionsRaw = ($('#int-cf-options', el)?.value || '')

@@ -17,6 +17,57 @@ function esc(v) {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+function docMimeIcon(mime) {
+  return mime && mime.includes('pdf') ? 'picture_as_pdf' : 'image';
+}
+
+/** Document name cell: clickable when canDownload, blurred lock overlay otherwise. */
+function docFileLabel(d, { canDownload, viewAttr = 'data-doc-view' } = {}) {
+  const id = esc(d.id);
+  const name = esc(d.filename);
+  const icon = docMimeIcon(d.mime);
+  const lockedTip = esc(t('doc.viewLocked') || 'File on file — viewing locked');
+  if (canDownload) {
+    return `<div class="doc-cell">
+      <span class="ms doc-cell-icon" style="color:var(--on-surface-variant)">${icon}</span>
+      <a href="#" class="cell-title doc-link" ${viewAttr}="${id}" title="${esc(t('common.view') || 'View')}">${name}</a>
+    </div>`;
+  }
+  return `<div class="doc-cell">
+    <span class="ms doc-cell-icon" style="color:var(--on-surface-variant)">${icon}</span>
+    <div class="doc-locked" title="${lockedTip}">
+      <span class="doc-locked-filename">${name}</span>
+      <span class="doc-locked-badge"><span class="ms ms-sm">lock</span>${lockedTip}</span>
+    </div>
+  </div>`;
+}
+
+/** View/download/delete action buttons for document table rows. */
+function docRowActions(d, { canDownload, canDel, viewAttr = 'data-doc-view', dlAttr = 'data-doc-dl', delAttr = 'data-doc-del' } = {}) {
+  const id = esc(d.id);
+  const lockedTip = esc(t('doc.viewLocked') || 'File on file — viewing locked');
+  if (!canDownload && !canDel) return '';
+  return `${canDownload ? `
+    <button type="button" class="btn btn-outline btn-sm" ${viewAttr}="${id}" title="${esc(t('common.view') || 'View')}"><span class="ms">visibility</span></button>
+    <button type="button" class="btn btn-outline btn-sm" ${dlAttr}="${id}" title="${esc(t('common.download') || 'Download')}"><span class="ms">download</span></button>` : `
+    <span class="btn btn-outline btn-sm doc-btn-locked" title="${lockedTip}"><span class="ms">lock</span></span>`}
+    ${canDel ? `<button type="button" class="btn btn-outline btn-sm" ${delAttr}="${id}"><span class="ms">delete</span></button>` : ''}`;
+}
+
+/** Inline blurred chips for compact document lists (e.g. asset history). */
+function docInlineLinks(docs, { canDownload, viewAttr = 'data-mdoc-dl' } = {}) {
+  const lockedTip = esc(t('doc.viewLocked') || 'File on file — viewing locked');
+  return (docs || []).map((d) => {
+    if (canDownload) {
+      return `<a href="#" ${viewAttr}="${esc(d.id)}" class="doc-link">${esc(d.filename)}</a>`;
+    }
+    return `<span class="doc-locked doc-locked-inline" title="${lockedTip}">
+      <span class="doc-locked-filename">${esc(d.filename)}</span>
+      <span class="doc-locked-badge"><span class="ms ms-sm">lock</span></span>
+    </span>`;
+  }).join(' · ');
+}
+
 /** Strip dangerous markup from contenteditable print previews before innerHTML assignment. */
 function sanitizePrintHtml(html) {
   const template = document.createElement('template');
@@ -138,10 +189,11 @@ function toast(message, type = 'info') {
 }
 
 /* ---- modals ---- */
-function openModal({ title, body, foot, wide, xwide, onMount, onClose }) {
+function openModal({ title, body, foot, wide, xwide, onMount, onClose, dismissible = true }) {
   closeModal();
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
+  if (!dismissible) overlay.classList.add('modal-locked');
   const sizeClass = xwide ? ' modal-xl' : (wide ? ' modal-lg' : '');
   // body/foot are templates built by callers; all dynamic values inside them
   // are esc()-encoded at the call site.
@@ -149,13 +201,14 @@ function openModal({ title, body, foot, wide, xwide, onMount, onClose }) {
     <div class="modal${sizeClass}">
       <div class="modal-head">
         <h3>${esc(title)}</h3>
-        <button class="modal-close" data-close>×</button>
+        ${dismissible ? '<button class="modal-close" data-close>×</button>' : ''}
       </div>
       <div class="modal-body">${body}</div>
       ${foot ? `<div class="modal-foot">${foot}</div>` : ''}
     </div>`;
   if (typeof onClose === 'function') overlay._onCloseCleanup = onClose;
   overlay.addEventListener('click', (e) => {
+    if (!dismissible) return;
     if (e.target === overlay || e.target.hasAttribute('data-close')) closeModal();
   });
   document.body.classList.add('modal-open');

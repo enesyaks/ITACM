@@ -211,9 +211,15 @@ ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS locations JSONB;
 -- Physical location of each asset (denormalized string)
 ALTER TABLE assets ADD COLUMN IF NOT EXISTS location TEXT;
 
--- Optional per-asset lifecycle override in months (NULL -> use the category
--- default). Lets e.g. MacBooks run a 5-year lifecycle while other laptops use 4.
+-- Optional per-asset lifecycle override in months (NULL -> use the model /
+-- category default). EOL months resolve in this order:
+--   asset.lifecycle_months -> catalog_models.lifecycle_months -> app_settings.lifecycles[category] -> app default
 ALTER TABLE assets ADD COLUMN IF NOT EXISTS lifecycle_months INTEGER;
+
+-- Optional per-model lifecycle (months) on the catalog, so e.g. Apple MacBooks
+-- run a 5-year lifecycle while other laptops keep the Laptop category default.
+-- NULL -> fall through to the category default.
+ALTER TABLE catalog_models ADD COLUMN IF NOT EXISTS lifecycle_months INTEGER;
 ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS default_location TEXT;
 
 -- Hardware spec dropdown lists (cpu/ram/storage); NULL -> defaults

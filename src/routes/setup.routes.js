@@ -7,7 +7,7 @@
  * PUT /api/settings — Admin-only branding updates afterwards.
  */
 const router = require('express').Router();
-const { authenticate, requireRole } = require('../middleware/auth');
+const { authenticate, requireRole, requirePermission } = require('../middleware/auth');
 const { asyncHandler } = require('../utils/asyncHandler');
 const { authProvider, settingsService } = require('../services');
 const { canRevealSetupToken } = require('../utils/setupAccess');
@@ -52,7 +52,7 @@ router.post('/setup', asyncHandler(async (req, res) => {
 
 // Branding & company-level settings are Owner-only. Operational lists
 // (lifecycles, locations, specOptions) are managed by staff via /api/catalog.
-router.put('/settings', authenticate, requireRole('Owner'), asyncHandler(async (req, res) => {
+router.put('/settings', authenticate, requirePermission('settings', 'manage'), asyncHandler(async (req, res) => {
   const {
     companyName, companyLogo, companyAddress, handoverTerms, defaultLocation, documentStorage,
     handoverTemplate, handoverTemplates, defaultTemplateId, language, currency, labelConfig,
