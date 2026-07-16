@@ -4,7 +4,81 @@ function auditExplain(action) {
   const key = 'audit.x.' + String(action || '').replace(/\./g, '_');
   const v = t(key);
   if (v !== key) return v;
+  // Fallback for raw HTTP-derived actions like post.auth.verify-token
+  const raw = String(action || '');
+  if (/verify.?token/i.test(raw)) {
+    const k2 = 'audit.x.auth_verify_token';
+    const v2 = t(k2);
+    if (v2 !== k2) return v2;
+  }
+  if (/^[a-z]+\./i.test(raw) && raw.includes('/')) {
+    return t('audit.x.generic').replace('{action}', raw);
+  }
   return t('audit.x.generic').replace('{action}', action || '—');
+}
+
+function auditLooksTechnical(text) {
+  const s = String(text || '');
+  return /^[A-Z]+\s+\//.test(s) || /^\/api\//.test(s);
+}
+
+function auditHeadline(ev) {
+  const summary = String(ev.summary || '').trim();
+  const explain = auditExplain(ev.action);
+  if (!summary || auditLooksTechnical(summary) || summary === ev.action) {
+    // Prefer a short friendly title over the long explanation sentence when possible.
+    const shortKey = 'audit.title.' + String(ev.action || '').replace(/\./g, '_');
+    const short = t(shortKey);
+    if (short !== shortKey) return short;
+    if (/verify.?token/i.test(String(ev.action || '')) || /verify.?token/i.test(summary)) {
+      const s2 = t('audit.title.auth_verify_token');
+      if (s2 !== 'audit.title.auth_verify_token') return s2;
+    }
+    return explain;
+  }
+  return summary;
+}
+
+function auditHttpTone(status) {
+  const n = Number(status);
+  if (!Number.isFinite(n)) return 'slate';
+  if (n >= 200 && n < 300) return 'ok';
+  if (n >= 400 && n < 500) return 'warn';
+  if (n >= 500) return 'bad';
+  return 'slate';
+}
+
+function auditFact(icon, label, value, hint, opts = {}) {
+  if (value == null || value === '') return '';
+  const tone = opts.tone || '';
+  return `
+    <div class="audit-fact${tone ? ` tone-${tone}` : ''}">
+      <span class="audit-fact-icon"><span class="ms">${esc(icon)}</span></span>
+      <div class="audit-fact-body">
+        <div class="audit-fact-label">${esc(label)}</div>
+        <div class="audit-fact-value${opts.mono ? ' mono' : ''}">${opts.html ? value : esc(value)}</div>
+        ${hint ? `<div class="audit-fact-hint">${esc(hint)}</div>` : ''}
+      </div>
+    </div>`;
+}
+
+function auditBucketMeta(b) {
+  const map = {
+    system: { pill: 'pill-indigo', icon: 'tune' },
+    asset_history: { pill: 'pill-blue', icon: 'devices' },
+    line_history: { pill: 'pill-blue', icon: 'sim_card' },
+    login: { pill: 'pill-emerald', icon: 'login' },
+    user_admin: { pill: 'pill-amber', icon: 'manage_accounts' },
+    handover: { pill: 'pill-indigo', icon: 'assignment_turned_in' },
+    license: { pill: 'pill-blue', icon: 'workspace_premium' },
+    documents: { pill: 'pill-amber', icon: 'description' },
+  };
+  return map[b] || { pill: 'pill-slate', icon: 'history' };
+}
+
+function auditBucketPill(b) {
+  const m = auditBucketMeta(b);
+  return `<span class="pill ${m.pill}">${esc(b || '—')}</span>`;
 }
 
 function auditRelatedSection(ev) {
@@ -24,6 +98,7 @@ function auditRelatedSection(ev) {
           <span class="cell-sub">${esc([e.email, e.department, e.title].filter(Boolean).join(' · '))}</span>
         </span>
         ${badge(e.status || '—')}
+        <span class="ms audit-link-chev">chevron_right</span>
       </button>`);
   });
   assets.forEach((a) => {
@@ -35,6 +110,7 @@ function auditRelatedSection(ev) {
           <span class="cell-sub">${esc([a.brand, a.model, a.category].filter(Boolean).join(' · '))}${a.serialNumber ? ' · ' + esc(a.serialNumber) : ''}</span>
         </span>
         ${badge(a.status || '—')}
+        <span class="ms audit-link-chev">chevron_right</span>
       </button>`);
   });
   lines.forEach((l) => {
@@ -46,55 +122,52 @@ function auditRelatedSection(ev) {
           <span class="cell-sub">${esc([l.operator, l.plan].filter(Boolean).join(' · ') || t('nav.lines'))}</span>
         </span>
         ${badge(l.status || '—')}
+        <span class="ms audit-link-chev">chevron_right</span>
       </button>`);
   });
 
   return `
-    <div class="audit-section">
-      <div class="audit-section-label">${esc(t('audit.involved'))}</div>
+    <section class="audit-sec">
+      <div class="audit-sec-head"><strong>${esc(t('audit.involved'))}</strong></div>
       <div class="audit-link-list">${rows.join('')}</div>
-    </div>`;
+    </section>`;
 }
 
-function auditDetailRows(ev) {
+function auditContextRows(ev) {
   const hasRelated = !!(ev.related && (
     (ev.related.employees && ev.related.employees.length)
     || (ev.related.assets && ev.related.assets.length)
     || (ev.related.lines && ev.related.lines.length)
   ));
-  const rows = [
-    [t('audit.when'), fmtDateTime(ev.timestamp)],
-    [t('audit.actor'), ev.actorName || ev.actorEmail || '—'],
-  ];
-  if (ev.actorEmail && ev.actorEmail !== ev.actorName) {
-    rows.push([t('audit.actorEmail'), ev.actorEmail]);
-  }
+  const rows = [];
   if (!hasRelated && (ev.entityLabel || ev.entityType)) {
     const label = ev.entityLabel && ev.entityLabel !== ev.entityType
       ? `${ev.entityType || ''} · ${ev.entityLabel}`.replace(/^ · /, '')
       : (ev.entityLabel || ev.entityType || '—');
-    rows.push([t('audit.entity'), label]);
+    rows.push({
+      icon: 'sell',
+      label: t('audit.entity'),
+      value: label,
+      hint: t('audit.hint.entity'),
+    });
   }
 
   const d = ev.details || {};
-  if (d.notes) rows.push([t('audit.notes'), d.notes]);
-  if (d.softwareName) rows.push([t('audit.software'), d.softwareName]);
-  if (d.targetEmail) rows.push([t('audit.target'), d.targetEmail + (d.targetName ? ` (${d.targetName})` : '')]);
-  if (d.detail) rows.push([t('audit.detailNote'), d.detail]);
-  if (d.documentType) rows.push([t('audit.docType'), d.documentType]);
-  if (d.templateId) rows.push([t('audit.template'), d.templateId]);
-  if (d.filename) rows.push([t('audit.filename'), d.filename]);
-  if (d.itemCount != null) rows.push([t('audit.itemCount'), String(d.itemCount)]);
-
-  rows.push([t('audit.source'), ev.source || ev.bucket || '—']);
-  rows.push([t('audit.action'), ev.action || '—']);
-  if (ev.ip) rows.push([t('audit.ip'), ev.ip]);
-
-  const meta = ev.meta || {};
-  if (meta.method && meta.path) rows.push([t('audit.path'), `${meta.method} ${meta.path}`]);
-  else if (meta.path) rows.push([t('audit.path'), meta.path]);
-  if (meta.status != null) rows.push([t('audit.httpStatus'), String(meta.status)]);
-
+  if (d.notes) rows.push({ icon: 'sticky_note_2', label: t('audit.notes'), value: d.notes, hint: t('audit.hint.notes') });
+  if (d.softwareName) rows.push({ icon: 'workspace_premium', label: t('audit.software'), value: d.softwareName, hint: t('audit.hint.software') });
+  if (d.targetEmail) {
+    rows.push({
+      icon: 'person_search',
+      label: t('audit.target'),
+      value: d.targetEmail + (d.targetName ? ` (${d.targetName})` : ''),
+      hint: t('audit.hint.target'),
+    });
+  }
+  if (d.detail) rows.push({ icon: 'notes', label: t('audit.detailNote'), value: d.detail, hint: t('audit.hint.detail') });
+  if (d.documentType) rows.push({ icon: 'description', label: t('audit.docType'), value: d.documentType, hint: t('audit.hint.docType') });
+  if (d.templateId) rows.push({ icon: 'article', label: t('audit.template'), value: d.templateId, hint: t('audit.hint.template') });
+  if (d.filename) rows.push({ icon: 'attach_file', label: t('audit.filename'), value: d.filename, hint: t('audit.hint.filename'), mono: true });
+  if (d.itemCount != null) rows.push({ icon: 'tag', label: t('audit.itemCount'), value: String(d.itemCount), hint: t('audit.hint.itemCount') });
   return rows;
 }
 
@@ -107,7 +180,7 @@ async function showAuditDetail(bucket, id) {
   });
   try {
     const ev = await api(`/audit/${encodeURIComponent(bucket)}/${encodeURIComponent(id)}`);
-    const rows = auditDetailRows(ev);
+    const contextRows = auditContextRows(ev);
     const bodyPayload = ev.meta && ev.meta.body != null ? ev.meta.body : null;
     const legacyItems = (ev.details && Array.isArray(ev.details.items)) ? ev.details.items : null;
     const showRaw = bodyPayload != null || (legacyItems && legacyItems.length);
@@ -117,29 +190,90 @@ async function showAuditDetail(bucket, id) {
 
     const overlay = $('#modal-root .modal-overlay');
     if (!overlay) return;
+    const headline = auditHeadline(ev);
+    const explain = auditExplain(ev.action);
     const head = overlay.querySelector('.modal-head h3');
-    if (head) head.textContent = ev.summary || ev.action || t('audit.detailTitle');
+    if (head) head.textContent = headline;
     const bodyEl = overlay.querySelector('.modal-body');
     if (!bodyEl) return;
+    const bm = auditBucketMeta(ev.bucket);
+    const meta = ev.meta || {};
+    const httpStatus = meta.status;
+    const httpTone = auditHttpTone(httpStatus);
+    const pathLine = meta.method && meta.path
+      ? `${meta.method} ${meta.path}`
+      : (meta.path || '');
+    const resultLabel = httpStatus != null
+      ? (httpTone === 'ok' ? t('audit.resultOk') : httpTone === 'warn' ? t('audit.resultClientErr') : httpTone === 'bad' ? t('audit.resultServerErr') : t('audit.httpStatus'))
+      : t('audit.source');
+    const resultValue = httpStatus != null
+      ? `${httpStatus}${httpTone === 'ok' ? ' · OK' : ''}`
+      : (ev.source || ev.bucket || '—');
+
+    const factsHtml = [
+      auditFact('schedule', t('audit.when'), fmtDateTime(ev.timestamp), t('audit.hint.when')),
+      auditFact(
+        'person',
+        t('audit.actor'),
+        ev.actorName || ev.actorEmail || '—',
+        ev.actorEmail && ev.actorEmail !== ev.actorName
+          ? `${t('audit.hint.actor')} · ${ev.actorEmail}`
+          : t('audit.hint.actor')
+      ),
+      auditFact(
+        httpTone === 'ok' ? 'check_circle' : httpTone === 'warn' ? 'warning' : httpTone === 'bad' ? 'error' : 'hub',
+        resultLabel,
+        resultValue,
+        t('audit.hint.result'),
+        { tone: httpTone === 'slate' ? '' : httpTone }
+      ),
+      ev.ip ? auditFact('language', t('audit.ip'), ev.ip, t('audit.hint.ip'), { mono: true }) : '',
+    ].join('');
+
+    const contextHtml = contextRows.length
+      ? `<section class="audit-sec">
+          <div class="audit-sec-head"><strong>${esc(t('audit.context'))}</strong><span>${esc(t('audit.contextSub'))}</span></div>
+          <div class="audit-facts">${contextRows.map((r) =>
+            auditFact(r.icon, r.label, r.value, r.hint, { mono: !!r.mono })).join('')}</div>
+        </section>`
+      : '';
+
+    const techBits = [];
+    if (ev.action) techBits.push(`<div class="audit-tech-row"><span>${esc(t('audit.action'))}</span><code>${esc(ev.action)}</code></div>`);
+    if (ev.source || ev.bucket) techBits.push(`<div class="audit-tech-row"><span>${esc(t('audit.source'))}</span><code>${esc(ev.source || ev.bucket)}</code></div>`);
+    if (pathLine) techBits.push(`<div class="audit-tech-row"><span>${esc(t('audit.path'))}</span><code>${esc(pathLine)}</code></div>`);
+    if (httpStatus != null) techBits.push(`<div class="audit-tech-row"><span>${esc(t('audit.httpStatus'))}</span><code>${esc(String(httpStatus))}</code></div>`);
+    if (ev.userAgent) techBits.push(`<div class="audit-tech-row full"><span>${esc(t('audit.userAgent'))}</span><code class="audit-ua">${esc(ev.userAgent)}</code></div>`);
+    if (extraJson) {
+      techBits.push(`<pre class="audit-json">${esc(JSON.stringify(extraJson, null, 2))}</pre>`);
+    }
+
     bodyEl.innerHTML = `
       <div class="audit-detail">
-        <p class="audit-lede">${esc(auditExplain(ev.action))}</p>
-        ${auditRelatedSection(ev)}
-        <div class="audit-section">
-          <div class="audit-section-label">${esc(t('audit.meta'))}</div>
-          <div class="form-grid audit-meta-grid">
-            ${rows.map(([k, v]) => `
-              <div>
-                <span class="cell-sub">${esc(k)}</span>
-                <div class="${String(v).length > 40 || k === t('audit.path') ? 'mono' : ''}" style="word-break:break-word;margin-top:2px">${esc(v)}</div>
-              </div>`).join('')}
+        <header class="audit-hero">
+          <span class="audit-hero-icon"><span class="ms">${esc(bm.icon)}</span></span>
+          <div class="audit-hero-main">
+            <div class="audit-hero-title">${esc(headline)}</div>
+            <p class="audit-lede">${esc(explain)}</p>
+            <div class="audit-hero-meta">
+              ${auditBucketPill(ev.bucket)}
+              <span>${esc(fmtDateTime(ev.timestamp))}</span>
+              <span>·</span>
+              <span>${esc(ev.actorName || ev.actorEmail || '—')}</span>
+            </div>
           </div>
-        </div>
-        ${ev.userAgent ? `<div class="cell-sub" style="word-break:break-word">${esc(t('audit.userAgent'))}: ${esc(ev.userAgent)}</div>` : ''}
-        ${extraJson ? `
+        </header>
+        <section class="audit-sec">
+          <div class="audit-sec-head"><strong>${esc(t('audit.snapshot'))}</strong><span>${esc(t('audit.snapshotSub'))}</span></div>
+          <div class="audit-facts">${factsHtml}</div>
+        </section>
+        ${auditRelatedSection(ev)}
+        ${contextHtml}
+        ${techBits.length ? `
           <details class="audit-tech">
-            <summary>${esc(t('audit.technical'))}</summary>
-            <pre class="audit-json">${esc(JSON.stringify(extraJson, null, 2))}</pre>
+            <summary><span class="ms">terminal</span> ${esc(t('audit.technical'))}</summary>
+            <p class="audit-tech-lead">${esc(t('audit.technicalHint'))}</p>
+            <div class="audit-tech-grid">${techBits.join('')}</div>
           </details>` : ''}
       </div>`;
 
@@ -220,76 +354,86 @@ Views.audit = async function (el, params = {}) {
     { v: 'login', label: t('audit.srcLogin') },
   ];
 
-  const bucketPill = (b) => {
-    const map = {
-      system: 'pill-indigo',
-      asset_history: 'pill-blue',
-      line_history: 'pill-blue',
-      login: 'pill-emerald',
-      user_admin: 'pill-amber',
-      handover: 'pill-indigo',
-      license: 'pill-blue',
-      documents: 'pill-amber',
-    };
-    return `<span class="pill ${map[b] || 'pill-slate'}">${esc(b || '—')}</span>`;
-  };
+  const hasFilters = !!(params.search || params.source || params.actor || params.from || params.to);
 
   el.innerHTML = `
     ${pageHead(t('audit.title'), t('audit.subtitle'), '')}
 
-    <div class="card" style="margin-bottom:14px">
-      <div class="card-pad toolbar" style="gap:8px">
-        <div class="search-box" style="flex:1;min-width:160px">
+    <div class="card audit-filters">
+      <div class="card-pad audit-filters-inner">
+        <div class="search-box audit-search">
           <span class="ms">search</span>
           <input type="search" id="audit-q" placeholder="${esc(t('audit.searchPh'))}" value="${esc(params.search || '')}">
         </div>
-        <select id="audit-source" style="min-width:140px">
+        <select id="audit-source" class="audit-filter-select" title="${esc(t('audit.allSources'))}">
           ${SOURCES.map((s) => `<option value="${esc(s.v)}" ${params.source === s.v ? 'selected' : ''}>${esc(s.label)}</option>`).join('')}
         </select>
-        <input type="search" id="audit-actor" placeholder="${esc(t('audit.actorPh'))}" value="${esc(params.actor || '')}" style="width:140px">
-        <input type="date" id="audit-from" value="${esc(params.from || '')}" title="${esc(t('audit.from'))}">
-        <input type="date" id="audit-to" value="${esc(params.to || '')}" title="${esc(t('audit.to'))}">
+        <input type="search" id="audit-actor" class="audit-filter-input" placeholder="${esc(t('audit.actorPh'))}" value="${esc(params.actor || '')}">
+        <div class="audit-date-range">
+          <input type="date" id="audit-from" value="${esc(params.from || '')}" title="${esc(t('audit.from'))}">
+          <span class="audit-date-sep">–</span>
+          <input type="date" id="audit-to" value="${esc(params.to || '')}" title="${esc(t('audit.to'))}">
+        </div>
         <button class="btn btn-outline" id="audit-apply"><span class="ms">filter_list</span> ${esc(t('audit.apply'))}</button>
+        ${hasFilters ? `<button type="button" class="btn btn-outline" id="audit-clear" title="Clear filters"><span class="ms">close</span></button>` : ''}
       </div>
     </div>
 
-    <div class="card">
+    <div class="card audit-list-card">
       <div class="m-audit-list">
         ${items.length === 0 ? `<div class="table-empty" style="padding:28px">${esc(t('audit.empty'))}</div>` :
-          items.map((x) => `
+          items.map((x) => {
+            const bm = auditBucketMeta(x.bucket);
+            const title = auditHeadline(x);
+            return `
             <div class="m-audit-card audit-row" role="button" tabindex="0" data-bucket="${esc(x.bucket)}" data-id="${esc(x.id)}">
               <div class="m-audit-top">
-                ${bucketPill(x.bucket)}
+                ${auditBucketPill(x.bucket)}
                 <span class="mono cell-sub">${esc(fmtDateTime(x.timestamp))}</span>
               </div>
-              <div class="cell-title">${esc(x.summary || x.action)}</div>
-              <div class="cell-sub">${esc(x.action)} · ${esc(x.source || '—')}</div>
+              <div class="cell-title">${esc(title)}</div>
+              <div class="cell-sub">${esc(auditExplain(x.action))}</div>
               <div class="m-audit-meta">
                 <span><span class="ms ms-sm">person</span> ${esc(x.actorName || '—')}</span>
-                ${x.entityLabel ? `<span><span class="ms ms-sm">sell</span> ${esc(x.entityLabel)}</span>` : ''}
+                ${x.entityLabel ? `<span><span class="ms ms-sm">${esc(bm.icon)}</span> ${esc(x.entityLabel)}</span>` : ''}
               </div>
-            </div>`).join('')}
+            </div>`;
+          }).join('')}
       </div>
-      <div class="table-wrap"><table class="data">
+      <div class="table-wrap"><table class="data audit-table">
         <thead><tr>
           <th>${esc(t('audit.when'))}</th>
-          <th>${esc(t('audit.source'))}</th>
-          <th>${esc(t('audit.action'))}</th>
           <th>${esc(t('audit.summary'))}</th>
+          <th>${esc(t('audit.source'))}</th>
           <th>${esc(t('audit.actor'))}</th>
           <th>${esc(t('audit.entity'))}</th>
+          <th class="audit-col-go"></th>
         </tr></thead>
         <tbody>
           ${items.length === 0 ? `<tr><td colspan="6" class="table-empty">${esc(t('audit.empty'))}</td></tr>` :
-            items.map((x) => `
+            items.map((x) => {
+              const title = auditHeadline(x);
+              const explain = auditExplain(x.action);
+              return `
               <tr class="audit-row" role="button" tabindex="0" data-bucket="${esc(x.bucket)}" data-id="${esc(x.id)}">
-                <td class="mono cell-sub" style="white-space:nowrap">${esc(fmtDateTime(x.timestamp))}</td>
-                <td>${bucketPill(x.bucket)}</td>
-                <td class="mono">${esc(x.action)}</td>
-                <td>${esc(x.summary || '—')}</td>
-                <td>${esc(x.actorName || '—')}</td>
-                <td class="cell-sub">${esc(x.entityLabel || x.entityType || '—')}</td>
-              </tr>`).join('')}
+                <td class="audit-when">
+                  <span class="audit-when-main">${esc(fmtDateTime(x.timestamp))}</span>
+                </td>
+                <td class="audit-event">
+                  <div class="audit-event-title">${esc(title)}</div>
+                  <div class="audit-event-sub">${esc(explain)}</div>
+                </td>
+                <td>${auditBucketPill(x.bucket)}</td>
+                <td>
+                  <div class="audit-actor">
+                    <span class="avatar avatar-sm">${esc(initials(x.actorName || x.actorEmail || '?'))}</span>
+                    <span class="audit-actor-name">${esc(x.actorName || '—')}</span>
+                  </div>
+                </td>
+                <td class="audit-entity">${esc(x.entityLabel || x.entityType || '—')}</td>
+                <td class="audit-go"><span class="ms">chevron_right</span></td>
+              </tr>`;
+            }).join('')}
         </tbody>
       </table></div>
       <div class="table-foot">
@@ -321,6 +465,8 @@ Views.audit = async function (el, params = {}) {
     to: $('#audit-to', el).value,
     page: 1,
   }));
+  const clearBtn = $('#audit-clear', el);
+  if (clearBtn) clearBtn.addEventListener('click', () => { location.hash = '#/audit'; });
   $('#audit-q', el).addEventListener('keydown', (e) => {
     if (e.key === 'Enter') $('#audit-apply', el).click();
   });

@@ -278,7 +278,7 @@ async function getSettings() {
     companyAddress: s.company_address || '',
     onboarded: !!s.onboarded,
     handoverTerms: s.handover_terms || DEFAULT_HANDOVER_TERMS,
-    lifecycles: { ...DEFAULT_LIFECYCLES, ...(s.lifecycles || {}) },
+    lifecycles: sanitizeLifecycles(s.lifecycles),
     locations: (s.locations && s.locations.length) ? s.locations : [...DEFAULT_LOCATIONS],
     defaultLocation: s.default_location || null,
     departments: (s.departments && s.departments.length) ? s.departments : [...DEFAULT_DEPARTMENTS],
@@ -309,11 +309,26 @@ function validateLifecycles(lc) {
   if (lc == null) return;
   if (typeof lc !== 'object') throw HttpError.badRequest('lifecycles must be an object of category -> months');
   for (const [cat, months] of Object.entries(lc)) {
+    if (!(cat in DEFAULT_LIFECYCLES)) {
+      throw HttpError.badRequest(`Unknown lifecycle category "${cat}"`);
+    }
     const m = Number(months);
     if (!Number.isInteger(m) || m < 0 || m > 240) {
       throw HttpError.badRequest(`Lifecycle for ${cat} must be 0-240 months (0 = EOL tracking off)`);
     }
   }
+}
+
+/** Keep only known category keys — strips accidental catalog model UUIDs etc. */
+function sanitizeLifecycles(lc) {
+  const src = (lc && typeof lc === 'object' && !Array.isArray(lc)) ? lc : {};
+  const out = { ...DEFAULT_LIFECYCLES };
+  for (const cat of Object.keys(DEFAULT_LIFECYCLES)) {
+    if (src[cat] == null || src[cat] === '') continue;
+    const m = Number(src[cat]);
+    if (Number.isInteger(m) && m >= 0 && m <= 240) out[cat] = m;
+  }
+  return out;
 }
 
 function validateSpecOptions(so) {
@@ -348,6 +363,7 @@ async function saveSettings({
   }
   validateLogo(companyLogo);
   validateLifecycles(lifecycles);
+  const lifecyclesClean = lifecycles !== undefined ? sanitizeLifecycles(lifecycles) : undefined;
   validateSpecOptions(specOptions);
   const labelConfigClean = sanitizeLabelConfig(labelConfig);
 
@@ -411,7 +427,7 @@ async function saveSettings({
        currency = CASE WHEN $18::text IS NOT NULL THEN $18 ELSE currency END
      WHERE id = 1`,
     [companyName ?? null, companyLogo ?? null, onboarded ?? null, handoverTerms ?? null,
-     lifecycles ? JSON.stringify(lifecycles) : null,
+     lifecyclesClean ? JSON.stringify(lifecyclesClean) : null,
      locations ? JSON.stringify(locations.map((l) => String(l).trim()).filter(Boolean)) : null,
      defaultLocation === null ? '__none__' : (defaultLocation ?? null),
      specOptions ? JSON.stringify(specOptions) : null,

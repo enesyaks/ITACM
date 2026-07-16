@@ -187,4 +187,12 @@ router.get('/contract-categories', requirePermission('catalog', 'read'), asyncHa
 router.post('/contract-categories', requirePermission('catalog', 'create'), asyncHandler(contractCats.post));
 router.delete('/contract-categories/:name', requirePermission('catalog', 'delete'), asyncHandler(contractCats.del));
 
+/**
+ * PUT /api/catalog/:id — update a catalog model's lifecycle (months). İzin: catalog:update
+ * Registered last so it never shadows the literal PUT routes above (e.g. /lifecycles).
+ */
+router.put('/:id', requirePermission('catalog', 'update'), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await catalogService.updateCatalogEntry(req.params.id, req.body || {}) });
+}));
+
 module.exports = router;

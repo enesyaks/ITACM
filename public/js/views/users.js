@@ -80,45 +80,68 @@ Views.users = async function (el) {
     </div>
 
     <h3 class="section-title" style="margin:4px 0 10px">${esc('Operators')}</h3>
-    <div class="card"><div class="table-wrap"><table class="data">
+    <div class="card ops-card"><div class="table-wrap"><table class="data ops-table">
       <thead><tr>
         <th>${esc('User')}</th>
-        <th>${esc('Email')}</th>
         <th>${esc('Role')}</th>
         <th>${esc('Permission group')}</th>
         <th>${esc('Status')}</th>
-        <th>${esc('Last Login')}</th>
-        <th style="text-align:right"></th>
+        <th>${esc('Last login')}</th>
+        <th class="ops-col-actions"></th>
       </tr></thead>
       <tbody>
-        ${items.map((u) => `
-        <tr style="${u.status === 'Disabled' ? 'opacity:.55' : ''}">
-          <td><div style="display:flex;align-items:center;gap:12px">
-            <span class="avatar">${esc(initials(u.username))}</span>
-            <span class="cell-title">${esc(u.username)}</span></div></td>
-          <td>${esc(u.email)}</td>
-          <td>${badge(u.role)}</td>
+        ${items.map((u) => {
+          const isSelf = u.uid === (Auth.profile && Auth.profile.uid);
+          const canAdminRow = Auth.can('canManageOwner') && !isSelf;
+          const roleLocked = (u.role === 'Owner' || u.role === 'Admin') && !Auth.can('canManageOwner');
+          const groupLocked = roleLocked;
+          return `
+        <tr class="ops-row${u.status === 'Disabled' ? ' is-disabled' : ''}${isSelf ? ' is-self' : ''}">
           <td>
-            <select data-perm-group="${esc(u.uid)}" style="width:auto;min-width:160px"
-              ${(u.role === 'Owner' || u.role === 'Admin') && !Auth.can('canManageOwner') ? 'disabled title="Only an Owner can change Owner/Admin groups"' : ''}>
+            <div class="ops-user">
+              <span class="avatar">${esc(initials(u.username))}</span>
+              <div class="ops-user-text">
+                <div class="ops-user-name">${esc(u.username)}${isSelf ? ` <span class="ops-you">${esc('you')}</span>` : ''}</div>
+                <div class="ops-user-email">${esc(u.email)}</div>
+              </div>
+            </div>
+          </td>
+          <td>
+            <select class="ops-select" data-role="${esc(u.uid)}"
+              ${roleLocked ? 'disabled title="Only an Owner can change Owner/Admin roles"' : ''}>
+              ${roleOptionsFor(u).map((r) => `<option ${u.role === r ? 'selected' : ''}>${r}</option>`).join('')}
+            </select>
+          </td>
+          <td>
+            <select class="ops-select ops-select-wide" data-perm-group="${esc(u.uid)}"
+              ${groupLocked ? 'disabled title="Only an Owner can change Owner/Admin groups"' : ''}>
               ${groupOptionsHtml(u.permissionGroupId)}
             </select>
             ${u.permissionGroupName && !u.permissionGroupId ? `<div class="cell-sub">${esc(u.permissionGroupName)}</div>` : ''}
           </td>
-          <td>${u.status === 'Disabled' ? '<span class="pill pill-rose">Disabled</span>' : '<span class="pill pill-emerald">Active</span>'}</td>
-          <td>${u.lastLoginAt ? fmtDateTime(u.lastLoginAt) : '<span class="cell-sub">Never</span>'}</td>
+          <td>${u.status === 'Disabled'
+            ? '<span class="pill pill-rose">Disabled</span>'
+            : '<span class="pill pill-emerald">Active</span>'}</td>
+          <td class="ops-login">${u.lastLoginAt
+            ? `<span title="${esc(fmtDateTime(u.lastLoginAt))}">${esc(fmtDateTime(u.lastLoginAt))}</span>`
+            : '<span class="cell-sub">Never</span>'}</td>
           <td class="actions">
-            <button class="btn btn-outline btn-sm" data-logins="${esc(u.uid)}" data-uname="${esc(u.username)}" data-uemail="${esc(u.email)}">
-              <span class="ms">history</span> Logins</button>
-            <select data-role="${esc(u.uid)}" style="width:auto" ${(u.role === 'Owner' || u.role === 'Admin') && !Auth.can('canManageOwner') ? 'disabled title="Only an Owner can change Owner/Admin roles"' : ''}>
-              ${roleOptionsFor(u).map((r) => `<option ${u.role === r ? 'selected' : ''}>${r}</option>`).join('')}
-            </select>
-            ${Auth.can('canManageOwner') && u.uid !== (Auth.profile && Auth.profile.uid) ? `
-            <button class="btn btn-outline btn-sm" data-toggle-status="${esc(u.uid)}" data-cur="${esc(u.status || 'Active')}" title="${u.status === 'Disabled' ? 'Re-enable this account' : 'Disable sign-in for this account'}">
-              <span class="ms">${u.status === 'Disabled' ? 'lock_open' : 'block'}</span> ${u.status === 'Disabled' ? 'Enable' : 'Disable'}</button>
-            <button class="btn btn-danger btn-sm" data-del-user="${esc(u.uid)}" data-uname="${esc(u.username)}"><span class="ms">delete</span></button>` : ''}
+            <div class="ops-actions">
+              <button type="button" class="ops-icon-btn" data-logins="${esc(u.uid)}" data-uname="${esc(u.username)}" data-uemail="${esc(u.email)}" title="${esc('Login history')}">
+                <span class="ms">history</span>
+              </button>
+              ${canAdminRow ? `
+              <button type="button" class="ops-icon-btn" data-toggle-status="${esc(u.uid)}" data-cur="${esc(u.status || 'Active')}"
+                title="${u.status === 'Disabled' ? esc('Re-enable account') : esc('Disable sign-in')}">
+                <span class="ms">${u.status === 'Disabled' ? 'lock_open' : 'block'}</span>
+              </button>
+              <button type="button" class="ops-icon-btn ops-icon-danger" data-del-user="${esc(u.uid)}" data-uname="${esc(u.username)}" title="${esc('Delete user')}">
+                <span class="ms">delete</span>
+              </button>` : ''}
+            </div>
           </td>
-        </tr>`).join('')}
+        </tr>`;
+        }).join('')}
       </tbody>
     </table></div></div>`;
 

@@ -16,21 +16,32 @@ Views.catalog = async function (el) {
         <div class="cell-sub" style="margin-bottom:14px">The catalog is empty. Import every brand/model already in your
         inventory with one click, or add models manually.</div>
       </div>` :
-      cats.map((cat) => `
+      cats.map((cat) => {
+        const catDef = (AppConfig.lifecycles && AppConfig.lifecycles[cat] != null) ? AppConfig.lifecycles[cat] : null;
+        const catHint = catDef != null ? `${catDef} mo` : 'app default';
+        return `
       <div class="card" style="margin-bottom:16px">
         <div class="card-head"><h3>${esc(cat)} (${items.filter((c) => c.category === cat).length})</h3></div>
         <div class="table-wrap"><table class="data">
-          <thead><tr><th>Brand</th><th>Model</th><th style="text-align:right"></th></tr></thead>
+          <thead><tr><th>Brand</th><th>Model</th><th style="width:180px">Lifecycle (EOL)</th><th style="text-align:right"></th></tr></thead>
           <tbody>
             ${items.filter((c) => c.category === cat).map((c) => `
             <tr>
               <td class="cell-title">${esc(c.brand)}</td>
               <td>${esc(c.model)}</td>
+              <td>${canUpdate
+                ? `<input type="number" class="lc-input" data-lc="${esc(c.id)}" min="1" max="240"
+                     value="${c.lifecycleMonths != null ? esc(String(c.lifecycleMonths)) : ''}"
+                     placeholder="${catDef != null ? esc(String(catDef)) : ''}"
+                     title="Months until EOL. Leave blank to inherit the ${esc(cat)} category default (${catHint})."
+                     style="width:82px;padding:6px 8px"> <span class="cell-sub">mo</span>`
+                : (c.lifecycleMonths != null ? `${esc(String(c.lifecycleMonths))} mo` : `<span class="cell-sub">category default (${catHint})</span>`)}</td>
               <td class="actions">${canDelete ? `<button class="btn btn-outline btn-sm" data-del="${esc(c.id)}">Delete</button>` : ''}</td>
             </tr>`).join('')}
           </tbody>
         </table></div>
-      </div>`).join('')}`;
+      </div>`;
+      }).join('')}`;
 
   if (canCreate) {
     $('#cat-new', el)?.addEventListener('click', () => formModal({
@@ -40,6 +51,8 @@ Views.catalog = async function (el) {
           options: ['Laptop', 'Desktop', 'Monitor', 'Television', 'Phone', 'Tablet', 'Printer', 'Network', 'Server', 'Keyboard', 'Mouse', 'Headset', 'Docking Station', 'Webcam', 'Peripheral', 'Accessory', 'Other'] },
         { name: 'brand', label: 'Brand *', required: true },
         { name: 'model', label: 'Model *', required: true, full: true },
+        { name: 'lifecycleMonths', label: 'Lifecycle (months)', type: 'number', full: true,
+          placeholder: 'Blank = category default. e.g. Apple / MacBook → 60' },
       ],
       submitLabel: 'Add to catalog',
       async onSubmit(d) {
@@ -58,6 +71,17 @@ Views.catalog = async function (el) {
       } catch (err) { toast(err.message, 'error'); }
     });
   }
+
+  // Inline per-model lifecycle edit → EOL for every asset of that brand/model.
+  el.querySelectorAll('.lc-input').forEach((inp) => {
+    inp.addEventListener('change', async () => {
+      const val = inp.value.trim();
+      try {
+        await api('/catalog/' + inp.dataset.lc, { method: 'PUT', body: { lifecycleMonths: val === '' ? null : Number(val) } });
+        toast('Lifecycle updated — applies to every asset of this model', 'success');
+      } catch (err) { toast(err.message, 'error'); Views.catalog(el); }
+    });
+  });
 
   /* ---- Office Locations (stored in settings, drives asset form dropdown) ---- */
   const locData = await api('/catalog/locations').catch(() => ({ locations: [], defaultLocation: null }));
@@ -107,41 +131,59 @@ Views.catalog = async function (el) {
     </div>`);
 
   /* ---- Product lifecycle durations + per-category EOL on/off ---- */
+  // Category defaults only — never mix with per-model .lc-input[data-lc] (UUIDs).
   const lifecycles = await api('/catalog/lifecycles').catch(() => ({}));
+  const lcCats = Object.keys(lifecycles).filter((k) => !/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(k));
   el.insertAdjacentHTML('beforeend', `
-    <div class="card" style="margin-top:16px">
-      <div class="card-head"><h3>Product Lifecycle Durations</h3>
-        <span class="cell-sub">Months per category. Untick "EOL" to exclude a category from end-of-life tracking (e.g. accessories).</span></div>
+    <div class="card lc-card" style="margin-top:16px">
+      <div class="card-head">
+        <h3>Product Lifecycle Durations</h3>
+        <span class="cell-sub">Category defaults in months. Untick EOL to skip end-of-life tracking (e.g. accessories). Per-model overrides live in the tables above.</span>
+      </div>
       <div class="card-pad">
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px">
-          ${Object.entries(lifecycles).map(([cat, m]) => `
-          <label style="font-size:12px;font-weight:600;color:var(--on-surface-variant)">
-            <span style="display:flex;align-items:center;justify-content:space-between">${esc(cat)}
-              <span class="tc-opt" style="padding:0;font-weight:500"><input type="checkbox" data-lc-on="${esc(cat)}"
-                ${Number(m) > 0 ? 'checked' : ''} ${canEdit ? '' : 'disabled'}> EOL</span></span>
-            <input type="number" min="1" max="240" data-lc="${esc(cat)}" value="${Number(m) > 0 ? Number(m) : 48}"
-              style="margin-top:4px" ${(canEdit && Number(m) > 0) ? '' : 'disabled'}></label>`).join('')}
+        <div class="lc-grid">
+          ${lcCats.map((cat) => {
+            const m = Number(lifecycles[cat]);
+            const on = m > 0;
+            return `
+            <div class="lc-item${!on ? ' is-off' : ''}">
+              <div class="lc-item-top">
+                <span class="lc-cat">${esc(cat)}</span>
+                <label class="lc-eol">
+                  <input type="checkbox" data-lc-cat-on="${esc(cat)}" ${on ? 'checked' : ''} ${canEdit ? '' : 'disabled'}>
+                  <span>EOL</span>
+                </label>
+              </div>
+              <div class="lc-months">
+                <input type="number" min="1" max="240" data-lc-cat="${esc(cat)}"
+                  value="${on ? m : 48}" ${(canEdit && on) ? '' : 'disabled'}>
+                <span class="cell-sub">mo</span>
+              </div>
+            </div>`;
+          }).join('')}
         </div>
         ${canEdit ? '<button class="btn btn-primary btn-sm" id="lc-save" style="margin-top:14px"><span class="ms">save</span> Save lifecycles</button>' : ''}
       </div>
     </div>`);
 
   if (canEdit) {
-    // EOL checkbox toggles the months input; unticked saves as 0 (= excluded).
-    el.querySelectorAll('[data-lc-on]').forEach((c) => c.addEventListener('change', () => {
-      const inp = el.querySelector(`[data-lc="${c.dataset.lcOn}"]`);
+    el.querySelectorAll('[data-lc-cat-on]').forEach((c) => c.addEventListener('change', () => {
+      const item = c.closest('.lc-item');
+      const inp = el.querySelector(`[data-lc-cat="${c.dataset.lcCatOn}"]`);
       if (inp) inp.disabled = !c.checked;
+      if (item) item.classList.toggle('is-off', !c.checked);
     }));
     const lcSave = $('#lc-save', el);
     if (lcSave) lcSave.addEventListener('click', async () => {
       try {
-        const body = Object.fromEntries([...el.querySelectorAll('[data-lc]')].map((i) => {
-          const on = el.querySelector(`[data-lc-on="${i.dataset.lc}"]`);
-          return [i.dataset.lc, on && !on.checked ? 0 : (Number(i.value) || 48)];
+        const body = Object.fromEntries([...el.querySelectorAll('[data-lc-cat]')].map((i) => {
+          const on = el.querySelector(`[data-lc-cat-on="${i.dataset.lcCat}"]`);
+          return [i.dataset.lcCat, on && !on.checked ? 0 : (Number(i.value) || 48)];
         }));
         const saved = await api('/catalog/lifecycles', { method: 'PUT', body });
         AppConfig.lifecycles = saved;
         toast('Lifecycle settings saved', 'success');
+        Views.catalog(el);
       } catch (err) { toast(err.message, 'error'); }
     });
   }

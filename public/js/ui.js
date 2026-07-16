@@ -189,10 +189,11 @@ function toast(message, type = 'info') {
 }
 
 /* ---- modals ---- */
-function openModal({ title, body, foot, wide, xwide, onMount, onClose }) {
+function openModal({ title, body, foot, wide, xwide, onMount, onClose, dismissible = true }) {
   closeModal();
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
+  if (!dismissible) overlay.classList.add('modal-locked');
   const sizeClass = xwide ? ' modal-xl' : (wide ? ' modal-lg' : '');
   // body/foot are templates built by callers; all dynamic values inside them
   // are esc()-encoded at the call site.
@@ -200,13 +201,14 @@ function openModal({ title, body, foot, wide, xwide, onMount, onClose }) {
     <div class="modal${sizeClass}">
       <div class="modal-head">
         <h3>${esc(title)}</h3>
-        <button class="modal-close" data-close>×</button>
+        ${dismissible ? '<button class="modal-close" data-close>×</button>' : ''}
       </div>
       <div class="modal-body">${body}</div>
       ${foot ? `<div class="modal-foot">${foot}</div>` : ''}
     </div>`;
   if (typeof onClose === 'function') overlay._onCloseCleanup = onClose;
   overlay.addEventListener('click', (e) => {
+    if (!dismissible) return;
     if (e.target === overlay || e.target.hasAttribute('data-close')) closeModal();
   });
   document.body.classList.add('modal-open');

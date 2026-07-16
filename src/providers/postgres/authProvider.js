@@ -13,6 +13,7 @@ const { query } = require('./pool');
 const config = require('../../config');
 const { HttpError } = require('../../utils/httpError');
 const { ROLES, buildPermissions } = require('../../utils/permissions');
+const { roleRequiresMfa } = require('../../utils/mfaPolicy');
 
 authenticator.options = { window: 1 };
 
@@ -63,6 +64,9 @@ async function issueSession(user, meta = {}) {
       role: user.role,
       mfaEnabled: !!user.mfa_enabled,
     },
+    ...(roleRequiresMfa(user.role) && !user.mfa_enabled
+      ? { mfaEnrollmentRequired: true }
+      : {}),
   };
 }
 
@@ -282,6 +286,9 @@ async function mfaSetupConfirm(user, { code }) {
 }
 
 async function mfaDisable(user, { password, code }) {
+  if (roleRequiresMfa(user.role)) {
+    throw HttpError.forbidden('MFA is mandatory for Owner accounts and cannot be disabled');
+  }
   const { rows } = await query(
     'SELECT password_hash, mfa_secret, mfa_enabled FROM users WHERE id = $1',
     [user.uid]
@@ -310,9 +317,12 @@ async function mfaStatus(user) {
     'SELECT mfa_enabled, cardinality(mfa_backup_hashes) AS backup_left FROM users WHERE id = $1',
     [user.uid]
   );
+  const enabled = !!rows[0]?.mfa_enabled;
   return {
-    enabled: !!rows[0]?.mfa_enabled,
+    enabled,
     backupCodesRemaining: Number(rows[0]?.backup_left || 0),
+    mandatory: roleRequiresMfa(user.role),
+    enrollmentRequired: roleRequiresMfa(user.role) && !enabled,
   };
 }
 
@@ -376,7 +386,7 @@ async function upsertAdminTx(client, { username, email, password }) {
 async function setUserRole(uid, role, actor) {
   assertValidRole(role);
   const { rows: existing } = await query(
-    'SELECT id, role, email, username FROM users WHERE id = $1',
+    'SELECT id, role, email, username, mfa_enabled FROM users WHERE id = $1',
     [uid]
   );
   if (!existing[0]) throw HttpError.notFound(`No user with id ${uid}`);
@@ -385,6 +395,9 @@ async function setUserRole(uid, role, actor) {
   }
   if ((role === 'Owner' || role === 'Admin') && (!actor || actor.role !== 'Owner')) {
     throw HttpError.forbidden('Only an Owner can assign the Owner or Admin role');
+  }
+  if (role === 'Owner' && !existing[0].mfa_enabled) {
+    throw HttpError.badRequest('Enable MFA on this account before assigning the Owner role');
   }
   const { rows } = await query(
     'UPDATE users SET role = $2 WHERE id = $1 RETURNING id, role, email, username',
@@ -418,6 +431,8 @@ async function getVerifiedProfile(user) {
     username: row?.username || enriched.email,
     role: enriched.role,
     mfaEnabled: !!row?.mfa_enabled,
+    mfaMandatory: roleRequiresMfa(enriched.role),
+    mfaEnrollmentRequired: roleRequiresMfa(enriched.role) && !row?.mfa_enabled,
     permissionGroupId: enriched.permissionGroupId,
     customConstraints: enriched.customConstraints,
     permissions: uiPermissionsFromIam(iamPermissions, enriched.role),

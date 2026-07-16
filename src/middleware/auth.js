@@ -14,6 +14,7 @@
  */
 const { authProvider } = require('../providers');
 const { HttpError } = require('../utils/httpError');
+const { needsMfaEnrollment, isMfaEnrollmentAllowedPath } = require('../utils/mfaPolicy');
 
 async function authenticate(req, res, next) {
   try {
@@ -53,6 +54,15 @@ async function authenticate(req, res, next) {
       permissionGroupId: rows[0]?.permissionGroupId || null,
       customConstraints: rows[0]?.customConstraints || null,
     };
+
+    // Owners without MFA may only hit enrollment / logout / verify-token.
+    if (needsMfaEnrollment(req.user) && !isMfaEnrollmentAllowedPath(req.originalUrl)) {
+      throw HttpError.forbidden(
+        'Owners must enable MFA before using the app',
+        { code: 'MFA_ENROLLMENT_REQUIRED' }
+      );
+    }
+
     next();
   } catch (err) {
     next(err instanceof HttpError ? err : HttpError.unauthorized('Invalid token'));
