@@ -75,6 +75,8 @@ Donanım ve ağ envanteri · yazdırılabilir PDF tutanaklı personel zimmetleri
 | ![Personel detayı](docs/screenshots/employee-detail.png) | ![Denetim kaydı](docs/screenshots/audit-log.png) |
 | **Yazdırılabilir zimmet tutanağı** | **Raporlar & oluşturucu** |
 | ![Yazdırma önizleme](docs/screenshots/print-preview.png) | ![Raporlar](docs/screenshots/reports.png) |
+| **Donanım envanteri** | **Ürün Kataloğu — model-bazlı EOL yaşam döngüsü** |
+| ![Donanım envanteri](docs/screenshots/hardware.png) | ![Ürün Kataloğu](docs/screenshots/catalog.png) |
 
 <br />
 
@@ -86,7 +88,7 @@ Donanım ve ağ envanteri · yazdırılabilir PDF tutanaklı personel zimmetleri
 
 </div>
 
-> Diğer ekranlar (donanım envanteri, ürün kataloğu, zimmet sepeti, giriş) [`docs/screenshots/`](docs/screenshots) altında.
+> Diğer ekranlar (zimmet sepeti, ağ haritası, giriş) [`docs/screenshots/`](docs/screenshots) altında.
 
 ---
 
@@ -121,13 +123,13 @@ Yeni çalışanın setini planlayın (cihaz + hat rezerve edin), sonra tek zimme
 <td width="50%" valign="top">
 
 ### 🔐 Rol bazlı erişim kontrolü
-`Owner`, `Admin`, `Helpdesk`, `Viewer` rolleri **her** uç noktada uygulanır ve her istekte yeniden denetlenir; değişiklikler anında geçerli olur. Sahipler hesapları devre dışı bırakabilir veya silebilir — her pasifleştirme/aktifleştirme/silme/rol değişikliği kaydedilir.
+`Owner`, `Admin`, `Helpdesk`, `Viewer` rolleri **her** uç noktada uygulanır ve her istekte yeniden denetlenir; değişiklikler anında geçerli olur. Sahipler hesapları devre dışı bırakabilir veya silebilir — her pasifleştirme/aktifleştirme/silme/rol değişikliği kaydedilir. Giriş yerel e-posta/parola ile; **TOTP MFA** her rol için opsiyonel, **`Owner` hesapları için zorunludur**: bir Owner uygulamayı kullanmadan önce MFA'yı etkinleştirmek zorundadır, kapatamaz ve MFA'sı olmayan hiç kimse Owner'a yükseltilemez. Ayrıca parola değişikliği ve sunucu taraflı çıkış (JWT iptali). SSO / Entra girişi yoktur.
 
 ### 🧾 Sistem geneli denetim kaydı
 Cihaz, kullanıcı, belge, zimmet, giriş, ayar ve dahasını kapsayan; append-only denetim tablosunu eski alan geçmişleriyle birleştiren birleşik, filtrelenebilir zaman çizelgesi. Kaynağa, aktöre ve tarihe göre arama; sırlar saklanmadan önce maskelenir.
 
 ### ⏳ Ürün yaşam döngüsü (EOL)
-Kategori başına yaşam süresi + cihaz bazlı istisnalar (ör. MacBook 5 yıl) — ya da bir kategori için (aksesuarlar) EOL takibini kapatın. Her cihaz EOL tarihini ve "EOL yakın" / gecikmiş işaretlerini gösterir.
+EOL süreleri üç katmanda çözülür — **cihaz bazlı override → katalog modeli → kategori varsayılanı**. Ayarlar'dan kategori varsayılanını belirleyin, belirli bir katalog modeline kendi yaşam süresini verin (ör. **Apple MacBook'lar 5 yıl**, diğer laptoplar 4 yılda kalır) ya da tek bir cihazı override edin — veya bir kategori için (aksesuarlar) EOL takibini kapatın. Her cihaz EOL tarihini ve "EOL yakın" / gecikmiş işaretlerini gösterir.
 
 ### 📦 Fiziksel sayım
 Bir sayım oturumu açın ve **giriş yapmış herhangi bir cihazdan** tarayın — PC'de başlayın, telefon kameranızla barkod/QR taramaya devam edin. Oturumu kapatınca canlı envanterle mutabakat: bulundu / eksik / bilinmeyen, CSV dışa aktarımıyla.
@@ -160,7 +162,7 @@ Kenar menü, özellik setiyle bire bir eşleşir:
 | **Panel** | KPI'lar, dikkat gerektirenler (lisans, düşük stok, EOL), cihaz dağılımı, son hareketler |
 | **Donanım** | Tam cihaz envanteri — QR kodlar, toplu işlemler, maliyet/garanti, yaşam döngüsü, global arama |
 | **Ağ & Sunucu** | Altyapı envanteri + bağımlılık topolojisi + kabinetler (lokasyon/sorumlu, kişisel zimmet değil) |
-| **Ürün Kataloğu** | Onaylı marka/model, kategori, lokasyon, departman, yaşam döngüsü & özellik seçenekleri |
+| **Ürün Kataloğu** | Onaylı marka/model (**model-bazlı EOL yaşam döngüsü** ile), kategori, lokasyon, departman & özellik seçenekleri |
 | **Yazılım & Lisanslar** | Koltuk havuzları, atomik al/bırak, süre uyarıları, lisans bazlı sahip dışa aktarımı |
 | **Hatlar** | SIM/telefon numarası envanteri ve atama geçmişi |
 | **Tedarikçi & Sözleşmeler** | Tedarikçi rehberi + yenileme takipli ticari sözleşmeler ve belgeler |
@@ -336,7 +338,7 @@ POST /api/handovers
 ## 🔒 Güvenlik notları
 
 - **Sırlar depoda tutulmaz.** `.env` git tarafından yok sayılır; kurulum sihirbazı onu `0600` izinle yazar ve sizin için güçlü bir `JWT_SECRET` ve DB parolası üretir. Veritabanı yedekleri (`backups/`) da git dışındadır.
-- **Kimlik doğrulama:** parolalar bcrypt ile hash'lenir (maliyet 12); JWT'ler HS256 ile imzalanır ve doğrulamada algoritma **sabitlenir**; giriş tek bir hata mesajı ve sabit-zamanlı karşılaştırma kullanır (bilinmeyen e-postalar için sahte hash) — böylece hesap sayımı için kullanılamaz; her istek kullanıcı satırını yeniden denetler, rol/pasifleştirme/silme anında geçerli olur.
+- **Kimlik doğrulama:** parolalar bcrypt ile hash'lenir (maliyet 12); JWT'ler HS256 ile imzalanır ve doğrulamada algoritma **sabitlenir**; giriş tek bir hata mesajı ve sabit-zamanlı karşılaştırma kullanır (bilinmeyen e-postalar için sahte hash) — böylece hesap sayımı için kullanılamaz; her istek kullanıcı satırını yeniden denetler, rol/pasifleştirme/silme anında geçerli olur; **`Owner` hesapları TOTP MFA etkinleştirmek zorundadır** — etkinleştirene kadar middleware, MFA kaydı / token doğrulama / çıkış dışındaki tüm yolları engeller.
 - **Erişim kontrolü:** her API router'ı `authenticate` uygular, değiştiren rotalar `requireRole(...)` ekler. Denetim kaydı, saklamadan önce hassas anahtarları (parola, token, key) **maskeler**.
 - **Yüklemeler:** belge rotaları gerçek dosya türünü **magic byte** ile doğrular (istemcinin iddiasına değil) ve gövdeyi 12 MB ile sınırlar; indirmeler temizlenmiş bir `Content-Disposition` ayarlar. Tüm SQL parametrelidir; tüm gösterilen değerler HTML olarak kaçışlanır.
 - **Sıkılaştırma:** katı Content-Security-Policy (satır içi script yok, self-only), HSTS, nosniff / frame-deny / referrer / permissions-policy başlıkları, giriş hız sınırı (20 / 15 dk / IP), global API hız sınırı (1000 / 5 dk / IP), varsayılan same-origin CORS, 1 MB varsayılan gövde limiti, `x-powered-by` kapalı, ilk kullanımdan sonra kendini kilitleyen tek seferlik onboarding uç noktası ve `npm audit`-temiz bağımlılık ağacı.

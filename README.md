@@ -75,6 +75,8 @@ Most asset trackers are either a spreadsheet that rots or a heavyweight SaaS you
 | ![Employee detail](docs/screenshots/employee-detail.png) | ![Audit log](docs/screenshots/audit-log.png) |
 | **Printable handover receipt** | **Reports & builder** |
 | ![Print preview](docs/screenshots/print-preview.png) | ![Reports](docs/screenshots/reports.png) |
+| **Hardware inventory** | **Product Catalog — per-model EOL lifecycle** |
+| ![Hardware inventory](docs/screenshots/hardware.png) | ![Product Catalog](docs/screenshots/catalog.png) |
 
 <br />
 
@@ -86,7 +88,7 @@ Most asset trackers are either a spreadsheet that rots or a heavyweight SaaS you
 
 </div>
 
-> More screens (hardware inventory, product catalog, handover basket, login) live in [`docs/screenshots/`](docs/screenshots).
+> More screens (handover basket, network map, login) live in [`docs/screenshots/`](docs/screenshots).
 
 ---
 
@@ -121,13 +123,13 @@ Schedule a new hire's kit (reserve assets + lines), then complete it into a sing
 <td width="50%" valign="top">
 
 ### 🔐 Role-based access control
-`Owner`, `Admin`, `Helpdesk`, `Viewer` roles enforced on **every** endpoint, re-checked on each request so changes apply instantly. Owners can disable or delete accounts — every disable/enable/delete/role change is recorded. Sign-in is local email/password with optional **TOTP MFA**, password change, and server-side logout (JWT revoke). There is no SSO / Entra login.
+`Owner`, `Admin`, `Helpdesk`, `Viewer` roles enforced on **every** endpoint, re-checked on each request so changes apply instantly. Owners can disable or delete accounts — every disable/enable/delete/role change is recorded. Sign-in is local email/password with **TOTP MFA** — optional for every role and **mandatory for `Owner` accounts**: an Owner must enrol MFA before using the app, cannot disable it, and no one can be promoted to Owner until they have it enabled. Plus password change and server-side logout (JWT revoke). There is no SSO / Entra login.
 
 ### 🧾 System-wide audit log
 A unified, filterable timeline of **all** instance activity — assets, users, documents, handovers, logins, settings and more — merging the append-only audit table with legacy domain history. Search by source, actor and date; secrets are redacted before storage.
 
 ### ⏳ Product lifecycle (EOL)
-Lifecycle duration per category plus per-asset overrides (e.g. MacBooks at 5 years) — or untick EOL for a category (accessories) to exclude it entirely. Every asset shows its EOL date and "EOL soon" / overdue flags.
+EOL windows resolve in three tiers — **per-asset override → per-catalog-model → per-category default**. Set a category default in Settings, give a specific catalog model its own lifecycle (e.g. **Apple MacBooks at 5 years** while other laptops keep 4), or override a single device — or untick EOL for a category (accessories) to exclude it entirely. Every asset shows its EOL date and "EOL soon" / overdue flags.
 
 ### 📦 Physical stock counts
 Open a count session and scan from **any signed-in device** — start on the PC, keep scanning barcodes/QRs from your phone camera. Closing the session reconciles against live inventory: found / missing / unknown, with CSV export.
@@ -160,7 +162,7 @@ The sidebar maps 1:1 to the feature set:
 | **Dashboard** | KPIs, attention-required alerts (licenses, low stock, EOL), asset distribution, recent activity |
 | **Hardware** | Full device inventory — QR codes, bulk actions, cost/warranty, lifecycle, global search |
 | **Network & Server** | Infra inventory + dependency topology + rack cabinets (site/owner, not personal zimmet) |
-| **Product Catalog** | Approved brands/models, categories, locations, departments, lifecycle & spec options |
+| **Product Catalog** | Approved brands/models (with **per-model EOL lifecycle**), categories, locations, departments & spec options |
 | **Software & Licenses** | Seat pools, atomic claim/release, expiry alerts, per-license holder export |
 | **Mobile Lines** | SIM/phone-number inventory with assignment history |
 | **Providers & Contracts** | Vendor directory + commercial agreements with renewal tracking and documents |
@@ -336,7 +338,7 @@ If **any** asset is locked, the API returns `409` with a per-asset conflict list
 ## 🔒 Security notes
 
 - **Secrets never live in the repo.** `.env` is git-ignored; the setup wizard writes it with `0600` permissions and generates a strong `JWT_SECRET` and DB password for you. Database backups (`backups/`) are git-ignored too.
-- **Auth:** passwords are bcrypt-hashed (cost 12); JWTs are signed HS256 with the algorithm **pinned** on verify; login uses a single error message and a constant-time compare (dummy hash for unknown emails) so it can't be used to enumerate accounts; every request re-checks the user row so role changes / disables / deletes apply instantly.
+- **Auth:** passwords are bcrypt-hashed (cost 12); JWTs are signed HS256 with the algorithm **pinned** on verify; login uses a single error message and a constant-time compare (dummy hash for unknown emails) so it can't be used to enumerate accounts; every request re-checks the user row so role changes / disables / deletes apply instantly; **`Owner` accounts must have TOTP MFA enabled** — until they do, the middleware blocks every route except MFA enrolment, token verification and logout.
 - **Access control:** every API router mounts `authenticate`, and mutating routes add `requireRole(...)`. The audit log **redacts** sensitive keys (passwords, tokens, keys) before persisting.
 - **Uploads:** document routes validate the real file type by **magic bytes** (not the client's claim) and cap the body at 12 MB; downloads set a sanitized `Content-Disposition`. All SQL is parameterized; all rendered values are HTML-escaped.
 - **Hardening:** strict Content-Security-Policy (no inline scripts, self-only), HSTS, nosniff / frame-deny / referrer / permissions-policy headers, login rate-limiting (20 / 15 min / IP), global API rate limit (1000 / 5 min / IP), same-origin-only CORS by default, 1 MB default body limit, `x-powered-by` disabled, a one-shot onboarding endpoint that locks itself after first use, and an `npm audit`-clean dependency tree.
