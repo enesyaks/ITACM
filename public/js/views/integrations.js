@@ -9,14 +9,18 @@ Views.integrations = async function (el) {
   const readOnly = canRead && !canManage;
   const lockedTip = esc(t('integration.viewLocked') || 'Saved — editing requires integration:manage');
 
-  const [mail, keys, hooks, cfAsset, cfEmp, cfContract] = await Promise.all([
+  const [mail, keys, hooks, cfAsset, cfEmp, cfContract, emailTemplates] = await Promise.all([
     api('/integrations/notifications'),
     api('/integrations/api-keys'),
     api('/integrations/webhooks'),
     api('/integrations/custom-fields/asset'),
     api('/integrations/custom-fields/employee'),
     api('/integrations/custom-fields/contract'),
+    api('/integrations/email-templates').catch(() => ({})),
   ]);
+  const tplKey = 'onboarding_welcome';
+  const tpl = (emailTemplates && emailTemplates[tplKey]) || { subject: '', bodyHtml: '', bodyText: '', isCustom: false };
+  const phList = ['companyName', 'companyAddress', 'employeeName', 'employeeEmail', 'startDate', 'itemList', 'appUrl', 'accessInstructions'];
 
   const smtp = mail.smtp || {};
   const notify = mail.notify || {};
@@ -82,6 +86,35 @@ Views.integrations = async function (el) {
           <button class="btn btn-outline" id="int-smtp-test">Send test email</button>
           <button class="btn btn-outline" id="int-smtp-clear" style="margin-left:auto;color:var(--rose,#be123c)">Clear SMTP &amp; recipients</button>` : ''}
           ${canRead ? `<button class="btn btn-outline" id="int-digest">Run digest now</button>` : ''}
+        </div>
+      </section>
+
+      <section class="card card-pad" style="margin-bottom:16px">
+        <h3 style="margin:0 0 8px">${esc(t('integration.emailTemplates') || 'Email templates')}</h3>
+        <p class="cell-sub" style="margin:0 0 12px">${esc(t('integration.emailTemplatesHint') || 'Edit the onboarding welcome email. Placeholders are replaced when sending.')}</p>
+        ${!smtp.host ? '<p class="banner banner-amber" style="margin-bottom:12px">SMTP host is not configured — save SMTP before sending.</p>' : ''}
+        <div class="form-grid">
+          <div class="form-field"><label>Template</label>
+            <select id="int-tpl-key" ${inputDis}>
+              <option value="onboarding_welcome" selected>onboarding_welcome</option>
+            </select>
+          </div>
+          <div class="form-field full"><label>Subject</label>
+            <input id="int-tpl-subject" value="${esc(tpl.subject || '')}" ${inputDis}></div>
+          <div class="form-field full"><label>Body (HTML)</label>
+            <textarea id="int-tpl-html" rows="10" style="font-family:ui-monospace,monospace;font-size:12px" ${inputDis}>${esc(tpl.bodyHtml || '')}</textarea></div>
+          <div class="form-field full"><label>Body (text)</label>
+            <textarea id="int-tpl-text" rows="8" style="font-family:ui-monospace,monospace;font-size:12px" ${inputDis}>${esc(tpl.bodyText || '')}</textarea></div>
+          <div class="form-field full">
+            <p class="cell-sub" style="margin:0">Placeholders:
+              ${phList.map((p) => '<code>{{' + p + '}}</code>').join(' ')}
+            </p>
+            ${tpl.isCustom ? '<p class="ob-hint" style="margin:6px 0 0">Custom override saved</p>' : '<p class="ob-hint" style="margin:6px 0 0">Using built-in default</p>'}
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+          <button type="button" class="btn btn-outline" id="int-tpl-preview">${esc(t('integration.emailTemplatePreview') || 'Preview')}</button>
+          ${canManage ? '<button class="btn btn-primary" id="int-tpl-save">Save template</button><button class="btn btn-outline" id="int-tpl-reset">Reset to default</button>' : ''}
         </div>
       </section>
 
@@ -253,6 +286,103 @@ GET /api/integrations/licenses/:id/sam
         Views.integrations(el);
       }
     );
+  });
+
+
+  function applyEmailTplPreviewVars(template, vars, { html = false } = {}) {
+    let out = String(template ?? '');
+    for (const [k, v] of Object.entries(vars || {})) {
+      const raw = v == null ? '' : String(v);
+      const val = html ? esc(raw) : raw;
+      out = out.split(`{{${k}}}`).join(val);
+    }
+    return out;
+  }
+
+  $('#int-tpl-preview', el)?.addEventListener('click', () => {
+    const cfg = typeof AppConfig !== 'undefined' ? AppConfig : {};
+    const vars = {
+      companyName: cfg.companyName || 'Acme Corp',
+      companyAddress: cfg.companyAddress || '123 Example Street',
+      employeeName: 'Ada Lovelace',
+      employeeEmail: 'ada@example.com',
+      startDate: new Date().toISOString().slice(0, 10),
+      itemList: '- IT-1001: Dell Latitude 5540\n- Line: +1 555-0100 (Operator · Plan)',
+      appUrl: (typeof location !== 'undefined' && location.origin) || 'http://localhost:8000',
+      accessInstructions: 'Sign in with your company email. Contact IT Helpdesk if you need help getting access.',
+    };
+    const subject = applyEmailTplPreviewVars($('#int-tpl-subject', el)?.value || '', vars, { html: false });
+    const bodyHtml = applyEmailTplPreviewVars($('#int-tpl-html', el)?.value || '', vars, { html: true });
+    const bodyText = applyEmailTplPreviewVars($('#int-tpl-text', el)?.value || '', vars, { html: false });
+    const wrappedHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"></head>`
+      + `<body style="font-family:system-ui,-apple-system,sans-serif;line-height:1.5;color:#1a1a1a;max-width:640px;margin:0 auto;padding:24px">`
+      + `${bodyHtml}</body></html>`;
+
+    openModal({
+      wide: true,
+      title: t('integration.emailTemplatePreview') || 'Preview',
+      body: `
+        <p class="cell-sub" style="margin:0 0 12px">${esc(t('integration.emailTemplatePreviewHint') || 'Sample data is used for placeholders. This is not sent.')}</p>
+        <div style="margin-bottom:12px">
+          <span class="cell-sub">${esc(t('integration.emailTemplateSubject') || 'Subject')}</span>
+          <div style="font-weight:600;margin-top:4px">${esc(subject)}</div>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:12px">
+          <button type="button" class="btn btn-primary btn-sm" id="tpl-prev-html">HTML</button>
+          <button type="button" class="btn btn-outline btn-sm" id="tpl-prev-text">Text</button>
+        </div>
+        <iframe id="tpl-prev-frame" title="HTML preview" sandbox
+          style="width:100%;height:360px;border:1px solid var(--border,#e8e6f0);border-radius:8px;background:#fff"></iframe>
+        <pre id="tpl-prev-textpane" class="mono" hidden
+          style="white-space:pre-wrap;font-size:12px;background:#f6f5fa;padding:12px;border-radius:8px;max-height:360px;overflow:auto;margin:0">${esc(bodyText)}</pre>`,
+      foot: `<button class="btn btn-outline" data-close>${esc(t('common.close') || 'Close')}</button>`,
+      onMount(overlay) {
+        const frame = $('#tpl-prev-frame', overlay);
+        const textPane = $('#tpl-prev-textpane', overlay);
+        const btnHtml = $('#tpl-prev-html', overlay);
+        const btnText = $('#tpl-prev-text', overlay);
+        if (frame) frame.srcdoc = wrappedHtml;
+        const show = (mode) => {
+          const isHtml = mode === 'html';
+          if (frame) frame.hidden = !isHtml;
+          if (textPane) textPane.hidden = isHtml;
+          if (btnHtml) btnHtml.className = isHtml ? 'btn btn-primary btn-sm' : 'btn btn-outline btn-sm';
+          if (btnText) btnText.className = isHtml ? 'btn btn-outline btn-sm' : 'btn btn-primary btn-sm';
+        };
+        btnHtml?.addEventListener('click', () => show('html'));
+        btnText?.addEventListener('click', () => show('text'));
+      },
+    });
+  });
+
+  $('#int-tpl-save', el)?.addEventListener('click', async () => {
+    try {
+      const key = $('#int-tpl-key', el)?.value || 'onboarding_welcome';
+      await api('/integrations/email-templates', {
+        method: 'PUT',
+        body: {
+          [key]: {
+            subject: $('#int-tpl-subject', el).value,
+            bodyHtml: $('#int-tpl-html', el).value,
+            bodyText: $('#int-tpl-text', el).value,
+          },
+        },
+      });
+      toast('Email template saved', 'success');
+      Views.integrations(el);
+    } catch (err) { toast(err.message, 'error'); }
+  });
+
+  $('#int-tpl-reset', el)?.addEventListener('click', async () => {
+    try {
+      const key = $('#int-tpl-key', el)?.value || 'onboarding_welcome';
+      await api('/integrations/email-templates', {
+        method: 'PUT',
+        body: { reset: [key] },
+      });
+      toast('Template reset to default', 'success');
+      Views.integrations(el);
+    } catch (err) { toast(err.message, 'error'); }
   });
 
   $('#int-key-create', el)?.addEventListener('click', async () => {

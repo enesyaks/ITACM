@@ -1,7 +1,7 @@
 const router = require('express').Router();
 const { authenticate, requireRole, requirePermission } = require('../middleware/auth');
 const { asyncHandler } = require('../utils/asyncHandler');
-const { onboardingService } = require('../services');
+const { onboardingService, notificationService } = require('../services');
 
 router.use(authenticate);
 
@@ -43,6 +43,16 @@ router.delete('/:id/items/:itemId', requirePermission('onboarding', 'update'), a
 /** POST /api/onboardings/:id/complete. İzin: onboarding:update */
 router.post('/:id/complete', requirePermission('onboarding', 'update'), asyncHandler(async (req, res) => {
   const data = await onboardingService.completeOnboarding(req.params.id, req.body || {}, req.user);
+  res.json({ success: true, data });
+}));
+
+/** POST /api/onboardings/:id/send-email. İzin: onboarding:update */
+router.post('/:id/send-email', requirePermission('onboarding', 'update'), asyncHandler(async (req, res) => {
+  const data = await notificationService.sendOnboardingWelcomeEmail({
+    onboardingId: req.params.id,
+    to: req.body?.to,
+    extraNote: req.body?.extraNote,
+  });
   res.json({ success: true, data });
 }));
 

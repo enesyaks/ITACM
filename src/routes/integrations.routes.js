@@ -43,6 +43,15 @@ router.delete('/notifications', authenticate, requirePermission('integration', '
   res.json({ success: true, data: cfg });
 }));
 
+/** ---------- Email templates (integration:read / integration:manage) ---------- */
+router.get('/email-templates', authenticate, requirePermission('integration', 'read'), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await notificationService.getEmailTemplates() });
+}));
+
+router.put('/email-templates', authenticate, requirePermission('integration', 'manage'), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await notificationService.saveEmailTemplates(req.body || {}) });
+}));
+
 /** ---------- Webhooks (integration:read / integration:manage) ---------- */
 router.get('/webhooks', authenticate, requirePermission('integration', 'read'), asyncHandler(async (req, res) => {
   res.json({ success: true, data: await webhookService.listWebhooks() });

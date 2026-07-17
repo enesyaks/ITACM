@@ -413,12 +413,47 @@ async function openOnboardingDueModal({ force = false, focusId = null } = {}) {
     body: `<div id="obn-due-body"></div>`,
     foot: `
       <button class="btn btn-outline" id="obn-due-later">${esc(t('emp.onboardRemindLater'))}</button>
+      <button class="btn btn-outline" id="obn-due-email"><span class="ms">mail</span> ${esc(t('emp.onboardSendEmail'))}</button>
       <button class="btn btn-outline" id="obn-due-add"><span class="ms">add</span> ${esc(t('emp.onboardAddDevices'))}</button>
       <button class="btn btn-primary" id="obn-due-complete"><span class="ms">print</span> ${esc(t('emp.onboardComplete'))}</button>`,
     onMount(overlay) {
       renderBody(overlay);
 
       $('#obn-due-later', overlay).addEventListener('click', () => closeModal());
+
+
+      $('#obn-due-email', overlay)?.addEventListener('click', () => {
+        const emp = (detail && detail.employee) || {};
+        formModal({
+          title: t('emp.onboardSendEmail'),
+          fields: [
+            {
+              name: 'to',
+              label: 'emp.onboardSendEmailTo',
+              type: 'email',
+              required: true,
+              value: emp.email || '',
+              full: true,
+            },
+            {
+              name: 'extraNote',
+              label: 'emp.onboardSendEmailNote',
+              type: 'textarea',
+              full: true,
+            },
+          ],
+          submitLabel: 'emp.onboardSendEmail',
+          async onSubmit(d) {
+            const id = (detail && detail.id) || current.id;
+            const r = await api(`/onboardings/${encodeURIComponent(id)}/send-email`, {
+              method: 'POST',
+              body: { to: d.to, extraNote: d.extraNote },
+            });
+            const sentTo = (r && r.sentTo) || d.to;
+            toast(`${t('emp.onboardEmailSent')}: ${sentTo}`, 'success');
+          },
+        });
+      });
 
       $('#obn-due-add', overlay).addEventListener('click', async () => {
         const panel = $('#obn-add-panel', overlay);

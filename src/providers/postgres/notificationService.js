@@ -6,6 +6,14 @@ const dashboardService = require('./dashboardService');
 const { renderEmail } = require('../../utils/emailLayout');
 const { encryptSecret, decryptSecret } = require('../../utils/secretCrypto');
 const { resolveAndAssertPublicHost, smtpAllowsPrivate } = require('../../utils/safeOutbound');
+const {
+  TEMPLATE_KEYS,
+  PLACEHOLDERS,
+  mergeTemplates,
+  sanitizeTemplateInput,
+  renderTemplate,
+  DEFAULT_ACCESS,
+} = require('../../utils/emailTemplates');
 
 const DEFAULT_NOTIFY = {
   enabled: false,
@@ -308,7 +316,102 @@ async function notifyHandoverCompleted(receipt) {
   }
 }
 
+async function getEmailTemplates() {
+  const { rows } = await query('SELECT email_templates FROM app_settings WHERE id = 1');
+  return mergeTemplates(rows[0]?.email_templates || {});
+}
+
+async function saveEmailTemplates(body = {}) {
+  const { rows } = await query('SELECT email_templates FROM app_settings WHERE id = 1');
+  const stored = { ...(rows[0]?.email_templates && typeof rows[0].email_templates === 'object'
+    ? rows[0].email_templates
+    : {}) };
+
+  const reset = Array.isArray(body.reset) ? body.reset : [];
+  for (const key of reset) {
+    if (TEMPLATE_KEYS.includes(key)) delete stored[key];
+  }
+
+  for (const key of TEMPLATE_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(body, key) && body[key] != null) {
+      stored[key] = sanitizeTemplateInput(key, body[key]);
+    }
+  }
+
+  await query(
+    'UPDATE app_settings SET email_templates = $1::jsonb WHERE id = 1',
+    [JSON.stringify(stored)]
+  );
+  return getEmailTemplates();
+}
+
+function formatOnboardingItemList(items) {
+  const lines = (items || []).map((it) => {
+    if (it.kind === 'asset') {
+      const name = [it.brand, it.model].filter(Boolean).join(' ');
+      return `- ${it.assetTag || 'Asset'}${name ? `: ${name}` : ''}`;
+    }
+    const meta = [it.operator, it.plan].filter(Boolean).join(' · ');
+    return `- Line: ${it.phoneNumber || '—'}${meta ? ` (${meta})` : ''}`;
+  });
+  return lines.length ? lines.join('\n') : '(none reserved yet)';
+}
+
+async function sendOnboardingWelcomeEmail({ onboardingId, to, extraNote } = {}) {
+  const { smtp } = await getMailConfig();
+  if (!smtp.host) {
+    throw HttpError.badRequest('SMTP host is required — save SMTP settings first');
+  }
+
+  // Lazy require to avoid circular dependency with onboardingService / handover notify paths.
+  const onboardingService = require('./onboardingService');
+  const detail = await onboardingService.getOnboarding(onboardingId);
+
+  const { rows } = await query(
+    'SELECT company_name, company_address, email_templates FROM app_settings WHERE id = 1'
+  );
+  const companyName = rows[0]?.company_name || 'ITACM';
+  const companyAddress = rows[0]?.company_address || '';
+  const templates = mergeTemplates(rows[0]?.email_templates || {});
+  const tpl = templates.onboarding_welcome;
+
+  const emp = detail.employee || {};
+  const employeeName = emp.fullName || emp.full_name || 'Employee';
+  const employeeEmail = emp.email || '';
+  const recipient = String(to || employeeEmail || '').trim().toLowerCase();
+  if (!recipient) throw HttpError.badRequest('Recipient email is required');
+
+  const appUrl = process.env.APP_URL || process.env.PUBLIC_URL || 'http://localhost:8000';
+  const accessInstructions = String(extraNote || '').trim() || DEFAULT_ACCESS;
+  const startDate = String(detail.startDate || '').slice(0, 10);
+
+  const rendered = renderTemplate(tpl, {
+    companyName,
+    companyAddress,
+    employeeName,
+    employeeEmail,
+    startDate,
+    itemList: formatOnboardingItemList(detail.items),
+    appUrl,
+    accessInstructions,
+  });
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"></head>`
+    + `<body style="font-family:system-ui,-apple-system,sans-serif;line-height:1.5;color:#1a1a1a;max-width:640px;margin:0 auto;padding:24px">`
+    + `${rendered.bodyHtml}</body></html>`;
+
+  await sendMail({
+    to: recipient,
+    subject: rendered.subject,
+    text: rendered.bodyText,
+    html,
+  });
+
+  return { sent: true, sentTo: recipient, subject: rendered.subject };
+}
+
 module.exports = {
   getMailConfig, saveMailConfig, clearMailConfig, sendTestEmail, runAlertDigest, notifyHandoverCompleted, sendMail,
-  DEFAULT_NOTIFY,
+  getEmailTemplates, saveEmailTemplates, sendOnboardingWelcomeEmail,
+  DEFAULT_NOTIFY, TEMPLATE_KEYS, PLACEHOLDERS,
 };
