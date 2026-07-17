@@ -1457,6 +1457,8 @@ function renderObSetupStep() {
 function renderTour() {
   const scr = $('#onboarding-screen');
   if (!scr) return;
+  const nav = $('#onb-nav');
+  if (nav) nav.classList.toggle('is-tour', obPhase === 'tour');
   if (obPhase === 'tour') renderObTourSlide();
   else renderObSetupStep();
 }
