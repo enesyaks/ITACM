@@ -1215,78 +1215,152 @@ function obPreviewHtml(kind) {
   return shell(map[kind] || map.welcome, kind === 'welcome' ? 'ob-mock-welcome' : '');
 }
 
-let obStep = 0;
+let obStep = 0;                 // setup step: 0 company · 1 handover design · 2 owner
+let obPhase = 'tour';           // 'tour' (product intro) -> 'setup' (workspace form)
+let obTourIdx = 0;              // index into OB_TOUR while in the tour phase
+const OB_SETUP_STEPS = 3;
 
-function renderTour() {
-  const total = OB_TOUR.length + 1; // +1 for the setup step
-  $('#ob-bar').style.width = `${(obStep / (total - 1)) * 100}%`;
-  $('#ob-skip').style.display = obStep === OB_TOUR.length ? 'none' : '';
-  const stepLabel = $('#ob-step-label');
-  if (stepLabel) {
-    stepLabel.textContent = obStep >= OB_TOUR.length
-      ? `${t('ob.setup')} · ${total}/${total}`
-      : `${obStep + 1} / ${total}`;
+/**
+ * Logical sections of the product tour — index ranges into OB_TOUR, so the 18
+ * features read as a story (start → what you track → who gets it → where it
+ * comes from → keeping it running → proving it) instead of a flat list.
+ * Keep the ranges in sync with OB_TOUR's order.
+ */
+const OB_TOUR_GROUPS = [
+  { label: 'ob.grpStart', from: 0, to: 2 },      // welcome · in action · dashboard
+  { label: 'ob.grpInventory', from: 3, to: 5 },  // hardware · network & server · catalog
+  { label: 'ob.grpPeople', from: 6, to: 9 },     // employees · handover · licenses · lines
+  { label: 'ob.grpSupply', from: 10, to: 11 },   // providers & contracts · consumables
+  { label: 'ob.grpOps', from: 12, to: 13 },      // maintenance · stock count
+  { label: 'ob.grpGov', from: 14, to: 17 },      // reports · audit · integrations · users
+];
+const obGroupOf = (i) => OB_TOUR_GROUPS.find((g) => i >= g.from && i <= g.to) || OB_TOUR_GROUPS[0];
+
+/** Validate the current setup step's fields; on failure show an inline error + focus. */
+function validateObStep(step) {
+  const err = $('#onboarding-error');
+  const f = $('#onboarding-form').elements;
+  const fail = (msg, el) => {
+    if (err) { err.textContent = msg; err.classList.remove('hidden'); }
+    if (el) { try { el.focus(); } catch (e) { /* ignore */ } }
+    return false;
+  };
+  if (err) err.classList.add('hidden');
+  if (step === 0) {
+    if (!f.companyName.value.trim()) return fail('Company name is required.', f.companyName);
+  } else if (step === 2) {
+    if (!f.adminUsername.value.trim()) return fail('Display name is required.', f.adminUsername);
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(f.adminEmail.value.trim())) return fail('A valid email address is required.', f.adminEmail);
+    if ((f.adminPassword.value || '').length < 8) return fail('Password must be at least 8 characters.', f.adminPassword);
+    if (f.setupToken && f.setupToken.required && !f.setupToken.value.trim() && !obSetupToken) {
+      return fail('Setup key is required — open from this host, or paste it from the server logs.', f.setupToken);
+    }
   }
-  const skipBtn = $('#ob-skip');
-  if (skipBtn) skipBtn.textContent = t('ob.skip');
+  return true;
+}
 
-  const setup = $('#ob-setup');
-  const tour = $('#ob-tour');
-  if (obStep >= OB_TOUR.length) {
-    tour.classList.add('hidden');
-    setup.classList.remove('hidden');
-    renderObTplCards();
-    return;
-  }
-  setup.classList.add('hidden');
-  tour.classList.remove('hidden');
+/** Highlight the left step rail: Product tour + the three setup steps. */
+function setObIndicator() {
+  const scr = $('#onboarding-screen'); if (!scr) return;
+  scr.querySelectorAll('#onb-steps li').forEach((li) => {
+    if (li.dataset.nav === 'tour') {
+      li.classList.toggle('on', obPhase === 'tour');
+      li.classList.toggle('done', obPhase === 'setup');
+    } else {
+      const i = Number(li.dataset.step);
+      li.classList.toggle('on', obPhase === 'setup' && i === obStep);
+      li.classList.toggle('done', obPhase === 'setup' && i < obStep);
+    }
+  });
+}
 
-  const s = obItem(OB_TOUR[obStep]);
-  const last = obStep === OB_TOUR.length - 1;
-  const visualFirst = s.preview === 'howto' || s.preview === 'welcome';
-  tour.innerHTML = `
-    <div class="ob-layout">
-      <aside class="ob-rail" aria-label="Features">
-        ${OB_TOUR.map((raw, i) => { const item = obItem(raw); return `
-          <button type="button" class="ob-rail-item ${i === obStep ? 'on' : ''} ${i < obStep ? 'done' : ''}" data-dot="${i}">
-            <span class="ms">${item.icon}</span>
-            <span class="ob-rail-label">${esc(item.title.split('(')[0].trim())}</span>
-          </button>`; }).join('')}
-        <button type="button" class="ob-rail-item setup" data-dot="${OB_TOUR.length}">
-          <span class="ms">rocket_launch</span>
-          <span class="ob-rail-label">${esc(t('ob.setup'))}</span>
-        </button>
-      </aside>
-      <div class="ob-slide ob-slide-rich ${visualFirst ? 'ob-slide-showcase' : ''}">
-        <span class="ob-slide-badge"><span class="ms ms-sm">${s.icon}</span> ${esc(s.title)}</span>
-        <div class="ob-slide-grid ${visualFirst ? 'ob-slide-grid-showcase' : ''}">
-          <div>
-            <h2 class="ob-slide-title">${esc(s.title)}</h2>
-            <p class="ob-slide-desc">${esc(s.desc)}</p>
-            <ul class="ob-bullets">
-              ${s.bullets.map((b) => `<li><span class="ms">check_circle</span> ${esc(b)}</li>`).join('')}
-            </ul>
-            ${s.tip ? `<div class="ob-tip-callout"><span class="ms">lightbulb</span> ${esc(s.tip)}</div>` : ''}
-          </div>
-          <div class="ob-preview-wrap">
-            ${obPreviewHtml(s.preview)}
-            ${s.preview !== 'howto' ? `<div class="ob-preview-caption">${esc(t('ob.preview'))}</div>` : ''}
-          </div>
+/** Product-tour slide — reuses OB_TOUR content + the feature preview visuals. */
+function renderObTourSlide() {
+  const host = $('#ob-tour');
+  const form = $('#onboarding-form');
+  if (!host || !form) return;
+  obTourIdx = Math.max(0, Math.min(OB_TOUR.length - 1, obTourIdx));
+  host.classList.remove('hidden');
+  form.classList.add('hidden');
+  const skip = $('#onb-skip'); if (skip) skip.classList.remove('hidden');
+  const s = obItem(OB_TOUR[obTourIdx]);
+  const grp = obGroupOf(obTourIdx);
+  host.innerHTML = `
+    <div class="ob-slide ob-slide-rich onb-anim">
+      <span class="ob-slide-badge"><span class="ms ms-sm">${s.icon}</span> ${esc(t(grp.label))} · ${obTourIdx - grp.from + 1}/${grp.to - grp.from + 1}</span>
+      <div class="ob-slide-grid">
+        <div>
+          <h2 class="ob-slide-title">${esc(s.title)}</h2>
+          <p class="ob-slide-desc">${esc(s.desc)}</p>
+          <ul class="ob-bullets">${s.bullets.map((b) => `<li><span class="ms">check_circle</span> ${esc(b)}</li>`).join('')}</ul>
+          ${s.tip ? `<div class="ob-tip-callout"><span class="ms">lightbulb</span> ${esc(s.tip)}</div>` : ''}
         </div>
-        <div class="ob-nav">
-          <button type="button" class="btn btn-outline" id="ob-back" ${obStep === 0 ? 'disabled' : ''}>
-            <span class="ms">arrow_back</span> ${esc(t('ob.back'))}</button>
-          <button type="button" class="btn btn-primary" id="ob-next">
-            ${last ? esc(t('ob.continueSetup')) : esc(t('ob.next'))} <span class="ms">arrow_forward</span></button>
-        </div>
+        <div class="ob-preview-wrap">${obPreviewHtml(s.preview)}${s.preview !== 'howto' ? `<div class="ob-preview-caption">${esc(t('ob.preview'))}</div>` : ''}</div>
       </div>
     </div>`;
+  mountObHowtoMedia(host);
+  const back = $('#ob-form-back'); if (back) back.style.visibility = obTourIdx === 0 ? 'hidden' : '';
+  const next = $('#onb-next'); if (next) next.classList.remove('hidden');
+  const done = $('#onboarding-btn'); if (done) done.classList.add('hidden');
+  const bar = $('#ob-bar'); if (bar) bar.style.width = `${(obTourIdx / Math.max(1, OB_TOUR.length - 1)) * 45}%`;
+  const lbl = $('#ob-step-label'); if (lbl) lbl.textContent = `${t('ob.tourNav')} ${obTourIdx + 1}/${OB_TOUR.length}`;
 
-  $('#ob-back', tour).addEventListener('click', () => { if (obStep > 0) { obStep--; renderTour(); } });
-  $('#ob-next', tour).addEventListener('click', () => { obStep++; renderTour(); });
-  tour.querySelectorAll('[data-dot]').forEach((d) =>
-    d.addEventListener('click', () => { obStep = Number(d.dataset.dot); renderTour(); }));
-  mountObHowtoMedia(tour);
+  // Left rail: every feature in the tour — shows progress and jumps straight to one.
+  const rail = $('#onb-tour-rail');
+  if (rail) {
+    rail.classList.remove('hidden');
+    rail.innerHTML = OB_TOUR_GROUPS.map((g) => `
+      <div class="onb-rail-group">${esc(t(g.label))}</div>
+      ${OB_TOUR.slice(g.from, g.to + 1).map((raw, k) => {
+        const i = g.from + k;
+        const it = obItem(raw);
+        return `<button type="button" class="onb-rail-item ${i === obTourIdx ? 'on' : ''}${i < obTourIdx ? ' done' : ''}" data-tour="${i}">
+          <span class="ms">${it.icon}</span><span class="onb-rail-text">${esc(it.title)}</span></button>`;
+      }).join('')}`).join('');
+    rail.querySelectorAll('[data-tour]').forEach((b) => {
+      b.addEventListener('click', () => { obTourIdx = Number(b.dataset.tour); renderTour(); });
+    });
+    const active = rail.querySelector('.onb-rail-item.on');
+    if (active && active.scrollIntoView) active.scrollIntoView({ block: 'nearest' });
+  }
+  const asideBody = $('.onb-aside-body'); if (asideBody) asideBody.classList.add('hidden');
+  setObIndicator();
+}
+
+/** Setup step — company / handover design / owner account. */
+function renderObSetupStep() {
+  const host = $('#ob-tour');
+  const form = $('#onboarding-form');
+  if (!form) return;
+  if (host) host.classList.add('hidden');
+  form.classList.remove('hidden');
+  const skip = $('#onb-skip'); if (skip) skip.classList.add('hidden');
+  obStep = Math.max(0, Math.min(OB_SETUP_STEPS - 1, obStep));
+  form.querySelectorAll('.onb-step').forEach((s) => {
+    const on = Number(s.dataset.step) === obStep;
+    s.classList.toggle('hidden', !on);
+    if (on) { s.classList.remove('onb-anim'); void s.offsetWidth; s.classList.add('onb-anim'); }
+  });
+  const bar = $('#ob-bar'); if (bar) bar.style.width = `${45 + (obStep / (OB_SETUP_STEPS - 1)) * 55}%`;
+  const lbl = $('#ob-step-label'); if (lbl) lbl.textContent = `${obStep + 1} / ${OB_SETUP_STEPS}`;
+  const back = $('#ob-form-back'); if (back) back.style.visibility = '';
+  const last = obStep === OB_SETUP_STEPS - 1;
+  const next = $('#onb-next'); if (next) next.classList.toggle('hidden', last);
+  const done = $('#onboarding-btn'); if (done) done.classList.toggle('hidden', !last);
+  if (obStep === 1) renderObTplCards();
+  const rail = $('#onb-tour-rail'); if (rail) rail.classList.add('hidden');
+  const asideBody = $('.onb-aside-body'); if (asideBody) asideBody.classList.remove('hidden');
+  setObIndicator();
+  const focusable = form.querySelector(`.onb-step[data-step="${obStep}"] input:not([type=file]), .onb-step[data-step="${obStep}"] select`);
+  if (focusable) setTimeout(() => { try { focusable.focus(); } catch (e) { /* ignore */ } }, 90);
+}
+
+/** Routes to the active onboarding phase (product tour, then setup). */
+function renderTour() {
+  const scr = $('#onboarding-screen');
+  if (!scr) return;
+  if (obPhase === 'tour') renderObTourSlide();
+  else renderObSetupStep();
 }
 
 function bindOnboarding() {
@@ -1320,11 +1394,49 @@ function bindOnboarding() {
     .map(([code, name]) => `<option value="${code}" ${i18nLang() === code ? 'selected' : ''}>${name}</option>`).join('');
   langSel.addEventListener('change', () => setLang(langSel.value));
 
-  // Feature tour navigation
+  // Onboarding navigation — product tour first, then the setup steps
+  obPhase = 'tour';
+  obTourIdx = 0;
   obStep = 0;
+  renderObTplCards();
   renderTour();
-  $('#ob-skip').addEventListener('click', () => { obStep = OB_TOUR.length; renderTour(); });
-  $('#ob-form-back').addEventListener('click', () => { obStep = OB_TOUR.length - 1; renderTour(); });
+
+  const obGoSetup = () => { obPhase = 'setup'; obStep = 0; renderTour(); };
+  const obNext = () => {
+    if (obPhase === 'tour') {
+      if (obTourIdx >= OB_TOUR.length - 1) obGoSetup();
+      else { obTourIdx++; renderTour(); }
+    } else if (validateObStep(obStep)) { obStep++; renderTour(); }
+  };
+  const obBack = () => {
+    if (obPhase === 'tour') { if (obTourIdx > 0) { obTourIdx--; renderTour(); } }
+    else if (obStep > 0) { obStep--; renderTour(); }
+    else { obPhase = 'tour'; obTourIdx = OB_TOUR.length - 1; renderTour(); } // company -> back into the tour
+  };
+
+  const obNextBtn = $('#onb-next');
+  if (obNextBtn) obNextBtn.addEventListener('click', obNext);
+  const obBackBtn = $('#ob-form-back');
+  if (obBackBtn) obBackBtn.addEventListener('click', obBack);
+  const obSkipBtn = $('#onb-skip');
+  if (obSkipBtn) obSkipBtn.addEventListener('click', obGoSetup);
+
+  const obStepsList = $('#onb-steps');
+  if (obStepsList) obStepsList.querySelectorAll('li').forEach((li) => {
+    li.addEventListener('click', () => {
+      if (li.dataset.nav === 'tour') { obPhase = 'tour'; renderTour(); return; }
+      if (obPhase !== 'setup') return;
+      const i = Number(li.dataset.step);
+      if (i <= obStep) { obStep = i; renderTour(); }
+    });
+  });
+
+  // Arrow keys page through the tour (ignored while typing in a field)
+  $('#onboarding-screen').addEventListener('keydown', (e) => {
+    if (obPhase !== 'tour' || isEditableKeyTarget(e.target)) return;
+    if (e.key === 'ArrowRight') { e.preventDefault(); obNext(); }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); obBack(); }
+  });
 
   const setupKeyHelpBtn = $('#ob-setup-key-help');
   const setupKeyHelpPanel = $('#ob-setup-key-help-panel');
@@ -1361,6 +1473,9 @@ function bindOnboarding() {
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
+    obPhase = 'setup';
+    if (!validateObStep(0)) { obStep = 0; renderTour(); return; }
+    if (!validateObStep(2)) { obStep = 2; renderTour(); return; }
     const btn = $('#onboarding-btn');
     const errBox = $('#onboarding-error');
     errBox.classList.add('hidden');
@@ -2635,6 +2750,12 @@ async function init() {
 
   // First run → onboarding wizard.
   if (AppConfig.onboarded === false) {
+    showOnboarding();
+    return;
+  }
+
+  // Design/dev preview without resetting the instance.
+  if (new URLSearchParams(location.search).get('previewOnboarding') === '1') {
     showOnboarding();
     return;
   }

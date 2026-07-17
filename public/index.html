@@ -10,91 +10,122 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/app.css?v=1.2.15">
+  <link rel="stylesheet" href="/css/app.css?v=1.2.18">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='16' fill='%234f46e5'/><text x='50' y='68' font-size='52' text-anchor='middle' fill='white' font-family='sans-serif' font-weight='bold'>A</text></svg>">
 </head>
 <body>
 
-  <!-- ============ ONBOARDING (first run) — guided feature tour ============ -->
+  <!-- ============ ONBOARDING (first run) — setup wizard ============ -->
   <div id="onboarding-screen" class="onboarding-screen hidden">
-    <div class="ob-panel ob-panel-wide">
-      <div class="ob-progress">
-        <div class="ob-progress-bar"><i id="ob-bar"></i></div>
-        <span class="ob-step-label" id="ob-step-label"></span>
-        <select id="ob-lang" class="ob-lang" title="Language / Dil"></select>
-        <button type="button" id="ob-skip" class="ob-skip">Skip to setup →</button>
-      </div>
-      <div id="ob-tour"></div>
-      <div id="ob-setup" class="hidden">
-        <div class="ob-setup-head">
-          <div class="ob-slide-icon"><span class="ms">rocket_launch</span></div>
-          <div>
-            <h2 class="ob-slide-title" data-i18n="ob.createTitle">Create your workspace</h2>
-            <p class="ob-slide-desc" style="margin:0" data-i18n="ob.createDesc">Company identity, zimmet design, and the Owner account.</p>
-          </div>
+    <div class="onb-shell">
+      <!-- LEFT: brand showcase -->
+      <aside class="onb-aside">
+        <div class="onb-aside-glow"></div>
+        <div class="onb-brand">
+          <span class="onb-brand-mark"><span class="ms">inventory_2</span></span>
+          <div><strong>ITACM</strong><small>IT Asset Control Pro</small></div>
         </div>
-        <p class="ob-slide-desc" style="font-size:12.5px;margin-top:12px"><span class="ms ms-sm" style="vertical-align:-2px">upload_file</span>
-          <span data-i18n="ob.excelHint">Coming from Excel? After sign-in: Hardware → Import Excel/CSV migrates devices, employees and zimmet.</span></p>
-        <form id="onboarding-form" class="ob-form">
-          <h3 class="ob-section" data-i18n="ob.secCompany">Company</h3>
-          <label><span data-i18n="ob.companyNameLabel">Company name</span> *
-            <input type="text" name="companyName" required maxlength="80" placeholder="Acme Teknoloji A.Ş.">
-          </label>
-          <label><span data-i18n="ob.companyLogoLabel">Company logo</span> <span class="ob-hint" data-i18n="ob.companyLogoHint">(optional, PNG/JPG/SVG, max ~300KB)</span>
-            <input type="file" name="logoFile" accept="image/*">
-          </label>
-          <div id="ob-logo-preview" class="ob-logo-preview hidden"></div>
+        <nav class="onb-tour-rail hidden" id="onb-tour-rail" aria-label="Product tour"></nav>
+        <div class="onb-aside-body">
+          <h2 class="onb-aside-title" data-i18n="ob.createTitle">Create your workspace</h2>
+          <ul class="onb-highlights">
+            <li><span class="ms">check_circle</span> <span data-i18n="ob.hlA">Hardware, network, licenses and lines — one system</span></li>
+            <li><span class="ms">check_circle</span> <span data-i18n="ob.hlB">Atomic handovers with printable PDF receipts</span></li>
+            <li><span class="ms">check_circle</span> <span data-i18n="ob.hlC">Self-hosted — your data stays yours</span></li>
+          </ul>
+        </div>
+        <ol class="onb-steps" id="onb-steps">
+          <li data-nav="tour"><span class="onb-dot"><span class="ms">auto_awesome</span></span> <span data-i18n="ob.tourNav">Product tour</span></li>
+          <li data-nav="setup" data-step="0"><span class="onb-dot"><span class="ms">apartment</span></span> <span data-i18n="ob.secCompany">Company</span></li>
+          <li data-nav="setup" data-step="1"><span class="onb-dot"><span class="ms">description</span></span> <span data-i18n="ob.secDesign">Zimmet form design</span></li>
+          <li data-nav="setup" data-step="2"><span class="onb-dot"><span class="ms">shield_person</span></span> <span data-i18n="ob.secOwner">Owner account</span></li>
+        </ol>
+      </aside>
 
-          <h3 class="ob-section" data-i18n="ob.secDesign">Zimmet form design</h3>
-          <p class="ob-hint" style="margin:0 0 10px" data-i18n="ob.designHint">Visual look of printed handover forms — change anytime in Settings.</p>
-          <div class="ob-tpl-cards" id="ob-tpl-cards" role="radiogroup" aria-label="Default zimmet design"></div>
+      <!-- RIGHT: flow -->
+      <main class="onb-main">
+        <div class="onb-topbar">
+          <div class="onb-progress"><i id="ob-bar"></i></div>
+          <span class="onb-steplabel" id="ob-step-label"></span>
+          <button type="button" id="onb-skip" class="onb-skip hidden"><span data-i18n="ob.skip">Skip tour</span> →</button>
+          <select id="ob-lang" class="onb-lang" title="Language / Dil"></select>
+        </div>
 
-          <h3 class="ob-section"><span data-i18n="ob.secOwner">Owner account</span> <span class="ob-hint" data-i18n="ob.ownerHint">(highest privilege)</span></h3>
-          <label><span data-i18n="ob.displayName">Display name</span> *
-            <input type="text" name="adminUsername" required placeholder="Ayşe Yılmaz">
-          </label>
-          <label><span data-i18n="login.email">Email</span> *
-            <input type="email" name="adminEmail" required placeholder="owner@company.com" autocomplete="username">
-          </label>
-          <label><span data-i18n="login.password">Password</span> * <span class="ob-hint" data-i18n="ob.passwordHint">(min 8 characters)</span>
-            <input type="password" name="adminPassword" required minlength="8" autocomplete="new-password">
-          </label>
-          <div id="ob-setup-key-wrap" class="hidden">
-            <label>
-              <span class="ob-label-row">
-                <span><span data-i18n="ob.setupKey">Setup key</span> *</span>
-                <button type="button" class="ob-help-btn" id="ob-setup-key-help"
-                  aria-expanded="false" aria-controls="ob-setup-key-help-panel"
-                  data-i18n-title="ob.setupKeyHelpAria" title="What is the setup key?">
-                  <span class="ob-help-q" aria-hidden="true">?</span>
-                </button>
-              </span>
-              <span class="ob-hint" data-i18n="ob.setupKeyHint">(from server logs or SETUP_TOKEN env)</span>
-              <div id="ob-setup-key-help-panel" class="ob-help-panel hidden" role="region" aria-labelledby="ob-setup-key-help">
-                <p data-i18n="ob.setupKeyHelpIntro">One-time secret so only you can finish first-time setup. It is not your login password.</p>
-                <ul>
-                  <li data-i18n-html="ob.setupKeyHelpLogs">Docker: run <code>docker compose logs api</code> and copy the line after “Setup key”.</li>
-                  <li data-i18n-html="ob.setupKeyHelpEnv">Or set <code>SETUP_TOKEN=your-key</code> in <code>.env</code> before the first start, then restart the API.</li>
-                  <li data-i18n-html="ob.setupKeyHelpLocalhost">Opening the app on the server itself (<code>localhost</code>) fills this field automatically — remote browsers must paste the key.</li>
-                </ul>
-              </div>
-              <input type="text" name="setupToken" autocomplete="off" spellcheck="false"
-                data-i18n-ph="ob.setupKeyPlaceholder" placeholder="Paste the one-time setup key" maxlength="128">
+        <div id="ob-tour" class="hidden"></div>
+
+        <form id="onboarding-form" class="onb-form" autocomplete="on" novalidate>
+          <!-- STEP 0 · Company -->
+          <section class="onb-step" data-step="0">
+            <span class="onb-badge"><span class="ms ms-sm">rocket_launch</span> <span data-i18n="ob.setup">Setup</span></span>
+            <h1 class="onb-h1" data-i18n="ob.secCompany">Company</h1>
+            <p class="onb-sub" data-i18n="ob.createDesc">Company identity, zimmet design, and the Owner account.</p>
+            <label class="onb-field"><span data-i18n="ob.companyNameLabel">Company name</span> *
+              <input type="text" name="companyName" required maxlength="80" placeholder="Acme Teknoloji A.Ş.">
             </label>
-          </div>
-          <label class="ob-check">
-            <input type="checkbox" name="enableTips" checked>
-            <span data-i18n="ob.tips">Show UI tips after I sign in (you can turn this off anytime from Help)</span>
-          </label>
+            <label class="onb-field"><span data-i18n="ob.companyLogoLabel">Company logo</span> <span class="onb-hint" data-i18n="ob.companyLogoHint">(optional, PNG/JPG/SVG, max ~300KB)</span>
+              <input type="file" name="logoFile" accept="image/*">
+            </label>
+            <div id="ob-logo-preview" class="ob-logo-preview hidden"></div>
+            <p class="onb-excel"><span class="ms ms-sm">upload_file</span> <span data-i18n="ob.excelHint">Coming from Excel? After sign-in: Hardware → Import Excel/CSV migrates devices, employees and zimmet.</span></p>
+          </section>
+
+          <!-- STEP 1 · Handover design -->
+          <section class="onb-step hidden" data-step="1">
+            <h1 class="onb-h1" data-i18n="ob.secDesign">Zimmet form design</h1>
+            <p class="onb-hint" style="margin:-2px 0 14px" data-i18n="ob.designHint">Visual look of printed handover forms — change anytime in Settings.</p>
+            <div class="ob-tpl-cards" id="ob-tpl-cards" role="radiogroup" aria-label="Default zimmet design"></div>
+          </section>
+
+          <!-- STEP 2 · Owner account -->
+          <section class="onb-step hidden" data-step="2">
+            <h1 class="onb-h1"><span data-i18n="ob.secOwner">Owner account</span> <span class="onb-hint" data-i18n="ob.ownerHint">(highest privilege)</span></h1>
+            <label class="onb-field"><span data-i18n="ob.displayName">Display name</span> *
+              <input type="text" name="adminUsername" required placeholder="Ayşe Yılmaz">
+            </label>
+            <label class="onb-field"><span data-i18n="login.email">Email</span> *
+              <input type="email" name="adminEmail" required placeholder="owner@company.com" autocomplete="username">
+            </label>
+            <label class="onb-field"><span data-i18n="login.password">Password</span> * <span class="onb-hint" data-i18n="ob.passwordHint">(min 8 characters)</span>
+              <input type="password" name="adminPassword" required minlength="8" autocomplete="new-password">
+            </label>
+            <div id="ob-setup-key-wrap" class="hidden">
+              <label class="onb-field">
+                <span class="ob-label-row">
+                  <span><span data-i18n="ob.setupKey">Setup key</span> *</span>
+                  <button type="button" class="ob-help-btn" id="ob-setup-key-help"
+                    aria-expanded="false" aria-controls="ob-setup-key-help-panel"
+                    data-i18n-title="ob.setupKeyHelpAria" title="What is the setup key?">
+                    <span class="ob-help-q" aria-hidden="true">?</span>
+                  </button>
+                </span>
+                <span class="onb-hint" data-i18n="ob.setupKeyHint">(from server logs or SETUP_TOKEN env)</span>
+                <div id="ob-setup-key-help-panel" class="ob-help-panel hidden" role="region" aria-labelledby="ob-setup-key-help">
+                  <p data-i18n="ob.setupKeyHelpIntro">One-time secret so only you can finish first-time setup. It is not your login password.</p>
+                  <ul>
+                    <li data-i18n-html="ob.setupKeyHelpLogs">Docker: run <code>docker compose logs api</code> and copy the line after “Setup key”.</li>
+                    <li data-i18n-html="ob.setupKeyHelpEnv">Or set <code>SETUP_TOKEN=your-key</code> in <code>.env</code> before the first start, then restart the API.</li>
+                    <li data-i18n-html="ob.setupKeyHelpLocalhost">Opening the app on the server itself (<code>localhost</code>) fills this field automatically — remote browsers must paste the key.</li>
+                  </ul>
+                </div>
+                <input type="text" name="setupToken" autocomplete="off" spellcheck="false"
+                  data-i18n-ph="ob.setupKeyPlaceholder" placeholder="Paste the one-time setup key" maxlength="128">
+              </label>
+            </div>
+            <label class="onb-check">
+              <input type="checkbox" name="enableTips" checked>
+              <span data-i18n="ob.tips">Show UI tips after I sign in (you can turn this off anytime from Help)</span>
+            </label>
+          </section>
+
           <div id="onboarding-error" class="login-error hidden"></div>
-          <div class="ob-nav">
+
+          <div class="onb-nav">
             <button type="button" class="btn btn-outline" id="ob-form-back"><span class="ms">arrow_back</span> <span data-i18n="ob.back">Back</span></button>
-            <button type="submit" class="btn btn-primary" id="onboarding-btn">
-              <span class="ms">rocket_launch</span> <span data-i18n="ob.completeSetup">Complete Setup</span>
-            </button>
+            <button type="button" class="btn btn-primary" id="onb-next"><span data-i18n="ob.next">Next</span> <span class="ms">arrow_forward</span></button>
+            <button type="submit" class="btn btn-primary hidden" id="onboarding-btn"><span class="ms">rocket_launch</span> <span data-i18n="ob.completeSetup">Complete Setup</span></button>
           </div>
         </form>
-      </div>
+      </main>
     </div>
   </div>
 
@@ -207,7 +238,7 @@
   <script src="/js/views/network.js?v=1.0.11"></script>
   <script src="/js/views/employees.js?v=1.0.20"></script>
   <script src="/js/views/onboarding.js?v=1.0.8"></script>
-  <script src="/js/views/handover.js?v=1.0.7"></script>
+  <script src="/js/views/handover.js?v=1.0.9"></script>
   <script src="/js/views/maintenance.js?v=1.0.7"></script>
   <script src="/js/views/licenses.js?v=1.0.13"></script>
   <script src="/js/views/consumables.js?v=1.0.9"></script>
@@ -218,7 +249,7 @@
   <script src="/js/views/providers.js?v=1.0.19"></script>
   <script src="/js/views/audit.js?v=1.0.8"></script>
   <script src="/js/views/integrations.js?v=1.0.5"></script>
-  <script src="/js/app.js?v=1.2.2"></script>
+  <script src="/js/app.js?v=1.2.4"></script>
   <script src="/js/mobile-shell.js?v=1.0.9"></script>
 </body>
 </html>
