@@ -310,7 +310,10 @@ CREATE TABLE IF NOT EXISTS user_admin_logs (
   id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   target_email TEXT NOT NULL,
   target_name  TEXT,
-  action       TEXT NOT NULL CHECK (action IN ('disabled', 'enabled', 'deleted', 'role_changed')),
+  action       TEXT NOT NULL CHECK (action IN (
+    'disabled', 'enabled', 'deleted', 'role_changed',
+    'ownership_granted', 'ownership_transferred'
+  )),
   detail       TEXT,
   by_name      TEXT NOT NULL,
   "timestamp"  TIMESTAMPTZ NOT NULL DEFAULT now()
