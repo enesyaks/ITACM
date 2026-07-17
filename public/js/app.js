@@ -1298,8 +1298,14 @@ function validateObStep(step) {
     if (!f.adminUsername.value.trim()) return fail('Display name is required.', f.adminUsername);
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(f.adminEmail.value.trim())) return fail('A valid email address is required.', f.adminEmail);
     if ((f.adminPassword.value || '').length < 8) return fail('Password must be at least 8 characters.', f.adminPassword);
-    if (f.setupToken && f.setupToken.required && !f.setupToken.value.trim() && !obSetupToken) {
-      return fail('Setup key is required — open from this host, or paste it from the server logs.', f.setupToken);
+    if (!obSetupToken && !(f.setupToken && f.setupToken.value.trim())) {
+      const wrap = $('#ob-setup-key-wrap');
+      if (wrap) wrap.classList.remove('hidden');
+      if (f.setupToken) f.setupToken.required = true;
+      return fail(
+        'Setup key is required — open from this host, or paste it from the server logs.',
+        f.setupToken
+      );
     }
   }
   return true;
@@ -1469,22 +1475,34 @@ function bindOnboarding() {
   // Fetch setup key only via /api/setup/status (never from /api/config).
   // Loopback gets the token automatically; remote clients paste from logs / SETUP_TOKEN.
   (async () => {
+    const wrap = $('#ob-setup-key-wrap');
+    const input = form.elements.setupToken;
+    const showSetupKeyField = () => {
+      obSetupToken = null;
+      if (wrap) wrap.classList.remove('hidden');
+      if (input) input.required = true;
+    };
+    const hideSetupKeyField = (token) => {
+      obSetupToken = token;
+      if (wrap) wrap.classList.add('hidden');
+      if (input) { input.required = false; input.value = ''; }
+    };
     try {
       const res = await fetch('/api/setup/status');
       const json = await res.json();
       const data = (json && json.data) || {};
-      const wrap = $('#ob-setup-key-wrap');
-      const input = form.elements.setupToken;
       if (data.setupToken) {
-        obSetupToken = data.setupToken;
-        if (wrap) wrap.classList.add('hidden');
-        if (input) { input.required = false; input.value = ''; }
-      } else if (data.setupTokenRequired) {
-        obSetupToken = null;
-        if (wrap) wrap.classList.remove('hidden');
-        if (input) input.required = true;
+        // Trusted (loopback) client — auto-fill in memory, hide the paste field.
+        hideSetupKeyField(data.setupToken);
+      } else {
+        // Remote host, preview on an already-onboarded instance, or any case
+        // without an auto token: always show the paste field so setup is possible.
+        showSetupKeyField();
       }
-    } catch { /* offline — form submit will surface the error */ }
+    } catch {
+      // Offline / status failed — still let the user paste a key from logs.
+      showSetupKeyField();
+    }
   })();
 
   // Language picker: applies immediately to this browser and is saved as the
@@ -1584,6 +1602,12 @@ function bindOnboarding() {
       const typedKey = (form.elements.setupToken && form.elements.setupToken.value || '').trim();
       const setupToken = typedKey || obSetupToken || AppConfig.setupToken || '';
       if (!setupToken) {
+        const wrap = $('#ob-setup-key-wrap');
+        if (wrap) wrap.classList.remove('hidden');
+        if (form.elements.setupToken) {
+          form.elements.setupToken.required = true;
+          try { form.elements.setupToken.focus(); } catch { /* ignore */ }
+        }
         throw new Error('Setup key required — open from this host, or paste the key from server logs / SETUP_TOKEN');
       }
       const body = {

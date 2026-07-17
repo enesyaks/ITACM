@@ -36,7 +36,8 @@ Views.users = async function (el) {
     ${pageHead(
       'IT Users',
       'Manage operators, roles and IAM permission groups.',
-      `<button class="btn btn-outline" id="iam-new-group"><span class="ms">shield_person</span> ${esc('New permission group')}</button>
+      `${Auth.profile?.role === 'Owner' ? `<button class="btn btn-outline" id="owner-transfer"><span class="ms">swap_horiz</span> ${esc('Transfer ownership')}</button>` : ''}
+       <button class="btn btn-outline" id="iam-new-group"><span class="ms">shield_person</span> ${esc('New permission group')}</button>
        <button class="btn btn-primary" id="user-new"><span class="ms">person_add</span> ${esc('New IT User')}</button>`
     )}
 
@@ -941,6 +942,48 @@ Views.users = async function (el) {
       Views.users(el);
     },
   }));
+
+  $('#owner-transfer', el)?.addEventListener('click', async () => {
+    let pre;
+    try { pre = await api('/auth/owner/transfer/preflight'); } catch (err) { toast(err.message, 'error'); return; }
+    if (!pre.mfaEnrolled) {
+      confirmModal(
+        'Ownership transfer needs your two-factor authentication. Set up MFA on your Owner account first, then try again.',
+        () => {},
+      );
+      return;
+    }
+    const note = pre.smtpConfigured
+      ? 'The new account becomes Owner and an invite with a temporary password is emailed to it. You drop to Admin and must sign in again.'
+      : 'The new account becomes Owner with the temporary password you set — share it with them. You drop to Admin and must sign in again.';
+    const fields = [
+      { type: 'html', full: true, html: `<p class="onb-hint" style="margin:0">${esc(note)}</p>` },
+      { name: 'username', label: 'New owner display name *', required: true },
+      { name: 'email', label: 'New owner email *', type: 'email', required: true },
+    ];
+    if (!pre.smtpConfigured) {
+      fields.push({ name: 'password', label: 'Temporary password * (min 8)', type: 'password', required: true });
+    }
+    fields.push({ name: 'code', label: 'Your MFA code (6 digits) *', required: true });
+    formModal({
+      title: 'Transfer ownership',
+      fields,
+      submitLabel: 'Transfer ownership',
+      async onSubmit(d) {
+        const res = await api('/auth/owner/transfer', { method: 'POST', body: d });
+        let msg = `Ownership transferred to ${res.newOwner.email}. You are now Admin — sign in again.`;
+        if (res.smtpUsed && res.emailStatus === 'failed') {
+          msg = `Owner created (${res.newOwner.email}) but the invite email failed. Temporary password: ${res.tempPassword} — share it securely, then sign in again.`;
+        }
+        toast(msg, 'success');
+        // Sessions were revoked server-side; force a fresh login as the demoted (Admin) account.
+        setTimeout(() => {
+          try { localStorage.removeItem('itacm_token'); localStorage.removeItem('itacm_profile'); } catch (e) { /* ignore */ }
+          location.reload();
+        }, 2200);
+      },
+    });
+  });
 
   el.querySelectorAll('select[data-role]').forEach((s) => s.addEventListener('change', async () => {
     try {

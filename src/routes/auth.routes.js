@@ -1,7 +1,8 @@
 const router = require('express').Router();
 const { authenticate, requireRole, requirePermission } = require('../middleware/auth');
 const { asyncHandler } = require('../utils/asyncHandler');
-const { authProvider, permissionService } = require('../services');
+const crypto = require('crypto');
+const { authProvider, permissionService, notificationService } = require('../services');
 const { HttpError } = require('../utils/httpError');
 const { rateLimitIp } = require('../utils/setupAccess');
 
@@ -142,6 +143,52 @@ router.delete('/users/:uid', authenticate, requirePermission('user_management', 
 /** GET /api/auth/users/:uid/logins — login logs. İzin: user_management:read */
 router.get('/users/:uid/logins', authenticate, requirePermission('user_management', 'read'), asyncHandler(async (req, res) => {
   res.json({ success: true, data: await authProvider.getLoginLogs(req.params.uid, req.query.limit) });
+}));
+
+/** GET /api/auth/owner/transfer/preflight — Owner-only; tells the UI whether SMTP will
+ *  email the invite and whether the caller has an MFA code to confirm with. */
+router.get('/owner/transfer/preflight', authenticate, asyncHandler(async (req, res) => {
+  if (!req.user || req.user.role !== 'Owner') throw HttpError.forbidden('Only an Owner can transfer ownership');
+  const { smtp } = await notificationService.getMailConfig();
+  const pre = await authProvider.ownerTransferPreflight(req.user);
+  res.json({ success: true, data: { smtpConfigured: !!(smtp && smtp.host), mfaEnrolled: pre.mfaEnrolled } });
+}));
+
+/** POST /api/auth/owner/transfer — hand the Owner role to a new account and step the
+ *  caller down to Admin, confirmed by the caller's TOTP. Owner-only; loginLimiter
+ *  throttles code guessing. Body: { email, username, code, password? }. */
+router.post('/owner/transfer', authenticate, loginLimiter, asyncHandler(async (req, res) => {
+  if (!req.user || req.user.role !== 'Owner') throw HttpError.forbidden('Only an Owner can transfer ownership');
+  const { email, username, code } = req.body || {};
+  const { smtp } = await notificationService.getMailConfig();
+  const smtpOn = !!(smtp && smtp.host);
+  // SMTP on: generate a strong temp password and email it, so the acting Owner never
+  // sees it. SMTP off: the acting Owner sets it inline and shares it out-of-band.
+  const password = smtpOn
+    ? crypto.randomBytes(12).toString('base64url')
+    : String((req.body || {}).password || '');
+  const { newOwner } = await authProvider.transferOwnership({ email, username, password, code }, req.user);
+
+  let emailStatus = 'skipped';
+  let tempPassword;
+  if (smtpOn) {
+    try {
+      await notificationService.sendMail({
+        to: newOwner.email,
+        subject: 'You are now the owner of this ITACM instance',
+        text: `Hello ${newOwner.username},\n\n`
+          + `You have been made the Owner of this IT Asset Control instance.\n\n`
+          + `Sign in with:\n  Email: ${newOwner.email}\n  Temporary password: ${password}\n\n`
+          + `Change this password right after signing in, and set up two-factor authentication when prompted.\n`,
+      });
+      emailStatus = 'sent';
+    } catch (err) {
+      // The account already exists; surface the password so the Owner can share it manually.
+      emailStatus = 'failed';
+      tempPassword = password;
+    }
+  }
+  res.json({ success: true, data: { newOwner, smtpUsed: smtpOn, emailStatus, tempPassword } });
 }));
 
 /** ================================================================ */

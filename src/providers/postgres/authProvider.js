@@ -9,7 +9,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { authenticator } = require('otplib');
 const QRCode = require('qrcode');
-const { query } = require('./pool');
+const { query, withTransaction } = require('./pool');
 const config = require('../../config');
 const { HttpError } = require('../../utils/httpError');
 const { ROLES, buildPermissions } = require('../../utils/permissions');
@@ -560,6 +560,76 @@ async function deleteUser(uid, actor) {
   return { uid, deleted: true };
 }
 
+/**
+ * Owner hand-off. The last remaining Owner is otherwise un-deletable and can't be
+ * demoted (see the "last Owner" guards above), which permanently locks the founding
+ * account. This creates a new Owner and steps the caller down to Admin in one
+ * transaction — which is exactly what releases those guards — after verifying the
+ * caller's TOTP as a step-up.
+ *
+ * `password` is the new Owner's initial password: a server-generated temp when SMTP is
+ * on (the route emails it), or an Owner-supplied one when SMTP is off. Either way the
+ * new Owner is force-prompted to enrol MFA on first login (roleRequiresMfa).
+ */
+async function transferOwnership({ email, username, password, code }, actor) {
+  const { rows: mine } = await query(
+    'SELECT id, email, username, role, mfa_enabled, mfa_secret FROM users WHERE id = $1',
+    [actor.uid]
+  );
+  const me = mine[0];
+  if (!me || me.role !== 'Owner') throw HttpError.forbidden('Only an Owner can transfer ownership');
+  if (!me.mfa_enabled || !me.mfa_secret) {
+    throw HttpError.badRequest('Enable MFA on your account before transferring ownership');
+  }
+  const codeOk = code && authenticator.verify({ token: String(code).replace(/\s/g, ''), secret: me.mfa_secret });
+  if (!codeOk) throw HttpError.unauthorized('Invalid MFA code');
+
+  if (!username || !email) throw HttpError.badRequest('New owner name and email are required');
+  const normEmail = String(email).toLowerCase().trim();
+  if (normEmail === String(me.email).toLowerCase()) {
+    throw HttpError.badRequest('The new owner must be a different account');
+  }
+  assertPasswordPolicy(password);
+  const hash = await bcrypt.hash(password, 12);
+
+  const newOwner = await withTransaction(async (t) => {
+    let created;
+    try {
+      const { rows } = await t.query(
+        `INSERT INTO users (username, email, password_hash, role)
+         VALUES ($1, $2, $3, 'Owner') RETURNING id, username, email, role`,
+        [username, normEmail, hash]
+      );
+      created = rows[0];
+    } catch (err) {
+      if (err.code === '23505') throw HttpError.conflict(`A user with email ${normEmail} already exists`);
+      throw err;
+    }
+    // Demote the caller and force re-login: role is baked into the JWT, so revoking
+    // sessions applies the demotion immediately instead of at token expiry.
+    await t.query(
+      `UPDATE users SET role = 'Admin', sessions_revoked_at = now() WHERE id = $1`,
+      [me.id]
+    );
+    await t.query(
+      'INSERT INTO user_admin_logs (target_email, target_name, action, detail, by_name) VALUES ($1,$2,$3,$4,$5)',
+      [created.email, created.username, 'ownership_granted', `new Owner; ${me.email} stepped down to Admin`, me.username || me.email]
+    );
+    await t.query(
+      'INSERT INTO user_admin_logs (target_email, target_name, action, detail, by_name) VALUES ($1,$2,$3,$4,$5)',
+      [me.email, me.username, 'ownership_transferred', `to ${created.email}; Owner -> Admin`, me.username || me.email]
+    );
+    return { uid: created.id, username: created.username, email: created.email, role: created.role };
+  });
+  return { newOwner };
+}
+
+/** Preflight for the owner-transfer UI: whether the caller has MFA to confirm with. */
+async function ownerTransferPreflight(actor) {
+  const { rows } = await query('SELECT mfa_enabled FROM users WHERE id = $1', [actor.uid]);
+  return { mfaEnrolled: !!(rows[0] && rows[0].mfa_enabled) };
+}
+
 async function getAdminLogs(email, limit = 25) {
   const { rows } = await query(
     `SELECT target_email AS "targetEmail", target_name AS "targetName", action, detail,
@@ -575,4 +645,5 @@ module.exports = {
   changePassword, mfaSetupStart, mfaSetupConfirm, mfaDisable, mfaStatus,
   createItUser, upsertAdmin, upsertAdminTx, setUserRole, getVerifiedProfile, listUsers,
   setUserStatus, deleteUser, getAdminLogs,
+  transferOwnership, ownerTransferPreflight,
 };

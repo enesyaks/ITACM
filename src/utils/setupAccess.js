@@ -39,6 +39,18 @@ function rateLimitIp(req) {
   return peerIp(req) || 'unknown';
 }
 
+/**
+ * Host header is localhost / 127.0.0.1 (optional port).
+ * Used only when TRUST_PROXY is off — Docker Desktop publishes ports so the
+ * TCP peer is a bridge IP, not loopback, even when the user opens localhost.
+ */
+function isLocalhostHostHeader(req) {
+  const raw = String((req && req.headers && req.headers.host) || '').split(',')[0].trim().toLowerCase();
+  if (!raw) return false;
+  const host = raw.replace(/:\d+$/, '');
+  return host === 'localhost' || host === '127.0.0.1' || host === '[::1]';
+}
+
 /** Reveal setupToken in API responses only for trusted clients. */
 function canRevealSetupToken(req) {
   if (envFlag('SETUP_TOKEN_PUBLIC')) {
@@ -54,11 +66,16 @@ function canRevealSetupToken(req) {
     }
   }
   // Direct TCP peer only — never req.ip / X-Forwarded-For.
-  return isLoopbackIp(peerIp(req));
+  if (isLoopbackIp(peerIp(req))) return true;
+  // Docker Desktop / published ports: browser hits localhost but peer is the gateway.
+  // Only trust Host when we are NOT behind a reverse proxy (Host would be spoofable).
+  if (!envFlag('TRUST_PROXY') && isLocalhostHostHeader(req)) return true;
+  return false;
 }
 
 module.exports = {
   canRevealSetupToken,
+  isLocalhostHostHeader,
   isLoopbackIp,
   normalizeIp,
   peerIp,
