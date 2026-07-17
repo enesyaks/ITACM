@@ -393,13 +393,19 @@ Views.handover = async function (el) {
 /* Printable receipt — matches the print_preview_handover_form mockup */
 // Scale each receipt so it fits exactly one A4 page. #print-root is display:none
 // off-print, so it's laid out off-screen at A4 width to measure real height, then
-// shrunk via `zoom` when content would spill to a 2nd sheet.
+// shrunk. Chrome uses `zoom` (affects layout). Safari ignores zoom in print, so we
+// use transform:scale + margin collapse instead.
+function isSafariBrowser() {
+  const ua = navigator.userAgent || '';
+  return /safari/i.test(ua) && !/chrome|crios|chromium|android|edg/i.test(ua);
+}
+
 function fitReceiptsToOnePage() {
-  // A4 @96dpi ≈ 794×1123. CSS sets 210×297mm with ~7–8mm padding; measure the
-  // intrinsic content height without the forced A4 min-height so zoom is honest.
+  // A4 @96dpi ≈ 794×1123. Leave headroom: Safari print dialog often adds margins
+  // even when @page { margin: … } is set, which otherwise spills a 2nd blank sheet.
   const PRINT_W = 794;
-  // Usable height inside 297mm with ~7mm vertical padding (avoids a stray 2nd sheet).
-  const PRINT_H = 1050;
+  const safari = isSafariBrowser();
+  const PRINT_H = safari ? 960 : 1050;
   const pr = $('#print-root');
   const restore = pr.getAttribute('style') || '';
   pr.setAttribute('style', 'display:block;position:fixed;left:-10000px;top:0;width:' + PRINT_W + 'px');
@@ -411,17 +417,40 @@ function fitReceiptsToOnePage() {
     r.style.height = 'auto';
     r.style.minHeight = '0';
     r.style.maxHeight = 'none';
+    r.style.marginBottom = '';
+    r.style.marginRight = '';
     const h = r.scrollHeight;
     if (h > PRINT_H) {
-      // Chrome print honors `zoom` and keeps layout box correct for page breaks.
-      const z = Math.max(0.55, PRINT_H / h);
-      r.style.zoom = z.toFixed(4);
+      const z = Math.max(0.52, PRINT_H / h);
+      if (safari) {
+        // Safari print: zoom is a no-op; scale visually and collapse leftover layout box.
+        r.style.transformOrigin = 'top left';
+        r.style.transform = 'scale(' + z.toFixed(4) + ')';
+        r.style.width = PRINT_W + 'px';
+        r.style.height = h + 'px';
+        r.style.marginBottom = (-(h * (1 - z))).toFixed(1) + 'px';
+        r.style.marginRight = (-(PRINT_W * (1 - z))).toFixed(1) + 'px';
+      } else {
+        r.style.zoom = z.toFixed(4);
+      }
     }
-    r.style.height = '';
-    r.style.minHeight = '';
-    r.style.maxHeight = '';
+    if (!safari) {
+      r.style.height = '';
+      r.style.minHeight = '';
+      r.style.maxHeight = '';
+    }
   });
   pr.setAttribute('style', restore);
+}
+
+function beginSafariPrintMode() {
+  if (!isSafariBrowser()) return false;
+  document.documentElement.classList.add('safari-print');
+  return true;
+}
+
+function endSafariPrintMode() {
+  document.documentElement.classList.remove('safari-print');
 }
 
 /* One Zimmet Belgesi receipt as HTML — Stitch "Terminal Protocol" layout.
@@ -711,6 +740,11 @@ async function printHandover(h) {
           .map((p) => sanitizePrintHtml(p.innerHTML)).join('');
         $('#print-root').innerHTML = edited;
         fitReceiptsToOnePage();
+        const safariPrint = beginSafariPrintMode();
+        if (safariPrint) {
+          window.addEventListener('afterprint', endSafariPrintMode, { once: true });
+          setTimeout(endSafariPrintMode, 120000);
+        }
         window.print();
       });
       const dl = $('#do-download', overlay);
