@@ -76,7 +76,8 @@ function sizesAt(s, { empRows, assetCount, lineCount, showTerms, showReturn }) {
   const termsH = showTerms ? 70 * s : 0;
   const sigH = 72 * s;
   const sigGap = 10;
-  const returnFieldsH = showReturn ? 44 * s : 0;
+  // Title + body + 3 full-width write lines (date / condition / missing).
+  const returnFieldsH = showReturn ? 90 * s : 0;
   const retSigH = showReturn ? 66 * s : 0;
   const afterHeaderGap = gap + 2 * s;
 
@@ -405,19 +406,24 @@ function buildHandoverPdf(stream, { handover, employee, settings, deliveredBy, l
     if (showReturn) {
       const fieldsH = Sz.returnFieldsH;
       doc.roundedRect(M, y, contentW, fieldsH, 4).lineWidth(0.6).strokeColor(C.border).stroke();
-      at(doc, 'b', 7, C.accent, L.returnSection.toUpperCase(), M + 8, y + 6 * Sz.s, { width: contentW - 16 });
+      at(doc, 'b', 7, C.accent, L.returnSection.toUpperCase(), M + 8, y + 5 * Sz.s, { width: contentW - 16 });
       doc.font('r').fontSize(6.5).fillColor(C.body)
-        .text(L.returnBody, M + 8, y + 17 * Sz.s, {
+        .text(L.returnBody, M + 8, y + 15 * Sz.s, {
           width: contentW - 16,
-          height: 12 * Sz.s,
+          height: 11 * Sz.s,
           ellipsis: true,
-          lineGap: 0.5,
+          lineGap: 0.4,
         });
-      const third = (contentW - 24) / 3;
-      [L.returnDate, L.returnCondition, L.missingItems].forEach((lab, i) => {
-        const fx = M + 8 + i * (third + 4);
-        at(doc, 'r', 6, C.muted, lab.toUpperCase(), fx, y + 30 * Sz.s, { width: third });
-        doc.moveTo(fx, y + 40 * Sz.s).lineTo(fx + third - 8, y + 40 * Sz.s)
+      // One full-width write line each — condition & missing need room to handwrite.
+      const fieldLabels = [L.returnDate, L.returnCondition, L.missingItems];
+      const fieldTop = y + 28 * Sz.s;
+      const fieldStride = 18 * Sz.s;
+      const lineInset = M + 8;
+      const lineW = contentW - 16;
+      fieldLabels.forEach((lab, i) => {
+        const fy = fieldTop + i * fieldStride;
+        at(doc, 'r', 6, C.muted, lab.toUpperCase(), lineInset, fy, { width: lineW });
+        doc.moveTo(lineInset, fy + 11 * Sz.s).lineTo(lineInset + lineW, fy + 11 * Sz.s)
           .dash(1.5, { space: 1.5 }).strokeColor(C.border).stroke().undash();
       });
       y += fieldsH + gap;

@@ -616,7 +616,7 @@ function handoverReceiptHTML(ctx, tpl) {
         ${tpl.showReturnSection ? `<section class="r-card r-return">
           <div class="r-card-h">${esc(t('handover.returnSection'))}</div>
           <p class="r-terms">${esc(t('handover.returnBody'))}</p>
-          <div class="r-info r-info-3">
+          <div class="r-return-fields">
             <div class="f"><small>${esc(t('handover.returnDate'))}</small><div class="r-write-line">&nbsp;</div></div>
             <div class="f"><small>${esc(t('handover.returnCondition'))}</small><div class="r-write-line">&nbsp;</div></div>
             <div class="f"><small>${esc(t('handover.missingItems'))}</small><div class="r-write-line">&nbsp;</div></div>

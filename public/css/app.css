@@ -1512,6 +1512,17 @@ textarea { resize: vertical; min-height: 60px; }
 }
 .receipt-v2 .r-return { padding-bottom: 8px; }
 .receipt-v2 .r-return > .r-terms { padding: 0 12px 6px; }
+.receipt-v2 .r-return-fields {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 2px 12px 10px;
+}
+.receipt-v2 .r-return-fields .f small {
+  display: block; font-size: 7pt; font-weight: 700; letter-spacing: .04em;
+  text-transform: uppercase; color: var(--r-muted);
+}
+.receipt-v2 .r-return-fields .r-write-line {
+  min-height: 1.35em; margin-top: 3px;
+}
 .receipt-v2 .r-return-sigs { margin-top: 10px; padding: 0 8px 8px; }
 .receipt-v2 .r-return-sigs .sig-label { margin-bottom: 26px; }
 
@@ -2249,6 +2260,8 @@ tr.net-row:hover td { background: var(--surface-low); }
   .print-root .receipt-v2 .sig-foot strong { font-size: 8pt !important; min-height: 1.1em !important; }
   .print-root .receipt-v2 .r-return { page-break-inside: avoid; padding-bottom: 4px !important; flex: 0 0 auto !important; }
   .print-root .receipt-v2 .r-return > .r-terms { padding: 0 8px 4px !important; }
+  .print-root .receipt-v2 .r-return-fields { gap: 6px !important; padding: 2px 8px 8px !important; }
+  .print-root .receipt-v2 .r-return-fields .r-write-line { min-height: 1.25em !important; }
   .print-root .receipt-v2 .r-return-sigs { margin-top: 8px !important; padding: 0 6px 6px !important; }
   .print-root .receipt-v2 .r-return-sigs .sig-label { margin-bottom: 24px !important; }
   .print-root .receipt-v2 .r-write-line { min-height: 14px !important; }
