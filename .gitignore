@@ -19,3 +19,9 @@ backups/
 .claude/
 .cursor/
 docker-compose.override.yml
+
+# Private security / pentest artefacts — never publish on a public remote
+ITACM-Guvenlik-Raporu.html
+*Guvenlik-Raporu*
+docs/SECURITY-TESTING-PLAN.md
+scripts/qa-report-*.json
