@@ -1236,6 +1236,52 @@ const OB_TOUR_GROUPS = [
 ];
 const obGroupOf = (i) => OB_TOUR_GROUPS.find((g) => i >= g.from && i <= g.to) || OB_TOUR_GROUPS[0];
 
+/**
+ * Tour slides backed by a real UI screenshot at /media/tour/<id>.webp (1760×1011,
+ * the app's content column with the sidebar clipped off so it reads near 1:1).
+ * Slides not listed here (welcome, howto) keep the drawn preview instead.
+ */
+const OB_SHOTS = new Set([
+  'dashboard', 'hardware', 'network', 'catalog', 'employees', 'handover', 'licenses',
+  'lines', 'providers', 'consumables', 'maintenance', 'stockcount', 'reports', 'audit',
+  'integrations', 'users',
+]);
+
+/**
+ * Languages we actually ship shots for, under /media/tour/<lang>/. Everything else
+ * shows the English set — which is honest rather than lazy: only ~13% of the visible
+ * text on these module pages is translated today, so a localized shot would be ~87%
+ * identical and cost 16 more images per language. Once a module's UI is genuinely
+ * translated, capture that language and add the code here.
+ */
+const OB_SHOT_LANGS = new Set(['en']);
+
+/**
+ * Numbered markers pinned onto those screenshots, keyed by slide id.
+ * `b` is the 1-based bullet the marker explains; x/y are percentages of the image,
+ * read off each module's real DOM rather than eyeballed. A bullet describing something
+ * the shot doesn't show simply gets no marker.
+ * If a module's layout changes, re-run the capture + anchor scripts and update these.
+ */
+const OB_HOTSPOTS = {
+  dashboard: [{ b: 1, x: 17.6, y: 41.4 }, { b: 3, x: 71.5, y: 48.7 }],
+  hardware: [{ b: 1, x: 11.1, y: 90.2 }, { b: 2, x: 33.5, y: 66 }],
+  network: [{ b: 1, x: 67.5, y: 87 }, { b: 2, x: 38.5, y: 87 }, { b: 3, x: 16, y: 57 }],
+  catalog: [{ b: 1, x: 64, y: 47.6 }],
+  employees: [{ b: 1, x: 13.6, y: 39.3 }, { b: 3, x: 89.4, y: 75.8 }],
+  handover: [{ b: 1, x: 77.4, y: 96.2 }, { b: 2, x: 28.7, y: 49.7 }, { b: 3, x: 77.4, y: 52.9 }],
+  licenses: [{ b: 1, x: 43.4, y: 43.2 }, { b: 2, x: 89.8, y: 43 }, { b: 3, x: 60.6, y: 43 }],
+  lines: [{ b: 1, x: 86, y: 36.9 }, { b: 2, x: 89, y: 73.5 }],
+  providers: [{ b: 1, x: 13.8, y: 69.1 }, { b: 2, x: 13.6, y: 39.3 }],
+  consumables: [{ b: 1, x: 42.5, y: 39.6 }, { b: 2, x: 63.9, y: 49.4 }, { b: 3, x: 92.8, y: 39.6 }],
+  maintenance: [{ b: 1, x: 19, y: 47.9 }, { b: 2, x: 88.6, y: 47.9 }],
+  stockcount: [{ b: 1, x: 14.9, y: 43.5 }, { b: 2, x: 91.7, y: 43.5 }],
+  reports: [{ b: 1, x: 13.8, y: 87.8 }, { b: 2, x: 26.5, y: 59.8 }, { b: 3, x: 13.8, y: 40.1 }],
+  audit: [{ b: 1, x: 50, y: 33.8 }, { b: 2, x: 41.5, y: 56.1 }],
+  integrations: [{ b: 1, x: 9, y: 23.8 }, { b: 2, x: 26.8, y: 57.5 }],
+  users: [{ b: 1, x: 17.8, y: 43.3 }],
+};
+
 /** Validate the current setup step's fields; on failure show an inline error + focus. */
 function validateObStep(step) {
   const err = $('#onboarding-error');
@@ -1274,6 +1320,45 @@ function setObIndicator() {
   });
 }
 
+/**
+ * Screenshot-led slide: the real UI is the hero and numbered markers pin each bullet
+ * to the spot in the app it talks about, so the words and the picture teach the same
+ * thing. A bullet whose subject isn't visible in the shot stays unnumbered.
+ */
+function obShotSlideHtml(s, badge) {
+  const uiLang = (typeof i18nLang === 'function') ? i18nLang() : 'en';
+  const lang = OB_SHOT_LANGS.has(uiLang) ? uiLang : 'en';
+  const spots = OB_HOTSPOTS[s.id] || [];
+  const numOf = (bulletNo) => {
+    const k = spots.findIndex((h) => h.b === bulletNo);
+    return k < 0 ? 0 : k + 1;
+  };
+  const pins = spots
+    .map((h, k) => `<span class="obs-pin" style="left:${h.x}%; top:${h.y}%">${k + 1}</span>`)
+    .join('');
+  const legend = s.bullets.map((b, i) => {
+    const n = numOf(i + 1);
+    const mark = n ? `<span class="obs-num">${n}</span>` : '<span class="obs-dot"></span>';
+    return `<li>${mark}<span>${esc(b)}</span></li>`;
+  }).join('');
+  return `
+    <div class="ob-slide ob-slide-shot onb-anim">
+      <div class="obs-head">
+        ${badge}
+        <h2 class="ob-slide-title">${esc(s.title)}</h2>
+        <p class="ob-slide-desc">${esc(s.desc)}</p>
+      </div>
+      <figure class="obs-figure">
+        <img class="obs-img" src="/media/tour/${encodeURIComponent(lang)}/${encodeURIComponent(s.preview)}.webp"
+             data-shot="${esc(s.preview)}" alt=""
+             width="1320" height="758" fetchpriority="high" decoding="async">
+        ${pins}
+      </figure>
+      <ul class="obs-legend">${legend}</ul>
+      ${s.tip ? `<div class="ob-tip-callout"><span class="ms">lightbulb</span> ${esc(s.tip)}</div>` : ''}
+    </div>`;
+}
+
 /** Product-tour slide — reuses OB_TOUR content + the feature preview visuals. */
 function renderObTourSlide() {
   const host = $('#ob-tour');
@@ -1285,9 +1370,12 @@ function renderObTourSlide() {
   const skip = $('#onb-skip'); if (skip) skip.classList.remove('hidden');
   const s = obItem(OB_TOUR[obTourIdx]);
   const grp = obGroupOf(obTourIdx);
-  host.innerHTML = `
+  const badge = `<span class="ob-slide-badge"><span class="ms ms-sm">${s.icon}</span> ${esc(t(grp.label))} · ${obTourIdx - grp.from + 1}/${grp.to - grp.from + 1}</span>`;
+  host.innerHTML = OB_SHOTS.has(s.preview)
+    ? obShotSlideHtml(s, badge)
+    : `
     <div class="ob-slide ob-slide-rich onb-anim">
-      <span class="ob-slide-badge"><span class="ms ms-sm">${s.icon}</span> ${esc(t(grp.label))} · ${obTourIdx - grp.from + 1}/${grp.to - grp.from + 1}</span>
+      ${badge}
       <div class="ob-slide-grid">
         <div>
           <h2 class="ob-slide-title">${esc(s.title)}</h2>
@@ -1299,6 +1387,16 @@ function renderObTourSlide() {
       </div>
     </div>`;
   mountObHowtoMedia(host);
+  // Shots are captured per language; if one is missing, show the English set rather
+  // than an empty frame. CSP forbids inline handlers, so wire it here.
+  const shotImg = host.querySelector('.obs-img');
+  if (shotImg) {
+    shotImg.addEventListener('error', () => {
+      if (shotImg.dataset.fellBack) return;
+      shotImg.dataset.fellBack = '1';
+      shotImg.src = `/media/tour/en/${encodeURIComponent(shotImg.dataset.shot)}.webp`;
+    }, { once: true });
+  }
   const back = $('#ob-form-back'); if (back) back.style.visibility = obTourIdx === 0 ? 'hidden' : '';
   const next = $('#onb-next'); if (next) next.classList.remove('hidden');
   const done = $('#onboarding-btn'); if (done) done.classList.add('hidden');
