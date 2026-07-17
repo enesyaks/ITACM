@@ -166,6 +166,16 @@ async function updateEmployee(id, body) {
         'Reassign or clear responsibility first (use Offboard).'
       );
     }
+    const contractRes = await query(
+      'SELECT COUNT(*)::int AS n FROM contracts WHERE owner_employee_id = $1',
+      [id]
+    );
+    if (contractRes.rows[0].n > 0) {
+      throw HttpError.conflict(
+        `${current.full_name} is still internal owner of ${contractRes.rows[0].n} contract(s). ` +
+        'Transfer or clear ownership first (use Offboard).'
+      );
+    }
   }
 
   const cols = Object.keys(data);

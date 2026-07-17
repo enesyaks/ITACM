@@ -208,6 +208,17 @@ Views.providers = async function (el, params = {}) {
     providers,
     refresh
   ));
+  const openContractId = params.contractId || '';
+  if (openContractId && canReadContract) {
+    const c = contracts.find((x) => x.id === openContractId);
+    if (c) {
+      queueMicrotask(() => openContractForm(c, providers, refresh));
+    } else {
+      api(`/contracts/${openContractId}`).then((row) => {
+        if (!isStaleView(el)) openContractForm(row, providers, refresh);
+      }).catch(() => {});
+    }
+  }
 };
 
 function renderProvidersTab(el, providers, opts = {}) {

@@ -12,6 +12,7 @@ const HW_ACTIONS = new Set(['return', 'reassign', 'scrap', 'sell']);
 const LINE_ACTIONS = new Set(['unassign', 'reassign']);
 const LIC_ACTIONS = new Set(['revoke', 'reassign']);
 const INFRA_ACTIONS = new Set(['clear', 'reassign']);
+const CONTRACT_ACTIONS = new Set(['clear', 'reassign']);
 const INFRA_CATS = new Set(['Network', 'Server']);
 
 function actor(itUser) {
@@ -38,7 +39,7 @@ async function getOffboardingChecklist(employeeId) {
   if (!empRows[0]) throw HttpError.notFound(`Employee ${employeeId} not found`);
   const emp = mapRow(empRows[0]);
 
-  const [assets, licenses, lines, infra] = await Promise.all([
+  const [assets, licenses, lines, infra, contracts] = await Promise.all([
     query(
       `SELECT id, asset_tag, brand, model, category, serial_number, status, location
        FROM assets
@@ -67,6 +68,15 @@ async function getOffboardingChecklist(employeeId) {
        ORDER BY asset_tag`,
       [employeeId]
     ),
+    query(
+      `SELECT c.id, c.title, c.status, c.contract_number, c.end_date,
+              p.name AS provider_name
+       FROM contracts c
+       JOIN providers p ON p.id = c.provider_id
+       WHERE c.owner_employee_id = $1
+       ORDER BY c.title`,
+      [employeeId]
+    ),
   ]);
 
   return {
@@ -75,12 +85,15 @@ async function getOffboardingChecklist(employeeId) {
     licenses: mapRows(licenses.rows),
     lines: mapRows(lines.rows),
     infra: mapRows(infra.rows),
+    contracts: mapRows(contracts.rows),
     counts: {
       assets: assets.rows.length,
       licenses: licenses.rows.length,
       lines: lines.rows.length,
       infra: infra.rows.length,
-      total: assets.rows.length + licenses.rows.length + lines.rows.length + infra.rows.length,
+      contracts: contracts.rows.length,
+      total: assets.rows.length + licenses.rows.length + lines.rows.length +
+        infra.rows.length + contracts.rows.length,
     },
   };
 }
@@ -314,10 +327,37 @@ async function disposeInfra(t, asset, action, fromEmp, toEmp, itUser) {
   throw HttpError.badRequest(`Unknown infra action: ${action}`);
 }
 
+
+async function disposeContract(t, contract, action, fromEmp, toEmp) {
+  if (action === 'clear') {
+    await t.query(
+      `UPDATE contracts SET owner_employee_id = NULL, owner_employee_name = NULL, updated_at = now()
+       WHERE id = $1`,
+      [contract.id]
+    );
+    return { contractId: contract.id, title: contract.title, action: 'clear' };
+  }
+  if (action === 'reassign') {
+    if (!toEmp) throw HttpError.badRequest(`Reassign target required for contract ${contract.title}`);
+    await t.query(
+      `UPDATE contracts SET owner_employee_id = $2, owner_employee_name = $3, updated_at = now()
+       WHERE id = $1`,
+      [contract.id, toEmp.id, toEmp.full_name]
+    );
+    return {
+      contractId: contract.id,
+      title: contract.title,
+      action: 'reassign',
+      toEmployeeId: toEmp.id,
+    };
+  }
+  throw HttpError.badRequest(`Unknown contract action: ${action}`);
+}
+
 async function executeOffboard(employeeId, body, itUser) {
   if (!isUuid(employeeId)) throw HttpError.notFound(`Employee ${employeeId} not found`);
   const {
-    assets = [], lines = [], licenses = [], infra = [], deactivate = true,
+    assets = [], lines = [], licenses = [], infra = [], contracts = [], deactivate = true,
   } = body || {};
 
   const result = await withTransaction(async (t) => {
@@ -338,7 +378,7 @@ async function executeOffboard(employeeId, body, itUser) {
       return emp;
     }
 
-    const summary = { assets: [], lines: [], licenses: [], infra: [], deactivated: false };
+    const summary = { assets: [], lines: [], licenses: [], infra: [], contracts: [], deactivated: false };
 
     for (const item of assets) {
       const action = String(item.action || '');
@@ -405,6 +445,20 @@ async function executeOffboard(employeeId, body, itUser) {
       summary.infra.push(await disposeInfra(t, asset, action, fromEmp, toEmp, itUser));
     }
 
+    for (const item of contracts) {
+      const action = String(item.action || '');
+      if (!CONTRACT_ACTIONS.has(action)) throw HttpError.badRequest(`Invalid contract action: ${action}`);
+      if (!isUuid(item.contractId)) throw HttpError.badRequest('Invalid contractId');
+      const { rows } = await t.query('SELECT * FROM contracts WHERE id = $1 FOR UPDATE', [item.contractId]);
+      const contract = rows[0];
+      if (!contract) throw HttpError.notFound(`Contract ${item.contractId} not found`);
+      if (contract.owner_employee_id !== employeeId) {
+        throw HttpError.conflict(`${contract.title} is not owned by this employee`);
+      }
+      const toEmp = action === 'reassign' ? await resolveTo(item.toEmployeeId) : null;
+      summary.contracts.push(await disposeContract(t, contract, action, fromEmp, toEmp));
+    }
+
     const leftAssets = await t.query(
       `SELECT COUNT(*)::int AS n FROM assets
        WHERE current_employee_id = $1 AND status = 'Assigned'`,
@@ -424,20 +478,25 @@ async function executeOffboard(employeeId, body, itUser) {
        WHERE responsible_employee_id = $1 AND category IN ('Network', 'Server')`,
       [employeeId]
     );
+    const leftContracts = await t.query(
+      "SELECT COUNT(*)::int AS n FROM contracts WHERE owner_employee_id = $1",
+      [employeeId]
+    );
 
     const remaining = {
       assets: leftAssets.rows[0].n,
       lines: leftLines.rows[0].n,
       licenses: leftLic.rows[0].n,
       infra: leftInfra.rows[0].n,
+      contracts: leftContracts.rows[0].n,
     };
 
     if (deactivate) {
-      if (remaining.assets || remaining.lines || remaining.licenses || remaining.infra) {
+      if (remaining.assets || remaining.lines || remaining.licenses || remaining.infra || remaining.contracts) {
         throw HttpError.conflict(
           `Cannot deactivate: remaining holdings — ` +
           `${remaining.assets} asset(s), ${remaining.licenses} license(s), ` +
-          `${remaining.lines} line(s), ${remaining.infra} infra device(s). ` +
+          `${remaining.lines} line(s), ${remaining.infra} infra device(s), ${remaining.contracts} contract(s). ` +
           'Include a disposition for every item.'
         );
       }
@@ -471,6 +530,7 @@ async function executeOffboard(employeeId, body, itUser) {
         licenses: result.licenses.length,
         lines: result.lines.length,
         infra: result.infra.length,
+        contracts: result.contracts.length,
         deactivated: result.deactivated,
         detail: result,
       },

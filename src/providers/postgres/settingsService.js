@@ -196,9 +196,13 @@ async function completeSetup(setupToken, fields, adminFn) {
     throw HttpError.badRequest('setupToken is required');
   }
   const {
-    companyName, companyLogo, language, handoverTemplates, defaultTemplateId,
+    companyName, companyLogo, companyAddress, language, handoverTemplates, defaultTemplateId,
   } = fields || {};
   if (!companyName) throw HttpError.badRequest('companyName is required');
+  if (companyAddress !== undefined && companyAddress !== null && String(companyAddress).length > 200) {
+    throw HttpError.badRequest('companyAddress too long (max 200 chars)');
+  }
+  const addressClean = String(companyAddress ?? '').trim().slice(0, 200);
 
   return withTransaction(async (client) => {
     const { rows } = await client.query(
@@ -239,7 +243,8 @@ async function completeSetup(setupToken, fields, adminFn) {
          setup_token = NULL,
          language = COALESCE($3, language),
          handover_templates = COALESCE($4::jsonb, handover_templates),
-         handover_template = COALESCE($5::jsonb, handover_template)
+         handover_template = COALESCE($5::jsonb, handover_template),
+         company_address = $6
        WHERE id = 1`,
       [
         companyName,
@@ -247,6 +252,7 @@ async function completeSetup(setupToken, fields, adminFn) {
         language ?? null,
         templatesToSave ? JSON.stringify(templatesToSave) : null,
         defaultMirror ? JSON.stringify(defaultMirror) : null,
+        addressClean,
       ]
     );
 

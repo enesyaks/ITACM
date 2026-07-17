@@ -953,18 +953,36 @@ Views.users = async function (el) {
       );
       return;
     }
-    const note = pre.smtpConfigured
-      ? 'The new account becomes Owner and an invite with a temporary password is emailed to it. You drop to Admin and must sign in again.'
-      : 'The new account becomes Owner with the temporary password you set — share it with them. You drop to Admin and must sign in again.';
-    const fields = [
-      { type: 'html', full: true, html: `<p class="onb-hint" style="margin:0">${esc(note)}</p>` },
-      { name: 'username', label: 'New owner display name *', required: true },
-      { name: 'email', label: 'New owner email *', type: 'email', required: true },
-    ];
-    if (!pre.smtpConfigured) {
-      fields.push({ name: 'password', label: 'Temporary password * (min 8)', type: 'password', required: true });
+    const candidates = pre.candidates || [];
+    const fields = [];
+    if (candidates.length > 0) {
+      fields.push({
+        type: 'html', full: true,
+        html: `<p class="onb-hint" style="margin:0">${esc('Select an existing IT user. They become Owner; you become Admin and must sign in again. The selected user must already have MFA enabled.')}</p>`,
+      });
+      fields.push({
+        name: 'targetUserId',
+        label: 'Transfer to *',
+        type: 'select',
+        required: true,
+        options: candidates.map((c) => ({
+          value: c.uid,
+          label: `${c.username || c.email} (${c.email}) — ${c.role}${c.mfaEnabled ? '' : ' — MFA required'}`,
+        })),
+      });
+      fields.push({ name: 'code', label: 'Your MFA code (6 digits) *', required: true });
+    } else {
+      const note = pre.smtpConfigured
+        ? 'The new account becomes Owner and an invite with a temporary password is emailed to it. You drop to Admin and must sign in again.'
+        : 'The new account becomes Owner with the temporary password you set — share it with them. You drop to Admin and must sign in again.';
+      fields.push({ type: 'html', full: true, html: `<p class="onb-hint" style="margin:0">${esc(note)}</p>` });
+      fields.push({ name: 'username', label: 'New owner display name *', required: true });
+      fields.push({ name: 'email', label: 'New owner email *', type: 'email', required: true });
+      if (!pre.smtpConfigured) {
+        fields.push({ name: 'password', label: 'Temporary password * (min 8)', type: 'password', required: true });
+      }
+      fields.push({ name: 'code', label: 'Your MFA code (6 digits) *', required: true });
     }
-    fields.push({ name: 'code', label: 'Your MFA code (6 digits) *', required: true });
     formModal({
       title: 'Transfer ownership',
       fields,
@@ -972,7 +990,7 @@ Views.users = async function (el) {
       async onSubmit(d) {
         const res = await api('/auth/owner/transfer', { method: 'POST', body: d });
         let msg = `Ownership transferred to ${res.newOwner.email}. You are now Admin — sign in again.`;
-        if (res.smtpUsed && res.emailStatus === 'failed') {
+        if (res.mode === 'create' && res.smtpUsed && res.emailStatus === 'failed') {
           msg = `Owner created (${res.newOwner.email}) but the invite email failed. Temporary password: ${res.tempPassword} — share it securely, then sign in again.`;
         }
         toast(msg, 'success');

@@ -338,9 +338,57 @@ function renderObTplCards() {
   });
 }
 
+const OB_TPL_TOGGLES = [
+  ['Header', [['showLogo', 'Company logo']]],
+  ['Employee fields', [['showEmployeeId', 'Employee ID / Sicil No'], ['showDepartment', 'Department'], ['showTitle', 'Position / Title']]],
+  ['Equipment columns', [['colCategory', 'Category'], ['colSerial', 'Serial number'], ['colMac', 'MAC address'], ['colCondition', 'Condition']]],
+  ['Sections', [['showTerms', 'Terms & Conditions'], ['showReturnSection', 'Equipment return section']]],
+];
+let obTplOptions = null;
+function getObTplOptions() {
+  if (!obTplOptions) {
+    const d = defaultTemplateFields();
+    obTplOptions = {
+      showLogo: d.showLogo, showEmployeeId: d.showEmployeeId, showDepartment: d.showDepartment, showTitle: d.showTitle,
+      colCategory: d.colCategory, colSerial: d.colSerial, colMac: d.colMac, colCondition: d.colCondition,
+      showTerms: d.showTerms, showReturnSection: d.showReturnSection,
+    };
+  }
+  return obTplOptions;
+}
+
+function renderObTplOptions() {
+  const box = $('#ob-tpl-options');
+  if (!box) return;
+  const opts = getObTplOptions();
+  const groupI18n = {
+    'Header': 'ob.optHeader',
+    'Employee fields': 'ob.optEmployee',
+    'Equipment columns': 'ob.optEquipment',
+    'Sections': 'ob.optSections',
+  };
+  box.innerHTML = OB_TPL_TOGGLES.map(([grp, items]) => {
+    const i18nKey = groupI18n[grp] || '';
+    return `<fieldset class="ob-opt-group">
+      <legend${i18nKey ? ` data-i18n="${i18nKey}"` : ''}>${esc(grp)}</legend>
+      <div class="ob-opt-grid">${items.map(([k, l]) =>
+        `<label class="ob-opt-check"><input type="checkbox" data-ob-tpl="${esc(k)}" ${opts[k] ? 'checked' : ''}> ${esc(l)}</label>`
+      ).join('')}</div>
+    </fieldset>`;
+  }).join('');
+  box.querySelectorAll('input[data-ob-tpl]').forEach((inp) => {
+    inp.addEventListener('change', () => {
+      getObTplOptions()[inp.dataset.obTpl] = inp.checked;
+    });
+  });
+  box.querySelectorAll('[data-i18n]').forEach((el) => {
+    if (typeof t === 'function') el.textContent = t(el.dataset.i18n);
+  });
+}
+
 function buildTemplatesForSetup(defaultDesignId) {
   const pick = HANDOVER_DESIGN_CATALOG.find((p) => p.id === defaultDesignId) || HANDOVER_DESIGN_CATALOG[0];
-  const base = defaultTemplateFields();
+  const base = { ...defaultTemplateFields(), ...getObTplOptions() };
   // One template per visual design; selected design becomes the default (first).
   const all = HANDOVER_DESIGN_CATALOG.map((d) => ({
     ...base,
@@ -1451,7 +1499,7 @@ function renderObSetupStep() {
   const last = obStep === OB_SETUP_STEPS - 1;
   const next = $('#onb-next'); if (next) next.classList.toggle('hidden', last);
   const done = $('#onboarding-btn'); if (done) done.classList.toggle('hidden', !last);
-  if (obStep === 1) renderObTplCards();
+  if (obStep === 1) { renderObTplCards(); renderObTplOptions(); }
   const rail = $('#onb-tour-rail'); if (rail) rail.classList.add('hidden');
   const asideBody = $('.onb-aside-body'); if (asideBody) asideBody.classList.remove('hidden');
   setObIndicator();
@@ -1517,6 +1565,7 @@ function bindOnboarding() {
   obTourIdx = 0;
   obStep = 0;
   renderObTplCards();
+  renderObTplOptions();
   renderTour();
 
   const obGoSetup = () => { obPhase = 'setup'; obStep = 0; renderTour(); };
@@ -1614,6 +1663,7 @@ function bindOnboarding() {
         setupToken,
         companyName: form.elements.companyName.value.trim(),
         companyLogo: obLogoDataUrl,
+        companyAddress: (form.elements.companyAddress && form.elements.companyAddress.value || '').trim(),
         adminUsername: form.elements.adminUsername.value.trim(),
         adminEmail: form.elements.adminEmail.value.trim(),
         adminPassword: form.elements.adminPassword.value,

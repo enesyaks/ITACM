@@ -151,44 +151,68 @@ router.get('/owner/transfer/preflight', authenticate, asyncHandler(async (req, r
   if (!req.user || req.user.role !== 'Owner') throw HttpError.forbidden('Only an Owner can transfer ownership');
   const { smtp } = await notificationService.getMailConfig();
   const pre = await authProvider.ownerTransferPreflight(req.user);
-  res.json({ success: true, data: { smtpConfigured: !!(smtp && smtp.host), mfaEnrolled: pre.mfaEnrolled } });
+  res.json({
+    success: true,
+    data: {
+      smtpConfigured: !!(smtp && smtp.host),
+      mfaEnrolled: pre.mfaEnrolled,
+      candidates: pre.candidates || [],
+    },
+  });
 }));
 
 /** POST /api/auth/owner/transfer — hand the Owner role to a new account and step the
  *  caller down to Admin, confirmed by the caller's TOTP. Owner-only; loginLimiter
- *  throttles code guessing. Body: { email, username, code, password? }. */
+ *  throttles code guessing. Body: { targetUserId, code } or { email, username, code, password? }. */
 router.post('/owner/transfer', authenticate, loginLimiter, asyncHandler(async (req, res) => {
   if (!req.user || req.user.role !== 'Owner') throw HttpError.forbidden('Only an Owner can transfer ownership');
-  const { email, username, code } = req.body || {};
+  const { email, username, code, targetUserId } = req.body || {};
   const { smtp } = await notificationService.getMailConfig();
   const smtpOn = !!(smtp && smtp.host);
-  // SMTP on: generate a strong temp password and email it, so the acting Owner never
-  // sees it. SMTP off: the acting Owner sets it inline and shares it out-of-band.
-  const password = smtpOn
-    ? crypto.randomBytes(12).toString('base64url')
-    : String((req.body || {}).password || '');
-  const { newOwner } = await authProvider.transferOwnership({ email, username, password, code }, req.user);
+
+  let result;
+  let password;
+  if (targetUserId) {
+    result = await authProvider.transferOwnership({ targetUserId, code }, req.user);
+  } else {
+    // SMTP on: generate a strong temp password and email it, so the acting Owner never
+    // sees it. SMTP off: the acting Owner sets it inline and shares it out-of-band.
+    password = smtpOn
+      ? crypto.randomBytes(12).toString('base64url')
+      : String((req.body || {}).password || '');
+    result = await authProvider.transferOwnership({ email, username, password, code }, req.user);
+  }
+  const { newOwner, mode } = result;
 
   let emailStatus = 'skipped';
   let tempPassword;
   if (smtpOn) {
     try {
-      await notificationService.sendMail({
-        to: newOwner.email,
-        subject: 'You are now the owner of this ITACM instance',
-        text: `Hello ${newOwner.username},\n\n`
-          + `You have been made the Owner of this IT Asset Control instance.\n\n`
-          + `Sign in with:\n  Email: ${newOwner.email}\n  Temporary password: ${password}\n\n`
-          + `Change this password right after signing in, and set up two-factor authentication when prompted.\n`,
-      });
+      if (mode === 'existing') {
+        await notificationService.sendMail({
+          to: newOwner.email,
+          subject: 'You are now the owner of this ITACM instance',
+          text: `Hello ${newOwner.username},\n\n`
+            + `You are now the Owner of this IT Asset Control instance.\n\n`
+            + `Sign in with your existing credentials and MFA.\n`,
+        });
+      } else {
+        await notificationService.sendMail({
+          to: newOwner.email,
+          subject: 'You are now the owner of this ITACM instance',
+          text: `Hello ${newOwner.username},\n\n`
+            + `You have been made the Owner of this IT Asset Control instance.\n\n`
+            + `Sign in with:\n  Email: ${newOwner.email}\n  Temporary password: ${password}\n\n`
+            + `Change this password right after signing in, and set up two-factor authentication when prompted.\n`,
+        });
+      }
       emailStatus = 'sent';
     } catch (err) {
-      // The account already exists; surface the password so the Owner can share it manually.
       emailStatus = 'failed';
-      tempPassword = password;
+      if (mode === 'create') tempPassword = password;
     }
   }
-  res.json({ success: true, data: { newOwner, smtpUsed: smtpOn, emailStatus, tempPassword } });
+  res.json({ success: true, data: { newOwner, mode, smtpUsed: smtpOn, emailStatus, tempPassword } });
 }));
 
 /** ================================================================ */

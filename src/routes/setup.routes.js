@@ -30,13 +30,13 @@ router.get('/setup/status', asyncHandler(async (req, res) => {
 
 router.post('/setup', asyncHandler(async (req, res) => {
   const {
-    setupToken, companyName, companyLogo, adminUsername, adminEmail, adminPassword, language,
+    setupToken, companyName, companyLogo, companyAddress, adminUsername, adminEmail, adminPassword, language,
     handoverTemplates, defaultTemplateId,
   } = req.body || {};
 
   const { settings, admin } = await settingsService.completeSetup(
     setupToken,
-    { companyName, companyLogo, language, handoverTemplates, defaultTemplateId },
+    { companyName, companyLogo, companyAddress, language, handoverTemplates, defaultTemplateId },
     (client) => authProvider.upsertAdminTx(client, {
       username: adminUsername,
       email: adminEmail,

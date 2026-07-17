@@ -447,7 +447,7 @@ async function resolveOwner(employeeId) {
   return { id: rows[0].id, name: rows[0].full_name };
 }
 
-async function listContracts({ status, providerId, search, expiringWithinDays, user } = {}) {
+async function listContracts({ status, providerId, ownerEmployeeId, search, expiringWithinDays, user } = {}) {
   const where = [];
   const params = [];
   if (status && CONTRACT_STATUSES.has(status)) {
@@ -458,6 +458,11 @@ async function listContracts({ status, providerId, search, expiringWithinDays, u
     if (!isUuid(providerId)) throw HttpError.badRequest('Invalid providerId');
     params.push(providerId);
     where.push(`c.provider_id = $${params.length}`);
+  }
+  if (ownerEmployeeId) {
+    if (!isUuid(ownerEmployeeId)) throw HttpError.badRequest('Invalid ownerEmployeeId');
+    params.push(ownerEmployeeId);
+    where.push(`c.owner_employee_id = $${params.length}`);
   }
   if (search && String(search).trim()) {
     params.push(`%${String(search).trim().toLowerCase()}%`);

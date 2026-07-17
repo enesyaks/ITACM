@@ -248,6 +248,7 @@ async function showEmployeeDetail(emp) {
   const canAssignLine = Auth.canIamOp('line', 'assign');
   const canUnassignLine = Auth.canIam('line', 'unassign') || Auth.canIam('line', 'manage');
   const canReturnAsset = Auth.canIamOp('asset', 'unassign');
+  const canReadContracts = Auth.canIamOp('contract', 'read');
   const canReadDocs = Auth.canIam('document', 'read') || Auth.can('canReadDocuments');
   const canDownloadDocs = Auth.canIam('document', 'download') || Auth.can('canDownloadDocuments');
   const canUploadDocs = (Auth.canIam('document', 'upload') || Auth.canIam('document', 'create') || Auth.can('canUploadDocuments'))
@@ -257,7 +258,7 @@ async function showEmployeeDetail(emp) {
   const emptyList = () => [];
   const emptyItems = () => ({ items: [] });
   // Soft-fail every nested call — missing perms must not block opening the profile card.
-  const [assetsRes, infraRes, receipts, allSoftware, history, documents, lines] = await Promise.all([
+  const [assetsRes, infraRes, receipts, allSoftware, history, documents, lines, ownedContracts] = await Promise.all([
     canViewInventory
       ? api(`/assets?employeeId=${encodeURIComponent(emp.id)}&status=Assigned&limit=500`).catch(emptyItems)
       : Promise.resolve({ items: [] }),
@@ -279,10 +280,14 @@ async function showEmployeeDetail(emp) {
     canViewInventory
       ? api(`/lines?employeeId=${encodeURIComponent(emp.id)}`).catch(emptyList)
       : Promise.resolve([]),
+    canReadContracts
+      ? api(`/contracts?ownerEmployeeId=${encodeURIComponent(emp.id)}`).catch(emptyList)
+      : Promise.resolve([]),
   ]);
   const assets = (assetsRes && assetsRes.items) || [];
   const infra = (infraRes && infraRes.items) || [];
   const software = (allSoftware || []).filter((s) => !s.revokedAt);
+  const contracts = ownedContracts || [];
 
   // Merge device + software + mobile-line events into one activity timeline.
   const swEvents = [];
@@ -410,6 +415,27 @@ async function showEmployeeDetail(emp) {
         </table>
       </div>`}
       ` : ''}
+
+      ${canReadContracts && contracts.length ? `
+      <h3 style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--on-surface-variant);margin:0 0 8px">
+        ${esc(t('emp.ownedContracts'))} (${contracts.length})</h3>
+      <div class="table-wrap" style="margin-bottom:18px;border:1px solid var(--outline-variant);border-radius:var(--radius-lg)">
+        <table class="data">
+          <thead><tr><th>${esc(t('providers.tabContracts') || 'Contract')}</th><th>${esc(t('providers.tabProviders') || 'Provider')}</th><th>${esc(t('common.status') || 'Status')}</th><th style="text-align:right"></th></tr></thead>
+          <tbody>
+            ${contracts.map((c) => `
+            <tr>
+              <td><div class="cell-title">${esc(c.title)}</div>${c.contractNumber ? `<div class="cell-sub mono">${esc(c.contractNumber)}</div>` : ''}</td>
+              <td>${esc(c.providerName || '—')}</td>
+              <td>${badge(c.status)}</td>
+              <td class="actions">
+                <a class="btn btn-outline btn-sm" href="#/providers?tab=contracts&contractId=${esc(c.id)}">
+                  <span class="ms">description</span> ${esc(t('emp.viewContract'))}</a>
+              </td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>` : ''}
 
       ${canViewHandover ? `
       <h3 style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--on-surface-variant);margin:0 0 8px">
@@ -702,6 +728,9 @@ async function openOffboardWizard(emp) {
   const infraActions = `
     <option value="clear">${esc(t('emp.offboardClear'))}</option>
     <option value="reassign">${esc(t('emp.offboardReassign'))}</option>`;
+  const contractActions = `
+    <option value="clear">${esc(t('emp.offboardClearOwner'))}</option>
+    <option value="reassign">${esc(t('emp.offboardTransfer'))}</option>`;
 
   function rowHtml(kind, id, label, sub, actionsHtml) {
     return `
@@ -758,6 +787,11 @@ async function openOffboardWizard(emp) {
       `${a.assetTag} · ${a.location || t('network.noLocation')} · ${a.infraRole || a.category}`,
       infraActions)
   ).join('');
+  const contractRows = (checklist.contracts || []).map((c) =>
+    rowHtml('contract', c.id, c.title,
+      [c.providerName, c.contractNumber, c.status].filter(Boolean).join(' · '),
+      contractActions)
+  ).join('');
 
   function section(title, count, presetBtns, rows) {
     if (!count) return '';
@@ -812,6 +846,10 @@ async function openOffboardWizard(emp) {
         <button type="button" class="btn btn-outline btn-sm" data-preset="infra:clear">${esc(t('emp.offboardPresetClear'))}</button>
         <button type="button" class="btn btn-outline btn-sm" data-preset="infra:reassign">${esc(t('emp.offboardPresetReassign'))}</button>
       `, infraRows)}
+      ${section(t('emp.offboardContracts'), c.contracts, `
+        <button type="button" class="btn btn-outline btn-sm" data-preset="contract:clear">${esc(t('emp.offboardPresetClearOwner'))}</button>
+        <button type="button" class="btn btn-outline btn-sm" data-preset="contract:reassign">${esc(t('emp.offboardPresetTransfer'))}</button>
+      `, contractRows)}
       <label class="ob-check" style="display:flex;align-items:center;gap:8px;margin-top:8px">
         <input type="checkbox" id="ob-deactivate" checked>
         <span>${esc(t('emp.offboardDeactivate'))}</span>
@@ -991,6 +1029,7 @@ async function openOffboardWizard(emp) {
           licenses: [],
           lines: [],
           infra: [],
+          contracts: [],
           deactivate: !!$('#ob-deactivate', overlay)?.checked,
         };
         try {
@@ -1023,6 +1062,12 @@ async function openOffboardWizard(emp) {
             const toEmployeeId = rowTargetId(tr);
             if (action === 'reassign' && !toEmployeeId) throw new Error(t('emp.offboardNeedTarget'));
             payload.infra.push({ assetId: tr.dataset.id, action, toEmployeeId });
+          });
+          overlay.querySelectorAll('tr[data-ob-row="contract"]').forEach((tr) => {
+            const action = tr.querySelector('.ob-action').value;
+            const toEmployeeId = rowTargetId(tr);
+            if (action === 'reassign' && !toEmployeeId) throw new Error(t('emp.offboardNeedTarget'));
+            payload.contracts.push({ contractId: tr.dataset.id, action, toEmployeeId });
           });
 
           $('#ob-submit', overlay).disabled = true;

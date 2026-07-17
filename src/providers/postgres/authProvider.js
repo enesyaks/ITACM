@@ -561,17 +561,15 @@ async function deleteUser(uid, actor) {
 }
 
 /**
- * Owner hand-off. The last remaining Owner is otherwise un-deletable and can't be
- * demoted (see the "last Owner" guards above), which permanently locks the founding
- * account. This creates a new Owner and steps the caller down to Admin in one
- * transaction — which is exactly what releases those guards — after verifying the
- * caller's TOTP as a step-up.
+ * Owner hand-off. Prefer promoting an existing Active non-Owner user (must have MFA);
+ * otherwise create a new Owner account. Either way the caller is demoted to Admin in
+ * one transaction after verifying their TOTP as a step-up.
  *
- * `password` is the new Owner's initial password: a server-generated temp when SMTP is
- * on (the route emails it), or an Owner-supplied one when SMTP is off. Either way the
- * new Owner is force-prompted to enrol MFA on first login (roleRequiresMfa).
+ * Create path: `password` is the new Owner's initial password (server-generated temp
+ * when SMTP is on, or Owner-supplied when off). New Owners are force-prompted to
+ * enrol MFA on first login (roleRequiresMfa).
  */
-async function transferOwnership({ email, username, password, code }, actor) {
+async function assertOwnerTransferActor(actor, code) {
   const { rows: mine } = await query(
     'SELECT id, email, username, role, mfa_enabled, mfa_secret FROM users WHERE id = $1',
     [actor.uid]
@@ -583,6 +581,52 @@ async function transferOwnership({ email, username, password, code }, actor) {
   }
   const codeOk = code && authenticator.verify({ token: String(code).replace(/\s/g, ''), secret: me.mfa_secret });
   if (!codeOk) throw HttpError.unauthorized('Invalid MFA code');
+  return me;
+}
+
+async function demoteCallerAndLog(t, me, newOwner, detailGranted) {
+  await t.query(
+    `UPDATE users SET role = 'Admin', sessions_revoked_at = now() WHERE id = $1`,
+    [me.id]
+  );
+  await t.query(
+    'INSERT INTO user_admin_logs (target_email, target_name, action, detail, by_name) VALUES ($1,$2,$3,$4,$5)',
+    [newOwner.email, newOwner.username, 'ownership_granted', detailGranted, me.username || me.email]
+  );
+  await t.query(
+    'INSERT INTO user_admin_logs (target_email, target_name, action, detail, by_name) VALUES ($1,$2,$3,$4,$5)',
+    [me.email, me.username, 'ownership_transferred', `to ${newOwner.email}; Owner -> Admin`, me.username || me.email]
+  );
+}
+
+async function transferOwnership({ targetUserId, email, username, password, code }, actor) {
+  const me = await assertOwnerTransferActor(actor, code);
+
+  if (targetUserId) {
+    const newOwner = await withTransaction(async (t) => {
+      const { rows } = await t.query(
+        `SELECT id, username, email, role, status, mfa_enabled
+         FROM users WHERE id = $1 FOR UPDATE`,
+        [targetUserId]
+      );
+      const target = rows[0];
+      if (!target) throw HttpError.notFound(`No user with id ${targetUserId}`);
+      if (target.id === me.id) throw HttpError.badRequest('The new owner must be a different account');
+      if (target.role === 'Owner') throw HttpError.badRequest('That user is already an Owner');
+      if (target.status !== 'Active') throw HttpError.badRequest('The new owner must be an Active user');
+      if (!target.mfa_enabled) {
+        throw HttpError.badRequest('The selected user must have MFA enabled before becoming Owner');
+      }
+      await t.query(`UPDATE users SET role = 'Owner' WHERE id = $1`, [target.id]);
+      const promoted = { uid: target.id, username: target.username, email: target.email, role: 'Owner' };
+      await demoteCallerAndLog(
+        t, me, promoted,
+        `existing user promoted to Owner; ${me.email} stepped down to Admin`
+      );
+      return promoted;
+    });
+    return { newOwner, mode: 'existing' };
+  }
 
   if (!username || !email) throw HttpError.badRequest('New owner name and email are required');
   const normEmail = String(email).toLowerCase().trim();
@@ -605,29 +649,27 @@ async function transferOwnership({ email, username, password, code }, actor) {
       if (err.code === '23505') throw HttpError.conflict(`A user with email ${normEmail} already exists`);
       throw err;
     }
-    // Demote the caller and force re-login: role is baked into the JWT, so revoking
-    // sessions applies the demotion immediately instead of at token expiry.
-    await t.query(
-      `UPDATE users SET role = 'Admin', sessions_revoked_at = now() WHERE id = $1`,
-      [me.id]
+    const createdOwner = { uid: created.id, username: created.username, email: created.email, role: created.role };
+    await demoteCallerAndLog(
+      t, me, createdOwner,
+      `new Owner; ${me.email} stepped down to Admin`
     );
-    await t.query(
-      'INSERT INTO user_admin_logs (target_email, target_name, action, detail, by_name) VALUES ($1,$2,$3,$4,$5)',
-      [created.email, created.username, 'ownership_granted', `new Owner; ${me.email} stepped down to Admin`, me.username || me.email]
-    );
-    await t.query(
-      'INSERT INTO user_admin_logs (target_email, target_name, action, detail, by_name) VALUES ($1,$2,$3,$4,$5)',
-      [me.email, me.username, 'ownership_transferred', `to ${created.email}; Owner -> Admin`, me.username || me.email]
-    );
-    return { uid: created.id, username: created.username, email: created.email, role: created.role };
+    return createdOwner;
   });
-  return { newOwner };
+  return { newOwner, mode: 'create' };
 }
 
-/** Preflight for the owner-transfer UI: whether the caller has MFA to confirm with. */
+/** Preflight for the owner-transfer UI: MFA status plus Active non-Owner candidates. */
 async function ownerTransferPreflight(actor) {
-  const { rows } = await query('SELECT mfa_enabled FROM users WHERE id = $1', [actor.uid]);
-  return { mfaEnrolled: !!(rows[0] && rows[0].mfa_enabled) };
+  const { rows: mine } = await query('SELECT mfa_enabled FROM users WHERE id = $1', [actor.uid]);
+  const { rows: candidates } = await query(
+    `SELECT id AS uid, username, email, role, mfa_enabled AS "mfaEnabled"
+     FROM users
+     WHERE status = 'Active' AND role <> 'Owner' AND id <> $1
+     ORDER BY username ASC NULLS LAST, email ASC`,
+    [actor.uid]
+  );
+  return { mfaEnrolled: !!(mine[0] && mine[0].mfa_enabled), candidates };
 }
 
 async function getAdminLogs(email, limit = 25) {
