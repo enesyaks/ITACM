@@ -22,6 +22,20 @@ function envFlag(name) {
 }
 
 /**
+ * True when a reverse proxy is trusted — must mirror app.js's `trust proxy`
+ * parsing, which also accepts a numeric hop count (e.g. TRUST_PROXY=2). The
+ * plain envFlag() misses those, so callers deciding whether the Host header is
+ * spoofable (canRevealSetupToken) must use this instead to avoid trusting Host
+ * behind a proxy.
+ */
+function trustProxyEnabled() {
+  const raw = String(process.env.TRUST_PROXY || '').trim().toLowerCase();
+  if (!raw || raw === '0' || raw === 'false' || raw === 'no') return false;
+  if (/^\d+$/.test(raw)) return Number(raw) >= 1;
+  return raw === '1' || raw === 'true' || raw === 'yes';
+}
+
+/**
  * Connection peer IP (not spoofable via X-Forwarded-For).
  */
 function peerIp(req) {
@@ -69,7 +83,9 @@ function canRevealSetupToken(req) {
   if (isLoopbackIp(peerIp(req))) return true;
   // Docker Desktop / published ports: browser hits localhost but peer is the gateway.
   // Only trust Host when we are NOT behind a reverse proxy (Host would be spoofable).
-  if (!envFlag('TRUST_PROXY') && isLocalhostHostHeader(req)) return true;
+  // trustProxyEnabled() also catches numeric hop counts (TRUST_PROXY=2), which
+  // envFlag() would miss — leaving Host trusted behind a proxy and leaking the token.
+  if (!trustProxyEnabled() && isLocalhostHostHeader(req)) return true;
   return false;
 }
 
@@ -80,4 +96,5 @@ module.exports = {
   normalizeIp,
   peerIp,
   rateLimitIp,
+  trustProxyEnabled,
 };

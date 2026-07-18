@@ -582,16 +582,36 @@ async function setUserPermissionGroup(userId, groupId, actor) {
 
   const target = users[0];
 
-  if (groupId) {
+  // Normalize so UUID case (e.g. an upper-cased Owner id) can't slip past the
+  // string comparisons below — Postgres treats the uuid type case-insensitively.
+  const gid = groupId ? String(groupId).toLowerCase() : groupId;
+
+  if (gid) {
     const { rows: groups } = await query(
       'SELECT id, name FROM permission_groups WHERE id = $1',
-      [groupId]
+      [gid]
     );
     if (!groups[0]) throw HttpError.notFound('Permission group not found');
   }
 
+  // Privilege-escalation guard. The built-in Owner group flips isOwner() to true
+  // (a blanket bypass of every permission check) and the Admin group grants full
+  // operational + confidential access. A delegated user-manager (user_management:
+  // update, but not an Owner) must not be able to hand those out — otherwise they
+  // could place their own account in the Owner group and become owner-equivalent.
+  if (gid === SYSTEM_GROUPS.OWNER || gid === SYSTEM_GROUPS.ADMIN) {
+    if (!actor || actor.role !== 'Owner') {
+      throw HttpError.forbidden('Only an Owner can assign the Owner or Admin permission group');
+    }
+  }
+  // Keep owner-equivalence bound to the Owner role: never let a non-Owner account
+  // gain full control through the group membership alone.
+  if (gid === SYSTEM_GROUPS.OWNER && target.role !== 'Owner') {
+    throw HttpError.badRequest('Assign the Owner role before placing a user in the Owner permission group');
+  }
+
   // Owner rolündeki bir kullanıcıyı başka bir gruba atamaya çalışıyorsa engelle
-  if (target.role === 'Owner' && groupId !== SYSTEM_GROUPS.OWNER) {
+  if (target.role === 'Owner' && gid !== SYSTEM_GROUPS.OWNER) {
     // Eğer başka Owner yoksa engelle
     const { rows: ownerCount } = await query(
       `SELECT COUNT(*)::int AS n FROM users WHERE role = 'Owner' AND status = 'Active'`
@@ -601,13 +621,13 @@ async function setUserPermissionGroup(userId, groupId, actor) {
     }
   }
 
-  await query('UPDATE users SET permission_group_id = $2 WHERE id = $1', [userId, groupId]);
+  await query('UPDATE users SET permission_group_id = $2 WHERE id = $1', [userId, gid]);
 
   return {
     uid: target.id,
     email: target.email,
     username: target.username,
-    permissionGroupId: groupId,
+    permissionGroupId: gid,
   };
 }
 
