@@ -424,6 +424,21 @@ function assertCanEditGroupEntries(isSystem, actor) {
 }
 
 /**
+ * A non-Owner may only grant a (resource, action) they themselves hold — this is
+ * the core no-privilege-escalation rule for permission-group editing/assignment.
+ * Owners (isOwner) may grant anything.
+ */
+async function assertActorMayGrant(actor, resource, action) {
+  if (isOwner(actor)) return;
+  const has = await checkPermission(actor, resource, action);
+  if (!has) {
+    throw HttpError.forbidden(
+      `You cannot grant ${resource}:${action} — you do not hold that permission yourself`
+    );
+  }
+}
+
+/**
  * Bir izin grubuna yeni bir permission entry ekle.
  * `manage` (unconstrained) also inserts MANAGE_EXPAND ops for that resource.
  */
@@ -447,6 +462,10 @@ async function addPermissionEntry(groupId, { resource, action, constraintType, c
   const existing = await getPermissionGroup(groupId);
   if (!existing) throw HttpError.notFound('Permission group not found');
   assertCanEditGroupEntries(existing.is_system, actor);
+  // No-privilege-escalation: a non-Owner cannot grant a permission they lack —
+  // otherwise they could add a powerful entry to a group (even one already
+  // assigned to users) and escalate. Owners bypass.
+  await assertActorMayGrant(actor, resource, action);
 
   const ct = constraintType || null;
   const cv = constraintValue !== undefined ? JSON.stringify(constraintValue) : null;
@@ -511,6 +530,9 @@ async function updatePermissionEntry(entryId, { resource, action, constraintType
   if (action && !ACTIONS.includes(action_)) {
     throw HttpError.badRequest(`Invalid action "${action_}"`);
   }
+  // No-privilege-escalation: a non-Owner cannot re-point an entry at a permission
+  // they lack (would otherwise escalate a group already assigned to users).
+  await assertActorMayGrant(actor, resource_, action_);
   const ct = constraintType !== undefined ? (constraintType || null) : entry.constraint_type;
   if (ct && !CONSTRAINT_TYPES.includes(ct)) {
     throw HttpError.badRequest(`Invalid constraint type "${ct}"`);
@@ -608,6 +630,27 @@ async function setUserPermissionGroup(userId, groupId, actor) {
   // gain full control through the group membership alone.
   if (gid === SYSTEM_GROUPS.OWNER && target.role !== 'Owner') {
     throw HttpError.badRequest('Assign the Owner role before placing a user in the Owner permission group');
+  }
+
+  // No-privilege-escalation: a non-Owner actor may only place a user into a group
+  // whose permissions are a SUBSET of what the actor themselves holds. Otherwise a
+  // delegated user-manager (or an Admin) could grant — to their own or another
+  // account — a permission they lack (contract:view_confidential, user_management:
+  // delete, …), whether the group was hand-crafted or pre-existing. Owners bypass.
+  if (gid && !isOwner(actor)) {
+    const { rows: grantEntries } = await query(
+      'SELECT DISTINCT resource, action FROM permission_entries WHERE group_id = $1',
+      [gid]
+    );
+    for (const e of grantEntries) {
+      // eslint-disable-next-line no-await-in-loop
+      const actorHas = await checkPermission(actor, e.resource, e.action);
+      if (!actorHas) {
+        throw HttpError.forbidden(
+          `You cannot assign a group that grants ${e.resource}:${e.action} — you do not hold that permission yourself`
+        );
+      }
+    }
   }
 
   // Owner rolündeki bir kullanıcıyı başka bir gruba atamaya çalışıyorsa engelle

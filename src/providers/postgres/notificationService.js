@@ -28,10 +28,36 @@ const DEFAULT_NOTIFY = {
 
 function materializeSmtp(smtp) {
   if (!smtp || typeof smtp !== 'object') return {};
+  const raw = smtp.pass || '';
+  const pass = decryptSecret(raw);
+  // Encrypted blob that decrypts to empty → JWT_SECRET rotated / corrupt ciphertext.
+  // Without this flag, sendMail only sees an empty password and the UI may look fine.
+  const passCorrupt = typeof raw === 'string' && raw.startsWith('enc:v1:') && !pass;
+  const passConfigured = !!(raw && String(raw).length > 0);
   return {
     ...smtp,
-    pass: decryptSecret(smtp.pass || ''),
+    pass,
+    passCorrupt,
+    passConfigured,
   };
+}
+
+/**
+ * Provider-specific SMTP defaults. iCloud (smtp.mail.me.com) often times out on
+ * port 465 from Docker/cloud NATs; Apple documents STARTTLS on 587 instead.
+ */
+function normalizeSmtpTransport(smtp) {
+  const host = String(smtp.host || '').trim().toLowerCase();
+  const port = Number(smtp.port) || 587;
+  let secure = smtp.secure != null ? !!smtp.secure : port === 465;
+  let nextPort = port;
+  if (host === 'smtp.mail.me.com' || host === 'mail.me.com') {
+    if (port === 465 || secure) {
+      nextPort = 587;
+      secure = false;
+    }
+  }
+  return { ...smtp, host, port: nextPort, secure };
 }
 
 async function getMailConfig() {
@@ -65,19 +91,34 @@ async function saveMailConfig({ smtp, notify }) {
   if (smtp !== undefined) {
     if (typeof smtp !== 'object' || Array.isArray(smtp)) throw HttpError.badRequest('smtp must be an object');
     const cur = await getMailConfig();
+    const typedPass = smtp.pass;
     // Empty / masked password = keep existing secret (never persist the UI placeholder).
-    const nextPassPlain = isBlankOrMaskedPass(smtp.pass)
+    let nextPassPlain = isBlankOrMaskedPass(typedPass)
       ? (cur.smtp?.pass || '')
-      : String(smtp.pass).slice(0, 200);
-    const host = String(smtp.host || '').slice(0, 200);
-    await assertSmtpHostSafe(host);
-    params.push(JSON.stringify({
-      host,
+      : String(typedPass).slice(0, 200);
+    // Corrupt ciphertext + blank form would otherwise re-save an empty password.
+    if (isBlankOrMaskedPass(typedPass) && (cur.smtp?.passCorrupt || !nextPassPlain)) {
+      if (smtp.user || smtp.host) {
+        throw HttpError.badRequest(
+          'SMTP password is missing or could not be read — enter the mail password (app-specific for iCloud/Gmail) and Save'
+        );
+      }
+    }
+    const normalized = normalizeSmtpTransport({
+      host: String(smtp.host || '').slice(0, 200),
       port: Math.min(65535, Math.max(1, Number(smtp.port) || 587)),
       secure: !!smtp.secure,
       user: String(smtp.user || '').slice(0, 200),
-      pass: encryptSecret(nextPassPlain),
       from: String(smtp.from || '').slice(0, 200),
+    });
+    await assertSmtpHostSafe(normalized.host);
+    params.push(JSON.stringify({
+      host: normalized.host,
+      port: normalized.port,
+      secure: normalized.secure,
+      user: normalized.user,
+      pass: encryptSecret(nextPassPlain),
+      from: normalized.from,
     }));
     sets.push(`smtp_json = $${params.length}::jsonb`);
   }
@@ -114,12 +155,13 @@ async function clearMailConfig({ smtp = true, notify = true } = {}) {
 }
 
 function buildTransport(smtp) {
-  if (!smtp.host) throw HttpError.badRequest('SMTP host is required');
-  const port = Number(smtp.port) || 587;
-  const secure = smtp.secure != null ? !!smtp.secure : port === 465;
-  const auth = smtp.user ? { user: smtp.user, pass: smtp.pass || '' } : undefined;
+  const n = normalizeSmtpTransport(smtp);
+  if (!n.host) throw HttpError.badRequest('SMTP host is required');
+  const port = Number(n.port) || 587;
+  const secure = n.secure != null ? !!n.secure : port === 465;
+  const auth = n.user ? { user: n.user, pass: n.pass || '' } : undefined;
   return nodemailer.createTransport({
-    host: smtp.host,
+    host: n.host,
     port,
     secure,
     // STARTTLS on 587 when not using implicit TLS
@@ -133,10 +175,11 @@ function buildTransport(smtp) {
   });
 }
 
-function mapSmtpError(err) {
+function mapSmtpError(err, smtp = {}) {
   const msg = String(err?.message || err || '');
   const code = err?.code || err?.responseCode;
   const response = String(err?.response || '');
+  const port = Number(smtp.port) || 0;
   if (/Invalid login|authentication failed|535/i.test(msg + response)
     || code === 535) {
     return HttpError.badRequest(
@@ -144,10 +187,15 @@ function mapSmtpError(err) {
       + '(not your normal account password), then Save SMTP and try again.'
     );
   }
-  if (/ECONNREFUSED|ETIMEDOUT|ESOCKET|ENOTFOUND|ECONNRESET|connection timed out/i.test(msg)
+  if (/ECONNREFUSED|ETIMEDOUT|ESOCKET|ENOTFOUND|ECONNRESET|connection timed out|Connection timeout/i.test(msg)
     || code === 'ECONNECTION' || code === 'ETIMEDOUT' || code === 'EDNS') {
+    if (port === 465 || smtp.secure) {
+      return HttpError.badRequest(
+        'Cannot reach SMTP on port 465/TLS. For iCloud use host smtp.mail.me.com, port 587, and leave “TLS (port 465)” unchecked, then Save and retry.'
+      );
+    }
     return HttpError.badRequest(
-      `Cannot reach SMTP server (${msg.slice(0, 120)}). Check host, port, and TLS (465 = TLS on).`
+      `Cannot reach SMTP server (${msg.slice(0, 120)}). Check host, port, and TLS (465 = TLS on; iCloud prefers 587 without that checkbox).`
     );
   }
   if (/self[- ]signed|certificate/i.test(msg)) {
@@ -160,6 +208,11 @@ async function sendMail({ to, subject, text, html }) {
   const { smtp, companyName } = await getMailConfig();
   if (!smtp.host) throw HttpError.badRequest('SMTP host is required — save SMTP settings first');
   await assertSmtpHostSafe(smtp.host);
+  if (smtp.passCorrupt) {
+    throw HttpError.badRequest(
+      'SMTP password could not be decrypted (server secret may have changed) — re-enter the mail password in Integrations → Email and Save'
+    );
+  }
   if (smtp.user && !smtp.pass) {
     throw HttpError.badRequest('SMTP password is empty — enter your mail password (app-specific for iCloud/Gmail) and Save');
   }
@@ -175,7 +228,7 @@ async function sendMail({ to, subject, text, html }) {
       html: html || undefined,
     });
   } catch (err) {
-    throw mapSmtpError(err);
+    throw mapSmtpError(err, smtp);
   }
   return { sent: true, to: recipients };
 }
@@ -410,8 +463,39 @@ async function sendOnboardingWelcomeEmail({ onboardingId, to, extraNote } = {}) 
   return { sent: true, sentTo: recipient, subject: rendered.subject };
 }
 
+/**
+ * Email a self-service Portal user their sign-in details (URL, email, temporary
+ * password). Uses the editable `portal_access` template (Integrations →
+ * Templates); renderTemplate HTML-escapes every variable, so untrusted names
+ * cannot inject markup.
+ */
+async function sendPortalAccessEmail({ to, username, tempPassword }) {
+  const [{ companyName }, templates] = await Promise.all([getMailConfig(), getEmailTemplates()]);
+  const tpl = templates.portal_access;
+  const appUrl = process.env.APP_URL || process.env.PUBLIC_URL || 'http://localhost:8000';
+
+  const rendered = renderTemplate(tpl, {
+    companyName,
+    employeeName: username || to,
+    employeeEmail: to,
+    appUrl,
+    tempPassword,
+  });
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"></head>`
+    + `<body style="font-family:system-ui,-apple-system,sans-serif;line-height:1.5;color:#1a1a1a;max-width:640px;margin:0 auto;padding:24px">`
+    + `${rendered.bodyHtml}</body></html>`;
+
+  return sendMail({
+    to,
+    subject: rendered.subject,
+    text: rendered.bodyText,
+    html,
+  });
+}
+
 module.exports = {
   getMailConfig, saveMailConfig, clearMailConfig, sendTestEmail, runAlertDigest, notifyHandoverCompleted, sendMail,
-  getEmailTemplates, saveEmailTemplates, sendOnboardingWelcomeEmail,
+  getEmailTemplates, saveEmailTemplates, sendOnboardingWelcomeEmail, sendPortalAccessEmail,
   DEFAULT_NOTIFY, TEMPLATE_KEYS, PLACEHOLDERS,
 };

@@ -212,6 +212,15 @@ Views.employees = async function (el, params = {}) {
 };
 
 /* Employee detail: assigned assets + handover receipts + form regeneration. */
+/** Onboard is only offered within 7 days of the employee record being created. */
+function empOnboardWindowOpen(emp) {
+  const raw = emp && emp.createdAt;
+  if (!raw) return false;
+  const created = new Date(raw);
+  if (Number.isNaN(created.getTime())) return false;
+  return (Date.now() - created.getTime()) <= 7 * 24 * 60 * 60 * 1000;
+}
+
 function empDeviceHistoryBadge(type) {
   const map = {
     placed: { pill: 'pill-indigo', icon: 'location_on', label: t('emp.histPlaced') },
@@ -230,8 +239,32 @@ function empDeviceHistoryBadge(type) {
   return `<span class="pill ${m.pill}"><span class="ms ms-sm">${m.icon}</span> ${esc(m.label)}</span>`;
 }
 
+/** Toast / alert after POST grant-access — never claim email sent unless emailStatus === 'sent'. */
+function reportPortalGrantResult(r) {
+  if (!r) return;
+  if (r.emailStatus === 'sent') {
+    toast(t('emp.grantSent'), 'success');
+    return;
+  }
+  const email = (r.user && r.user.email) || '';
+  if (r.tempPassword) {
+    const why = r.emailError
+      || (r.emailStatus === 'failed'
+        ? (t('emp.grantEmailFailed') || 'Email could not be sent.')
+        : (t('emp.grantSmtpOff') || 'SMTP is not configured.'));
+    window.alert(`${why}\n\n${t('emp.grantTemp')}\n\n${email}\n${r.tempPassword}`);
+    toast(t('emp.grantEmailFailed') || 'Portal access created — email not sent', 'warning');
+    return;
+  }
+  toast(r.emailError || t('emp.grantEmailFailed') || 'Portal access created — email not sent', 'warning');
+}
+
 async function showEmployeeDetail(emp) {
   if (!emp) return;
+  // Refresh so hasPortalAccess (and other detail-only fields) are current.
+  try {
+    emp = await api(`/employees/${encodeURIComponent(emp.id)}`);
+  } catch { /* keep list row as fallback */ }
   const canEdit = Auth.canIam('employee', 'update') || Auth.canIam('employee', 'manage');
   // Explicit detail toggles — manage does NOT imply these (same as export).
   const canViewInventory = Auth.canIam('employee', 'view_inventory');
@@ -501,8 +534,15 @@ async function showEmployeeDetail(emp) {
     foot: `
       <button class="btn btn-outline" data-close>Close</button>
       ${canEdit && emp.status === 'Active' ? `
-        <button class="btn btn-outline" id="emp-onboard-one"><span class="ms">event_available</span> ${esc(t('emp.onboard'))}</button>
+        ${empOnboardWindowOpen(emp) ? `<button class="btn btn-outline" id="emp-onboard-one"><span class="ms">event_available</span> ${esc(t('emp.onboard'))}</button>` : ''}
         <button class="btn btn-outline" id="emp-offboard"><span class="ms">person_off</span> ${esc(t('emp.offboard'))}</button>` : ''}
+      ${Auth.can('canManageUsers') && emp.email ? (
+        emp.hasPortalAccess
+          ? `<button class="btn btn-danger" id="emp-revoke-access"><span class="ms">key_off</span> ${esc(t('emp.revokeAccess'))}</button>`
+          : (emp.status === 'Active'
+            ? `<button class="btn btn-outline" id="emp-grant-access"><span class="ms">key</span> ${esc(t('emp.grantAccess'))}</button>`
+            : '')
+      ) : ''}
       ${canGenerateForm ? `<button class="btn btn-primary" id="emp-print-current" ${assets.length === 0 ? 'disabled' : ''}>
         <span class="ms">print</span> Generate Current Asset Form</button>` : ''}`,
     onMount(overlay) {
@@ -527,6 +567,39 @@ async function showEmployeeDetail(emp) {
       if (obBtn) obBtn.addEventListener('click', () => {
         closeModal();
         openOffboardWizard(emp);
+      });
+
+      // Provision (or re-provision) a self-service Portal login for this employee.
+      const gaBtn = $('#emp-grant-access', overlay);
+      if (gaBtn) gaBtn.addEventListener('click', async () => {
+        if (!window.confirm(t('emp.grantConfirm'))) return;
+        gaBtn.disabled = true;
+        try {
+          const r = await api(`/employees/${encodeURIComponent(emp.id)}/grant-access`, { method: 'POST' });
+          reportPortalGrantResult(r);
+          closeModal();
+          showEmployeeDetail(emp);
+        } catch (err) {
+          toast(err.message, 'error');
+        } finally {
+          gaBtn.disabled = false;
+        }
+      });
+
+      // Revoke Portal login (delete Portal user + invalidate sessions).
+      const revBtn = $('#emp-revoke-access', overlay);
+      if (revBtn) revBtn.addEventListener('click', async () => {
+        if (!window.confirm(t('emp.revokeConfirm'))) return;
+        revBtn.disabled = true;
+        try {
+          await api(`/employees/${encodeURIComponent(emp.id)}/revoke-access`, { method: 'DELETE' });
+          toast(t('emp.revokeDone'), 'success');
+          closeModal();
+          showEmployeeDetail(emp);
+        } catch (err) {
+          toast(err.message, 'error');
+          revBtn.disabled = false;
+        }
       });
 
       // Filename or eye icon → stacked document lightbox (keeps employee modal open).
@@ -1091,6 +1164,9 @@ async function openOffboardWizard(emp) {
 
 async function employeeForm(emp, done) {
   const { defs: cfDefs, values: cfValues } = await fetchCustomFields('employee', emp?.id);
+  // Offer a Portal login only on create (existing employees get the button in
+  // their detail view) and only to users allowed to create accounts.
+  const offerGrant = !emp && Auth.can('canManageUsers');
   formModal({
     title: emp ? `Edit ${emp.fullName}` : 'Add New Employee',
     fields: [
@@ -1105,8 +1181,14 @@ async function employeeForm(emp, done) {
       { name: 'title', label: 'Title', value: emp?.title },
       { name: 'status', label: 'Status', type: 'select', value: emp?.status || 'Active', options: ['Active', 'Inactive'] },
       ...customFieldsAsFormFields(cfDefs, cfValues),
+      ...(offerGrant ? [{
+        name: 'grantAccess', type: 'checkbox', full: true,
+        label: 'emp.grantOnCreate', hint: 'emp.grantOnCreateHint',
+      }] : []),
     ],
     async onSubmit(d) {
+      const grant = offerGrant && !!d.grantAccess;
+      delete d.grantAccess;
       const { body, values } = peelCustomFieldPayload(d, cfDefs);
       let id = emp?.id;
       if (emp) await api(`/employees/${emp.id}`, { method: 'PUT', body });
@@ -1116,6 +1198,16 @@ async function employeeForm(emp, done) {
       }
       if (cfDefs.length && id) await saveCustomFieldValues('employee', id, values);
       toast(emp ? 'Employee updated' : 'Employee created', 'success');
+      if (grant && id) {
+        // Employee exists at this point, so a grant failure must not fail the
+        // whole submit — surface it and leave the detail-view button as retry.
+        try {
+          const r = await api(`/employees/${encodeURIComponent(id)}/grant-access`, { method: 'POST' });
+          reportPortalGrantResult(r);
+        } catch (err) {
+          toast(err.message, 'error');
+        }
+      }
       done();
     },
   });

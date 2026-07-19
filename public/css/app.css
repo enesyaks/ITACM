@@ -1010,6 +1010,7 @@ textarea { resize: vertical; min-height: 60px; }
 
 /* ---------- modal ---------- */
 .modal-overlay { position: fixed; inset: 0; background: rgba(19, 27, 46, .55); display: flex; align-items: flex-start; justify-content: center; padding: 48px 16px; z-index: 80; overflow-y: auto; }
+.modal-overlay.modal-stacked { z-index: 90; }
 .modal {
   background: #fff; border-radius: var(--radius-xl); width: 520px; max-width: 100%;
   box-shadow: var(--shadow-pop);
@@ -1072,6 +1073,14 @@ textarea { resize: vertical; min-height: 60px; }
 .form-grid .full { grid-column: 1 / -1; }
 .form-field label { display: block; font-size: 12px; font-weight: 600; color: var(--on-surface-variant); margin-bottom: 4px; }
 .form-error { color: var(--rose-800); background: var(--rose-100); border-radius: var(--radius); font-size: 12px; padding: 8px 12px; margin-top: 12px; }
+/* Portal (self-service) mode: hide IT tooling in the topbar, keep the avatar. */
+.is-portal .topbar-search,
+.is-portal .topbar-actions .icon-btn { display: none; }
+
+/* formModal type:'checkbox' — must beat `.form-field label { display:block }` */
+.form-field label.check-row { display: flex; align-items: flex-start; gap: 10px; font-size: .88rem; font-weight: 500; color: var(--on-surface); cursor: pointer; margin: 2px 0 0; }
+.form-field label.check-row > input[type=checkbox] { flex: 0 0 auto; width: 16px; height: 16px; margin: 2px 0 0; accent-color: var(--primary, #4f46e5); }
+.form-field .check-hint { font-size: 12px; color: var(--on-surface-variant); margin: 4px 0 0 26px; }
 
 /* Asset create/edit form */
 .af-form { display: flex; flex-direction: column; gap: 16px; }
@@ -2576,7 +2585,7 @@ tr.net-row:hover td { background: var(--surface-low); }
   fill: none; stroke: #98a2b3; stroke-width: 2; stroke-linecap: round;
 }
 .net-topo-node { cursor: pointer; }
-.net-topo-node:hover rect:first-of-type { filter: drop-shadow(0 4px 10px rgba(53,37,205,.18)); }
+.net-topo-node:hover .net-topo-node-bg { filter: drop-shadow(0 4px 10px rgba(53,37,205,.18)); }
 .net-topo-title { font: 700 12px var(--font); fill: #101828; }
 .net-topo-sub { font: 500 11px var(--font); fill: #344054; }
 .net-topo-meta { font: 400 10px var(--font-mono, monospace); fill: #667085; }

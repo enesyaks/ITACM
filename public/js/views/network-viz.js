@@ -165,7 +165,8 @@ const NetViz = (() => {
       return `<path class="net-topo-edge" d="${edgePath(a, b)}" marker-end="url(#${mid})"/>`;
     }).join('');
 
-    const nodes = [...positions.entries()].map(([id, p]) => {
+    const clipDefs = [];
+    const nodes = [...positions.entries()].map(([id, p], ni) => {
       const d = byId.get(id);
       const s = d.specs || {};
       const color = roleColor(d.infraRole);
@@ -174,10 +175,15 @@ const NetViz = (() => {
       const remoteNote = remote
         ? `↑ ${remote.assetTag} @ ${(remote.location || '?')}`
         : '';
+      const clipId = `ntc-${mid}-${ni}`;
+      clipDefs.push(`<clipPath id="${clipId}"><rect width="${p.w}" height="${p.h}" rx="10" ry="10"/></clipPath>`);
       return `<g class="net-topo-node" data-id="${esc(id)}" transform="translate(${p.x},${p.y})" role="button" tabindex="0">
-        <rect width="${p.w}" height="${p.h}" rx="10" ry="10"
-          fill="#fff" stroke="${color}" stroke-width="2"/>
-        <rect width="6" height="${p.h}" rx="3" fill="${color}"/>
+        <g clip-path="url(#${clipId})">
+          <rect class="net-topo-node-bg" width="${p.w}" height="${p.h}" fill="#fff"/>
+          <rect class="net-topo-node-accent" width="6" height="${p.h}" fill="${color}"/>
+        </g>
+        <rect class="net-topo-node-stroke" width="${p.w}" height="${p.h}" rx="10" ry="10"
+          fill="none" stroke="${color}" stroke-width="2"/>
         <text x="16" y="22" class="net-topo-title">${esc(d.assetTag)}</text>
         <text x="16" y="38" class="net-topo-sub">${esc((d.brand + ' ' + d.model).slice(0, 22))}</text>
         <text x="16" y="52" class="net-topo-meta">${esc((remoteNote || sub).slice(0, 28) || d.category)}</text>
@@ -191,6 +197,7 @@ const NetViz = (() => {
           markerWidth="7" markerHeight="7" orient="auto-start-reverse">
           <path d="M0,0 L10,5 L0,10 z" fill="#98a2b3"/>
         </marker>
+        ${clipDefs.join('')}
       </defs>
       <g class="net-topo-edges">${edgeSvg}</g>
       <g class="net-topo-nodes">${nodes}</g>

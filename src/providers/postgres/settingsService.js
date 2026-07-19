@@ -6,7 +6,7 @@ const {
   DEFAULT_HANDOVER_TERMS, DEFAULT_LIFECYCLES, DEFAULT_LOCATIONS, DEFAULT_SPEC_OPTIONS,
   DEFAULT_HANDOVER_TEMPLATE, DEFAULT_HANDOVER_TEMPLATES, MAX_HANDOVER_TEMPLATES,
   DEFAULT_LABEL_CONFIG, DEFAULT_DEPARTMENTS, DEFAULT_PROVIDER_CATEGORIES,
-  DEFAULT_CONTRACT_CATEGORIES, DEFAULT_CURRENCY, HANDOVER_DESIGN_IDS,
+  DEFAULT_CONTRACT_CATEGORIES, DEFAULT_CURRENCY, DEFAULT_ASSET_TAG_PREFIX, HANDOVER_DESIGN_IDS,
 } = require('../../utils/defaults');
 
 function normalizeCurrency(raw) {
@@ -16,6 +16,22 @@ function normalizeCurrency(raw) {
     throw HttpError.badRequest('currency must be a 3-letter ISO code (e.g. TRY, USD, EUR)');
   }
   return c;
+}
+
+/**
+ * Asset tag leading text only (letters/digits). Stored uppercase; tags become PREFIX-####.
+ * Pass null/'' to mean "use default" when reading; save path treats undefined as no-op.
+ */
+function normalizeAssetTagPrefix(raw, { allowEmpty = false } = {}) {
+  if (raw == null || raw === '') {
+    if (allowEmpty) return null;
+    return DEFAULT_ASSET_TAG_PREFIX;
+  }
+  const p = String(raw).trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (p.length < 1 || p.length > 12) {
+    throw HttpError.badRequest('assetTagPrefix must be 1–12 letters or digits (e.g. IT, ACME)');
+  }
+  return p;
 }
 
 const LABEL_NUM_KEYS = { widthMm: [20, 150], heightMm: [10, 150], barcodeMm: [5, 40], copies: [1, 50] };
@@ -197,12 +213,18 @@ async function completeSetup(setupToken, fields, adminFn) {
   }
   const {
     companyName, companyLogo, companyAddress, language, handoverTemplates, defaultTemplateId,
+    assetTagPrefix,
   } = fields || {};
   if (!companyName) throw HttpError.badRequest('companyName is required');
   if (companyAddress !== undefined && companyAddress !== null && String(companyAddress).length > 200) {
     throw HttpError.badRequest('companyAddress too long (max 200 chars)');
   }
   const addressClean = String(companyAddress ?? '').trim().slice(0, 200);
+  const tagPrefixClean = normalizeAssetTagPrefix(
+    assetTagPrefix === undefined || assetTagPrefix === null || assetTagPrefix === ''
+      ? DEFAULT_ASSET_TAG_PREFIX
+      : assetTagPrefix
+  );
 
   return withTransaction(async (client) => {
     const { rows } = await client.query(
@@ -244,7 +266,8 @@ async function completeSetup(setupToken, fields, adminFn) {
          language = COALESCE($3, language),
          handover_templates = COALESCE($4::jsonb, handover_templates),
          handover_template = COALESCE($5::jsonb, handover_template),
-         company_address = $6
+         company_address = $6,
+         asset_tag_prefix = $7
        WHERE id = 1`,
       [
         companyName,
@@ -253,6 +276,7 @@ async function completeSetup(setupToken, fields, adminFn) {
         templatesToSave ? JSON.stringify(templatesToSave) : null,
         defaultMirror ? JSON.stringify(defaultMirror) : null,
         addressClean,
+        tagPrefixClean,
       ]
     );
 
@@ -266,7 +290,7 @@ async function getSettings() {
     `SELECT company_name, company_logo, company_address, onboarded, handover_terms, lifecycles,
             locations, default_location, spec_options, document_storage, handover_template,
             handover_templates, departments, language, currency, label_config,
-            provider_categories, contract_categories
+            provider_categories, contract_categories, asset_tag_prefix
      FROM app_settings WHERE id = 1`
   );
   const s = rows[0] || {};
@@ -277,6 +301,12 @@ async function getSettings() {
     currency = normalizeCurrency(s.currency) || DEFAULT_CURRENCY;
   } catch {
     currency = DEFAULT_CURRENCY;
+  }
+  let assetTagPrefix = DEFAULT_ASSET_TAG_PREFIX;
+  try {
+    assetTagPrefix = normalizeAssetTagPrefix(s.asset_tag_prefix);
+  } catch {
+    assetTagPrefix = DEFAULT_ASSET_TAG_PREFIX;
   }
   return {
     companyName: s.company_name || 'IT Asset Control Pro',
@@ -296,6 +326,7 @@ async function getSettings() {
     documentStorage: s.document_storage || { provider: 'local' },
     language: s.language || 'en',
     currency,
+    assetTagPrefix,
     labelConfig: { ...DEFAULT_LABEL_CONFIG, ...(s.label_config || {}) },
     handoverTemplates,
     // First template = default (used by older callers that only read handoverTemplate).
@@ -352,12 +383,15 @@ async function saveSettings({
   companyName, companyLogo, companyAddress, onboarded, handoverTerms, lifecycles,
   locations, defaultLocation, specOptions, documentStorage, handoverTemplate,
   handoverTemplates, defaultTemplateId, departments, language, currency, labelConfig,
-  providerCategories, contractCategories,
+  providerCategories, contractCategories, assetTagPrefix,
 }) {
   if (language !== undefined && language !== null && !/^[a-z]{2}(-[A-Za-z]{2,4})?$/.test(String(language))) {
     throw HttpError.badRequest('language must be a short code like "en" or "tr"');
   }
   const currencyClean = currency !== undefined ? normalizeCurrency(currency) : undefined;
+  const assetTagPrefixClean = assetTagPrefix !== undefined
+    ? normalizeAssetTagPrefix(assetTagPrefix)
+    : undefined;
   if (companyName !== undefined && (!companyName || companyName.length > 80)) {
     throw HttpError.badRequest('companyName is required (max 80 chars)');
   }
@@ -430,7 +464,8 @@ async function saveSettings({
        label_config   = CASE WHEN $15::jsonb IS NOT NULL THEN $15 ELSE label_config END,
        provider_categories = CASE WHEN $16::jsonb IS NOT NULL THEN $16 ELSE provider_categories END,
        contract_categories = CASE WHEN $17::jsonb IS NOT NULL THEN $17 ELSE contract_categories END,
-       currency = CASE WHEN $18::text IS NOT NULL THEN $18 ELSE currency END
+       currency = CASE WHEN $18::text IS NOT NULL THEN $18 ELSE currency END,
+       asset_tag_prefix = CASE WHEN $19::text IS NOT NULL THEN $19 ELSE asset_tag_prefix END
      WHERE id = 1`,
     [companyName ?? null, companyLogo ?? null, onboarded ?? null, handoverTerms ?? null,
      lifecyclesClean ? JSON.stringify(lifecyclesClean) : null,
@@ -450,7 +485,8 @@ async function saveSettings({
      contractCategories
        ? JSON.stringify(contractCategories.map((d) => String(d).trim()).filter(Boolean))
        : null,
-     currencyClean ?? null]
+     currencyClean ?? null,
+     assetTagPrefixClean ?? null]
   );
   return getSettings();
 }
@@ -463,4 +499,5 @@ module.exports = {
   newTemplateId,
   ensureSetupToken,
   completeSetup,
+  normalizeAssetTagPrefix,
 };

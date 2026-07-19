@@ -66,7 +66,9 @@ Views.licenses = async function (el) {
               <td><div style="display:flex;align-items:center;gap:12px">${iconChip('vpn_key', chipTone(l))}
                 <div>
                   <span class="cell-title">${esc(l.softwareName)}</span>
-                  <div class="cell-sub mono">${esc(l.licenseKey)}</div>
+                  ${l.licenseKey
+                    ? `<div class="cell-sub mono">${esc(l.licenseKey)}</div>`
+                    : '<div class="cell-sub">No license key</div>'}
                   ${l.renewedAt ? `<div class="cell-sub">Renewed ${fmtDate(l.renewedAt)}</div>` : ''}
                   ${cancelled && l.cancelledAt ? `<div class="cell-sub">Cancelled ${fmtDate(l.cancelledAt)}</div>` : ''}
                 </div></div></td>
@@ -282,105 +284,188 @@ Views.licenses = async function (el) {
 
 /** Create / edit license with provider + contract or invoice purchase proof. */
 function openLicenseForm({ license = null, providers = [], contracts = [], onDone }) {
-  const activeProviders = providers.filter((p) => (p.status || 'Active') === 'Active' || p.id === license?.providerId);
+  const OTHER_PROVIDER = '__other__';
+  const canCreateProvider = Auth.canIamOp('provider', 'create');
+  let providerList = providers.filter((p) => (p.status || 'Active') === 'Active' || p.id === license?.providerId);
   const toDate = (v) => (v ? String(v).slice(0, 10) : '');
+  const canCosts = Auth.canIam('license', 'view_confidential') || Auth.can('canViewLicenseCosts');
+
+  const providerOptionsHtml = (selectedId) => `
+              <option value="">— Select provider —</option>
+              ${providerList.map((p) =>
+                `<option value="${esc(p.id)}" ${selectedId === p.id ? 'selected' : ''}>${esc(p.name)}${p.category ? ' · ' + esc(p.category) : ''}</option>`
+              ).join('')}
+              ${canCreateProvider
+                ? `<option value="${OTHER_PROVIDER}">Other (create new provider)…</option>`
+                : ''}`;
 
   openModal({
     title: license ? `Edit ${license.softwareName}` : 'New License',
     wide: true,
     body: `
-      <form id="lic-form" class="form-grid" style="gap:12px">
-        <div class="form-field full"><label>Software *</label>
-          <input name="softwareName" required value="${esc(license?.softwareName || '')}"></div>
-        <div class="form-field"><label>License key *</label>
-          <input name="licenseKey" required value="${esc(license?.licenseKey || '')}"></div>
-        <div class="form-field"><label>Total seats *</label>
-          <input name="totalSeats" type="number" min="1" required value="${esc(license?.totalSeats ?? 1)}"></div>
-        <div class="form-field"><label>Expiration *</label>
-          <input name="expirationDate" type="date" required value="${esc(toDate(license?.expirationDate))}"></div>
+      <form id="lic-form" class="af-form" novalidate>
+        <section class="af-sec">
+          <div class="af-sec-head"><strong>License</strong><span>Product, seats &amp; expiry</span></div>
+          <div class="form-field full"><label>Software *</label>
+            <input name="softwareName" required autocomplete="off" placeholder="e.g. Microsoft 365 E3"
+              value="${esc(license?.softwareName || '')}"></div>
+          <div class="form-field full"><label>License key <span class="ob-hint">optional</span></label>
+            <input name="licenseKey" class="mono" autocomplete="off" spellcheck="false"
+              placeholder="Leave blank if managed by vendor portal"
+              value="${esc(license?.licenseKey || '')}">
+            <div class="cell-sub" style="margin-top:4px">Not required for subscription or portal-managed seats.</div>
+          </div>
+          <div class="form-field"><label>Total seats *</label>
+            <input name="totalSeats" type="number" min="1" required value="${esc(license?.totalSeats ?? 1)}"></div>
+          <div class="form-field"><label>Expiration *</label>
+            <input name="expirationDate" type="date" required value="${esc(toDate(license?.expirationDate))}"></div>
+        </section>
 
-        <div class="form-field full" style="margin-top:4px">
-          <div class="cell-sub" style="font-weight:600;margin-bottom:6px">Purchase / supplier</div>
-        </div>
-        <div class="form-field full"><label>Provider</label>
-          <select name="providerId" id="lic-provider">
-            <option value="">— Select provider —</option>
-            ${activeProviders.map((p) =>
-              `<option value="${esc(p.id)}" ${license?.providerId === p.id ? 'selected' : ''}>${esc(p.name)}${p.category ? ' · ' + esc(p.category) : ''}</option>`
-            ).join('')}
-          </select>
-          <div class="cell-sub" style="margin-top:4px">Create providers under Providers if missing. Vendor name fills from provider.</div>
-        </div>
-        <div class="form-field"><label>Purchase type</label>
-          <select name="purchaseType" id="lic-ptype">
-            <option value="" ${!license?.purchaseType ? 'selected' : ''}>—</option>
-            <option value="contract" ${license?.purchaseType === 'contract' ? 'selected' : ''}>Contract / agreement</option>
-            <option value="invoice" ${license?.purchaseType === 'invoice' ? 'selected' : ''}>Invoice</option>
-          </select></div>
-        <div class="form-field" id="lic-contract-wrap"><label>Linked contract</label>
-          <select name="contractId" id="lic-contract">
-            <option value="">— None —</option>
-          </select>
-          <div class="cell-sub" style="margin-top:4px">Filtered by selected provider. Upload scans under Documents after save.</div>
-        </div>
-        <div class="form-field" id="lic-invoice-wrap"><label>Invoice number</label>
-          <input name="invoiceNumber" value="${esc(license?.invoiceNumber || '')}" placeholder="e.g. INV-2026-0142"></div>
-        <div class="form-field"><label>Purchase date</label>
-          <input name="purchaseDate" type="date" value="${esc(toDate(license?.purchaseDate))}"></div>
-        ${(Auth.canIam('license', 'view_confidential') || Auth.can('canViewLicenseCosts')) ? `
-        <div class="form-field"><label>Amount</label>
-          <input name="purchaseAmount" type="number" step="0.01" min="0" value="${esc(license?.purchaseAmount ?? '')}"></div>
-        <div class="form-field"><label>Currency</label>
-          <select name="purchaseCurrency">
-            ${currencyOptionsForSelect(license?.purchaseCurrency || appCurrency()).map((o) =>
-              `<option value="${esc(o.value)}" ${(license?.purchaseCurrency || appCurrency()) === o.value ? 'selected' : ''}>${esc(o.label)}</option>`
-            ).join('')}
-          </select></div>` : `
-        <input type="hidden" name="purchaseAmount" value="">
-        <input type="hidden" name="purchaseCurrency" value="">`}
+        <section class="af-sec">
+          <div class="af-sec-head"><strong>Purchase / supplier</strong><span>Link a contract, or record a one-off invoice</span></div>
+          <div class="form-field full"><label>Provider</label>
+            <select name="providerId" id="lic-provider">
+              ${providerOptionsHtml(license?.providerId || '')}
+            </select>
+            <div class="cell-sub" style="margin-top:4px">${canCreateProvider
+              ? 'Choose Other to create a provider without leaving this form. Vendor name fills from provider.'
+              : 'Create providers under Providers if missing. Vendor name fills from provider.'}</div>
+          </div>
+          <div class="form-field full"><label>How was this purchased?</label>
+            <select name="purchaseType" id="lic-ptype">
+              <option value="" ${!license?.purchaseType ? 'selected' : ''}>— Not set —</option>
+              <option value="contract" ${license?.purchaseType === 'contract' ? 'selected' : ''}>Under a contract / agreement</option>
+              <option value="invoice" ${license?.purchaseType === 'invoice' ? 'selected' : ''}>One-off invoice (no contract)</option>
+            </select>
+            <div class="cell-sub" style="margin-top:4px">If a master agreement exists, pick Contract and link it. Otherwise use Invoice.</div>
+          </div>
+          <div class="form-field full hidden" id="lic-contract-wrap"><label>Linked contract</label>
+            <select name="contractId" id="lic-contract">
+              <option value="">— Select contract —</option>
+            </select>
+            <div class="cell-sub" style="margin-top:4px">Only contracts for the selected provider. Upload the signed PDF under Documents after save.</div>
+          </div>
+          <div class="form-field full hidden" id="lic-invoice-wrap"><label>Invoice number</label>
+            <input name="invoiceNumber" value="${esc(license?.invoiceNumber || '')}" placeholder="e.g. INV-2026-0142">
+            <div class="cell-sub" style="margin-top:4px">Upload the invoice PDF under Documents after save.</div>
+          </div>
+          <div class="form-field" id="lic-purchase-date-wrap"><label>Purchase date</label>
+            <input name="purchaseDate" type="date" value="${esc(toDate(license?.purchaseDate))}"></div>
+          ${canCosts ? `
+          <div class="form-field" id="lic-amount-wrap"><label>Amount</label>
+            <input name="purchaseAmount" type="number" step="0.01" min="0" value="${esc(license?.purchaseAmount ?? '')}"></div>
+          <div class="form-field" id="lic-currency-wrap"><label>Currency</label>
+            <select name="purchaseCurrency">
+              ${currencyOptionsForSelect(license?.purchaseCurrency || appCurrency()).map((o) =>
+                `<option value="${esc(o.value)}" ${(license?.purchaseCurrency || appCurrency()) === o.value ? 'selected' : ''}>${esc(o.label)}</option>`
+              ).join('')}
+            </select></div>` : `
+          <input type="hidden" name="purchaseAmount" value="">
+          <input type="hidden" name="purchaseCurrency" value="">`}
+        </section>
       </form>`,
     foot: `
       <button class="btn btn-outline" data-close>Cancel</button>
-      <button class="btn btn-primary" id="lic-save">${license ? 'Save changes' : 'Create license'}</button>`,
+      <button class="btn btn-primary" id="lic-save">
+        <span class="ms">${license ? 'save' : 'add'}</span>
+        ${license ? 'Save changes' : 'Create license'}
+      </button>`,
     onMount(overlay) {
       const providerSel = $('#lic-provider', overlay);
       const contractSel = $('#lic-contract', overlay);
       const typeSel = $('#lic-ptype', overlay);
+      let prevProviderId = providerSel.value || '';
+
+      const contractWrap = $('#lic-contract-wrap', overlay);
+      const invoiceWrap = $('#lic-invoice-wrap', overlay);
+      const invoiceInput = invoiceWrap && invoiceWrap.querySelector('input[name="invoiceNumber"]');
 
       function fillContracts() {
         const pid = providerSel.value;
+        if (pid === OTHER_PROVIDER) return;
         const opts = contracts.filter((c) => !pid || c.providerId === pid);
-        const cur = license?.contractId || contractSel.value;
-        contractSel.innerHTML = `<option value="">— None —</option>` + opts.map((c) =>
-          `<option value="${esc(c.id)}" ${c.id === cur ? 'selected' : ''}>${esc(c.title)}${c.contractNumber ? ' · ' + esc(c.contractNumber) : ''} (${esc(c.status || '')})</option>`
-        ).join('');
+        const cur = contractSel.value || license?.contractId || '';
+        contractSel.innerHTML = `<option value="">— Select contract —</option>` + (opts.length
+          ? opts.map((c) =>
+            `<option value="${esc(c.id)}" ${c.id === cur ? 'selected' : ''}>${esc(c.title)}${c.contractNumber ? ' · ' + esc(c.contractNumber) : ''} (${esc(c.status || '')})</option>`
+          ).join('')
+          : `<option value="" disabled>${pid ? 'No contracts for this provider' : 'Select a provider first'}</option>`);
       }
 
-      function syncTypeUi() {
+      /** Contract XOR invoice — only the path that matches purchase type is shown. */
+      function syncTypeUi({ clearOther = false } = {}) {
         const t = typeSel.value;
-        const inv = $('#lic-invoice-wrap', overlay);
-        if (inv) inv.style.display = t === 'invoice' || t === '' ? '' : '';
-        // keep both visible; type mainly drives doc kind defaults
+        const showContract = t === 'contract';
+        const showInvoice = t === 'invoice';
+        if (contractWrap) contractWrap.classList.toggle('hidden', !showContract);
+        if (invoiceWrap) invoiceWrap.classList.toggle('hidden', !showInvoice);
+        if (clearOther) {
+          if (!showContract) contractSel.value = '';
+          if (!showInvoice && invoiceInput) invoiceInput.value = '';
+        }
+      }
+
+      function applyCreatedProvider(created) {
+        if (!created || !created.id) return;
+        if (!providerList.some((p) => p.id === created.id)) providerList.push(created);
+        if (Array.isArray(providers) && !providers.some((p) => p.id === created.id)) providers.push(created);
+        providerSel.innerHTML = providerOptionsHtml(created.id);
+        prevProviderId = created.id;
+        fillContracts();
       }
 
       fillContracts();
-      syncTypeUi();
-      providerSel.addEventListener('change', fillContracts);
-      typeSel.addEventListener('change', syncTypeUi);
+      syncTypeUi({ clearOther: false });
+      providerSel.addEventListener('change', () => {
+        if (providerSel.value === OTHER_PROVIDER) {
+          const restore = prevProviderId;
+          providerSel.value = restore;
+          if (typeof openProviderForm !== 'function') {
+            toast('Provider form unavailable — open Providers to create one.', 'error');
+            return;
+          }
+          let saved = false;
+          openProviderForm(null, (created) => {
+            saved = true;
+            applyCreatedProvider(created);
+          }, {
+            stack: true,
+            onClose: () => {
+              if (!saved) {
+                providerSel.value = restore;
+                prevProviderId = restore;
+              }
+            },
+          });
+          return;
+        }
+        prevProviderId = providerSel.value;
+        fillContracts();
+      });
+      typeSel.addEventListener('change', () => syncTypeUi({ clearOther: true }));
 
       $('#lic-save', overlay).addEventListener('click', async () => {
         const form = $('#lic-form', overlay);
         if (!form.reportValidity()) return;
         const fd = new FormData(form);
+        const providerId = fd.get('providerId');
+        const purchaseType = fd.get('purchaseType') || null;
+        // Enforce one path: contract link OR invoice number — never both.
+        const contractId = purchaseType === 'contract' ? (fd.get('contractId') || null) : null;
+        const invoiceNumber = purchaseType === 'invoice' ? (fd.get('invoiceNumber') || null) : null;
+        if (purchaseType === 'contract' && !contractId) {
+          toast('Select a linked contract, or switch purchase type to Invoice.', 'error');
+          return;
+        }
         const body = {
           softwareName: String(fd.get('softwareName') || '').trim(),
           licenseKey: String(fd.get('licenseKey') || '').trim(),
           totalSeats: Number(fd.get('totalSeats')),
           expirationDate: fd.get('expirationDate'),
-          providerId: fd.get('providerId') || null,
-          purchaseType: fd.get('purchaseType') || null,
-          contractId: fd.get('contractId') || null,
-          invoiceNumber: fd.get('invoiceNumber') || null,
+          providerId: !providerId || providerId === OTHER_PROVIDER ? null : providerId,
+          purchaseType,
+          contractId,
+          invoiceNumber,
           purchaseDate: fd.get('purchaseDate') || null,
           purchaseAmount: fd.get('purchaseAmount') === '' ? null : fd.get('purchaseAmount'),
           purchaseCurrency: fd.get('purchaseCurrency') || null,

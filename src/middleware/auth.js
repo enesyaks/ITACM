@@ -15,6 +15,25 @@
 const { authProvider } = require('../providers');
 const { HttpError } = require('../utils/httpError');
 const { needsMfaEnrollment, isMfaEnrollmentAllowedPath } = require('../utils/mfaPolicy');
+const { needsPasswordChange, isPasswordChangeAllowedPath } = require('../utils/passwordPolicy');
+
+// Endpoints a Portal (self-service employee) account is allowed to reach:
+// its own zimmet plus the self-service auth actions. Everything else is 403.
+const PORTAL_AUTH_PATHS = new Set([
+  '/api/auth/logout',
+  '/api/auth/password',
+  '/api/auth/verify-token',
+  '/api/auth/my-permissions',
+  '/api/auth/mfa',
+  '/api/auth/mfa/setup',
+  '/api/auth/mfa/enable',
+  '/api/auth/mfa/disable',
+]);
+function isPortalAllowedPath(originalUrl) {
+  const path = String(originalUrl || '').split('?')[0].replace(/\/+$/, '') || '/';
+  if (path === '/api/me' || path.startsWith('/api/me/')) return true;
+  return PORTAL_AUTH_PATHS.has(path);
+}
 
 async function authenticate(req, res, next) {
   try {
@@ -60,6 +79,24 @@ async function authenticate(req, res, next) {
       throw HttpError.forbidden(
         'Owners must enable MFA before using the app',
         { code: 'MFA_ENROLLMENT_REQUIRED' }
+      );
+    }
+
+    // Users with a one-time/temp password must set a new one before normal API use.
+    if (needsPasswordChange(req.user) && !isPasswordChangeAllowedPath(req.originalUrl)) {
+      throw HttpError.forbidden(
+        'You must set a new password before continuing',
+        { code: 'PASSWORD_CHANGE_REQUIRED' }
+      );
+    }
+
+    // Portal = untrusted self-service employee login. Confine it to its OWN
+    // zimmet (/api/me/*) and self-service auth endpoints so it can never reach
+    // an authenticate-only route that assumed every caller was staff.
+    if (req.user.role === 'Portal' && !isPortalAllowedPath(req.originalUrl)) {
+      throw HttpError.forbidden(
+        'Portal accounts can only access their own zimmet',
+        { code: 'PORTAL_CONFINED' }
       );
     }
 

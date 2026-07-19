@@ -202,6 +202,9 @@ const DEFAULT_LABEL_CONFIG = {
 /** Instance default currency (ISO 4217). Contracts may override per record. */
 const DEFAULT_CURRENCY = 'TRY';
 
+/** Leading segment of auto-generated asset tags: PREFIX-#### (e.g. IT-1001). */
+const DEFAULT_ASSET_TAG_PREFIX = 'IT';
+
 /** Common currencies offered in Settings / contract forms. */
 const APP_CURRENCIES = [
   'TRY', 'USD', 'EUR', 'GBP', 'CHF', 'AED', 'SAR', 'JPY', 'CAD', 'AUD', 'SEK', 'NOK', 'DKK', 'PLN', 'RON', 'CZK', 'HUF', 'BGN', 'RUB', 'CNY', 'INR', 'BRL', 'MXN', 'ZAR', 'KRW', 'SGD', 'HKD', 'NZD',
@@ -220,6 +223,7 @@ module.exports = {
   DEFAULT_PROVIDER_CATEGORIES,
   DEFAULT_CONTRACT_CATEGORIES,
   DEFAULT_CURRENCY,
+  DEFAULT_ASSET_TAG_PREFIX,
   APP_CURRENCIES,
   HANDOVER_DESIGNS,
   HANDOVER_DESIGN_IDS,

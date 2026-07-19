@@ -3,12 +3,18 @@
  * Missing keys fall back to DEFAULT_EMAIL_TEMPLATES.
  */
 
-const TEMPLATE_KEYS = ['onboarding_welcome'];
+const TEMPLATE_KEYS = ['onboarding_welcome', 'portal_access'];
 
 const PLACEHOLDERS = [
   'companyName', 'companyAddress', 'employeeName', 'employeeEmail',
   'startDate', 'itemList', 'appUrl', 'accessInstructions',
 ];
+
+// Placeholders each template actually supports (shown in the editor UI).
+const TEMPLATE_PLACEHOLDERS = {
+  onboarding_welcome: PLACEHOLDERS,
+  portal_access: ['companyName', 'employeeName', 'employeeEmail', 'appUrl', 'tempPassword'],
+};
 
 const DEFAULT_EMAIL_TEMPLATES = {
   onboarding_welcome: {
@@ -31,6 +37,25 @@ const DEFAULT_EMAIL_TEMPLATES = {
       + 'How to get access / Giriş bilgileri:\n{{accessInstructions}}\n\n'
       + 'Workspace: {{appUrl}}\n\n'
       + 'If you have questions, reply to this email or contact IT.\n',
+  },
+  portal_access: {
+    subject: 'Your {{companyName}} account',
+    bodyHtml:
+      '<p>Hello {{employeeName}},</p>'
+      + '<p>You can now sign in to <strong>{{companyName}}</strong> to view the equipment assigned to you (zimmet).</p>'
+      + '<p><strong>Sign-in URL:</strong> <a href="{{appUrl}}">{{appUrl}}</a><br>'
+      + '<strong>Email:</strong> {{employeeEmail}}<br>'
+      + '<strong>Temporary password:</strong> {{tempPassword}}</p>'
+      + '<p>Please change your password right after your first sign-in.</p>'
+      + '<p>{{companyName}} · ITACM</p>',
+    bodyText:
+      'Hello {{employeeName}},\n\n'
+      + 'You can now sign in to {{companyName}} to view the equipment assigned to you (zimmet).\n\n'
+      + 'Sign-in URL: {{appUrl}}\n'
+      + 'Email: {{employeeEmail}}\n'
+      + 'Temporary password: {{tempPassword}}\n\n'
+      + 'Please change your password right after your first sign-in.\n\n'
+      + '{{companyName}} · ITACM\n',
   },
 };
 
@@ -110,6 +135,7 @@ function renderTemplate(tpl, vars) {
 module.exports = {
   TEMPLATE_KEYS,
   PLACEHOLDERS,
+  TEMPLATE_PLACEHOLDERS,
   DEFAULT_EMAIL_TEMPLATES,
   DEFAULT_ACCESS,
   getDefaultTemplate,

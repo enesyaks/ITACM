@@ -63,10 +63,12 @@ async function issueSession(user, meta = {}) {
       email: user.email,
       role: user.role,
       mfaEnabled: !!user.mfa_enabled,
+      mustChangePassword: !!user.must_change_password,
     },
     ...(roleRequiresMfa(user.role) && !user.mfa_enabled
       ? { mfaEnrollmentRequired: true }
       : {}),
+    ...(user.must_change_password ? { mustChangePassword: true } : {}),
   };
 }
 
@@ -117,11 +119,31 @@ async function verifyMfaChallengeToken(mfaToken) {
   const { rows } = await query('SELECT * FROM users WHERE id = $1', [payload.sub]);
   if (!rows[0]) throw HttpError.unauthorized('Account no longer exists');
   if (rows[0].status === 'Disabled') throw HttpError.forbidden('This account has been disabled');
+  await assertPortalEmployeeActive(rows[0]);
   return {
     user: rows[0],
     jti: payload.jti || null,
     tokenExp: payload.exp ? new Date(payload.exp * 1000) : new Date(Date.now() + 5 * 60 * 1000),
   };
+}
+
+/**
+ * Portal logins are tied to an Active employee record (by email).
+ * Inactive / missing employees must never sign in — even if a users row remains.
+ */
+async function assertPortalEmployeeActive(user) {
+  if (!user || user.role !== 'Portal') return;
+  const email = String(user.email || '').trim().toLowerCase();
+  if (!email) {
+    throw HttpError.forbidden('Portal access is no longer available — contact IT');
+  }
+  const { rows } = await query(
+    `SELECT status FROM employees WHERE lower(email) = $1 LIMIT 1`,
+    [email]
+  );
+  if (!rows[0] || rows[0].status !== 'Active') {
+    throw HttpError.forbidden('Portal access is no longer available — contact IT');
+  }
 }
 
 async function login({ email, password }, meta = {}) {
@@ -133,6 +155,7 @@ async function login({ email, password }, meta = {}) {
   const valid = user && match;
   if (!valid) throw HttpError.unauthorized('Invalid email or password');
   if (user.status === 'Disabled') throw HttpError.forbidden('This account has been disabled — contact your Owner');
+  await assertPortalEmployeeActive(user);
 
   if (user.mfa_enabled && user.mfa_secret) {
     return issueMfaChallenge(user);
@@ -187,11 +210,12 @@ async function verifyToken(token) {
   await assertJtiNotDenied(payload.jti);
 
   const { rows } = await query(
-    'SELECT id, email, role, username, status, mfa_enabled, sessions_revoked_at FROM users WHERE id = $1',
+    'SELECT id, email, role, username, status, mfa_enabled, must_change_password, sessions_revoked_at FROM users WHERE id = $1',
     [payload.sub]
   );
   if (!rows[0]) throw HttpError.unauthorized('Account no longer exists');
   if (rows[0].status === 'Disabled') throw HttpError.unauthorized('This account has been disabled');
+  await assertPortalEmployeeActive(rows[0]);
 
   // Password change (and similar) bumps sessions_revoked_at — invalidate older JWTs.
   const revokedAt = rows[0].sessions_revoked_at;
@@ -208,6 +232,7 @@ async function verifyToken(token) {
     role: rows[0].role,
     username: rows[0].username,
     mfaEnabled: !!rows[0].mfa_enabled,
+    mustChangePassword: !!rows[0].must_change_password,
     jti: payload.jti || null,
     tokenExp: payload.exp ? new Date(payload.exp * 1000) : parseExpiryToDate(config.jwtExpiresIn),
   };
@@ -224,23 +249,33 @@ async function logout(user) {
 
 async function recordLogin() { /* no-op */ }
 
-async function changePassword(user, { currentPassword, newPassword }) {
+async function changePassword(user, { currentPassword, newPassword }, meta = {}) {
   if (!currentPassword || !newPassword) {
     throw HttpError.badRequest('currentPassword and newPassword are required');
   }
   assertPasswordPolicy(newPassword);
-  const { rows } = await query('SELECT password_hash FROM users WHERE id = $1', [user.uid]);
+  const { rows } = await query('SELECT * FROM users WHERE id = $1', [user.uid]);
   if (!rows[0]) throw HttpError.unauthorized();
   const ok = await bcrypt.compare(currentPassword, rows[0].password_hash);
   if (!ok) throw HttpError.unauthorized('Current password is incorrect');
+  // Temp/one-time passwords must be replaced with a different value.
+  if (await bcrypt.compare(newPassword, rows[0].password_hash)) {
+    throw HttpError.badRequest('New password must be different from the current password');
+  }
   const hash = await bcrypt.hash(newPassword, 12);
-  // Revoke every existing session for this user (iat ≤ sessions_revoked_at).
+  // Revoke every existing session (iat ≤ sessions_revoked_at). Subtract 1s so the
+  // freshly issued JWT below is not rejected when iat lands in the same second.
   await query(
-    'UPDATE users SET password_hash = $2, sessions_revoked_at = now() WHERE id = $1',
+    `UPDATE users
+       SET password_hash = $2, must_change_password = false,
+           sessions_revoked_at = now() - interval '1 second'
+     WHERE id = $1`,
     [user.uid, hash]
   );
   if (user.jti && user.tokenExp) await denylistJti(user.jti, user.tokenExp);
-  return { changed: true, reauthRequired: true };
+  const { rows: updated } = await query('SELECT * FROM users WHERE id = $1', [user.uid]);
+  const session = await issueSession(updated[0], meta);
+  return { changed: true, reauthRequired: false, ...session };
 }
 
 function companyIssuer() {
@@ -409,7 +444,10 @@ async function setUserRole(uid, role, actor) {
 
 async function getVerifiedProfile(user) {
   const { rows } = await query(
-    'SELECT username, mfa_enabled, permission_group_id AS "permissionGroupId", custom_constraints AS "customConstraints" FROM users WHERE id = $1',
+    `SELECT username, mfa_enabled, must_change_password,
+            permission_group_id AS "permissionGroupId",
+            custom_constraints AS "customConstraints"
+     FROM users WHERE id = $1`,
     [user.uid]
   );
   const row = rows[0];
@@ -433,6 +471,7 @@ async function getVerifiedProfile(user) {
     mfaEnabled: !!row?.mfa_enabled,
     mfaMandatory: roleRequiresMfa(enriched.role),
     mfaEnrollmentRequired: roleRequiresMfa(enriched.role) && !row?.mfa_enabled,
+    mustChangePassword: !!row?.must_change_password,
     permissionGroupId: enriched.permissionGroupId,
     customConstraints: enriched.customConstraints,
     permissions: uiPermissionsFromIam(iamPermissions, enriched.role),
@@ -672,6 +711,127 @@ async function ownerTransferPreflight(actor) {
   return { mfaEnrolled: !!(mine[0] && mine[0].mfa_enabled), candidates };
 }
 
+/**
+ * Grant (or re-provision) a self-service Portal login for an employee, keyed by
+ * the employee's email. Returns a fresh temporary password the caller can email
+ * or hand over. Never touches a non-Portal (staff) account that happens to share
+ * the email — those are refused so a directory action can't reset a real login.
+ */
+async function grantPortalAccess({ employee }, actor) {
+  const email = String((employee && employee.email) || '').trim().toLowerCase();
+  const name = (employee && (employee.fullName || employee.full_name)) || email;
+  const status = (employee && employee.status) || '';
+  if (!email) {
+    throw HttpError.badRequest('This employee has no email — add one before granting web access');
+  }
+  if (status !== 'Active') {
+    throw HttpError.badRequest('Cannot grant web access to an inactive (offboarded) employee');
+  }
+  const tempPassword = crypto.randomBytes(12).toString('base64url');
+  const hash = await bcrypt.hash(tempPassword, 12);
+
+  const { rows: existing } = await query(
+    'SELECT id, role FROM users WHERE lower(email) = $1',
+    [email]
+  );
+
+  let userRow;
+  let created;
+  if (existing[0]) {
+    if (existing[0].role !== 'Portal') {
+      throw HttpError.conflict(
+        'A staff account already uses this email — it cannot be turned into a portal login'
+      );
+    }
+    // Re-provision: reset the temp password, force change on next login, revoke old sessions.
+    const { rows } = await query(
+      `UPDATE users
+         SET password_hash = $2, status = 'Active', must_change_password = true,
+             sessions_revoked_at = now()
+       WHERE id = $1
+       RETURNING id, username, email, role`,
+      [existing[0].id, hash]
+    );
+    userRow = rows[0];
+    created = false;
+  } else {
+    const { rows } = await query(
+      `INSERT INTO users (username, email, password_hash, role, must_change_password)
+       VALUES ($1, $2, $3, 'Portal', true)
+       RETURNING id, username, email, role`,
+      [name, email, hash]
+    );
+    userRow = rows[0];
+    created = true;
+  }
+
+  if (actor) {
+    await logAdminAction(
+      { email: userRow.email, username: userRow.username },
+      created ? 'portal_access_granted' : 'portal_access_reset',
+      actor.username || actor.email
+    );
+  }
+
+  return {
+    user: { uid: userRow.id, username: userRow.username, email: userRow.email, role: userRow.role },
+    tempPassword,
+    created,
+  };
+}
+
+/**
+ * Revoke self-service Portal login for an employee: invalidate sessions then
+ * delete the Portal user. Staff accounts (non-Portal) are not touched.
+ */
+/**
+ * @param {{ soft?: boolean }} [opts] — soft: no throw when there is nothing to revoke
+ *   (used by offboard / Inactive status updates).
+ */
+async function revokePortalAccess({ employee }, actor, opts = {}) {
+  const soft = !!(opts && opts.soft);
+  const email = String((employee && employee.email) || '').trim().toLowerCase();
+  if (!email) {
+    if (soft) return { revoked: false };
+    throw HttpError.badRequest('This employee has no email — cannot revoke web access');
+  }
+
+  const { rows } = await query(
+    'SELECT id, email, username, role, status FROM users WHERE lower(email) = $1',
+    [email]
+  );
+  if (!rows[0]) {
+    if (soft) return { revoked: false };
+    throw HttpError.notFound('No portal access for this employee');
+  }
+  if (rows[0].role !== 'Portal') {
+    if (soft) return { revoked: false };
+    throw HttpError.conflict(
+      'This email belongs to a staff account — revoke from IT Users instead'
+    );
+  }
+
+  const target = rows[0];
+  await query(
+    `UPDATE users SET sessions_revoked_at = now() WHERE id = $1 AND role = 'Portal'`,
+    [target.id]
+  );
+  await query(`DELETE FROM users WHERE id = $1 AND role = 'Portal'`, [target.id]);
+
+  if (actor) {
+    await logAdminAction(
+      { email: target.email, username: target.username },
+      'portal_access_revoked',
+      actor.username || actor.email
+    );
+  }
+
+  return {
+    revoked: true,
+    user: { uid: target.id, email: target.email, username: target.username },
+  };
+}
+
 async function getAdminLogs(email, limit = 25) {
   const { rows } = await query(
     `SELECT target_email AS "targetEmail", target_name AS "targetName", action, detail,
@@ -688,4 +848,5 @@ module.exports = {
   createItUser, upsertAdmin, upsertAdminTx, setUserRole, getVerifiedProfile, listUsers,
   setUserStatus, deleteUser, getAdminLogs,
   transferOwnership, ownerTransferPreflight,
+  grantPortalAccess, revokePortalAccess,
 };

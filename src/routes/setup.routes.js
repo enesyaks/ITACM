@@ -31,12 +31,12 @@ router.get('/setup/status', asyncHandler(async (req, res) => {
 router.post('/setup', asyncHandler(async (req, res) => {
   const {
     setupToken, companyName, companyLogo, companyAddress, adminUsername, adminEmail, adminPassword, language,
-    handoverTemplates, defaultTemplateId,
+    handoverTemplates, defaultTemplateId, assetTagPrefix,
   } = req.body || {};
 
   const { settings, admin } = await settingsService.completeSetup(
     setupToken,
-    { companyName, companyLogo, companyAddress, language, handoverTemplates, defaultTemplateId },
+    { companyName, companyLogo, companyAddress, language, handoverTemplates, defaultTemplateId, assetTagPrefix },
     (client) => authProvider.upsertAdminTx(client, {
       username: adminUsername,
       email: adminEmail,
@@ -56,10 +56,12 @@ router.put('/settings', authenticate, requirePermission('settings', 'manage'), a
   const {
     companyName, companyLogo, companyAddress, handoverTerms, defaultLocation, documentStorage,
     handoverTemplate, handoverTemplates, defaultTemplateId, language, currency, labelConfig,
+    assetTagPrefix,
   } = req.body || {};
   const saved = await settingsService.saveSettings({
     companyName, companyLogo, companyAddress, handoverTerms, defaultLocation, documentStorage,
     handoverTemplate, handoverTemplates, defaultTemplateId, language, currency, labelConfig,
+    assetTagPrefix,
   });
   res.json({ success: true, data: saved });
 }));

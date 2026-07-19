@@ -225,10 +225,11 @@ ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS default_location TEXT;
 -- Hardware spec dropdown lists (cpu/ram/storage); NULL -> defaults
 ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS spec_options JSONB;
 
--- Owner role (highest privilege): relax the users.role CHECK constraint
+-- Owner role (highest privilege) + Portal role (self-service employee login,
+-- can only see their own zimmet): relax the users.role CHECK constraint.
 ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
 ALTER TABLE users ADD CONSTRAINT users_role_check
-  CHECK (role IN ('Owner', 'Admin', 'Helpdesk', 'Viewer'));
+  CHECK (role IN ('Owner', 'Admin', 'Helpdesk', 'Viewer', 'Portal'));
 
 -- Document storage provider config (Owner-managed): local | sharepoint | gdrive
 ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS document_storage JSONB;
@@ -296,6 +297,8 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_enabled BOOLEAN NOT NULL DEFAULT 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_secret TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_backup_hashes TEXT[] NOT NULL DEFAULT '{}';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_pending_secret TEXT;
+-- Forced password change after portal temp-password email — also 030_must_change_password.sql
+ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT false;
 
 CREATE TABLE IF NOT EXISTS jwt_denylist (
   jti         TEXT PRIMARY KEY,
@@ -312,13 +315,26 @@ CREATE TABLE IF NOT EXISTS user_admin_logs (
   target_name  TEXT,
   action       TEXT NOT NULL CHECK (action IN (
     'disabled', 'enabled', 'deleted', 'role_changed',
-    'ownership_granted', 'ownership_transferred'
+    'ownership_granted', 'ownership_transferred',
+    'portal_access_granted', 'portal_access_reset',
+    'portal_access_revoked'
   )),
   detail       TEXT,
   by_name      TEXT NOT NULL,
   "timestamp"  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_user_admin_logs ON user_admin_logs (target_email, "timestamp" DESC);
+
+-- Portal self-service audit actions: relax the action CHECK on existing DBs
+-- (must mirror the list in CREATE TABLE above).
+ALTER TABLE user_admin_logs DROP CONSTRAINT IF EXISTS user_admin_logs_action_check;
+ALTER TABLE user_admin_logs ADD CONSTRAINT user_admin_logs_action_check
+  CHECK (action IN (
+    'disabled', 'enabled', 'deleted', 'role_changed',
+    'ownership_granted', 'ownership_transferred',
+    'portal_access_granted', 'portal_access_reset',
+    'portal_access_revoked'
+  ));
 
 -- Unified system audit log (API mutations + readable timeline)
 CREATE TABLE IF NOT EXISTS system_audit_log (
@@ -412,6 +428,8 @@ ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS language TEXT;
 ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS company_address TEXT;
 -- Default currency for costs (ISO 4217). Contracts can override per agreement.
 ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS currency TEXT;
+-- Leading text for auto asset tags: PREFIX-#### (e.g. IT-1001). Network/Server stay manual.
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS asset_tag_prefix TEXT;
 
 -- Link network/server appliances to a software license pool (optional)
 ALTER TABLE assets ADD COLUMN IF NOT EXISTS license_id UUID REFERENCES licenses(id) ON DELETE SET NULL;

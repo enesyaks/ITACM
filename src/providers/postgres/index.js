@@ -24,6 +24,7 @@ module.exports = {
   webhookService: require('./webhookService'),
   syncService: require('./syncService'),
   permissionService: require('./permissionService'),
+  selfService: require('./selfService'),
   ensureDatabase: () => require('./migrate').ensureDatabase(),
   ping: (timeoutMs) => require('./pool').ping(timeoutMs),
   isAuthError: (err) => require('./pool').isAuthError(err),

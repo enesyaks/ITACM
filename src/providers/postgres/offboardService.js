@@ -7,6 +7,7 @@ const { mapRow, mapRows, isUuid } = require('./rowMapper');
 const { HttpError } = require('../../utils/httpError');
 const { normalizeSale, formatSaleSummary, appendSaleToNotes } = require('../../utils/saleNote');
 const auditService = require('./auditService');
+const authProvider = require('./authProvider');
 
 const HW_ACTIONS = new Set(['return', 'reassign', 'scrap', 'sell']);
 const LINE_ACTIONS = new Set(['unassign', 'reassign']);
@@ -510,6 +511,7 @@ async function executeOffboard(employeeId, body, itUser) {
     summary.remaining = remaining;
     summary.employeeId = employeeId;
     summary.employeeName = fromEmp.full_name;
+    summary.employeeEmail = fromEmp.email;
     return summary;
   });
 
@@ -536,6 +538,15 @@ async function executeOffboard(employeeId, body, itUser) {
       },
     });
   } catch { /* ignore */ }
+
+  // Offboard → Inactive closes Portal login (sessions + user row).
+  if (result.deactivated) {
+    await authProvider.revokePortalAccess(
+      { employee: { email: result.employeeEmail, fullName: result.employeeName } },
+      itUser,
+      { soft: true }
+    ).catch(() => {});
+  }
 
   return result;
 }

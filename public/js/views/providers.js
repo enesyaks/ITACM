@@ -633,7 +633,7 @@ function wireContractFilters(el, { setContractFilters, clearFilter, searchQ }) {
 }
 
 
-function openProviderForm(provider, done) {
+function openProviderForm(provider, done, opts = {}) {
   const isEdit = !!(provider && provider.id);
   const cats = catalogProviderCategories();
   let contacts = Array.isArray(provider?.contacts) && provider.contacts.length
@@ -744,6 +744,8 @@ function openProviderForm(provider, done) {
   formModal({
     title: isEdit ? (t('providers.editProvider') || 'Edit provider') : (t('providers.addProvider') || 'Add provider'),
     wide: true,
+    stack: !!opts.stack,
+    onClose: opts.onClose,
     fields: [
       { name: 'name', label: 'Name *', required: true, value: provider?.name || '' },
       {
@@ -795,14 +797,15 @@ function openProviderForm(provider, done) {
       }
       if (cleaned.length && !cleaned.some((c) => c.isPrimary)) cleaned[0].isPrimary = true;
       const body = { ...d, contacts: cleaned };
+      let saved;
       if (isEdit) {
-        await api(`/providers/${provider.id}`, { method: 'PATCH', body });
+        saved = await api(`/providers/${provider.id}`, { method: 'PATCH', body });
         toast('Provider updated', 'success');
       } else {
-        await api('/providers', { method: 'POST', body });
+        saved = await api('/providers', { method: 'POST', body });
         toast('Provider created', 'success');
       }
-      done();
+      if (typeof done === 'function') done(saved);
     },
   });
 }

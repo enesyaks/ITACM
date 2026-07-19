@@ -9,14 +9,18 @@
  * Real authorization is now handled by IAM `checkPermission(user, 'contract', 'view_confidential')`
  * in permissionService.js — which allows custom groups to have this access without being Owner/Admin.
  */
-const ROLES = Object.freeze(['Owner', 'Admin', 'Helpdesk', 'Viewer']);
+// 'Portal' = self-service employee login. It can ONLY see its own zimmet via
+// /api/me/*; it holds none of the staff/admin capabilities below and its nav is
+// reduced to the "Zimmetlerim" page on the client.
+const ROLES = Object.freeze(['Owner', 'Admin', 'Helpdesk', 'Viewer', 'Portal']);
 
 function buildPermissions(role) {
   const isOwner = role === 'Owner';
   const isAdmin = role === 'Admin';
   const isStaff = isOwner || isAdmin || role === 'Helpdesk';
   return {
-    canViewDashboard: true,
+    canViewDashboard: role !== 'Portal',
+    isPortal: role === 'Portal',
     canManageAssets: isStaff,
     canExecuteHandovers: isStaff,
     canManageMaintenance: isStaff,

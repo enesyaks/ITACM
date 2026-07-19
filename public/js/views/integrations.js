@@ -18,9 +18,17 @@ Views.integrations = async function (el) {
     api('/integrations/custom-fields/contract'),
     api('/integrations/email-templates').catch(() => ({})),
   ]);
-  const tplKey = 'onboarding_welcome';
-  const tpl = (emailTemplates && emailTemplates[tplKey]) || { subject: '', bodyHtml: '', bodyText: '', isCustom: false };
-  const phList = ['companyName', 'companyAddress', 'employeeName', 'employeeEmail', 'startDate', 'itemList', 'appUrl', 'accessInstructions'];
+  const tplKeys = ['onboarding_welcome', 'portal_access'];
+  // Placeholders per template — must mirror TEMPLATE_PLACEHOLDERS in src/utils/emailTemplates.js.
+  const tplPh = {
+    onboarding_welcome: ['companyName', 'companyAddress', 'employeeName', 'employeeEmail', 'startDate', 'itemList', 'appUrl', 'accessInstructions'],
+    portal_access: ['companyName', 'employeeName', 'employeeEmail', 'appUrl', 'tempPassword'],
+  };
+  const tpls = emailTemplates || {};
+  const emptyTpl = { subject: '', bodyHtml: '', bodyText: '', isCustom: false };
+  const tplKey = tplKeys[0];
+  const tpl = tpls[tplKey] || emptyTpl;
+  const phList = tplPh[tplKey];
 
   const smtp = mail.smtp || {};
   const notify = mail.notify || {};
@@ -61,23 +69,24 @@ Views.integrations = async function (el) {
       <section class="card card-pad" style="margin-bottom:16px">
         <h3 style="margin:0 0 8px">SMTP &amp; alert digest</h3>
         <p class="cell-sub" style="margin:0 0 12px">Daily digest of expired licenses, low stock, EOL, onboarding due.
-          iCloud/Gmail: Apple/Google hesabı şifresi değil, <strong>app-specific password</strong> kullanın.
-          iCloud: host <code>smtp.mail.me.com</code>, port <code>465</code>, TLS açık.</p>
+          iCloud/Gmail: Apple/Google hesap şifresi değil, <strong>app-specific password</strong> kullanın.
+          iCloud: host <code>smtp.mail.me.com</code>, port <code>587</code>, <strong>TLS (port 465) kapalı</strong> (STARTTLS).</p>
+        ${smtp.passCorrupt ? `<p class="banner banner-rose" style="margin-bottom:12px">Kayıtlı SMTP şifresi okunamıyor — app-specific password’ü yeniden girip Save edin.</p>` : ''}
         <div class="form-grid">
           <div class="form-field"><label>Host</label><input id="int-smtp-host" value="${esc(smtp.host || '')}" placeholder="smtp.mail.me.com"${inputDis}></div>
           <div class="form-field"><label>Port</label><input id="int-smtp-port" type="number" value="${esc(smtp.port || 587)}"${inputDis}></div>
           <div class="form-field"><label>User</label><input id="int-smtp-user" value="${esc(smtp.user || '')}" autocomplete="off"${inputDis}></div>
-          <div class="form-field"><label>Password ${smtp.pass ? '<span class="ob-hint">(saved — leave blank to keep)</span>' : ''}</label>
-            ${readOnly && smtp.pass
+          <div class="form-field"><label>Password ${smtp.passConfigured || smtp.pass ? '<span class="ob-hint">(saved — leave blank to keep)</span>' : ''}</label>
+            ${readOnly && (smtp.passConfigured || smtp.pass)
               ? secretLocked('••••••••••••')
-              : `<input id="int-smtp-pass" type="password" value="" placeholder="${smtp.pass ? '••••••••  leave blank to keep' : 'app-specific password'}" autocomplete="new-password"${inputDis}>`}
+              : `<input id="int-smtp-pass" type="password" value="" placeholder="${smtp.passConfigured || smtp.pass ? '••••••••  leave blank to keep' : 'app-specific password'}" autocomplete="new-password"${inputDis}>`}
           </div>
           <div class="form-field"><label>From</label><input id="int-smtp-from" value="${esc(smtp.from || '')}" placeholder="itacm@company.com"${inputDis}></div>
           <div class="form-field"><label>Recipients (comma-separated)</label>
             <input id="int-notify-to" value="${esc((notify.to || []).join(', '))}" placeholder="ops@company.com"${inputDis}></div>
           <div class="form-field full" style="display:flex;flex-wrap:wrap;gap:12px;align-items:center">
             <label><input type="checkbox" id="int-notify-on" ${notify.enabled ? 'checked' : ''}${chkDis}> Enable digests</label>
-            <label><input type="checkbox" id="int-smtp-secure" ${smtp.secure ? 'checked' : ''}${chkDis}> TLS (port 465)</label>
+            <label title="Only for servers that require implicit TLS on 465. Leave off for iCloud (587)."><input type="checkbox" id="int-smtp-secure" ${smtp.secure ? 'checked' : ''}${chkDis}> TLS (port 465)</label>
             <label><input type="checkbox" id="int-notify-ho" ${notify.handoverCompleted ? 'checked' : ''}${chkDis}> Email on handover</label>
           </div>
         </div>
@@ -91,12 +100,12 @@ Views.integrations = async function (el) {
 
       <section class="card card-pad" style="margin-bottom:16px">
         <h3 style="margin:0 0 8px">${esc(t('integration.emailTemplates') || 'Email templates')}</h3>
-        <p class="cell-sub" style="margin:0 0 12px">${esc(t('integration.emailTemplatesHint') || 'Edit the onboarding welcome email. Placeholders are replaced when sending.')}</p>
+        <p class="cell-sub" style="margin:0 0 12px">${esc(t('integration.emailTemplatesHint') || 'Edit the onboarding welcome and web-access emails. Placeholders are replaced when sending.')}</p>
         ${!smtp.host ? '<p class="banner banner-amber" style="margin-bottom:12px">SMTP host is not configured — save SMTP before sending.</p>' : ''}
         <div class="form-grid">
           <div class="form-field"><label>Template</label>
             <select id="int-tpl-key" ${inputDis}>
-              <option value="onboarding_welcome" selected>onboarding_welcome</option>
+              ${tplKeys.map((k) => `<option value="${k}" ${k === tplKey ? 'selected' : ''}>${k}</option>`).join('')}
             </select>
           </div>
           <div class="form-field full"><label>Subject</label>
@@ -106,10 +115,10 @@ Views.integrations = async function (el) {
           <div class="form-field full"><label>Body (text)</label>
             <textarea id="int-tpl-text" rows="8" style="font-family:ui-monospace,monospace;font-size:12px" ${inputDis}>${esc(tpl.bodyText || '')}</textarea></div>
           <div class="form-field full">
-            <p class="cell-sub" style="margin:0">Placeholders:
+            <p class="cell-sub" style="margin:0" id="int-tpl-ph">Placeholders:
               ${phList.map((p) => '<code>{{' + p + '}}</code>').join(' ')}
             </p>
-            ${tpl.isCustom ? '<p class="ob-hint" style="margin:6px 0 0">Custom override saved</p>' : '<p class="ob-hint" style="margin:6px 0 0">Using built-in default</p>'}
+            <p class="ob-hint" style="margin:6px 0 0" id="int-tpl-custom">${tpl.isCustom ? 'Custom override saved' : 'Using built-in default'}</p>
           </div>
         </div>
         <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
@@ -216,16 +225,26 @@ GET /api/integrations/licenses/:id/sam
   $('#int-smtp-save', el)?.addEventListener('click', async () => {
     try {
       const to = $('#int-notify-to', el).value.split(/[,;\s]+/).map((s) => s.trim()).filter(Boolean);
+      let host = $('#int-smtp-host', el).value.trim();
+      let port = Number($('#int-smtp-port', el).value) || 587;
+      let secure = $('#int-smtp-secure', el).checked;
+      // iCloud: Docker/NAT often cannot open 465 — force Apple's documented STARTTLS setup.
+      if (/^smtp\.mail\.me\.com$/i.test(host) && (port === 465 || secure)) {
+        port = 587;
+        secure = false;
+        $('#int-smtp-port', el).value = '587';
+        $('#int-smtp-secure', el).checked = false;
+      }
       await api('/integrations/notifications', {
         method: 'PUT',
         body: {
           smtp: {
-            host: $('#int-smtp-host', el).value.trim(),
-            port: Number($('#int-smtp-port', el).value) || 587,
+            host,
+            port,
             user: $('#int-smtp-user', el).value.trim(),
             pass: $('#int-smtp-pass', el).value,
             from: $('#int-smtp-from', el).value.trim(),
-            secure: $('#int-smtp-secure', el).checked,
+            secure,
           },
           notify: {
             enabled: $('#int-notify-on', el).checked,
@@ -235,6 +254,7 @@ GET /api/integrations/licenses/:id/sam
         },
       });
       toast('SMTP settings saved', 'success');
+      Views.integrations(el);
     } catch (err) { toast(err.message, 'error'); }
   });
 
@@ -244,16 +264,25 @@ GET /api/integrations/licenses/:id/sam
       btn.disabled = true;
       // Persist current form first so a freshly typed password is used.
       const toList = $('#int-notify-to', el).value.split(/[,;\s]+/).map((s) => s.trim()).filter(Boolean);
+      let host = $('#int-smtp-host', el).value.trim();
+      let port = Number($('#int-smtp-port', el).value) || 587;
+      let secure = $('#int-smtp-secure', el).checked;
+      if (/^smtp\.mail\.me\.com$/i.test(host) && (port === 465 || secure)) {
+        port = 587;
+        secure = false;
+        $('#int-smtp-port', el).value = '587';
+        $('#int-smtp-secure', el).checked = false;
+      }
       await api('/integrations/notifications', {
         method: 'PUT',
         body: {
           smtp: {
-            host: $('#int-smtp-host', el).value.trim(),
-            port: Number($('#int-smtp-port', el).value) || 587,
+            host,
+            port,
             user: $('#int-smtp-user', el).value.trim(),
             pass: $('#int-smtp-pass', el).value,
             from: $('#int-smtp-from', el).value.trim(),
-            secure: $('#int-smtp-secure', el).checked,
+            secure,
           },
           notify: {
             enabled: $('#int-notify-on', el).checked,
@@ -299,6 +328,20 @@ GET /api/integrations/licenses/:id/sam
     return out;
   }
 
+  // Switching templates loads the saved (or default) content for that key.
+  // Unsaved edits to the previous template are discarded, same as a reload.
+  $('#int-tpl-key', el)?.addEventListener('change', () => {
+    const k = $('#int-tpl-key', el).value;
+    const cur = tpls[k] || emptyTpl;
+    $('#int-tpl-subject', el).value = cur.subject || '';
+    $('#int-tpl-html', el).value = cur.bodyHtml || '';
+    $('#int-tpl-text', el).value = cur.bodyText || '';
+    const ph = $('#int-tpl-ph', el);
+    if (ph) ph.innerHTML = 'Placeholders: ' + (tplPh[k] || []).map((p) => '<code>{{' + p + '}}</code>').join(' ');
+    const ch = $('#int-tpl-custom', el);
+    if (ch) ch.textContent = cur.isCustom ? 'Custom override saved' : 'Using built-in default';
+  });
+
   $('#int-tpl-preview', el)?.addEventListener('click', () => {
     const cfg = typeof AppConfig !== 'undefined' ? AppConfig : {};
     const vars = {
@@ -310,6 +353,7 @@ GET /api/integrations/licenses/:id/sam
       itemList: '- IT-1001: Dell Latitude 5540\n- Line: +1 555-0100 (Operator · Plan)',
       appUrl: (typeof location !== 'undefined' && location.origin) || 'http://localhost:8000',
       accessInstructions: 'Sign in with your company email. Contact IT Helpdesk if you need help getting access.',
+      tempPassword: 'Xy7-sample-pass',
     };
     const subject = applyEmailTplPreviewVars($('#int-tpl-subject', el)?.value || '', vars, { html: false });
     const bodyHtml = applyEmailTplPreviewVars($('#int-tpl-html', el)?.value || '', vars, { html: true });

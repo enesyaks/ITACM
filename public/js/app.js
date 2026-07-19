@@ -7,6 +7,7 @@
 
 const ROUTES = {
   '#/dashboard': { title: 'Dashboard', view: 'dashboard', icon: 'dashboard' },
+  '#/zimmetlerim': { title: 'My Assets', view: 'myZimmet', icon: 'inventory_2' },
   '#/assets': { title: 'Hardware', view: 'assets', icon: 'devices' },
   '#/network': { title: 'Network & Server', view: 'network', icon: 'dns' },
   '#/catalog': { title: 'Product Catalog', view: 'catalog', icon: 'category' },
@@ -24,7 +25,17 @@ const ROUTES = {
   '#/users': { title: 'IT Users', view: 'users', icon: 'vpn_key', perm: 'canManageUsers' },
 };
 
+// Portal = self-service employee login. It may only reach the "Zimmetlerim"
+// page; every other route is hidden from the nav and blocked in navigate().
+function isPortalUser() {
+  return !!(Auth.profile && Auth.profile.role === 'Portal');
+}
+const PORTAL_HASH = '#/zimmetlerim';
+
 function renderNav() {
+  // Portal users get a bare topbar: search/scan/notifications/help/settings are
+  // IT tools their role cannot use anyway (CSS hides them via .is-portal).
+  document.body.classList.toggle('is-portal', isPortalUser());
   // Nav labels come from the i18n dictionary. Prefer nav.<view>, then fall back
   // to a few aliases where the route view name ≠ the historical nav key.
   const NAV_KEY_ALIAS = { assets: 'hardware', licenses: 'software' };
@@ -40,7 +51,7 @@ function renderNav() {
     return r.title;
   };
   $('#nav').innerHTML = Object.entries(ROUTES)
-    .filter(([, r]) => !r.perm || Auth.can(r.perm))
+    .filter(([hash, r]) => (isPortalUser() ? hash === PORTAL_HASH : (!r.perm || Auth.can(r.perm))))
     .map(([hash, r]) =>
       `<a href="${hash}" data-route="${hash}"><span class="ms">${r.icon}</span> ${esc(label(r))}</a>`)
     .join('');
@@ -52,10 +63,13 @@ async function navigate() {
   const gen = bumpNavGen();
   // Support query params in the hash, e.g. #/assets?lifecycle=overdue
   const [rawHash, rawQuery] = location.hash.split('?');
-  const hash = ROUTES[rawHash] ? rawHash : '#/dashboard';
+  const homeHash = isPortalUser() ? PORTAL_HASH : '#/dashboard';
+  const hash = ROUTES[rawHash] ? rawHash : homeHash;
   const route = ROUTES[hash];
   const params = Object.fromEntries(new URLSearchParams(rawQuery || ''));
-  if (route.perm && !Auth.can(route.perm)) { location.hash = '#/dashboard'; return; }
+  // Portal accounts are confined to their own zimmet page.
+  if (isPortalUser() && hash !== PORTAL_HASH) { location.hash = PORTAL_HASH; return; }
+  if (route.perm && !Auth.can(route.perm)) { location.hash = homeHash; return; }
 
   $$('#nav a').forEach((a) => a.classList.toggle('active', a.dataset.route === hash));
 
@@ -104,6 +118,107 @@ function applyBranding() {
 /* ---- screens ---- */
 function ownerNeedsMfaSetup(profile) {
   return !!(profile && profile.role === 'Owner' && !profile.mfaEnabled);
+}
+
+function needsForcedPasswordChange(profile) {
+  return !!(profile && profile.mustChangePassword);
+}
+
+async function showMandatoryPasswordChange() {
+  $('#onboarding-screen').classList.add('hidden');
+  $('#login-screen').classList.add('hidden');
+  $('#app').classList.add('hidden');
+
+  openModal({
+    title: t('account.pwdRequiredTitle') || 'Set a new password',
+    dismissible: false,
+    body: `
+      <p class="cell-sub" style="margin:0 0 12px">
+        ${esc(t('account.pwdRequiredBody') || 'The temporary password emailed to you must be replaced before you can continue.')}
+      </p>
+      <div class="form-grid" style="grid-template-columns:1fr">
+        <div class="form-field"><label>${esc(t('account.pwdCurrent') || 'Current password')}</label>
+          <input type="password" id="force-pwd-cur" autocomplete="current-password"></div>
+        <div class="form-field"><label>${esc(t('account.pwdNew') || 'New password')}</label>
+          <input type="password" id="force-pwd-new" autocomplete="new-password"></div>
+        <div class="form-field"><label>${esc(t('account.pwdConfirm') || 'Confirm new password')}</label>
+          <input type="password" id="force-pwd-confirm" autocomplete="new-password"></div>
+      </div>
+      <div id="force-pwd-err" class="login-error hidden" style="margin-top:8px"></div>`,
+    foot: `
+      <button type="button" class="btn btn-outline" id="force-pwd-signout">
+        <span class="ms">logout</span> ${esc(t('common.signout') || 'Sign out')}</button>
+      <button type="button" class="btn btn-primary" id="force-pwd-submit">
+        <span class="ms">lock</span> ${esc(t('account.pwdSubmit') || 'Save new password')}</button>`,
+    onMount(overlay) {
+      $('#force-pwd-signout', overlay).addEventListener('click', () => {
+        closeModal();
+        logout();
+      });
+      const submit = async () => {
+        const err = $('#force-pwd-err', overlay);
+        err.classList.add('hidden');
+        const cur = ($('#force-pwd-cur', overlay).value || '');
+        const n1 = ($('#force-pwd-new', overlay).value || '');
+        const n2 = ($('#force-pwd-confirm', overlay).value || '');
+        if (n1.length < 8) {
+          err.textContent = t('account.pwdTooShort') || 'Password must be at least 8 characters';
+          err.classList.remove('hidden');
+          return;
+        }
+        if (n1 !== n2) {
+          err.textContent = t('account.pwdMismatch') || 'New passwords do not match';
+          err.classList.remove('hidden');
+          return;
+        }
+        if (n1 === cur) {
+          err.textContent = t('account.pwdSameAsOld') || 'New password must be different from the current password';
+          err.classList.remove('hidden');
+          return;
+        }
+        try {
+          const res = await api('/auth/password', {
+            method: 'POST',
+            body: { currentPassword: cur, newPassword: n1 },
+          });
+          if (res.token) {
+            Auth.token = res.token;
+            try {
+              const profile = await api('/auth/verify-token', { method: 'POST' });
+              Auth.save(res.token, profile);
+            } catch {
+              const merged = {
+                ...(Auth.profile || {}),
+                ...(res.user || {}),
+                mustChangePassword: false,
+              };
+              Auth.save(res.token, merged);
+            }
+          } else if (Auth.profile) {
+            Auth.profile.mustChangePassword = false;
+            localStorage.setItem('itacm_profile', JSON.stringify(Auth.profile));
+          }
+          closeModal();
+          showApp();
+        } catch (e) {
+          const msg = e.message || 'Failed';
+          if (/different|same|current password/i.test(msg)) {
+            err.textContent = t('account.pwdSameAsOld') || msg;
+          } else {
+            err.textContent = msg;
+          }
+          err.classList.remove('hidden');
+        }
+      };
+      $('#force-pwd-submit', overlay).addEventListener('click', submit);
+      overlay.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter') {
+          ev.preventDefault();
+          submit();
+        }
+      });
+    },
+  });
 }
 
 async function showMandatoryOwnerMfa() {
@@ -190,6 +305,10 @@ async function showMandatoryOwnerMfa() {
 }
 
 function showApp() {
+  if (needsForcedPasswordChange(Auth.profile)) {
+    showMandatoryPasswordChange();
+    return;
+  }
   if (ownerNeedsMfaSetup(Auth.profile)) {
     showMandatoryOwnerMfa();
     return;
@@ -1342,6 +1461,12 @@ function validateObStep(step) {
   if (err) err.classList.add('hidden');
   if (step === 0) {
     if (!f.companyName.value.trim()) return fail('Company name is required.', f.companyName);
+    if (f.assetTagPrefix) {
+      const p = String(f.assetTagPrefix.value || '').trim().replace(/[^A-Za-z0-9]/g, '');
+      if (p && (p.length < 1 || p.length > 12)) {
+        return fail('Asset tag prefix must be 1–12 letters or digits.', f.assetTagPrefix);
+      }
+    }
   } else if (step === 2) {
     if (!f.adminUsername.value.trim()) return fail('Display name is required.', f.adminUsername);
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(f.adminEmail.value.trim())) return fail('A valid email address is required.', f.adminEmail);
@@ -1560,6 +1685,19 @@ function bindOnboarding() {
     .map(([code, name]) => `<option value="${code}" ${i18nLang() === code ? 'selected' : ''}>${name}</option>`).join('');
   langSel.addEventListener('change', () => setLang(langSel.value));
 
+  // Live sample for asset tag prefix (IT-1001 → ACME-1001).
+  const tagPrefixInp = form.elements.assetTagPrefix || $('#ob-tag-prefix');
+  const tagSample = $('#ob-tag-sample');
+  const refreshTagSample = () => {
+    if (!tagSample) return;
+    const raw = String((tagPrefixInp && tagPrefixInp.value) || 'IT').trim().toUpperCase().replace(/[^A-Z0-9]/g, '') || 'IT';
+    tagSample.textContent = `${raw}-1001`;
+  };
+  if (tagPrefixInp) {
+    tagPrefixInp.addEventListener('input', refreshTagSample);
+    refreshTagSample();
+  }
+
   // Onboarding navigation — product tour first, then the setup steps
   obPhase = 'tour';
   obTourIdx = 0;
@@ -1664,6 +1802,7 @@ function bindOnboarding() {
         companyName: form.elements.companyName.value.trim(),
         companyLogo: obLogoDataUrl,
         companyAddress: (form.elements.companyAddress && form.elements.companyAddress.value || '').trim(),
+        assetTagPrefix: (form.elements.assetTagPrefix && form.elements.assetTagPrefix.value || 'IT').trim() || 'IT',
         adminUsername: form.elements.adminUsername.value.trim(),
         adminEmail: form.elements.adminEmail.value.trim(),
         adminPassword: form.elements.adminPassword.value,
@@ -2191,9 +2330,19 @@ async function showAccountSecurity() {
     const cur = $('#sec-cur', root).value;
     const n1 = $('#sec-new', root).value;
     const n2 = $('#sec-new2', root).value;
-    if (n1 !== n2) return toast('New passwords do not match', 'error');
+    if (n1 !== n2) return toast(t('account.pwdMismatch') || 'New passwords do not match', 'error');
+    if (n1.length < 8) return toast(t('account.pwdTooShort') || 'Password must be at least 8 characters', 'error');
     try {
-      await api('/auth/password', { method: 'POST', body: { currentPassword: cur, newPassword: n1 } });
+      const res = await api('/auth/password', { method: 'POST', body: { currentPassword: cur, newPassword: n1 } });
+      if (res.token) {
+        Auth.token = res.token;
+        try {
+          const profile = await api('/auth/verify-token', { method: 'POST' });
+          Auth.save(res.token, profile);
+        } catch {
+          Auth.save(res.token, { ...(Auth.profile || {}), ...(res.user || {}), mustChangePassword: false });
+        }
+      }
       toast('Password updated', 'success');
       $('#sec-cur', root).value = '';
       $('#sec-new', root).value = '';
@@ -2296,6 +2445,14 @@ function showSettings() {
                   `<option value="${esc(o.value)}" ${appCurrency() === o.value ? 'selected' : ''}>${esc(o.label)}</option>`).join('')}
               </select>
               <span class="ob-hint">Used for lines, repairs, sales. Contracts can still pick USD / EUR etc. per deal.</span>
+            </div>
+            <div class="form-field">
+              <label>Asset tag prefix</label>
+              <input id="set-tag-prefix" value="${esc(AppConfig.assetTagPrefix || 'IT')}" maxlength="12"
+                autocomplete="off" spellcheck="false" pattern="[A-Za-z0-9]{1,12}"
+                style="text-transform:uppercase;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;letter-spacing:.04em;max-width:10rem"
+                placeholder="IT">
+              <span class="ob-hint">Auto tags become <strong class="mono" id="set-tag-sample">${esc((AppConfig.assetTagPrefix || 'IT') + '-1001')}</strong>. Network/Server tags stay manual. Existing tags are unchanged.</span>
             </div>
             <div class="form-field full">
               <label>Company address <span class="ob-hint">(optional — under the logo on zimmet forms)</span></label>
@@ -2463,11 +2620,24 @@ function showSettings() {
       };
       renderDesignCards();
 
+      const tagPrefixEl = $('#set-tag-prefix', overlay);
+      const tagSampleEl = $('#set-tag-sample', overlay);
+      if (tagPrefixEl && tagSampleEl) {
+        const refresh = () => {
+          const p = String(tagPrefixEl.value || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '') || 'IT';
+          tagSampleEl.textContent = `${p}-1001`;
+        };
+        tagPrefixEl.addEventListener('input', refresh);
+      }
+
       $('#set-save', overlay).addEventListener('click', async () => {
         try {
           const langChoice = $('#set-lang', overlay).value;
           const currencyChoice = $('#set-currency', overlay).value;
+          const tagPrefixChoice = String(($('#set-tag-prefix', overlay) && $('#set-tag-prefix', overlay).value) || 'IT')
+            .trim().toUpperCase().replace(/[^A-Z0-9]/g, '') || 'IT';
           const prevCurrency = appCurrency();
+          const prevTagPrefix = AppConfig.assetTagPrefix || 'IT';
           // Ensure a template exists for the chosen design, then promote it.
           let list = (AppConfig.handoverTemplates && AppConfig.handoverTemplates.length
             ? AppConfig.handoverTemplates.map((t) => ({ ...defaultTemplateFields(), ...t }))
@@ -2499,6 +2669,7 @@ function showSettings() {
               handoverTerms: $('#set-terms', overlay).value,
               language: langChoice,
               currency: currencyChoice,
+              assetTagPrefix: tagPrefixChoice,
               handoverTemplates: list,
               defaultTemplateId: list[0].id,
               labelConfig: readLabelCfg(),
@@ -2512,12 +2683,16 @@ function showSettings() {
           AppConfig.handoverTemplate = saved.handoverTemplate;
           AppConfig.labelConfig = saved.labelConfig;
           AppConfig.currency = saved.currency || currencyChoice;
+          AppConfig.assetTagPrefix = saved.assetTagPrefix || tagPrefixChoice;
           AppConfig.language = saved.language || langChoice;
           applyBranding();
           toast('Settings saved', 'success');
           closeModal();
           if (langChoice !== i18nLang()) setLang(langChoice); // reloads with the new language
           else if (currencyChoice !== prevCurrency) location.reload();
+          else if (tagPrefixChoice !== prevTagPrefix) {
+            /* prefix change only affects new tags — no reload required */
+          }
         } catch (err) { toast(err.message, 'error'); }
       });
     },
@@ -2907,7 +3082,7 @@ async function init() {
 
   // Capture phase so Cmd/Ctrl+K wins over the browser omnibox when possible.
   document.addEventListener('keydown', (e) => {
-    if (!Auth.profile) return;
+    if (!Auth.profile || isPortalUser()) return;
     const key = (e.key || '').toLowerCase();
     if ((e.metaKey || e.ctrlKey) && key === 'k') {
       e.preventDefault();

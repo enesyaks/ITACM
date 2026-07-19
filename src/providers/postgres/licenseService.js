@@ -188,12 +188,18 @@ async function resolvePurchaseFields(body = {}) {
     contractId = null;
   }
 
-  if (purchaseType === 'invoice' && contractId) {
-    // invoice may still reference a master agreement; leave contract if provided
+  if (purchaseType === 'invoice') {
+    // One-off invoice path — do not keep a linked contract.
+    contractId = null;
+  } else if (purchaseType === 'contract') {
+    // Contract path — invoice number is not the proof of purchase.
+    // (invoiceNumber left as provided only when type is invoice; cleared below)
   }
 
-  const invoiceNumber = body.invoiceNumber != null
-    ? (String(body.invoiceNumber).trim() || null) : undefined;
+  const invoiceNumber = purchaseType === 'invoice' && body.invoiceNumber != null
+    ? (String(body.invoiceNumber).trim() || null)
+    : (purchaseType === 'contract' ? null
+      : (body.invoiceNumber != null ? (String(body.invoiceNumber).trim() || null) : undefined));
   let purchaseDate = undefined;
   if (body.purchaseDate !== undefined) {
     if (!body.purchaseDate) purchaseDate = null;
@@ -229,8 +235,12 @@ async function resolvePurchaseFields(body = {}) {
 }
 
 async function createLicense(body) {
-  const { softwareName, licenseKey, totalSeats, expirationDate } = body || {};
-  if (!softwareName || !licenseKey) throw HttpError.badRequest('softwareName and licenseKey are required');
+  const { softwareName, totalSeats, expirationDate } = body || {};
+  if (!softwareName || !String(softwareName).trim()) {
+    throw HttpError.badRequest('softwareName is required');
+  }
+  // License key is optional (volume/enterprise pools often have no per-seat key).
+  const licenseKey = body.licenseKey != null ? String(body.licenseKey).trim() : '';
   const seats = Number(totalSeats);
   if (!Number.isInteger(seats) || seats < 1) throw HttpError.badRequest('totalSeats must be a positive integer');
   if (!expirationDate) throw HttpError.badRequest('expirationDate is required');
@@ -246,7 +256,7 @@ async function createLicense(body) {
      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
      RETURNING id`,
     [
-      softwareName,
+      String(softwareName).trim(),
       vendor || null,
       licenseKey,
       seats,

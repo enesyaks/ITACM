@@ -215,14 +215,17 @@ async function importInventory(rows, { dryRun = false } = {}, itUser) {
       );
     }
 
-    // 3) assets — sequential tags allocated once for the whole batch
+    // 3) assets — sequential tags allocated once for the whole batch (uses company prefix)
+    const settings = await getSettings();
+    const tagPrefix = settings.assetTagPrefix || 'IT';
     const mx = await t.query(
-      `SELECT COALESCE(MAX(substring(asset_tag FROM '^IT-([0-9]+)$')::int), 1000) AS mx
-       FROM assets WHERE asset_tag ~ '^IT-[0-9]+$'`
+      `SELECT COALESCE(MAX(substring(asset_tag FROM $1)::int), 1000) AS mx
+       FROM assets WHERE asset_tag ~ $2`,
+      [`^${tagPrefix}-([0-9]+)$`, `^${tagPrefix}-[0-9]+$`]
     );
     let nextNo = mx.rows[0].mx;
     for (const v of valid) {
-      const tag = v.assetTag || `IT-${String(++nextNo).padStart(4, '0')}`;
+      const tag = v.assetTag || `${tagPrefix}-${String(++nextNo).padStart(4, '0')}`;
       const specs = { cpu: v.cpu || null, ram: v.ram || null, storage: v.storage || null, os: v.os || null };
       const ins = await t.query(
         `INSERT INTO assets (asset_tag, serial_number, brand, model, category, mac_ethernet,

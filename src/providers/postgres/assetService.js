@@ -362,11 +362,16 @@ function sanitize(body, { partial = false } = {}) {
 }
 
 async function nextAssetTag() {
+  const { getSettings } = require('./settingsService');
+  const { assetTagPrefix } = await getSettings();
+  const prefix = assetTagPrefix || 'IT';
+  // Prefix is sanitized to [A-Z0-9] only — safe in a POSIX regex.
   const { rows } = await query(
-    `SELECT COALESCE(MAX(substring(asset_tag FROM '^IT-([0-9]+)$')::int), 1000) AS mx
-     FROM assets WHERE asset_tag ~ '^IT-[0-9]+$'`
+    `SELECT COALESCE(MAX(substring(asset_tag FROM $1)::int), 1000) AS mx
+     FROM assets WHERE asset_tag ~ $2`,
+    [`^${prefix}-([0-9]+)$`, `^${prefix}-[0-9]+$`]
   );
-  return 'IT-' + String(rows[0].mx + 1).padStart(4, '0');
+  return `${prefix}-` + String(rows[0].mx + 1).padStart(4, '0');
 }
 
 async function createAsset(body, itUser) {

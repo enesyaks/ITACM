@@ -543,7 +543,7 @@ async function assetForm(asset, done) {
       ? `<div class="form-field"><label>Asset tag *</label>
           <input name="assetTag" required maxlength="64" placeholder="e.g. FW-HQ-01 / RACK-A01-U38"
             value="${esc((asset && asset.assetTag) || '')}" pattern="\\S+"></div>`
-      : `<div class="form-field"><label>Asset tag <span class="ob-hint">auto-assigned</span></label>
+      : `<div class="form-field"><label>Asset tag <span class="ob-hint">auto · ${(AppConfig.assetTagPrefix || 'IT')}-####</span></label>
           <input id="af-tag-preview" class="af-tag-preview" value="…" disabled></div>`;
 
   openModal({

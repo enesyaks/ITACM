@@ -2,6 +2,7 @@
 const { query } = require('./pool');
 const { mapRow, mapRows, isUuid } = require('./rowMapper');
 const { HttpError } = require('../../utils/httpError');
+const authProvider = require('./authProvider');
 
 const STATUSES = ['Active', 'Inactive'];
 
@@ -75,7 +76,18 @@ async function getEmployee(id) {
   if (!isUuid(id)) throw HttpError.notFound(`Employee ${id} not found`);
   const { rows } = await query('SELECT * FROM employees WHERE id = $1', [id]);
   if (!rows[0]) throw HttpError.notFound(`Employee ${id} not found`);
-  return mapRow(rows[0]);
+  const emp = mapRow(rows[0]);
+  const email = String(emp.email || '').trim().toLowerCase();
+  if (email) {
+    const { rows: portal } = await query(
+      `SELECT id FROM users WHERE lower(email) = $1 AND role = 'Portal' LIMIT 1`,
+      [email]
+    );
+    emp.hasPortalAccess = portal.length > 0;
+  } else {
+    emp.hasPortalAccess = false;
+  }
+  return emp;
 }
 
 async function createEmployee({ fullName, email, department, title, status = 'Active', startDate = null }) {
@@ -184,7 +196,12 @@ async function updateEmployee(id, body) {
     `UPDATE employees SET ${sets} WHERE id = $1 RETURNING *`,
     [id, ...cols.map((c) => data[c])]
   );
-  return mapRow(updated.rows[0]);
+  const emp = mapRow(updated.rows[0]);
+  // Inactive = offboarded: close Portal web access immediately.
+  if (data.status === 'Inactive' && current.status !== 'Inactive') {
+    await authProvider.revokePortalAccess({ employee: emp }, null, { soft: true }).catch(() => {});
+  }
+  return emp;
 }
 
 /** Full activity history of one employee: devices + mobile line zimmet events. */

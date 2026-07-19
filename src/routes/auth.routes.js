@@ -68,7 +68,8 @@ router.post('/logout', authenticate, asyncHandler(async (req, res) => {
 }));
 
 router.post('/password', authenticate, asyncHandler(async (req, res) => {
-  res.json({ success: true, data: await authProvider.changePassword(req.user, req.body || {}) });
+  const meta = { ip: rateLimitIp(req), userAgent: req.headers['user-agent'] || null };
+  res.json({ success: true, data: await authProvider.changePassword(req.user, req.body || {}, meta) });
 }));
 
 router.get('/mfa', authenticate, asyncHandler(async (req, res) => {

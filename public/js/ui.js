@@ -189,10 +189,10 @@ function toast(message, type = 'info') {
 }
 
 /* ---- modals ---- */
-function openModal({ title, body, foot, wide, xwide, onMount, onClose, dismissible = true }) {
-  closeModal();
+function openModal({ title, body, foot, wide, xwide, onMount, onClose, dismissible = true, stack = false }) {
+  if (!stack) closeModal(true);
   const overlay = document.createElement('div');
-  overlay.className = 'modal-overlay';
+  overlay.className = 'modal-overlay' + (stack ? ' modal-stacked' : '');
   if (!dismissible) overlay.classList.add('modal-locked');
   const sizeClass = xwide ? ' modal-xl' : (wide ? ' modal-lg' : '');
   // body/foot are templates built by callers; all dynamic values inside them
@@ -216,16 +216,25 @@ function openModal({ title, body, foot, wide, xwide, onMount, onClose, dismissib
   if (onMount) onMount(overlay);
   return overlay;
 }
-function closeModal() {
+/** Close the topmost modal. Pass `all=true` to clear the whole stack (default openModal). */
+function closeModal(all = false) {
   const root = $('#modal-root');
-  const open = root && root.firstElementChild;
-  if (open && typeof open._onCloseCleanup === 'function') {
-    const fn = open._onCloseCleanup;
-    open._onCloseCleanup = null;
-    try { fn(); } catch { /* ignore */ }
+  if (!root) return;
+  const closeOne = (open) => {
+    if (!open) return;
+    if (typeof open._onCloseCleanup === 'function') {
+      const fn = open._onCloseCleanup;
+      open._onCloseCleanup = null;
+      try { fn(); } catch { /* ignore */ }
+    }
+    open.remove();
+  };
+  if (all) {
+    while (root.firstElementChild) closeOne(root.lastElementChild);
+  } else {
+    closeOne(root.lastElementChild);
   }
-  if (root) root.innerHTML = '';
-  if (!root || !root.firstElementChild) document.body.classList.remove('modal-open');
+  if (!root.firstElementChild) document.body.classList.remove('modal-open');
 }
 
 /** Download a Bearer-protected file (plain <a> cannot send Authorization). */
@@ -319,17 +328,24 @@ async function viewAuthed(url, title) {
 
 /*
  * Declarative form modal.
- * fields: [{ name, label, type: text|number|email|password|date|select|textarea|employeeSearch,
+ * fields: [{ name, label, type: text|number|email|password|date|select|textarea|checkbox|employeeSearch,
  *            options: [{value,label}], required, value, placeholder, full,
  *            selected: { id, fullName } // for employeeSearch }]
  */
-function formModal({ title, fields, submitLabel, wide, onSubmit, onMount: extraMount }) {
+function formModal({ title, fields, submitLabel, wide, onSubmit, onMount: extraMount, stack = false, onClose }) {
   const saveLbl = t(submitLabel || 'Save');
   const inputs = fields.map((f) => {
     if (f.type === 'html') {
       return `<div class="form-field ${f.full ? 'full' : ''}" ${f.id ? `id="${esc(f.id)}"` : ''}>${
         f.label ? `<label>${esc(t(f.label))}</label>` : ''
       }${f.html || ''}</div>`;
+    }
+    if (f.type === 'checkbox') {
+      // The whole row is the label so the text itself toggles the box.
+      return `<div class="form-field ${f.full ? 'full' : ''}">
+        <label class="check-row"><input type="checkbox" name="${esc(f.name)}" ${f.value ? 'checked' : ''}>
+        <span>${esc(t(f.label))}</span></label>${
+        f.hint ? `<div class="check-hint">${esc(t(f.hint))}</div>` : ''}</div>`;
     }
     const val = f.value != null ? esc(f.value) : '';
     let control;
@@ -374,6 +390,8 @@ function formModal({ title, fields, submitLabel, wide, onSubmit, onMount: extraM
   openModal({
     title: t(title),
     wide,
+    stack,
+    onClose,
     body: `<form id="modal-form"><div class="form-grid">${inputs}</div><div id="modal-form-error"></div></form>`,
     foot: `<button class="btn btn-outline" data-close>${esc(t('common.cancel'))}</button>
            <button class="btn btn-primary" type="submit" form="modal-form">${esc(saveLbl)}</button>`,
@@ -430,6 +448,10 @@ function formModal({ title, fields, submitLabel, wide, onSubmit, onMount: extraM
               v = custom;
             }
             data[f.name] = v || undefined;
+            continue;
+          }
+          if (f.type === 'checkbox') {
+            data[f.name] = !!form.elements[f.name].checked;
             continue;
           }
           let v = form.elements[f.name].value;

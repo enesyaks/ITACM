@@ -2,7 +2,10 @@ const express = require('express');
 const router = express.Router();
 const { authenticate, requirePermission, requireAnyPermission, requireAllPermissions } = require('../middleware/auth');
 const { asyncHandler } = require('../utils/asyncHandler');
-const { employeeService, documentService, offboardService, permissionService } = require('../services');
+const {
+  employeeService, documentService, offboardService, permissionService,
+  authProvider, notificationService,
+} = require('../services');
 const { validateUpload } = require('../utils/uploadGuard');
 const { HttpError } = require('../utils/httpError');
 
@@ -95,6 +98,66 @@ router.put('/:id',
   requireAnyPermission([['employee', 'update'], ['employee', 'manage']], getEmployeeContext),
   asyncHandler(async (req, res) => {
     res.json({ success: true, data: await employeeService.updateEmployee(req.params.id, req.body) });
+  }));
+
+/**
+ * POST /api/employees/:id/grant-access — provision (or re-provision) a
+ * self-service Portal login for this employee and deliver the credentials.
+ * İzin: user_management:create (creating a login account is privileged).
+ *
+ * SMTP on  → email the sign-in details, temp password never returned.
+ * SMTP off → return the temp password so the admin can hand it over.
+ */
+router.post('/:id/grant-access',
+  requirePermission('user_management', 'create'),
+  asyncHandler(async (req, res) => {
+    const employee = await employeeService.getEmployee(req.params.id);
+    const { user, tempPassword, created } = await authProvider.grantPortalAccess({ employee }, req.user);
+
+    const { smtp } = await notificationService.getMailConfig();
+    const smtpOn = !!(smtp && smtp.host);
+    let emailStatus = 'skipped';
+    let emailError = null;
+    if (smtpOn) {
+      try {
+        await notificationService.sendPortalAccessEmail({
+          to: user.email,
+          username: user.username,
+          tempPassword,
+        });
+        emailStatus = 'sent';
+      } catch (err) {
+        console.warn('[notify] portal access email failed:', err.message);
+        emailStatus = 'failed';
+        emailError = err.message || 'Email send failed';
+      }
+    }
+    // Reveal the temp password only when it wasn't (successfully) emailed.
+    const reveal = !smtpOn || emailStatus === 'failed';
+    res.json({
+      success: true,
+      data: {
+        user,
+        created,
+        smtpUsed: smtpOn,
+        emailStatus,
+        emailError: emailError || undefined,
+        tempPassword: reveal ? tempPassword : undefined,
+      },
+    });
+  }));
+
+/**
+ * DELETE /api/employees/:id/revoke-access — remove the employee's Portal
+ * login (sessions revoked + user deleted). Staff accounts are not touched.
+ * İzin: user_management:delete (mirrors deleting a login).
+ */
+router.delete('/:id/revoke-access',
+  requirePermission('user_management', 'delete'),
+  asyncHandler(async (req, res) => {
+    const employee = await employeeService.getEmployee(req.params.id);
+    const result = await authProvider.revokePortalAccess({ employee }, req.user);
+    res.json({ success: true, data: result });
   }));
 
 /* ---- Per-employee handover document archive ---- */
