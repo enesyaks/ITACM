@@ -27,48 +27,12 @@ const {
   getIamSchema,
 } = require('../../utils/iamSchema');
 
-// ====================================================================
-// PERMISSION CACHE — Her istekte SQL sorgusunu önle (DoS koruması)
-// TTL: 5 dakika, maksimum 500 entry
-// ====================================================================
-const permissionCache = new Map();
-const CACHE_TTL = 5 * 60 * 1000;
-const CACHE_MAX_SIZE = 500;
-
-function getCacheKey(userId, resource, action) {
-  return `${userId}::${resource}::${action}`;
-}
-
-function getFromCache(userId, resource, action) {
-  const key = getCacheKey(userId, resource, action);
-  const entry = permissionCache.get(key);
-  if (!entry) return undefined;
-  if (Date.now() - entry.timestamp > CACHE_TTL) {
-    permissionCache.delete(key);
-    return undefined;
-  }
-  return entry.value;
-}
-
-function setToCache(userId, resource, action, value) {
-  if (permissionCache.size >= CACHE_MAX_SIZE) {
-    const entries = [...permissionCache.entries()].sort((a, b) => a[1].timestamp - b[1].timestamp);
-    entries.slice(0, 50).forEach(([k]) => permissionCache.delete(k));
-  }
-  const key = getCacheKey(userId, resource, action);
-  permissionCache.set(key, { value, timestamp: Date.now() });
-}
-
-function clearPermissionCache(userId) {
-  if (userId) {
-    for (const key of permissionCache.keys()) {
-      if (key.startsWith(`${userId}::`)) permissionCache.delete(key);
-    }
-  } else {
-    permissionCache.clear();
-  }
-}
-// ====================================================================
+// NOTE: permission checks are intentionally NOT cached. A verdict depends on the
+// per-request `context` (department/location/cost/…), so any userId::resource::action
+// cache would return wrong answers for constrained grants (a silent authorization
+// bug). `clearPermissionCache` is kept as a no-op so entry-mutation call sites that
+// invalidate "the cache" stay valid without reintroducing that trap.
+function clearPermissionCache() { /* no-op — see note above */ }
 
 // Built-in grup UUID'leri
 const SYSTEM_GROUPS = Object.freeze({
@@ -176,22 +140,26 @@ async function evaluateConstraint(entry, user, context) {
       return allowed.includes(context.category.toLowerCase());
     }
 
+    // Numeric limits FAIL CLOSED: if the route did not supply the value to check
+    // against, the limit cannot be verified, so deny rather than silently allow.
+    // A route that wants to honour one of these MUST pass the matching context
+    // (cost / seats / assetCount). cost_limit is wired on asset create/update.
     case 'cost_limit': {
-      if (context.cost == null) return true; // cost yoksa limit kontrolü yapma
+      if (context.cost == null) return false;
       const limit = Number(effectiveConstraints);
-      return Number(context.cost) <= limit;
+      return Number.isFinite(limit) && Number(context.cost) <= limit;
     }
 
     case 'seats_limit': {
-      if (context.seats == null) return true;
+      if (context.seats == null) return false;
       const limit = Number(effectiveConstraints);
-      return Number(context.seats) <= limit;
+      return Number.isFinite(limit) && Number(context.seats) <= limit;
     }
 
     case 'max_assets': {
-      if (context.assetCount == null) return true;
+      if (context.assetCount == null) return false;
       const limit = Number(effectiveConstraints);
-      return Number(context.assetCount) <= limit;
+      return Number.isFinite(limit) && Number(context.assetCount) <= limit;
     }
 
     case 'owner_only': {
@@ -674,6 +642,61 @@ async function setUserPermissionGroup(userId, groupId, actor) {
   };
 }
 
+// Array-type (list-scope) constraints. custom_constraints WIDEN a group's scope
+// for these, so handing them out is a grant and must respect no-escalation.
+const LIST_CONSTRAINT_TYPES = Object.freeze(['department', 'location', 'category']);
+
+/**
+ * No-privilege-escalation for custom_constraints: because mergeConstraints UNIONs
+ * list constraints (widening the target's data scope), a non-Owner actor must not
+ * assign list values beyond their OWN effective scope. Otherwise a department-
+ * restricted user-manager could widen their own (or anyone's) access to other
+ * departments/locations/categories. Owners, and actors not themselves restricted
+ * on a given dimension, may grant freely on that dimension.
+ */
+async function assertMayWidenConstraints(actor, constraints) {
+  if (isOwner(actor)) return;
+  if (!actor || !actor.permissionGroupId) return; // role-fallback actors carry no list constraints
+
+  const want = {};
+  for (const k of LIST_CONSTRAINT_TYPES) {
+    const v = constraints && constraints[k];
+    if (Array.isArray(v) && v.length) want[k] = v.map((x) => String(x).trim().toLowerCase());
+  }
+  if (!Object.keys(want).length) return; // nothing list-scoped is being granted
+
+  const { rows } = await query(
+    `SELECT constraint_type, constraint_value FROM permission_entries
+     WHERE group_id = $1 AND constraint_type = ANY($2::text[])`,
+    [actor.permissionGroupId, LIST_CONSTRAINT_TYPES]
+  );
+  const own = { department: new Set(), location: new Set(), category: new Set() };
+  const restricted = { department: false, location: false, category: false };
+  for (const r of rows) {
+    restricted[r.constraint_type] = true;
+    let raw = r.constraint_value;
+    if (typeof raw === 'string') { try { raw = JSON.parse(raw); } catch { /* keep */ } }
+    const list = Array.isArray(raw) ? raw : (raw != null ? [raw] : []);
+    for (const val of list) own[r.constraint_type].add(String(val).trim().toLowerCase());
+  }
+  // The actor's own custom_constraints are scope they already effectively hold.
+  const ac = (actor.customConstraints && typeof actor.customConstraints === 'object') ? actor.customConstraints : {};
+  for (const k of LIST_CONSTRAINT_TYPES) {
+    if (Array.isArray(ac[k])) for (const val of ac[k]) own[k].add(String(val).trim().toLowerCase());
+  }
+
+  for (const [k, vals] of Object.entries(want)) {
+    if (!restricted[k]) continue; // actor is unrestricted on this dimension → may grant any
+    for (const val of vals) {
+      if (!own[k].has(val)) {
+        throw HttpError.forbidden(
+          `You cannot grant ${k} "${val}" — it is outside your own scope`
+        );
+      }
+    }
+  }
+}
+
 /**
  * Kullanıcının custom_constraints'ini güncelle.
  */
@@ -692,6 +715,9 @@ async function setUserCustomConstraints(userId, constraints, actor) {
       }
     }
   }
+
+  // No-privilege-escalation: a non-Owner may not widen scope beyond their own.
+  await assertMayWidenConstraints(actor, validConstraints);
 
   const cv = Object.keys(validConstraints).length > 0 ? JSON.stringify(validConstraints) : null;
 

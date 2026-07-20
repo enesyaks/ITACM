@@ -9,6 +9,15 @@ const SENSITIVE_KEYS = new Set([
   'licensekey', 'secret', 'apikey', 'key',
 ]);
 
+// Any key whose name contains one of these is redacted, so variants like
+// currentPassword / newPassword / mfaSecret / backupCode never hit the log.
+const SENSITIVE_KEY_RE = /(pass(word|wd)?|secret|token|api[-_]?key|authorization|licensekey|backupcode|totp|otp|mfa)/i;
+
+function isSensitiveKey(k) {
+  const s = String(k).toLowerCase();
+  return SENSITIVE_KEYS.has(s) || SENSITIVE_KEY_RE.test(s);
+}
+
 function scrub(value, depth = 0) {
   if (value == null || depth > 3) return value;
   if (Array.isArray(value)) return value.slice(0, 20).map((v) => scrub(v, depth + 1));
@@ -18,7 +27,7 @@ function scrub(value, depth = 0) {
   }
   const out = {};
   for (const [k, v] of Object.entries(value)) {
-    out[k] = SENSITIVE_KEYS.has(String(k).toLowerCase()) ? '[redacted]' : scrub(v, depth + 1);
+    out[k] = isSensitiveKey(k) ? '[redacted]' : scrub(v, depth + 1);
   }
   return out;
 }

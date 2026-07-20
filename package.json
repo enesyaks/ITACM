@@ -16,6 +16,8 @@
     "seed:providers": "node scripts/seed-providers-demo.js",
     "backup": "bash scripts/backup.sh",
     "restore": "bash scripts/restore.sh",
+    "migrate:export": "bash scripts/migrate-export.sh",
+    "migrate:import": "bash scripts/migrate-import.sh",
     "change-db-password": "bash scripts/change-db-password.sh",
     "lint": "node --check server.js && find src scripts -name '*.js' -exec node --check {} +"
   },

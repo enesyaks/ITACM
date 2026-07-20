@@ -56,7 +56,7 @@ Donanım ve ağ envanteri · yazdırılabilir PDF tutanaklı personel zimmetleri
 
 - **Tek komutla çalışır.** `docker compose up -d` size veritabanını, şemayı, ilk yöneticiyi ve tam bir web arayüzünü verir — build adımı yok, ayrı bir frontend kurmanıza gerek yok.
 - **Sağlam zimmetler.** Her cihaz ataması, satır kilitli ve atomik bir işlemdir; şirket markanızla **Zimmet Tutanağı** (yazdırılabilir teslim formu) üretir.
-- **Tüm şirket, tek dosyada.** Cihazlar, personel, tutanaklar, sözleşmeler, denetim geçmişi ve yüklenen belgeler PostgreSQL'de durur; tek bir yedek her şeyi kapsar.
+- **Tüm şirket, tek taşıma.** Cihazlar, personel, tutanaklar, sözleşmeler ve denetim geçmişi PostgreSQL'dedir. Yüklenen belgeler dosya sisteminde (`DATA_DIR/documents`); tam taşıma için `npm run migrate:export` kullanın.
 - **Depoda da çalışır.** Arayüz tamamen duyarlı; mobil alt menü ve kamerayla QR/barkod tarama ile telefonunuzdan sayım yapabilir veya laptop zimmetleyebilirsiniz.
 - **Sizin kalır.** Telemetri yok, üreticiye bağımlılık yok, MIT lisanslı.
 
@@ -236,14 +236,20 @@ Yönetilen platformlarda (Railway, Render, Fly.io, Cloud Run…) `Dockerfile`'ı
 
 ## 💾 Yedekleme & kurtarma
 
-Tüm sisteminiz — cihazlar, personel, zimmet tutanakları, sözleşmeler, denetim geçmişi ve belge arşivi (taranmış/üretilmiş PDF'ler) — PostgreSQL'de durur. Düzenli yedekleyin.
+PostgreSQL cihazlar, personel, tutanaklar, sözleşmeler, ayarlar (SMTP, şirket, zimmet şablonları) ve denetim geçmişini tutar. **Yüklenen belgeler** `app-data` volume'ünde (`DATA_DIR/documents`) durur — yalnızca veritabanında değil.
 
 ```bash
-npm run backup                 # → backups/itacm-YYYYMMDD-HHMMSS.sql.gz
-npm run restore backups/itacm-20260707-120000.sql.gz   # mevcut veriyi değiştirir (onay ister)
+npm run backup                 # → backups/itacm-YYYYMMDD-HHMMSS.sql.gz  (yalnızca DB)
+npm run restore backups/itacm-20260707-120000.sql.gz   # mevcut DB'yi değiştirir (onay ister)
+
+# Tam sistem taşıma (DB + belgeler) — arayüzde de var:
+npm run migrate:export         # → migrations/itacm-migrate-… (+ varsa .zip)
+npm run migrate:import path/to/itacm-migrate-… [--yes]
 ```
 
-Tek bir dosya her şeyi kapsar (belge arşivi veritabanının içindedir). `backups/` klasörünü güvenli bir yere kopyalayın veya komutu cron ile zamanlayın, ör. her gün 02:00'de:
+İlk açılışta **Yeni kurulum** veya **Başka sunucudan taşı** seçilir. Kaynak `.env` içindeki `JWT_SECRET`'i hedefe kopyalayın (SMTP şifre çözümü için gerekli). Owner ayrıca **Integrations → System migration** ile dışa aktarabilir.
+
+`backups/` / `migrations/` klasörlerini güvenli bir yere kopyalayın veya DB yedeğini cron ile zamanlayın, ör. her gün 02:00'de:
 
 ```cron
 0 2 * * *  cd /path/to/ITACM && npm run backup

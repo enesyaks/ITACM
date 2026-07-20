@@ -4,7 +4,7 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 
-RUN apk add --no-cache su-exec
+RUN apk add --no-cache su-exec postgresql16-client unzip  || apk add --no-cache su-exec postgresql-client unzip
 
 COPY package*.json ./
 RUN npm ci --omit=dev && npm cache clean --force

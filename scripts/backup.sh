@@ -4,9 +4,10 @@
 #
 #   npm run backup            # or: bash scripts/backup.sh
 #
-# Dumps the entire PostgreSQL database (which includes the document archive —
-# scanned/generated PDFs are stored inside the DB) to a single gzipped SQL file
-# under ./backups/. Restore any of them with `npm run restore <file>`.
+# Dumps the entire PostgreSQL database to a single gzipped SQL file under
+# ./backups/. Uploaded documents live on the filesystem (DATA_DIR/documents),
+# not only in the DB — for a full move use `npm run migrate:export` instead.
+# Restore a DB dump with `npm run restore <file>`.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."

@@ -56,7 +56,7 @@ Most asset trackers are either a spreadsheet that rots or a heavyweight SaaS you
 
 - **One command to run.** `docker compose up -d` gives you the database, schema, first admin and a full web UI — no build step, no separate frontend to deploy.
 - **Handovers that hold up.** Every asset assignment is an atomic, row-locked transaction that produces a printable **Zimmet Tutanağı** (handover receipt) with your company branding.
-- **The whole company, one dump.** Assets, employees, receipts, contracts, audit history and uploaded documents all live in PostgreSQL, so a single backup captures everything.
+- **The whole company, one dump.** Assets, employees, receipts, contracts and audit history live in PostgreSQL. Uploaded document files live on the filesystem (`DATA_DIR/documents`); use `npm run migrate:export` for a full move.
 - **Works from the warehouse floor.** The UI is fully responsive with a mobile bottom-nav and a camera QR/barcode scanner — count stock or hand over a laptop from your phone.
 - **Yours to keep.** No telemetry, no vendor lock-in, MIT licensed.
 
@@ -217,7 +217,7 @@ docker compose up -d
 docker compose logs api   # first-run Owner credentials are printed here
 ```
 
-Then open **http://localhost:8000** — the first visit shows the onboarding wizard to set your company name/logo, pick a zimmet design and language, and create the **Owner** account.
+Then open **http://localhost:8000** — the first visit asks **New workspace** (product tour + company/Owner setup) or **Migrate from another server**.
 
 > [!TIP]
 > If you leave `ADMIN_PASSWORD` empty, a strong random password is generated and printed **once** in the API logs. Change it after first login.
@@ -236,14 +236,20 @@ For managed platforms (Railway, Render, Fly.io, Cloud Run…), deploy the `Docke
 
 ## 💾 Backup & recovery
 
-Your entire system — assets, employees, handover receipts, contracts, audit history and the document archive (scanned/generated PDFs) — lives in PostgreSQL. Back it up regularly.
+PostgreSQL holds assets, employees, receipts, contracts, settings (SMTP, company, zimmet templates) and audit history. **Uploaded document files** live under the `app-data` volume (`DATA_DIR/documents`), not only in the database.
 
 ```bash
-npm run backup                 # → backups/itacm-YYYYMMDD-HHMMSS.sql.gz
-npm run restore backups/itacm-20260707-120000.sql.gz   # replaces current data (asks to confirm)
+npm run backup                 # → backups/itacm-YYYYMMDD-HHMMSS.sql.gz  (DB only)
+npm run restore backups/itacm-20260707-120000.sql.gz   # replaces current DB (asks to confirm)
+
+# Full system move (DB + documents) — also available in the UI:
+npm run migrate:export         # → migrations/itacm-migrate-… (+ .zip if available)
+npm run migrate:import path/to/itacm-migrate-… [--yes]
 ```
 
-A single dump captures everything (the document archive is stored inside the database). Copy the `backups/` folder somewhere safe, or schedule the command with cron, e.g. daily at 02:00:
+First open of a fresh install offers **New workspace** or **Migrate from another server**. Copy `JWT_SECRET` from the source `.env` to the target (required for SMTP password decrypt). Owner can also export from **Integrations → System migration**.
+
+Copy the `backups/` / `migrations/` folders somewhere safe, or schedule DB backups with cron, e.g. daily at 02:00:
 
 ```cron
 0 2 * * *  cd /path/to/ITACM && npm run backup

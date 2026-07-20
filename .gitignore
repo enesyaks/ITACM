@@ -12,6 +12,9 @@ data/.itacm-bootstrap-password
 # Database backups (may contain personal data — keep them out of git)
 backups/
 
+# Full-system migration packages (DB + documents)
+migrations/
+
 # OS
 .DS_Store
 

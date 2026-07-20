@@ -5,6 +5,7 @@ Views.integrations = async function (el) {
     return;
   }
   const canManage = Auth.canIam('integration', 'manage');
+  const canExport = Auth.can('isOwner') || Auth.profile?.role === 'Owner';
   const canRead = Auth.can('canAccessIntegrations') || Auth.canIam('integration', 'read') || Auth.canIam('integration', 'update') || canManage;
   const readOnly = canRead && !canManage;
   const lockedTip = esc(t('integration.viewLocked') || 'Saved — editing requires integration:manage');
@@ -206,6 +207,14 @@ Views.integrations = async function (el) {
         </div>
       </section>
 
+      ${canExport ? `<section class="card card-pad" style="margin-bottom:16px">
+        <h3 style="margin:0 0 8px">${esc(t('integration.migrationTitle') || 'System migration')}</h3>
+        <p class="cell-sub" style="margin:0 0 12px">${esc(t('integration.migrationHint') || '')}</p>
+        <button type="button" class="btn btn-primary" id="int-migrate-export">
+          <span class="ms">download</span> ${esc(t('integration.migrationExport') || 'Export full backup')}
+        </button>
+      </section>` : ''}
+
       <section class="card card-pad">
         <h3 style="margin:0 0 8px">Sync connectors (API)</h3>
         <pre class="mono" style="white-space:pre-wrap;font-size:12px;background:#f6f5fa;padding:12px;border-radius:10px;overflow:auto">POST /api/integrations/sync/employees
@@ -315,6 +324,32 @@ GET /api/integrations/licenses/:id/sam
         Views.integrations(el);
       }
     );
+  });
+
+
+  $('#int-migrate-export', el)?.addEventListener('click', async () => {
+    const btn = $('#int-migrate-export', el);
+    try {
+      if (btn) btn.disabled = true;
+      const res = await fetch('/api/migrations/export', {
+        headers: Auth.token ? { Authorization: 'Bearer ' + Auth.token } : {},
+      });
+      if (!res.ok) {
+        let msg = 'Export failed';
+        try { const j = await res.json(); msg = j.error || msg; } catch { /* ignore */ }
+        throw new Error(msg);
+      }
+      const blob = await res.blob();
+      const cd = res.headers.get('Content-Disposition') || '';
+      const m = /filename="?([^";]+)"?/i.exec(cd);
+      const name = (m && m[1]) || 'itacm-migrate.tar.gz';
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = name; a.click();
+      URL.revokeObjectURL(url);
+      toast('Migration package downloaded — keep JWT_SECRET with it', 'success');
+    } catch (err) { toast(err.message, 'error'); }
+    finally { if (btn) btn.disabled = false; }
   });
 
 

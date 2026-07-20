@@ -1383,7 +1383,7 @@ function obPreviewHtml(kind) {
 }
 
 let obStep = 0;                 // setup step: 0 company · 1 handover design · 2 owner
-let obPhase = 'tour';           // 'tour' (product intro) -> 'setup' (workspace form)
+let obPhase = 'choice';         // 'choice' -> 'tour' | 'migrate' -> 'setup'
 let obTourIdx = 0;              // index into OB_TOUR while in the tour phase
 const OB_SETUP_STEPS = 3;
 
@@ -1484,20 +1484,29 @@ function validateObStep(step) {
   return true;
 }
 
-/** Highlight the left step rail: Product tour + the three setup steps. */
+/** Highlight the left step rail: choice → tour → setup (or migrate). */
 function setObIndicator() {
   const scr = $('#onboarding-screen'); if (!scr) return;
+  const pastChoice = obPhase === 'tour' || obPhase === 'setup' || obPhase === 'migrate';
+  const pastTour = obPhase === 'setup';
   scr.querySelectorAll('#onb-steps li').forEach((li) => {
-    if (li.dataset.nav === 'tour') {
+    const nav = li.dataset.nav;
+    if (nav === 'choice') {
+      li.classList.toggle('on', obPhase === 'choice');
+      li.classList.toggle('done', pastChoice);
+    } else if (nav === 'tour') {
       li.classList.toggle('on', obPhase === 'tour');
-      li.classList.toggle('done', obPhase === 'setup');
+      li.classList.toggle('done', pastTour || obPhase === 'migrate');
+      li.classList.toggle('hidden', obPhase === 'migrate');
     } else {
       const i = Number(li.dataset.step);
       li.classList.toggle('on', obPhase === 'setup' && i === obStep);
       li.classList.toggle('done', obPhase === 'setup' && i < obStep);
+      li.classList.toggle('hidden', obPhase === 'migrate' || obPhase === 'choice');
     }
   });
 }
+
 
 /**
  * Screenshot-led slide: the real UI is the hero and numbered markers pin each bullet
@@ -1632,15 +1641,151 @@ function renderObSetupStep() {
   if (focusable) setTimeout(() => { try { focusable.focus(); } catch (e) { /* ignore */ } }, 90);
 }
 
-/** Routes to the active onboarding phase (product tour, then setup). */
+/** Choice screen: new workspace vs migrate from another server. */
+function renderObChoice() {
+  const host = $('#ob-tour');
+  const form = $('#onboarding-form');
+  if (!host) return;
+  host.classList.remove('hidden');
+  if (form) form.classList.add('hidden');
+  const skip = $('#onb-skip'); if (skip) skip.classList.add('hidden');
+  const next = $('#onb-next'); if (next) next.classList.add('hidden');
+  const done = $('#onboarding-btn'); if (done) done.classList.add('hidden');
+  const back = $('#ob-form-back'); if (back) back.style.visibility = 'hidden';
+  const rail = $('#onb-tour-rail'); if (rail) rail.classList.add('hidden');
+  const asideBody = $('.onb-aside-body'); if (asideBody) asideBody.classList.remove('hidden');
+  const bar = $('#ob-bar'); if (bar) bar.style.width = '5%';
+  const lbl = $('#ob-step-label'); if (lbl) lbl.textContent = t('ob.choiceNav');
+  host.innerHTML = `
+    <div class="ob-slide onb-anim">
+      <span class="ob-slide-badge"><span class="ms ms-sm">fork_right</span> ${esc(t('ob.choiceNav'))}</span>
+      <h2 class="ob-slide-title">${esc(t('ob.choiceTitle'))}</h2>
+      <p class="ob-slide-desc">${esc(t('ob.choiceDesc'))}</p>
+      <div class="ob-choice-grid" style="display:grid;gap:12px;margin-top:20px;max-width:520px">
+        <button type="button" class="btn btn-primary" id="ob-choice-new" style="justify-content:flex-start;padding:14px 18px;text-align:left">
+          <span class="ms">rocket_launch</span>
+          <span style="display:flex;flex-direction:column;align-items:flex-start;margin-left:8px">
+            <strong>${esc(t('ob.choiceNew'))}</strong>
+            <span class="cell-sub" style="font-weight:400;opacity:.85">${esc(t('ob.choiceNewHint'))}</span>
+          </span>
+        </button>
+        <button type="button" class="btn btn-outline" id="ob-choice-migrate" style="justify-content:flex-start;padding:14px 18px;text-align:left">
+          <span class="ms">cloud_download</span>
+          <span style="display:flex;flex-direction:column;align-items:flex-start;margin-left:8px">
+            <strong>${esc(t('ob.choiceMigrate'))}</strong>
+            <span class="cell-sub" style="font-weight:400;opacity:.85">${esc(t('ob.choiceMigrateHint'))}</span>
+          </span>
+        </button>
+      </div>
+      <p class="onb-hint" style="margin-top:16px">${esc(t('ob.choiceJwtHint'))}</p>
+    </div>`;
+  $('#ob-choice-new', host)?.addEventListener('click', () => {
+    obPhase = 'tour'; obTourIdx = 0; renderTour();
+  });
+  $('#ob-choice-migrate', host)?.addEventListener('click', () => {
+    obPhase = 'migrate'; renderTour();
+  });
+  setObIndicator();
+}
+
+/** Migrate upload screen (fresh instance only). */
+function renderObMigrate() {
+  const host = $('#ob-tour');
+  const form = $('#onboarding-form');
+  if (!host) return;
+  host.classList.remove('hidden');
+  if (form) form.classList.add('hidden');
+  const skip = $('#onb-skip'); if (skip) skip.classList.add('hidden');
+  const next = $('#onb-next'); if (next) next.classList.add('hidden');
+  const done = $('#onboarding-btn'); if (done) done.classList.add('hidden');
+  const back = $('#ob-form-back'); if (back) back.style.visibility = '';
+  const rail = $('#onb-tour-rail'); if (rail) rail.classList.add('hidden');
+  const asideBody = $('.onb-aside-body'); if (asideBody) asideBody.classList.remove('hidden');
+  const bar = $('#ob-bar'); if (bar) bar.style.width = '20%';
+  const lbl = $('#ob-step-label'); if (lbl) lbl.textContent = t('ob.migrateNav');
+  const needKey = !obSetupToken;
+  host.innerHTML = `
+    <div class="ob-slide onb-anim">
+      <span class="ob-slide-badge"><span class="ms ms-sm">cloud_download</span> ${esc(t('ob.migrateNav'))}</span>
+      <h2 class="ob-slide-title">${esc(t('ob.migrateTitle'))}</h2>
+      <p class="ob-slide-desc">${esc(t('ob.migrateDesc'))}</p>
+      <label class="onb-field"><span>${esc(t('ob.migrateFile'))}</span>
+        <input type="file" id="ob-migrate-file" accept=".tar.gz,.tgz,.zip,application/gzip,application/zip">
+      </label>
+      <div id="ob-migrate-key-wrap" class="${needKey ? '' : 'hidden'}">
+        <label class="onb-field"><span>${esc(t('ob.migrateToken'))}</span>
+          <input type="text" id="ob-migrate-token" autocomplete="off" spellcheck="false"
+            placeholder="${esc(t('ob.migrateTokenPh'))}">
+        </label>
+      </div>
+      <p class="onb-hint">${esc(t('ob.migrateJwtHint'))}</p>
+      <div id="ob-migrate-error" class="banner banner-rose hidden" style="margin:12px 0"></div>
+      <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">
+        <button type="button" class="btn btn-outline" id="ob-migrate-back">${esc(t('ob.back'))}</button>
+        <button type="button" class="btn btn-primary" id="ob-migrate-go">
+          <span class="ms">upload</span> ${esc(t('ob.migrateUpload'))}
+        </button>
+      </div>
+    </div>`;
+  $('#ob-migrate-back', host)?.addEventListener('click', () => {
+    obPhase = 'choice'; renderTour();
+  });
+  $('#ob-migrate-go', host)?.addEventListener('click', () => submitObMigrate(host));
+  setObIndicator();
+}
+
+async function submitObMigrate(host) {
+  const errBox = $('#ob-migrate-error', host);
+  const btn = $('#ob-migrate-go', host);
+  const fileInp = $('#ob-migrate-file', host);
+  const tokenInp = $('#ob-migrate-token', host);
+  if (errBox) { errBox.classList.add('hidden'); errBox.textContent = ''; }
+  const file = fileInp && fileInp.files && fileInp.files[0];
+  if (!file) {
+    if (errBox) { errBox.textContent = t('ob.migrateNeedFile'); errBox.classList.remove('hidden'); }
+    return;
+  }
+  const setupToken = ((tokenInp && tokenInp.value) || '').trim() || obSetupToken || '';
+  if (!setupToken) {
+    const wrap = $('#ob-migrate-key-wrap', host);
+    if (wrap) wrap.classList.remove('hidden');
+    if (errBox) { errBox.textContent = t('ob.migrateNeedToken'); errBox.classList.remove('hidden'); }
+    return;
+  }
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch('/api/setup/migrate', {
+      method: 'POST',
+      headers: { 'X-Setup-Token': setupToken },
+      body: file,
+    });
+    let json = {};
+    try { json = await res.json(); } catch { /* non-json */ }
+    if (!res.ok || json.success === false) {
+      throw new Error((json && json.error) || `Import failed (${res.status})`);
+    }
+    toast(t('ob.migrateDone'), 'success');
+    await loadAppConfig();
+    location.reload();
+  } catch (err) {
+    if (errBox) { errBox.textContent = err.message || String(err); errBox.classList.remove('hidden'); }
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+/** Routes to the active onboarding phase (choice → tour/migrate → setup). */
 function renderTour() {
   const scr = $('#onboarding-screen');
   if (!scr) return;
   const nav = $('#onb-nav');
   if (nav) nav.classList.toggle('is-tour', obPhase === 'tour');
-  if (obPhase === 'tour') renderObTourSlide();
+  if (obPhase === 'choice') renderObChoice();
+  else if (obPhase === 'migrate') renderObMigrate();
+  else if (obPhase === 'tour') renderObTourSlide();
   else renderObSetupStep();
 }
+
 
 function bindOnboarding() {
   const form = $('#onboarding-form');
@@ -1698,8 +1843,8 @@ function bindOnboarding() {
     refreshTagSample();
   }
 
-  // Onboarding navigation — product tour first, then the setup steps
-  obPhase = 'tour';
+  // Onboarding navigation — choice first, then tour/setup or migrate
+  obPhase = 'choice';
   obTourIdx = 0;
   obStep = 0;
   renderObTplCards();
@@ -1708,15 +1853,21 @@ function bindOnboarding() {
 
   const obGoSetup = () => { obPhase = 'setup'; obStep = 0; renderTour(); };
   const obNext = () => {
+    if (obPhase === 'choice') { obPhase = 'tour'; obTourIdx = 0; renderTour(); return; }
     if (obPhase === 'tour') {
       if (obTourIdx >= OB_TOUR.length - 1) obGoSetup();
       else { obTourIdx++; renderTour(); }
-    } else if (validateObStep(obStep)) { obStep++; renderTour(); }
+    } else if (obPhase === 'setup' && validateObStep(obStep)) { obStep++; renderTour(); }
   };
   const obBack = () => {
-    if (obPhase === 'tour') { if (obTourIdx > 0) { obTourIdx--; renderTour(); } }
-    else if (obStep > 0) { obStep--; renderTour(); }
-    else { obPhase = 'tour'; obTourIdx = OB_TOUR.length - 1; renderTour(); } // company -> back into the tour
+    if (obPhase === 'migrate') { obPhase = 'choice'; renderTour(); return; }
+    if (obPhase === 'tour') {
+      if (obTourIdx > 0) { obTourIdx--; renderTour(); }
+      else { obPhase = 'choice'; renderTour(); }
+    } else if (obPhase === 'setup') {
+      if (obStep > 0) { obStep--; renderTour(); }
+      else { obPhase = 'tour'; obTourIdx = OB_TOUR.length - 1; renderTour(); }
+    }
   };
 
   const obNextBtn = $('#onb-next');
@@ -1729,7 +1880,12 @@ function bindOnboarding() {
   const obStepsList = $('#onb-steps');
   if (obStepsList) obStepsList.querySelectorAll('li').forEach((li) => {
     li.addEventListener('click', () => {
-      if (li.dataset.nav === 'tour') { obPhase = 'tour'; renderTour(); return; }
+      if (li.dataset.nav === 'choice') { obPhase = 'choice'; renderTour(); return; }
+      if (li.dataset.nav === 'tour') {
+        if (obPhase === 'migrate') return;
+        obPhase = 'tour'; renderTour();
+        return;
+      }
       if (obPhase !== 'setup') return;
       const i = Number(li.dataset.step);
       if (i <= obStep) { obStep = i; renderTour(); }

@@ -93,6 +93,7 @@ function createApp() {
     if (req.method === 'POST' && /^\/api\/(employees|maintenance|providers|contracts)\/[^/]+\/documents\/?$/.test(req.path)) return next();
     if (req.method === 'POST' && req.path === '/api/import/inventory') return next(); // big CSV payloads
     if (req.method === 'POST' && /^\/api\/integrations\/sync\//.test(req.path)) return next(); // sync JSON up to 6mb on route
+    if (req.method === 'POST' && req.path === '/api/setup/migrate') return next(); // raw migration archive body
     return jsonSmall(req, res, next);
   });
 
@@ -157,6 +158,7 @@ function createApp() {
   });
 
   app.use('/api', require('./routes/setup.routes'));
+  app.use('/api/migrations', require('./routes/migrations.routes'));
   app.use('/api/auth', require('./routes/auth.routes'));
   app.use('/api/dashboard', require('./routes/dashboard.routes'));
   app.use('/api/assets', require('./routes/assets.routes'));
