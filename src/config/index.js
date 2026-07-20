@@ -36,6 +36,8 @@ const config = {
   pgSslInsecure: flagEnv('PGSSL_INSECURE'),
   jwtSecret: env('JWT_SECRET'),
   jwtExpiresIn: trimmedEnv('JWT_EXPIRES_IN') || '12h',
+  // Opt-in longer session when the user checks "Remember me" at login.
+  jwtRememberExpiresIn: trimmedEnv('JWT_REMEMBER_EXPIRES_IN') || '30d',
 
   // First-run admin seed
   adminEmail: trimmedEnv('ADMIN_EMAIL') || 'admin@example.com',

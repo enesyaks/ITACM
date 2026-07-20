@@ -1001,7 +1001,7 @@ Views.users = async function (el) {
         toast(msg, 'success');
         // Sessions were revoked server-side; force a fresh login as the demoted (Admin) account.
         setTimeout(() => {
-          try { localStorage.removeItem('itacm_token'); localStorage.removeItem('itacm_profile'); } catch (e) { /* ignore */ }
+          try { if (typeof Auth !== 'undefined' && Auth.clear) Auth.clear(); else { localStorage.removeItem('itacm_token'); localStorage.removeItem('itacm_profile'); sessionStorage.removeItem('itacm_token'); sessionStorage.removeItem('itacm_profile'); } } catch (e) { /* ignore */ }
           location.reload();
         }, 2200);
       },

@@ -196,7 +196,7 @@ async function showMandatoryPasswordChange() {
             }
           } else if (Auth.profile) {
             Auth.profile.mustChangePassword = false;
-            localStorage.setItem('itacm_profile', JSON.stringify(Auth.profile));
+            Auth.persistProfile();
           }
           closeModal();
           showApp();
@@ -283,7 +283,7 @@ async function showMandatoryOwnerMfa() {
               if (Auth.profile) {
                 Auth.profile.mfaEnabled = true;
                 Auth.profile.mfaEnrollmentRequired = false;
-                localStorage.setItem('itacm_profile', JSON.stringify(Auth.profile));
+                Auth.persistProfile();
               }
               $('#owner-mfa-continue', box).addEventListener('click', () => {
                 closeModal();
@@ -316,11 +316,19 @@ function showApp() {
   $('#onboarding-screen').classList.add('hidden');
   $('#login-screen').classList.add('hidden');
   $('#app').classList.remove('hidden');
+  if (typeof applyStaticI18n === 'function') applyStaticI18n();
   const name = Auth.profile.username || Auth.profile.email;
   $('#user-name').textContent = name;
-  $('#user-role').textContent = Auth.profile.role;
+  const roleEl = $('#user-role');
+  if (roleEl) {
+    roleEl.textContent = (typeof roleLabel === 'function')
+      ? roleLabel(Auth.profile.role)
+      : Auth.profile.role;
+  }
   $('#user-avatar').textContent = initials(name);
   $('#topbar-avatar').textContent = initials(name);
+  const logoutBtn = $('#logout-btn');
+  if (logoutBtn) logoutBtn.title = t('common.signout') || 'Sign out';
   $('#sidebar-new-asset').style.display = Auth.canIam('asset', 'create') ? '' : 'none';
   applyBranding();
   if (typeof initMobileShell === 'function' && !window.__mobileShellReady) {
@@ -366,6 +374,7 @@ function showLogin() {
   $('#login-screen').classList.remove('hidden');
   if (typeof setMobileChromeVisible === 'function') setMobileChromeVisible(false);
   else if (typeof syncMobileChrome === 'function') syncMobileChrome();
+  if (typeof applyStaticI18n === 'function') applyStaticI18n();
   applyBranding();
   $('#login-mode-note').textContent = 'IT Asset Control Pro';
   const loginForm = $('#login-form');
@@ -375,6 +384,7 @@ function showLogin() {
     mfaForm.classList.add('hidden');
     mfaForm.reset();
     mfaForm.dataset.mfaToken = '';
+    mfaForm.dataset.rememberMe = '';
   }
   showConfigError('#login-error');
   const mfaErr = $('#mfa-error');
@@ -2844,7 +2854,10 @@ function showSettings() {
           applyBranding();
           toast('Settings saved', 'success');
           closeModal();
-          if (langChoice !== i18nLang()) setLang(langChoice); // reloads with the new language
+          // Always write the browser locale key — independent of remember-me / session storage.
+          const prevLang = i18nLang();
+          if (typeof setLang === 'function') setLang(langChoice, { reload: false });
+          if (langChoice !== prevLang) location.reload();
           else if (currencyChoice !== prevCurrency) location.reload();
           else if (tagPrefixChoice !== prevTagPrefix) {
             /* prefix change only affects new tags — no reload required */
@@ -3126,9 +3139,16 @@ function showProfile() {
 /* ---- init ---- */
 async function init() {
   await loadAppConfig();
+  if (typeof refreshLang === 'function') refreshLang(); // pick up instance language after config
   applyStaticI18n(); // translate login/topbar statics per the resolved language
   applyBranding();
   bindOnboarding();
+
+  const rememberPref = (() => {
+    try { return localStorage.getItem('itacm_remember_me') === '1'; } catch { return false; }
+  })();
+  const rememberBox = $('#login-remember');
+  if (rememberBox) rememberBox.checked = rememberPref;
 
   $('#login-form').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -3136,16 +3156,19 @@ async function init() {
     const errBox = $('#login-error');
     errBox.classList.add('hidden');
     btn.disabled = true;
-    btn.textContent = 'Signing in…';
+    btn.textContent = t('login.signingIn') || 'Signing in…';
     try {
       const email = e.target.elements.email.value.trim();
       const password = e.target.elements.password.value;
-      const result = await loginWithPassword(email, password);
+      const rememberMe = !!(e.target.elements.rememberMe && e.target.elements.rememberMe.checked);
+      try { localStorage.setItem('itacm_remember_me', rememberMe ? '1' : '0'); } catch { /* ignore */ }
+      const result = await loginWithPassword(email, password, { rememberMe });
       if (result && result.mfaRequired) {
         $('#login-form').classList.add('hidden');
         const mfaForm = $('#mfa-form');
         mfaForm.classList.remove('hidden');
         mfaForm.dataset.mfaToken = result.mfaToken;
+        mfaForm.dataset.rememberMe = rememberMe ? '1' : '0';
         mfaForm.elements.code.focus();
         return;
       }
@@ -3174,6 +3197,7 @@ async function init() {
           mfaToken: mfaForm.dataset.mfaToken,
           code: code || undefined,
           backupCode: backupCode || undefined,
+          rememberMe: mfaForm.dataset.rememberMe === '1',
         });
         showApp();
       } catch (err) {
@@ -3187,6 +3211,7 @@ async function init() {
       mfaForm.classList.add('hidden');
       mfaForm.reset();
       mfaForm.dataset.mfaToken = '';
+      mfaForm.dataset.rememberMe = '';
       $('#login-form').classList.remove('hidden');
       $('#mfa-error').classList.add('hidden');
     });

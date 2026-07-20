@@ -40,12 +40,18 @@ function parseExpiryToDate(expiresIn) {
   return new Date(Date.now() + n * mult);
 }
 
-async function issueSession(user, meta = {}) {
+function sessionExpiresIn(rememberMe) {
+  if (rememberMe) return config.jwtRememberExpiresIn || '30d';
+  return config.jwtExpiresIn || '12h';
+}
+
+async function issueSession(user, meta = {}, { rememberMe = false } = {}) {
   const jti = crypto.randomUUID();
+  const expiresIn = sessionExpiresIn(rememberMe);
   const token = jwt.sign(
     { sub: user.id, email: user.email, role: user.role, jti },
     config.jwtSecret,
-    { expiresIn: config.jwtExpiresIn, issuer: 'itacm', algorithm: 'HS256' }
+    { expiresIn, issuer: 'itacm', algorithm: 'HS256' }
   );
 
   await query('UPDATE users SET last_login_at = now() WHERE id = $1', [user.id]);
@@ -56,7 +62,8 @@ async function issueSession(user, meta = {}) {
 
   return {
     token,
-    expiresIn: config.jwtExpiresIn,
+    expiresIn,
+    rememberMe: !!rememberMe,
     user: {
       uid: user.id,
       username: user.username,
@@ -72,10 +79,16 @@ async function issueSession(user, meta = {}) {
   };
 }
 
-function issueMfaChallenge(user) {
+function issueMfaChallenge(user, { rememberMe = false } = {}) {
   const jti = crypto.randomUUID();
   const mfaToken = jwt.sign(
-    { sub: user.id, purpose: 'mfa', email: user.email, jti },
+    {
+      sub: user.id,
+      purpose: 'mfa',
+      email: user.email,
+      jti,
+      ...(rememberMe ? { rm: true } : {}),
+    },
     config.jwtSecret,
     { expiresIn: '5m', issuer: 'itacm', algorithm: 'HS256' }
   );
@@ -83,6 +96,7 @@ function issueMfaChallenge(user) {
     mfaRequired: true,
     mfaToken,
     expiresIn: '5m',
+    rememberMe: !!rememberMe,
     user: { email: user.email, username: user.username },
   };
 }
@@ -124,6 +138,7 @@ async function verifyMfaChallengeToken(mfaToken) {
     user: rows[0],
     jti: payload.jti || null,
     tokenExp: payload.exp ? new Date(payload.exp * 1000) : new Date(Date.now() + 5 * 60 * 1000),
+    rememberMe: !!payload.rm,
   };
 }
 
@@ -146,7 +161,7 @@ async function assertPortalEmployeeActive(user) {
   }
 }
 
-async function login({ email, password }, meta = {}) {
+async function login({ email, password, rememberMe }, meta = {}) {
   if (!email || !password) throw HttpError.badRequest('email and password are required');
 
   const { rows } = await query('SELECT * FROM users WHERE email = $1', [email.toLowerCase()]);
@@ -157,17 +172,20 @@ async function login({ email, password }, meta = {}) {
   if (user.status === 'Disabled') throw HttpError.forbidden('This account has been disabled — contact your Owner');
   await assertPortalEmployeeActive(user);
 
+  const remember = !!rememberMe;
   if (user.mfa_enabled && user.mfa_secret) {
-    return issueMfaChallenge(user);
+    return issueMfaChallenge(user, { rememberMe: remember });
   }
-  return issueSession(user, meta);
+  return issueSession(user, meta, { rememberMe: remember });
 }
 
-async function verifyMfaLogin({ mfaToken, code, backupCode }, meta = {}) {
-  const { user, jti, tokenExp } = await verifyMfaChallengeToken(mfaToken);
+async function verifyMfaLogin({ mfaToken, code, backupCode, rememberMe }, meta = {}) {
+  const { user, jti, tokenExp, rememberMe: challengeRemember } = await verifyMfaChallengeToken(mfaToken);
   if (!user.mfa_enabled || !user.mfa_secret) {
     throw HttpError.badRequest('MFA is not enabled for this account');
   }
+
+  const remember = !!(challengeRemember || rememberMe);
 
   const consumeChallenge = async () => {
     // One-time MFA challenge — prevent replay within the 5m TTL / TOTP window.
@@ -177,7 +195,7 @@ async function verifyMfaLogin({ mfaToken, code, backupCode }, meta = {}) {
   const totpOk = code && authenticator.verify({ token: String(code).replace(/\s/g, ''), secret: user.mfa_secret });
   if (totpOk) {
     await consumeChallenge();
-    return issueSession(user, meta);
+    return issueSession(user, meta, { rememberMe: remember });
   }
 
   if (backupCode) {
@@ -187,7 +205,7 @@ async function verifyMfaLogin({ mfaToken, code, backupCode }, meta = {}) {
         const next = hashes.slice(0, i).concat(hashes.slice(i + 1));
         await query('UPDATE users SET mfa_backup_hashes = $2 WHERE id = $1', [user.id, next]);
         await consumeChallenge();
-        return issueSession(user, meta);
+        return issueSession(user, meta, { rememberMe: remember });
       }
     }
   }

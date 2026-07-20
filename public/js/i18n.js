@@ -4,10 +4,15 @@
  * falls back to English, so untranslated screens simply stay in English
  * until their keys are added here.
  *
- * Language resolution: per-browser choice (localStorage) → instance default
- * (app_settings.language via /api/config) → English.
+ * Language resolution: per-browser choice (localStorage `itacm:lang`) →
+ * instance default (app_settings.language via /api/config) → English.
+ *
+ * Locale is intentionally separate from auth session keys (`itacm_token` /
+ * `itacm_profile` in localStorage or sessionStorage). Logout / remember-me
+ * must never clear `itacm:lang`.
  */
 (function () {
+  const LANG_KEY = 'itacm:lang';
   const LANGS = {
     en: 'English', tr: 'Türkçe', de: 'Deutsch', fr: 'Français', es: 'Español',
     it: 'Italiano', pt: 'Português', nl: 'Nederlands', pl: 'Polski',
@@ -489,7 +494,14 @@
     /* ---------------------------- login.* / topbar.* ---------------------------- */
     'login.email': L('Email', 'E-posta', 'E-Mail', 'E-mail', 'Correo', 'Email', 'E-mail', 'E-mail', 'E-mail', 'Эл. почта', 'البريد الإلكتروني', 'メール'),
     'login.password': L('Password', 'Şifre', 'Passwort', 'Mot de passe', 'Contraseña', 'Password', 'Senha', 'Wachtwoord', 'Hasło', 'Пароль', 'كلمة المرور', 'パスワード'),
+    'login.rememberMe': L('Remember me', 'Beni hatırla', 'Angemeldet bleiben', 'Se souvenir de moi', 'Recuérdame', 'Ricordami', 'Lembrar-me', 'Onthoud mij', 'Zapamiętaj mnie', 'Запомнить меня', 'تذكرني', 'ログイン状態を保持'),
     'login.signin': L('Sign in', 'Giriş yap', 'Anmelden', 'Se connecter', 'Iniciar sesión', 'Accedi', 'Entrar', 'Inloggen', 'Zaloguj się', 'Войти', 'تسجيل الدخول', 'サインイン'),
+    'login.signingIn': L('Signing in…', 'Giriş yapılıyor…', 'Anmeldung…', 'Connexion…', 'Iniciando sesión…', 'Accesso…', 'Entrando…', 'Bezig met inloggen…', 'Logowanie…', 'Вход…', 'جارٍ تسجيل الدخول…', 'サインイン中…'),
+    'role.Owner': L('Owner', 'Sahip', 'Owner', 'Owner', 'Owner', 'Owner', 'Owner', 'Owner', 'Owner', 'Owner', 'Owner', 'Owner'),
+    'role.Admin': L('Admin', 'Yönetici', 'Admin', 'Admin', 'Admin', 'Admin', 'Admin', 'Admin', 'Admin', 'Admin', 'Admin', 'Admin'),
+    'role.Helpdesk': L('Helpdesk', 'Helpdesk', 'Helpdesk', 'Helpdesk', 'Helpdesk', 'Helpdesk', 'Helpdesk', 'Helpdesk', 'Helpdesk', 'Helpdesk', 'Helpdesk', 'Helpdesk'),
+    'role.Viewer': L('Viewer', 'İzleyici', 'Viewer', 'Viewer', 'Viewer', 'Viewer', 'Viewer', 'Viewer', 'Viewer', 'Viewer', 'Viewer', 'Viewer'),
+    'role.Portal': L('Portal', 'Portal', 'Portal', 'Portal', 'Portal', 'Portal', 'Portal', 'Portal', 'Portal', 'Portal', 'Portal', 'Portal'),
     'login.mfaHint': L('Enter the 6-digit code from your authenticator app.', 'Kimlik doğrulama uygulamanızdaki 6 haneli kodu girin.', 'Geben Sie den 6-stelligen Code aus Ihrer Authenticator-App ein.', 'Saisissez le code à 6 chiffres de votre application.', 'Introduce el código de 6 dígitos de tu aplicación.', 'Inserisci il codice a 6 cifre dell\'app.', 'Digite o código de 6 dígitos do app.', 'Voer de 6-cijferige code uit je app in.', 'Wpisz 6-cyfrowy kod z aplikacji.', 'Введите 6-значный код из приложения.', 'أدخل الرمز المكون من 6 أرقام من التطبيق.', '認証アプリの6桁コードを入力してください。'),
     'login.mfaCode': L('Authentication code', 'Doğrulama kodu', 'Authentifizierungscode', 'Code d\'authentification', 'Código de autenticación', 'Codice di autenticazione', 'Código de autenticação', 'Authenticatiecode', 'Kod weryfikacyjny', 'Код подтверждения', 'رمز التحقق', '認証コード'),
     'login.mfaBackup': L('Or backup code', 'Veya yedek kod', 'Oder Backup-Code', 'Ou code de secours', 'O código de respaldo', 'O codice di backup', 'Ou código de backup', 'Of back-upcode', 'Lub kod zapasowy', 'Или резервный код', 'أو رمز احتياطي', 'またはバックアップコード'),
@@ -872,12 +884,34 @@
   let current = null;
   let enIndex = null;
 
+  function readStoredLang() {
+    try {
+      const stored = localStorage.getItem(LANG_KEY);
+      if (stored && LANGS[stored]) return stored;
+    } catch { /* private mode */ }
+    return null;
+  }
+
+  function resolveLang() {
+    const stored = readStoredLang();
+    if (stored) return stored;
+    const inst = (typeof AppConfig !== 'undefined' && AppConfig.language) || '';
+    return LANGS[inst] ? inst : 'en';
+  }
+
   function lang() {
     if (current) return current;
-    const stored = localStorage.getItem('itacm:lang');
-    if (stored && LANGS[stored]) return (current = stored);
-    const inst = (typeof AppConfig !== 'undefined' && AppConfig.language) || '';
-    return (current = LANGS[inst] ? inst : 'en');
+    return (current = resolveLang());
+  }
+
+  /**
+   * Re-resolve after /api/config loads. Safe to call anytime — does not
+   * overwrite an explicit per-browser choice in localStorage.
+   */
+  function refreshLang() {
+    current = resolveLang();
+    document.documentElement.lang = current;
+    return current;
   }
 
   function pick(row) {
@@ -906,9 +940,18 @@
   }
 
   /** Change the per-browser language and re-render (full reload keeps it simple). */
+  /** Localized label for a system role code (Owner, Admin, …). */
+  function roleLabel(role) {
+    if (!role) return '';
+    const key = 'role.' + role;
+    const v = t(key);
+    return v === key ? String(role) : v;
+  }
+
+  /** Change the per-browser language and re-render (full reload keeps it simple). */
   function setLang(code, { reload = true } = {}) {
     if (!LANGS[code]) return;
-    localStorage.setItem('itacm:lang', code);
+    try { localStorage.setItem(LANG_KEY, code); } catch { /* private mode */ }
     current = code;
     document.documentElement.lang = code;
     if (reload) location.reload();
@@ -924,8 +967,11 @@
   }
 
   window.I18N_LANGS = LANGS;
+  window.I18N_LANG_KEY = LANG_KEY;
   window.t = t;
   window.i18nLang = lang;
   window.setLang = setLang;
+  window.refreshLang = refreshLang;
+  window.roleLabel = roleLabel;
   window.applyStaticI18n = applyStaticI18n;
 })();

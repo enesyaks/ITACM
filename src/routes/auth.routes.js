@@ -33,8 +33,9 @@ function clearLoginFail(req) {
 }
 
 /**
- * POST /api/auth/login — { email, password }
+ * POST /api/auth/login — { email, password, rememberMe? }
  * → session token, or { mfaRequired, mfaToken } when MFA is enabled.
+ * rememberMe: true issues a longer-lived JWT (JWT_REMEMBER_EXPIRES_IN, default 30d).
  */
 router.post('/login', loginLimiter, asyncHandler(async (req, res) => {
   const meta = { ip: rateLimitIp(req), userAgent: req.headers['user-agent'] || null };

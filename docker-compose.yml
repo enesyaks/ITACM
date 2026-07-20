@@ -68,6 +68,7 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-itacm}:${POSTGRES_PASSWORD:-itacm_change_me}@db:5432/${POSTGRES_DB:-itacm}
       JWT_SECRET: "${JWT_SECRET:?Set JWT_SECRET in .env (generate with openssl rand -hex 32)}"
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-12h}
+      JWT_REMEMBER_EXPIRES_IN: ${JWT_REMEMBER_EXPIRES_IN:-30d}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-IT Admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
