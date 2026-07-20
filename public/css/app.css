@@ -4077,11 +4077,11 @@ table.data.audit-table tr.audit-row:focus-visible {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 36px;
+  height: 36px;
   padding: 0;
   border: none;
-  border-radius: 7px;
+  border-radius: 8px;
   background: transparent;
   color: var(--on-surface-variant);
   cursor: pointer;
@@ -4091,6 +4091,10 @@ table.data.audit-table tr.audit-row:focus-visible {
 .hw-qr:hover {
   background: var(--surface-low);
   color: var(--on-surface);
+}
+.hw-qr:focus-visible {
+  outline: 2px solid var(--primary-container);
+  outline-offset: 2px;
 }
 .hw-tag {
   font-weight: 650;
@@ -4146,14 +4150,16 @@ table.data.audit-table tr.audit-row:focus-visible {
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 1px;
+  gap: 2px;
 }
 .hw-icon-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  min-height: 40px;
   padding: 0;
   border: none;
   border-radius: 8px;
@@ -4166,6 +4172,10 @@ table.data.audit-table tr.audit-row:focus-visible {
 .hw-icon-btn:hover {
   background: var(--surface-low);
   color: var(--on-surface);
+}
+.hw-icon-btn:focus-visible {
+  outline: 2px solid var(--primary-container);
+  outline-offset: 2px;
 }
 
 @media (max-width: 1100px) {
@@ -4180,8 +4190,10 @@ table.data.audit-table tr.audit-row:focus-visible {
     margin-top: 10px;
   }
   .hw-actions-mobile .hw-icon-btn {
-    width: 36px;
-    height: 36px;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
     background: var(--surface-low);
     border: 1px solid var(--outline-variant);
   }
