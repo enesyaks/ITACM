@@ -80,7 +80,19 @@ Views.network = async function (el, params = {}) {
     const w = dateDaysInfo(x.warrantyEndDate);
     return w && w.days <= 90 && x.status !== 'Scrap';
   }).length;
+  // Site/owner placement (list + topology KPI). Distinct from cabinet/U placement.
   const unplaced = assetItems.filter((x) => !x.location || !x.responsibleEmployee).length;
+  // Same rule as NetViz.groupRacks → "Not in a cabinet" list on the Cabinets tab.
+  const unracked = assetItems.filter((x) => {
+    const rack = (x.rack || '').trim();
+    const place = typeof NetViz !== 'undefined' && NetViz.rackPlacement
+      ? NetViz.rackPlacement(x)
+      : { start: x.rackUStart != null && x.rackUStart !== '' ? Number(x.rackUStart) : null };
+    return !rack || place.start == null;
+  }).length;
+  const placementKpi = view === 'racks'
+    ? { label: t('network.unracked'), value: unracked, icon: 'view_column', tone: unracked ? 'amber' : 'emerald' }
+    : { label: t('network.needsPlacement'), value: unplaced, icon: 'location_off', tone: unplaced ? 'amber' : 'emerald' };
 
   const chips = [];
   selectedStatus.forEach((s) => chips.push({ key: 'status', value: s, label: `Status: ${s}` }));
@@ -130,8 +142,8 @@ Views.network = async function (el, params = {}) {
         <div class="metric-value">${assetItems.length.toLocaleString()}</div>
       </div>
       <div class="card card-pad metric" style="cursor:pointer" id="net-m-unplaced">
-        <div class="metric-top"><h3 class="card-title">${esc(t('network.needsPlacement'))}</h3>${iconChip('location_off', unplaced ? 'amber' : 'emerald')}</div>
-        <div class="metric-value">${unplaced.toLocaleString()}</div>
+        <div class="metric-top"><h3 class="card-title">${esc(placementKpi.label)}</h3>${iconChip(placementKpi.icon, placementKpi.tone)}</div>
+        <div class="metric-value">${placementKpi.value.toLocaleString()}</div>
       </div>
       <div class="card card-pad metric" style="cursor:pointer" id="net-m-eol">
         <div class="metric-top"><h3 class="card-title">${esc(t('network.pastEol'))}</h3>${iconChip('event_busy', 'rose')}</div>
@@ -231,9 +243,14 @@ Views.network = async function (el, params = {}) {
     responsible: (vals) => setHash({ ...cur(), responsible: vals.join(',') }),
   });
 
-  $('#net-m-unplaced', el).addEventListener('click', () => setHash({
-    ...cur(), location: UNPLACED_LOC, alert: '', view: 'list',
-  }));
+  $('#net-m-unplaced', el).addEventListener('click', () => {
+    if (view === 'racks') {
+      const target = el.querySelector('.net-unracked');
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
+    setHash({ ...cur(), location: UNPLACED_LOC, alert: '', view: 'list' });
+  });
   $('#net-m-eol', el).addEventListener('click', () => setHash({ ...cur(), alert: 'eol', view: 'list' }));
   $('#net-m-warranty', el).addEventListener('click', () => setHash({ ...cur(), alert: 'warrantySoon', view: 'list' }));
 
