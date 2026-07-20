@@ -1666,7 +1666,7 @@ function renderObChoice() {
           <span class="ms">rocket_launch</span>
           <span style="display:flex;flex-direction:column;align-items:flex-start;margin-left:8px">
             <strong>${esc(t('ob.choiceNew'))}</strong>
-            <span class="cell-sub" style="font-weight:400;opacity:.85">${esc(t('ob.choiceNewHint'))}</span>
+            <span style="font-weight:400;font-size:12px;line-height:1.35;margin-top:2px;color:rgba(255,255,255,.88)">${esc(t('ob.choiceNewHint'))}</span>
           </span>
         </button>
         <button type="button" class="btn btn-outline" id="ob-choice-migrate" style="justify-content:flex-start;padding:14px 18px;text-align:left">

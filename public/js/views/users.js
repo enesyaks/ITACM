@@ -914,6 +914,11 @@ Views.users = async function (el) {
   $('#user-new', el).addEventListener('click', () => formModal({
     title: 'New IT User',
     fields: [
+      {
+        type: 'html',
+        full: true,
+        html: `<p class="onb-hint" style="margin:0">${esc('An Employees directory entry is created with the same email so this person can receive zimmet.')}</p>`,
+      },
       { name: 'username', label: 'Display name *', required: true },
       { name: 'email', label: 'Email *', type: 'email', required: true },
       { name: 'password', label: 'Password *', type: 'password', required: true },

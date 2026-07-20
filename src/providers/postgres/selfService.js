@@ -16,22 +16,43 @@ const EMPTY = Object.freeze({
   counts: { assets: 0, licenses: 0, lines: 0 },
 });
 
+const STAFF_ROLES = new Set(['Owner', 'Admin', 'Helpdesk', 'Viewer']);
+
 /**
  * Resolve the employee linked to `user` by email, then return the assets they
  * currently hold, their active license assignments and their mobile lines.
  * Returns a `linked:false` shell when no matching employee exists.
+ * Staff (BT) accounts without a twin are backfilled on first Zimmetlerim open.
  */
 async function getMyZimmet(user) {
   const email = String((user && user.email) || '').trim().toLowerCase();
   // Service actors carry synthetic emails (apikey:<prefix>) — never linked.
   if (!email || email.startsWith('apikey:')) return { ...EMPTY };
 
-  const { rows: emps } = await query(
-    `SELECT id, full_name, email, department, title, status
-     FROM employees WHERE lower(email) = $1`,
-    [email]
-  );
-  const emp = emps[0];
+  const loadEmp = async () => {
+    const { rows: emps } = await query(
+      `SELECT id, full_name, email, department, title, status
+       FROM employees WHERE lower(email) = $1`,
+      [email]
+    );
+    return emps[0] || null;
+  };
+
+  let emp = await loadEmp();
+  if (!emp && STAFF_ROLES.has(user && user.role)) {
+    try {
+      const { ensureEmployeeForEmail } = require('./employeeService');
+      await ensureEmployeeForEmail({
+        fullName: (user && (user.username || user.name)) || email,
+        email,
+        department: 'IT',
+        title: user.role,
+      });
+    } catch (err) {
+      console.warn('[getMyZimmet] employee twin backfill failed:', err.message);
+    }
+    emp = await loadEmp();
+  }
   if (!emp) return { ...EMPTY };
 
   const [assetsRes, licRes, lineRes] = await Promise.all([

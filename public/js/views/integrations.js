@@ -210,6 +210,7 @@ Views.integrations = async function (el) {
       ${canExport ? `<section class="card card-pad" style="margin-bottom:16px">
         <h3 style="margin:0 0 8px">${esc(t('integration.migrationTitle') || 'System migration')}</h3>
         <p class="cell-sub" style="margin:0 0 12px">${esc(t('integration.migrationHint') || '')}</p>
+        <p class="banner banner-amber" style="margin:0 0 12px">${esc(t('integration.migrationSmtpWarn') || '')}</p>
         <button type="button" class="btn btn-primary" id="int-migrate-export">
           <span class="ms">download</span> ${esc(t('integration.migrationExport') || 'Export full backup')}
         </button>
@@ -347,7 +348,7 @@ GET /api/integrations/licenses/:id/sam
       const a = document.createElement('a');
       a.href = url; a.download = name; a.click();
       URL.revokeObjectURL(url);
-      toast('Migration package downloaded — keep JWT_SECRET with it', 'success');
+      toast(t('integration.migrationExportDone') || 'Migration package downloaded — keep JWT_SECRET with it', 'success');
     } catch (err) { toast(err.message, 'error'); }
     finally { if (btn) btn.disabled = false; }
   });

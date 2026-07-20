@@ -376,6 +376,9 @@ async function createItUser({ username, email, password, role }, actor) {
   }
   assertPasswordPolicy(password);
   assertValidRole(role);
+  if (role === 'Portal') {
+    throw HttpError.badRequest('createItUser cannot create Portal accounts');
+  }
   if ((role === 'Owner' || role === 'Admin') && actor && actor.role !== 'Owner') {
     throw HttpError.forbidden('Only an Owner can assign the Owner or Admin role');
   }
@@ -388,6 +391,17 @@ async function createItUser({ username, email, password, role }, actor) {
       [username, email.toLowerCase(), hash, role]
     );
     const u = rows[0];
+    try {
+      const { ensureEmployeeForEmail } = require('./employeeService');
+      await ensureEmployeeForEmail({
+        fullName: username,
+        email: u.email,
+        department: 'IT',
+        title: role,
+      });
+    } catch (twinErr) {
+      console.warn('[createItUser] employee twin failed:', twinErr.message);
+    }
     return { uid: u.id, username: u.username, email: u.email, role: u.role };
   } catch (err) {
     if (err.code === '23505') throw HttpError.conflict(`A user with email ${email} already exists`);
@@ -415,7 +429,19 @@ async function upsertAdminTx(client, { username, email, password }) {
      RETURNING id, username, email, role`,
     [username, email.toLowerCase(), hash]
   );
-  return { uid: rows[0].id, username: rows[0].username, email: rows[0].email, role: rows[0].role };
+  const u = rows[0];
+  try {
+    const { ensureEmployeeForEmail } = require('./employeeService');
+    await ensureEmployeeForEmail({
+      fullName: username,
+      email: u.email,
+      department: 'IT',
+      title: 'Owner',
+    });
+  } catch (twinErr) {
+    console.warn('[upsertAdminTx] employee twin failed:', twinErr.message);
+  }
+  return { uid: u.id, username: u.username, email: u.email, role: u.role };
 }
 
 async function setUserRole(uid, role, actor) {

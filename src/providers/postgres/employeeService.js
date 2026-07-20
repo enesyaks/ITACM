@@ -112,6 +112,34 @@ async function createEmployee({ fullName, email, department, title, status = 'Ac
   }
 }
 
+
+/**
+ * Idempotent employee twin for a staff (BT) login, keyed by email.
+ * Used so IT users can appear in handover pickers and Zimmetlerim without
+ * becoming Portal accounts. Does not call authProvider (avoid require cycles).
+ * Returns null for empty / synthetic apikey: emails.
+ */
+async function ensureEmployeeForEmail({ fullName, email, department = 'IT', title = null }) {
+  const normalized = String(email || '').trim().toLowerCase();
+  if (!normalized || normalized.startsWith('apikey:')) return null;
+
+  const name = String(fullName || '').trim() || normalized;
+  const { rows } = await query(
+    `INSERT INTO employees (full_name, email, department, title, status)
+     VALUES ($1, $2, $3, $4, 'Active')
+     ON CONFLICT (email) DO NOTHING
+     RETURNING *`,
+    [name, normalized, department || 'IT', title || null]
+  );
+  if (rows[0]) return mapRow(rows[0]);
+
+  const existing = await query(
+    'SELECT * FROM employees WHERE lower(email) = $1 LIMIT 1',
+    [normalized]
+  );
+  return existing.rows[0] ? mapRow(existing.rows[0]) : null;
+}
+
 async function updateEmployee(id, body) {
   if (!isUuid(id)) throw HttpError.notFound(`Employee ${id} not found`);
 
@@ -229,4 +257,7 @@ async function getEmployeeHistory(id, limit = 100) {
     .slice(0, cap);
 }
 
-module.exports = { listEmployees, getEmployee, createEmployee, updateEmployee, getEmployeeHistory };
+module.exports = {
+  listEmployees, getEmployee, createEmployee, ensureEmployeeForEmail,
+  updateEmployee, getEmployeeHistory,
+};
