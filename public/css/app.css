@@ -197,7 +197,7 @@ code, .mono { font-family: var(--mono); font-size: 12px; }
   color: var(--on-surface-variant);
   margin-bottom: 14px;
 }
-.login-card label.login-field input { margin-top: 6px; }
+.login-card label.login-field input { margin-top: 6px; min-height: 44px; box-sizing: border-box; }
 .login-card label.login-remember {
   display: flex;
   align-items: center;
@@ -220,7 +220,8 @@ code, .mono { font-family: var(--mono); font-size: 12px; }
 .login-card #login-btn,
 .login-card #mfa-btn {
   margin-top: 2px;
-  padding: 11px 16px;
+  min-height: 44px;
+  padding: 12px 16px;
 }
 .login-mfa-hint {
   margin: 0 0 16px;
@@ -229,7 +230,7 @@ code, .mono { font-family: var(--mono); font-size: 12px; }
   color: var(--on-surface-variant);
 }
 .login-error { background: var(--rose-100); color: var(--rose-800); border-radius: var(--radius); padding: 8px 12px; font-size: 12px; margin-bottom: 12px; }
-.login-footnote { color: var(--outline); font-size: 11px; text-align: center; margin: 18px 0 0; }
+.login-footnote { color: var(--outline); font-size: 12px; text-align: center; margin: 18px 0 0; }
 
 @keyframes login-mesh-shift {
   0% { transform: translate3d(0, 0, 0) scale(1); }
