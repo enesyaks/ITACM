@@ -22,7 +22,13 @@ function loginLimiter(req, res, next) {
     return next(HttpError.tooMany('Too many login attempts — wait 15 minutes and try again'));
   }
   req._loginLimitEntry = entry;
-  if (loginAttempts.size > 10000) loginAttempts.clear();
+  // Bound memory by sweeping only EXPIRED buckets — never wipe live counters,
+  // which would let a flood of throwaway IPs reset an active attacker's window.
+  if (loginAttempts.size > 10000) {
+    for (const [key, e] of loginAttempts) {
+      if (now > e.resetAt) loginAttempts.delete(key);
+    }
+  }
   next();
 }
 function bumpLoginFail(req) {

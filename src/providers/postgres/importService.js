@@ -91,8 +91,9 @@ async function analyse(rows) {
     const rowNo = i + 2; // +1 for header, +1 for 1-based
     const p = parseRow(raw || {}, knownLocations);
     if (!p.ok) return errors.push({ row: rowNo, error: p.error });
-    if (seenSerials.has(p.data.serialNumber)) return errors.push({ row: rowNo, error: `duplicate serialNumber "${p.data.serialNumber}" in the file` });
-    seenSerials.add(p.data.serialNumber);
+    const snKey = String(p.data.serialNumber || '').trim().toLowerCase();
+    if (seenSerials.has(snKey)) return errors.push({ row: rowNo, error: `duplicate serialNumber "${p.data.serialNumber}" in the file` });
+    seenSerials.add(snKey);
     if (p.data.assetTag) {
       if (seenTags.has(p.data.assetTag)) return errors.push({ row: rowNo, error: `duplicate assetTag "${p.data.assetTag}" in the file` });
       seenTags.add(p.data.assetTag);
@@ -114,15 +115,16 @@ async function analyse(rows) {
     }
   }
   if (seenSerials.size) {
-    const remainingSerials = valid.map((v) => v.serialNumber);
+    const remainingSerials = valid.map((v) => String(v.serialNumber || '').trim().toLowerCase()).filter(Boolean);
     if (remainingSerials.length) {
       const { rows: hitSn } = await query(
-        'SELECT serial_number FROM assets WHERE serial_number = ANY($1)',
+        'SELECT serial_number FROM assets WHERE lower(btrim(serial_number)) = ANY($1::text[])',
         [remainingSerials]
       );
-      const takenSn = new Set(hitSn.map((h) => h.serial_number));
+      const takenSn = new Set(hitSn.map((h) => String(h.serial_number || '').trim().toLowerCase()));
       for (let i = valid.length - 1; i >= 0; i--) {
-        if (takenSn.has(valid[i].serialNumber)) {
+        const vKey = String(valid[i].serialNumber || '').trim().toLowerCase();
+        if (takenSn.has(vKey)) {
           errors.push({
             row: valid[i].rowNo,
             error: `serialNumber "${valid[i].serialNumber}" already exists in the system`,

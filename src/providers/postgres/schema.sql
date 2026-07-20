@@ -28,7 +28,7 @@ ALTER TABLE employees ADD COLUMN IF NOT EXISTS start_date DATE;
 CREATE TABLE IF NOT EXISTS assets (
   id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   asset_tag             TEXT NOT NULL UNIQUE,
-  serial_number         TEXT NOT NULL,
+  serial_number         TEXT,
   brand                 TEXT NOT NULL,
   model                 TEXT NOT NULL,
   category              TEXT NOT NULL,
@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS assets (
 );
 CREATE INDEX IF NOT EXISTS idx_assets_status   ON assets (status, asset_tag);
 CREATE INDEX IF NOT EXISTS idx_assets_category ON assets (category);
+-- Serial uniqueness: see migrations/034_asset_serial_unique.sql
 
 CREATE TABLE IF NOT EXISTS licenses (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -451,6 +452,21 @@ ALTER TABLE assets ADD COLUMN IF NOT EXISTS mgmt_ip TEXT;
 ALTER TABLE assets ADD COLUMN IF NOT EXISTS parent_asset_id UUID REFERENCES assets(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_assets_infra_role ON assets (infra_role) WHERE infra_role IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_assets_parent ON assets (parent_asset_id) WHERE parent_asset_id IS NOT NULL;
+
+-- Many parents per Network/Server device (HA / dual-uplink topologies)
+CREATE TABLE IF NOT EXISTS asset_parent_links (
+  child_asset_id  UUID NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+  parent_asset_id UUID NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (child_asset_id, parent_asset_id),
+  CHECK (child_asset_id <> parent_asset_id)
+);
+CREATE INDEX IF NOT EXISTS idx_asset_parent_links_parent ON asset_parent_links (parent_asset_id);
+CREATE INDEX IF NOT EXISTS idx_asset_parent_links_child ON asset_parent_links (child_asset_id);
+INSERT INTO asset_parent_links (child_asset_id, parent_asset_id)
+SELECT id, parent_asset_id FROM assets
+ WHERE parent_asset_id IS NOT NULL
+ON CONFLICT DO NOTHING;
 
 -- Many licenses per Network/Server appliance
 CREATE TABLE IF NOT EXISTS asset_licenses (

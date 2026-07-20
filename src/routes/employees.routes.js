@@ -163,20 +163,20 @@ router.delete('/:id/revoke-access',
 /* ---- Per-employee handover document archive ---- */
 
 /** GET /api/employees/:id/documents — zimmet / scan archive.
- * İzin: document:read AND employee:view_handover
+ * İzin: handover_document:read AND employee:view_handover
  */
 router.get('/:id/documents',
-  requireAllPermissions([['document', 'read'], ['employee', 'view_handover']], getEmployeeContext),
+  requireAllPermissions([['handover_document', 'read'], ['employee', 'view_handover']], getEmployeeContext),
   asyncHandler(async (req, res) => {
     res.json({ success: true, data: await documentService.listByEmployee(req.params.id) });
   }));
 
 /**
  * POST /api/employees/:id/documents — upload signed scan.
- * İzin: document:upload AND employee:view_handover
+ * İzin: handover_document:upload AND employee:view_handover
  */
 router.post('/:id/documents',
-  requireAllPermissions([['document', 'upload'], ['employee', 'view_handover']], getEmployeeContext),
+  requireAllPermissions([['handover_document', 'upload'], ['employee', 'view_handover']], getEmployeeContext),
   express.json({ limit: '12mb' }),
   asyncHandler(async (req, res) => {
     await employeeService.getEmployee(req.params.id);

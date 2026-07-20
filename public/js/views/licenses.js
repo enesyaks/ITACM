@@ -1,5 +1,6 @@
 Views.licenses = async function (el) {
   const canEdit = Auth.canIamOp('license', 'create') || Auth.canIamOp('license', 'update');
+  const canCreateLic = Auth.canIamOp('license', 'create');
   const canAssign = Auth.canIam('license', 'assign') || Auth.canIam('license', 'manage');
   const canRevoke = Auth.canIam('license', 'unassign') || canAssign;
   const canViewCosts = Auth.canIam('license', 'view_confidential') || Auth.can('canViewLicenseCosts');
@@ -98,6 +99,8 @@ Views.licenses = async function (el) {
                 </button>` : ''}
                 ${canEdit ? `
                 <button class="btn btn-outline btn-sm" data-edit="${esc(l.id)}" title="Edit"><span class="ms">edit</span></button>
+                ${canCreateLic ? `
+                <button class="btn btn-outline btn-sm" data-duplicate="${esc(l.id)}" title="${esc(t('common.duplicate'))}"><span class="ms">content_copy</span></button>` : ''}
                 ${!cancelled ? `
                 <button class="btn btn-outline btn-sm" data-renew="${esc(l.id)}" title="Renew"><span class="ms">autorenew</span></button>
                 <button class="btn btn-outline btn-sm" data-cancel-lic="${esc(l.id)}" title="Cancel"><span class="ms">cancel</span></button>` : `
@@ -124,6 +127,24 @@ Views.licenses = async function (el) {
     if (b.dataset.edit && canEdit) {
       openLicenseForm({
         license: lic(b.dataset.edit),
+        providers: providerList,
+        contracts: contractList,
+        onDone: () => Views.licenses(el),
+      });
+      return;
+    }
+
+    if (b.dataset.duplicate && canCreateLic) {
+      const l = lic(b.dataset.duplicate);
+      // License keys are unique to a purchase — a copy starts without one.
+      const { id, ...rest } = l;
+      openLicenseForm({
+        seed: {
+          ...rest,
+          licenseKey: '',
+          softwareName: `${l.softwareName} (Copy)`,
+          duplicateOf: l.softwareName,
+        },
         providers: providerList,
         contracts: contractList,
         onDone: () => Views.licenses(el),
@@ -283,10 +304,13 @@ Views.licenses = async function (el) {
 };
 
 /** Create / edit license with provider + contract or invoice purchase proof. */
-function openLicenseForm({ license = null, providers = [], contracts = [], onDone }) {
+function openLicenseForm({ license = null, seed = null, providers = [], contracts = [], onDone }) {
   const OTHER_PROVIDER = '__other__';
   const canCreateProvider = Auth.canIamOp('provider', 'create');
-  let providerList = providers.filter((p) => (p.status || 'Active') === 'Active' || p.id === license?.providerId);
+  // `src` only prefills fields; edit mode (PATCH, title, button) keys off `license`.
+  // A duplicate passes `seed` so the form opens filled but saves as a new license.
+  const src = license || seed;
+  let providerList = providers.filter((p) => (p.status || 'Active') === 'Active' || p.id === src?.providerId);
   const toDate = (v) => (v ? String(v).slice(0, 10) : '');
   const canCosts = Auth.canIam('license', 'view_confidential') || Auth.can('canViewLicenseCosts');
 
@@ -300,7 +324,9 @@ function openLicenseForm({ license = null, providers = [], contracts = [], onDon
                 : ''}`;
 
   openModal({
-    title: license ? `Edit ${license.softwareName}` : 'New License',
+    title: license
+      ? `Edit ${license.softwareName}`
+      : (seed?.duplicateOf ? `${t('common.duplicate')} — ${seed.duplicateOf}` : 'New License'),
     wide: true,
     body: `
       <form id="lic-form" class="af-form" novalidate>
@@ -308,24 +334,24 @@ function openLicenseForm({ license = null, providers = [], contracts = [], onDon
           <div class="af-sec-head"><strong>License</strong><span>Product, seats &amp; expiry</span></div>
           <div class="form-field full"><label>Software *</label>
             <input name="softwareName" required autocomplete="off" placeholder="e.g. Microsoft 365 E3"
-              value="${esc(license?.softwareName || '')}"></div>
+              value="${esc(src?.softwareName || '')}"></div>
           <div class="form-field full"><label>License key <span class="ob-hint">optional</span></label>
             <input name="licenseKey" class="mono" autocomplete="off" spellcheck="false"
               placeholder="Leave blank if managed by vendor portal"
-              value="${esc(license?.licenseKey || '')}">
+              value="${esc(src?.licenseKey || '')}">
             <div class="cell-sub" style="margin-top:4px">Not required for subscription or portal-managed seats.</div>
           </div>
           <div class="form-field"><label>Total seats *</label>
-            <input name="totalSeats" type="number" min="1" required value="${esc(license?.totalSeats ?? 1)}"></div>
+            <input name="totalSeats" type="number" min="1" required value="${esc(src?.totalSeats ?? 1)}"></div>
           <div class="form-field"><label>Expiration *</label>
-            <input name="expirationDate" type="date" required value="${esc(toDate(license?.expirationDate))}"></div>
+            <input name="expirationDate" type="date" required value="${esc(toDate(src?.expirationDate))}"></div>
         </section>
 
         <section class="af-sec">
           <div class="af-sec-head"><strong>Purchase / supplier</strong><span>Link a contract, or record a one-off invoice</span></div>
           <div class="form-field full"><label>Provider</label>
             <select name="providerId" id="lic-provider">
-              ${providerOptionsHtml(license?.providerId || '')}
+              ${providerOptionsHtml(src?.providerId || '')}
             </select>
             <div class="cell-sub" style="margin-top:4px">${canCreateProvider
               ? 'Choose Other to create a provider without leaving this form. Vendor name fills from provider.'
@@ -333,9 +359,9 @@ function openLicenseForm({ license = null, providers = [], contracts = [], onDon
           </div>
           <div class="form-field full"><label>How was this purchased?</label>
             <select name="purchaseType" id="lic-ptype">
-              <option value="" ${!license?.purchaseType ? 'selected' : ''}>— Not set —</option>
-              <option value="contract" ${license?.purchaseType === 'contract' ? 'selected' : ''}>Under a contract / agreement</option>
-              <option value="invoice" ${license?.purchaseType === 'invoice' ? 'selected' : ''}>One-off invoice (no contract)</option>
+              <option value="" ${!src?.purchaseType ? 'selected' : ''}>— Not set —</option>
+              <option value="contract" ${src?.purchaseType === 'contract' ? 'selected' : ''}>Under a contract / agreement</option>
+              <option value="invoice" ${src?.purchaseType === 'invoice' ? 'selected' : ''}>One-off invoice (no contract)</option>
             </select>
             <div class="cell-sub" style="margin-top:4px">If a master agreement exists, pick Contract and link it. Otherwise use Invoice.</div>
           </div>
@@ -346,18 +372,18 @@ function openLicenseForm({ license = null, providers = [], contracts = [], onDon
             <div class="cell-sub" style="margin-top:4px">Only contracts for the selected provider. Upload the signed PDF under Documents after save.</div>
           </div>
           <div class="form-field full hidden" id="lic-invoice-wrap"><label>Invoice number</label>
-            <input name="invoiceNumber" value="${esc(license?.invoiceNumber || '')}" placeholder="e.g. INV-2026-0142">
+            <input name="invoiceNumber" value="${esc(src?.invoiceNumber || '')}" placeholder="e.g. INV-2026-0142">
             <div class="cell-sub" style="margin-top:4px">Upload the invoice PDF under Documents after save.</div>
           </div>
           <div class="form-field" id="lic-purchase-date-wrap"><label>Purchase date</label>
-            <input name="purchaseDate" type="date" value="${esc(toDate(license?.purchaseDate))}"></div>
+            <input name="purchaseDate" type="date" value="${esc(toDate(src?.purchaseDate))}"></div>
           ${canCosts ? `
           <div class="form-field" id="lic-amount-wrap"><label>Amount</label>
-            <input name="purchaseAmount" type="number" step="0.01" min="0" value="${esc(license?.purchaseAmount ?? '')}"></div>
+            <input name="purchaseAmount" type="number" step="0.01" min="0" value="${esc(src?.purchaseAmount ?? '')}"></div>
           <div class="form-field" id="lic-currency-wrap"><label>Currency</label>
             <select name="purchaseCurrency">
-              ${currencyOptionsForSelect(license?.purchaseCurrency || appCurrency()).map((o) =>
-                `<option value="${esc(o.value)}" ${(license?.purchaseCurrency || appCurrency()) === o.value ? 'selected' : ''}>${esc(o.label)}</option>`
+              ${currencyOptionsForSelect(src?.purchaseCurrency || appCurrency()).map((o) =>
+                `<option value="${esc(o.value)}" ${(src?.purchaseCurrency || appCurrency()) === o.value ? 'selected' : ''}>${esc(o.label)}</option>`
               ).join('')}
             </select></div>` : `
           <input type="hidden" name="purchaseAmount" value="">
@@ -384,7 +410,7 @@ function openLicenseForm({ license = null, providers = [], contracts = [], onDon
         const pid = providerSel.value;
         if (pid === OTHER_PROVIDER) return;
         const opts = contracts.filter((c) => !pid || c.providerId === pid);
-        const cur = contractSel.value || license?.contractId || '';
+        const cur = contractSel.value || src?.contractId || '';
         contractSel.innerHTML = `<option value="">— Select contract —</option>` + (opts.length
           ? opts.map((c) =>
             `<option value="${esc(c.id)}" ${c.id === cur ? 'selected' : ''}>${esc(c.title)}${c.contractNumber ? ' · ' + esc(c.contractNumber) : ''} (${esc(c.status || '')})</option>`

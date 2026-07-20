@@ -19,9 +19,12 @@ function errorHandler(err, req, res, next) {
   }
 
   if (err && (err.code === 'EACCES' || err.code === 'EPERM')) {
+    // Log the detailed message (incl. path) server-side; never return it — the
+    // filesystem path is internal and must not leak to clients.
+    console.error('Storage permission error:', err.message);
     return res.status(500).json({
       success: false,
-      error: err.message || 'Document storage is not writable on the server',
+      error: 'Document storage is not writable on the server',
     });
   }
 

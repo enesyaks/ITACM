@@ -117,6 +117,8 @@ function applyBranding() {
 
 /* ---- screens ---- */
 function ownerNeedsMfaSetup(profile) {
+  // When /api/config says ownerMfaRequired=false, skip the blocking enroll modal.
+  if (typeof AppConfig !== 'undefined' && AppConfig.ownerMfaRequired === false) return false;
   return !!(profile && profile.role === 'Owner' && !profile.mfaEnabled);
 }
 

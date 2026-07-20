@@ -76,7 +76,13 @@ function createApp() {
     if (++entry.count > 1000) {
       return res.status(429).json({ success: false, error: 'Too many requests — slow down' });
     }
-    if (apiHits.size > 10000) apiHits.clear(); // memory guard
+    // Memory guard: sweep only EXPIRED buckets so a flood of throwaway IPs cannot
+    // wipe live counters and reset an active abuser's window.
+    if (apiHits.size > 10000) {
+      for (const [key, e] of apiHits) {
+        if (now > e.resetAt) apiHits.delete(key);
+      }
+    }
     next();
   });
 
@@ -151,9 +157,18 @@ function createApp() {
       configError = 'Database unavailable: ' + err.message;
     }
     const onboardingVideoUrl = String(process.env.ONBOARDING_VIDEO_URL || '').trim() || null;
+    const { roleRequiresMfa } = require('./utils/mfaPolicy');
+    // UI uses this to skip the mandatory Owner MFA enrollment modal when off.
+    const ownerMfaRequired = roleRequiresMfa('Owner');
     res.json({
       success: true,
-      data: { backend: config.backend, configError, onboardingVideoUrl, ...settings },
+      data: {
+        backend: config.backend,
+        configError,
+        onboardingVideoUrl,
+        ownerMfaRequired,
+        ...settings,
+      },
     });
   });
 

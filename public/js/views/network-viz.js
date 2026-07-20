@@ -23,27 +23,35 @@ const NetViz = (() => {
   }
 
   function rackPlacement(x) {
-    let start = x.rackUStart != null ? Number(x.rackUStart) : null;
-    let size = x.rackUSize != null ? Number(x.rackUSize) : null;
+    let start = x.rackUStart != null && x.rackUStart !== '' ? Number(x.rackUStart) : null;
+    let size = x.rackUSize != null && x.rackUSize !== '' ? Number(x.rackUSize) : null;
+    if (!Number.isFinite(start) || start < 1) start = null;
+    if (!Number.isFinite(size) || size < 1) size = null;
+
+    // Legacy free-text rackUnit only fills gaps — never overwrite an explicit size.
     if (start == null && x.rackUnit) {
       const range = String(x.rackUnit).match(/^\s*(\d+)\s*[-–]\s*(\d+)\s*$/);
       if (range) {
         const a = Number(range[1]);
         const b = Number(range[2]);
         start = Math.min(a, b);
-        size = Math.abs(b - a) + 1;
+        if (size == null) size = Math.abs(b - a) + 1;
       } else {
         const n = parseInt(String(x.rackUnit), 10);
-        if (Number.isFinite(n)) { start = n; size = 1; }
+        if (Number.isFinite(n) && n >= 1) start = n;
       }
     }
-    if (start != null && (!size || size < 1)) size = 1;
+    if (start != null && size == null) size = 1;
     return { start, size: size || 1 };
   }
 
-  function shortestLicenses(list) {
-    const arr = list && list.length ? list : (list ? [list] : []);
-    return arr;
+  /** Round up to a common cabinet height (24 / 42 / 48 / … / 60). */
+  function cabinetHeight(maxNeeded) {
+    const n = Math.max(1, Number(maxNeeded) || 1);
+    if (n <= 24) return 24;
+    if (n <= 42) return 42;
+    if (n <= 48) return 48;
+    return Math.min(60, Math.ceil(n / 6) * 6);
   }
 
   function groupByLocation(devices) {
@@ -56,44 +64,125 @@ const NetViz = (() => {
     return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
   }
 
-  function parentRef(d) {
-    return d.parentAssetId || (d.parentAsset && d.parentAsset.id) || null;
+  function parentRefs(d) {
+    if (d.parentAssetIds && d.parentAssetIds.length) return d.parentAssetIds.filter(Boolean);
+    if (d.parentAssets && d.parentAssets.length) return d.parentAssets.map((p) => p.id).filter(Boolean);
+    const one = d.parentAssetId || (d.parentAsset && d.parentAsset.id) || null;
+    return one ? [one] : [];
   }
 
   /* ---------- Topology (parent → child graph), per location ---------- */
+
+  const TOPO_LAYOUT_KEY = 'itacm:net-topo-layout';
+  const TOPO_DRAG_THRESHOLD = 6;
+
+  function loadTopoLayouts() {
+    try {
+      const raw = localStorage.getItem(TOPO_LAYOUT_KEY);
+      if (!raw) return {};
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function saveTopoLayouts(all) {
+    try {
+      localStorage.setItem(TOPO_LAYOUT_KEY, JSON.stringify(all || {}));
+    } catch (_) { /* quota / private mode */ }
+  }
+
+  function siteLayoutKey(location) {
+    return String(location || '').trim() || '__none__';
+  }
+
+  function getSiteLayout(location) {
+    const all = loadTopoLayouts();
+    const site = all[siteLayoutKey(location)];
+    return site && typeof site === 'object' ? site : {};
+  }
+
+  function setNodeLayout(location, assetId, x, y) {
+    const all = loadTopoLayouts();
+    const key = siteLayoutKey(location);
+    if (!all[key] || typeof all[key] !== 'object') all[key] = {};
+    all[key][assetId] = { x: Math.round(x), y: Math.round(y) };
+    saveTopoLayouts(all);
+  }
+
+  function clearSiteLayout(location) {
+    const all = loadTopoLayouts();
+    delete all[siteLayoutKey(location)];
+    saveTopoLayouts(all);
+  }
+
+  function applySavedPositions(positions, saved, pad = 40) {
+    if (saved && typeof saved === 'object') {
+      positions.forEach((p, id) => {
+        const s = saved[id];
+        if (!s || typeof s !== 'object') return;
+        if (Number.isFinite(s.x)) p.x = s.x;
+        if (Number.isFinite(s.y)) p.y = s.y;
+      });
+    }
+    let maxR = pad;
+    let maxB = pad;
+    positions.forEach((p) => {
+      maxR = Math.max(maxR, p.x + p.w);
+      maxB = Math.max(maxB, p.y + p.h);
+    });
+    return { width: maxR + pad, height: maxB + pad };
+  }
+
+  function clientToSvgPoint(svg, clientX, clientY) {
+    const pt = svg.createSVGPoint();
+    pt.x = clientX;
+    pt.y = clientY;
+    const ctm = svg.getScreenCTM();
+    if (!ctm) return { x: 0, y: 0 };
+    return pt.matrixTransform(ctm.inverse());
+  }
 
   function buildTopoLayout(devices, { allById } = {}) {
     const byId = new Map(devices.map((d) => [d.id, d]));
     const children = new Map();
     devices.forEach((d) => children.set(d.id, []));
     const roots = [];
-    const remoteParents = new Map(); // childId → parent asset (other site)
+    const remoteParents = new Map(); // childId → first remote parent asset
 
     devices.forEach((d) => {
-      const pid = parentRef(d);
-      if (pid && byId.has(pid) && pid !== d.id) {
-        children.get(pid).push(d.id);
+      const pids = parentRefs(d).filter((pid) => pid !== d.id);
+      const local = pids.filter((pid) => byId.has(pid));
+      const remote = pids.filter((pid) => allById && allById.has(pid) && !byId.has(pid));
+      if (local.length) {
+        local.forEach((pid) => {
+          const list = children.get(pid);
+          if (list && !list.includes(d.id)) list.push(d.id);
+        });
       } else {
         roots.push(d.id);
-        if (pid && allById && allById.has(pid) && !byId.has(pid)) {
-          remoteParents.set(d.id, allById.get(pid));
-        }
       }
+      if (remote.length) remoteParents.set(d.id, allById.get(remote[0]));
     });
 
+    // Longest-path depth so multi-parent children sit below all parents.
     const depth = new Map();
-    const queue = roots.map((id) => ({ id, d: 0 }));
-    const seen = new Set();
-    while (queue.length) {
-      const { id, d } = queue.shift();
-      if (seen.has(id)) continue;
-      seen.add(id);
-      depth.set(id, d);
-      (children.get(id) || []).forEach((cid) => queue.push({ id: cid, d: d + 1 }));
+    devices.forEach((d) => depth.set(d.id, 0));
+    let guard = devices.length + 2;
+    let changed = true;
+    while (changed && guard-- > 0) {
+      changed = false;
+      devices.forEach((d) => {
+        const local = parentRefs(d).filter((pid) => byId.has(pid) && pid !== d.id);
+        if (!local.length) return;
+        const next = 1 + Math.max(...local.map((pid) => depth.get(pid) || 0));
+        if (next > (depth.get(d.id) || 0)) {
+          depth.set(d.id, next);
+          changed = true;
+        }
+      });
     }
-    devices.forEach((d) => {
-      if (!depth.has(d.id)) depth.set(d.id, 0);
-    });
 
     const cols = new Map();
     depth.forEach((d, id) => {
@@ -136,10 +225,11 @@ const NetViz = (() => {
 
     const edges = [];
     devices.forEach((d) => {
-      const pid = parentRef(d);
-      if (pid && positions.has(pid) && positions.has(d.id)) {
-        edges.push({ from: pid, to: d.id });
-      }
+      parentRefs(d).forEach((pid) => {
+        if (pid && positions.has(pid) && positions.has(d.id)) {
+          edges.push({ from: pid, to: d.id });
+        }
+      });
     });
 
     return { byId, positions, edges, width, height, remoteParents };
@@ -154,15 +244,18 @@ const NetViz = (() => {
     return `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`;
   }
 
-  function renderTopoSvg(devices, { allById, markerId } = {}) {
+  function renderTopoSvg(devices, { allById, markerId, location } = {}) {
     const layout = buildTopoLayout(devices, { allById });
-    const { positions, edges, byId, width, height, remoteParents } = layout;
+    const { positions, edges, byId, remoteParents } = layout;
+    const saved = getSiteLayout(location);
+    const { width, height } = applySavedPositions(positions, saved, 40);
     const mid = markerId || 'net-arrow';
+    const h = Math.max(height, 160);
 
     const edgeSvg = edges.map((e) => {
       const a = positions.get(e.from);
       const b = positions.get(e.to);
-      return `<path class="net-topo-edge" d="${edgePath(a, b)}" marker-end="url(#${mid})"/>`;
+      return `<path class="net-topo-edge" data-from="${esc(e.from)}" data-to="${esc(e.to)}" d="${edgePath(a, b)}" marker-end="url(#${mid})"/>`;
     }).join('');
 
     const clipDefs = [];
@@ -190,8 +283,8 @@ const NetViz = (() => {
       </g>`;
     }).join('');
 
-    return `<svg class="net-topo-svg" viewBox="0 0 ${width} ${Math.max(height, 160)}"
-      width="${width}" height="${Math.max(height, 160)}" role="img">
+    return `<svg class="net-topo-svg" data-location="${esc(location || '')}" viewBox="0 0 ${width} ${h}"
+      width="${width}" height="${h}" role="img">
       <defs>
         <marker id="${mid}" viewBox="0 0 10 10" refX="9" refY="5"
           markerWidth="7" markerHeight="7" orient="auto-start-reverse">
@@ -204,6 +297,108 @@ const NetViz = (() => {
     </svg>`;
   }
 
+  function refreshTopoEdges(svg) {
+    const nodes = new Map();
+    svg.querySelectorAll('.net-topo-node').forEach((g) => {
+      const m = /translate\(\s*([-\d.]+)\s*,\s*([-\d.]+)\s*\)/.exec(g.getAttribute('transform') || '');
+      if (!m) return;
+      const bg = g.querySelector('.net-topo-node-bg');
+      const w = bg ? Number(bg.getAttribute('width')) || 168 : 168;
+      const h = bg ? Number(bg.getAttribute('height')) || 64 : 64;
+      nodes.set(g.dataset.id, { x: Number(m[1]), y: Number(m[2]), w, h });
+    });
+    svg.querySelectorAll('.net-topo-edge').forEach((path) => {
+      const a = nodes.get(path.dataset.from);
+      const b = nodes.get(path.dataset.to);
+      if (a && b) path.setAttribute('d', edgePath(a, b));
+    });
+  }
+
+  function expandTopoSvg(svg, x, y, w, h, pad = 40) {
+    const needW = Math.max(Number(svg.getAttribute('width')) || 0, x + w + pad);
+    const needH = Math.max(Number(svg.getAttribute('height')) || 0, y + h + pad, 160);
+    svg.setAttribute('width', needW);
+    svg.setAttribute('height', needH);
+    svg.setAttribute('viewBox', `0 0 ${needW} ${needH}`);
+  }
+
+  function bindTopoDrag(svg, { onSelect } = {}) {
+    const location = svg.dataset.location || '';
+    let drag = null;
+
+    const onMove = (e) => {
+      if (!drag) return;
+      const pt = clientToSvgPoint(svg, e.clientX, e.clientY);
+      const dx = pt.x - drag.startPt.x;
+      const dy = pt.y - drag.startPt.y;
+      if (!drag.moved && (dx * dx + dy * dy) < TOPO_DRAG_THRESHOLD * TOPO_DRAG_THRESHOLD) return;
+      drag.moved = true;
+      drag.g.classList.add('is-dragging');
+      const nx = drag.originX + dx;
+      const ny = drag.originY + dy;
+      drag.g.setAttribute('transform', `translate(${nx},${ny})`);
+      refreshTopoEdges(svg);
+      expandTopoSvg(svg, nx, ny, drag.w, drag.h);
+    };
+
+    const onUp = (e) => {
+      if (!drag) return;
+      const { g, id, moved, pointerId } = drag;
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+      try { g.releasePointerCapture(pointerId); } catch (_) { /* already released */ }
+      g.classList.remove('is-dragging');
+      g.style.touchAction = '';
+      drag = null;
+      if (moved) {
+        const m = /translate\(\s*([-\d.]+)\s*,\s*([-\d.]+)\s*\)/.exec(g.getAttribute('transform') || '');
+        if (m) setNodeLayout(location, id, Number(m[1]), Number(m[2]));
+        const btn = svg.closest('.net-site-card')?.querySelector('[data-reset-loc]');
+        if (btn) btn.disabled = false;
+      } else if (onSelect && id) {
+        onSelect(id);
+      }
+      e.preventDefault();
+    };
+
+    svg.querySelectorAll('.net-topo-node').forEach((g) => {
+      g.addEventListener('pointerdown', (e) => {
+        if (e.button != null && e.button !== 0) return;
+        const id = g.dataset.id;
+        if (!id) return;
+        const m = /translate\(\s*([-\d.]+)\s*,\s*([-\d.]+)\s*\)/.exec(g.getAttribute('transform') || '');
+        if (!m) return;
+        const bg = g.querySelector('.net-topo-node-bg');
+        const w = bg ? Number(bg.getAttribute('width')) || 168 : 168;
+        const h = bg ? Number(bg.getAttribute('height')) || 64 : 64;
+        const startPt = clientToSvgPoint(svg, e.clientX, e.clientY);
+        drag = {
+          g, id,
+          originX: Number(m[1]),
+          originY: Number(m[2]),
+          startPt,
+          w, h,
+          moved: false,
+          pointerId: e.pointerId,
+        };
+        g.style.touchAction = 'none';
+        try { g.setPointerCapture(e.pointerId); } catch (_) { /* ignore */ }
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
+        window.addEventListener('pointercancel', onUp);
+        e.preventDefault();
+      });
+
+      g.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          if (onSelect) onSelect(g.dataset.id);
+        }
+      });
+    });
+  }
+
   function renderTopology(container, devices, { onSelect } = {}) {
     if (!devices.length) {
       container.innerHTML = `<div class="net-viz-empty"><span class="ms">hub</span>
@@ -212,7 +407,7 @@ const NetViz = (() => {
     }
 
     const allById = new Map(devices.map((d) => [d.id, d]));
-    const linked = devices.filter((d) => parentRef(d)).length;
+    const linked = devices.filter((d) => parentRefs(d).length).length;
     const groups = groupByLocation(devices);
 
     container.innerHTML = `
@@ -223,13 +418,12 @@ const NetViz = (() => {
       <div class="net-topo-sites">
         ${groups.map(([loc, list], i) => {
           const siteLinks = list.filter((d) => {
-            const pid = parentRef(d);
-            return pid && list.some((x) => x.id === pid);
+            return parentRefs(d).some((pid) => list.some((x) => x.id === pid));
           }).length;
           const cross = list.filter((d) => {
-            const pid = parentRef(d);
-            return pid && allById.has(pid) && !list.some((x) => x.id === pid);
+            return parentRefs(d).some((pid) => allById.has(pid) && !list.some((x) => x.id === pid));
           }).length;
+          const hasCustom = Object.keys(getSiteLayout(loc)).length > 0;
           return `<section class="net-site-card">
             <div class="net-site-head">
               <div>
@@ -238,9 +432,11 @@ const NetViz = (() => {
                   · ${siteLinks} ${esc(t('network.topoLocalLinks'))}
                   ${cross ? ` · ${cross} ${esc(t('network.topoCrossLinks'))}` : ''}</div>
               </div>
+              <button type="button" class="btn btn-outline btn-sm net-topo-reset" data-reset-loc="${esc(loc)}"
+                ${hasCustom ? '' : 'disabled'}>${esc(t('network.topoReset'))}</button>
             </div>
             <div class="net-topo-scroll">
-              ${renderTopoSvg(list, { allById, markerId: 'net-arrow-' + i })}
+              ${renderTopoSvg(list, { allById, markerId: 'net-arrow-' + i, location: loc })}
             </div>
           </section>`;
         }).join('')}
@@ -250,11 +446,14 @@ const NetViz = (() => {
           `<span class="net-role-chip"><i style="background:${c}"></i>${esc(role)}</span>`).join('')}
       </div>`;
 
-    container.querySelectorAll('.net-topo-node').forEach((g) => {
-      const go = () => onSelect && onSelect(g.dataset.id);
-      g.addEventListener('click', go);
-      g.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); }
+    container.querySelectorAll('.net-topo-svg').forEach((svg) => {
+      bindTopoDrag(svg, { onSelect });
+    });
+
+    container.querySelectorAll('[data-reset-loc]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        clearSiteLayout(btn.dataset.resetLoc);
+        renderTopology(container, devices, { onSelect });
       });
     });
   }
@@ -287,6 +486,7 @@ const NetViz = (() => {
       for (let j = i + 1; j < devices.length; j++) {
         const A = devices[i]._u;
         const B = devices[j]._u;
+        if (!A || A.start == null || !B || B.start == null) continue;
         const a1 = A.start; const a2 = A.start + A.size - 1;
         const b1 = B.start; const b2 = B.start + B.size - 1;
         if (a1 <= b2 && b1 <= a2) {
@@ -298,21 +498,60 @@ const NetViz = (() => {
     return hits;
   }
 
-  function renderRackCabinet(rack, { onSelect } = {}) {
-    const DEFAULT_U = 42;
-    let maxU = DEFAULT_U;
-    rack.devices.forEach((d) => {
-      maxU = Math.max(maxU, d._u.start + d._u.size - 1);
+  /** Unique U slots occupied (overlaps count once — used/free stay honest). */
+  function occupiedUnitSet(devices) {
+    const set = new Set();
+    devices.forEach((d) => {
+      const p = d._u;
+      if (!p || p.start == null) return;
+      for (let u = p.start; u < p.start + p.size; u++) set.add(u);
     });
-    // Round up to common cabinet sizes
-    if (maxU <= 24) maxU = 24;
-    else if (maxU <= 42) maxU = 42;
-    else if (maxU <= 48) maxU = 48;
-    else maxU = Math.min(60, Math.ceil(maxU / 6) * 6);
+    return set;
+  }
+
+  /** Horizontal lane so overlapping devices stay visible instead of stacking. */
+  function clashLanes(devices, overlaps) {
+    const lanes = new Map();
+    if (!overlaps.size) return lanes;
+    const clashers = devices
+      .filter((d) => overlaps.has(d.id))
+      .sort((a, b) => a._u.start - b._u.start
+        || String(a.assetTag || '').localeCompare(String(b.assetTag || '')));
+    clashers.forEach((d) => {
+      let lane = 0;
+      const a1 = d._u.start;
+      const a2 = d._u.start + d._u.size - 1;
+      clashers.forEach((o) => {
+        if (o.id === d.id || !lanes.has(o.id)) return;
+        const b1 = o._u.start;
+        const b2 = o._u.start + o._u.size - 1;
+        if (a1 <= b2 && b1 <= a2) lane = Math.max(lane, lanes.get(o.id) + 1);
+      });
+      lanes.set(d.id, lane);
+    });
+    return lanes;
+  }
+
+  function renderRackCabinet(rack, { onSelect } = {}) {
+    let needed = 42;
+    rack.devices.forEach((d) => {
+      needed = Math.max(needed, d._u.start + d._u.size - 1);
+    });
+    const maxU = cabinetHeight(needed);
 
     const overlaps = detectOverlaps(rack.devices);
-    const used = rack.devices.reduce((n, d) => n + d._u.size, 0);
+    const occupied = occupiedUnitSet(rack.devices);
+    const used = occupied.size;
     const free = Math.max(0, maxU - used);
+    const lanes = clashLanes(rack.devices, overlaps);
+    const clashLabels = rack.devices
+      .filter((d) => overlaps.has(d.id))
+      .map((d) => {
+        const p = d._u;
+        const range = p.size > 1 ? `U${p.start}–${p.start + p.size - 1}` : `U${p.start}`;
+        return `${d.assetTag} (${range})`;
+      })
+      .join(', ');
     const uH = 18;
     const labelW = 28;
     const railW = 14;
@@ -337,19 +576,33 @@ const NetViz = (() => {
       const h = size * uH - 2;
       const color = roleColor(d.infraRole);
       const clash = overlaps.has(d.id);
+      const lane = lanes.get(d.id) || 0;
+      const xOff = clash ? Math.min(lane, 3) * 10 : 0;
+      const wShrink = clash ? Math.min(lane, 3) * 10 + 4 : 0;
       const s = d.specs || {};
       const label = (s.hostname || d.assetTag || '').slice(0, 18);
       const model = `${d.brand} ${d.model}`.slice(0, 22);
+      const uTxt = `U${start}${size > 1 ? '-' + (start + size - 1) : ''}`;
+      const x0 = labelW + railW + 3 + xOff;
+      const w0 = Math.max(40, bayW - 6 - wShrink);
       return `<g class="net-rack-device${clash ? ' clash' : ''}" data-id="${esc(d.id)}" role="button" tabindex="0">
-        <rect x="${labelW + railW + 3}" y="${y + 1}" width="${bayW - 6}" height="${h}"
+        <rect x="${x0}" y="${y + 1}" width="${w0}" height="${h}"
           rx="4" fill="${clash ? '#fef3f2' : color}" fill-opacity="${clash ? 1 : 0.92}"
           stroke="${clash ? '#f04438' : '#0f172a'}" stroke-opacity=".2" stroke-width="${clash ? 2 : 1}"/>
-        <text x="${labelW + railW + 10}" y="${y + Math.min(14, h - 2)}" class="net-rack-dev-title"
+        <text x="${x0 + 7}" y="${y + Math.min(14, h - 2)}" class="net-rack-dev-title"
           fill="${clash ? '#b42318' : '#fff'}">${esc(label)}</text>
-        ${h >= 28 ? `<text x="${labelW + railW + 10}" y="${y + 28}" class="net-rack-dev-sub"
-          fill="${clash ? '#b42318' : '#e0e7ff'}">${esc(model)} · U${start}${size > 1 ? '-' + (start + size - 1) : ''}</text>` : ''}
+        ${h >= 28
+          ? `<text x="${x0 + 7}" y="${y + 28}" class="net-rack-dev-sub"
+              fill="${clash ? '#b42318' : '#e0e7ff'}">${esc(model)} · ${esc(uTxt)}</text>`
+          : (clash
+            ? `<title>${esc(label)} · ${esc(uTxt)}</title>`
+            : '')}
       </g>`;
     }).join('');
+
+    const overlapPill = overlaps.size
+      ? `<span class="pill pill-rose" title="${esc(clashLabels)}">${esc(t('network.rackOverlap'))} · ${overlaps.size}</span>`
+      : '';
 
     return `
       <div class="net-rack-card">
@@ -359,7 +612,7 @@ const NetViz = (() => {
             <div class="cell-sub">${esc(rack.location)} · ${maxU}U ·
               ${used}U ${esc(t('network.rackUsed'))} · ${free}U ${esc(t('network.rackFree'))}</div>
           </div>
-          ${overlaps.size ? `<span class="pill pill-rose">${esc(t('network.rackOverlap'))}</span>` : ''}
+          ${overlapPill}
         </div>
         <div class="net-rack-body">
           <svg class="net-rack-svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}"
@@ -422,12 +675,17 @@ const NetViz = (() => {
 
     const bind = (sel) => {
       container.querySelectorAll(sel).forEach((el) => {
-        el.addEventListener('click', () => onSelect && onSelect(el.dataset.id));
-        el.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
+        const open = (e) => {
+          if (e) {
             e.preventDefault();
-            onSelect && onSelect(el.dataset.id);
+            e.stopPropagation();
           }
+          const id = el.getAttribute('data-id');
+          if (id && onSelect) onSelect(id);
+        };
+        el.addEventListener('click', open);
+        el.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') open(e);
         });
       });
     };
@@ -438,7 +696,9 @@ const NetViz = (() => {
   return {
     roleColor,
     rackPlacement,
-    shortestLicenses,
+    cabinetHeight,
+    detectOverlaps,
+    occupiedUnitSet,
     renderTopology,
     renderRacks,
   };

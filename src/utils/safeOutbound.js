@@ -35,17 +35,23 @@ function hostLooksDangerous(hostname) {
   return false;
 }
 
-async function resolveAndAssertPublicHost(hostname, { field = 'host', allowPrivate = false } = {}) {
+/**
+ * Resolve a hostname and assert every candidate address is public.
+ * @returns {Promise<Array<{address:string, family:number}>>} validated addresses
+ *          (a single-entry list when `hostname` is already a literal IP).
+ */
+async function resolveValidatedAddrs(hostname, { field = 'host', allowPrivate = false } = {}) {
   const host = String(hostname || '').trim().toLowerCase().replace(/\.$/, '');
   if (!host) throw HttpError.badRequest(`${field} is required`);
   if (hostLooksDangerous(host)) {
     throw HttpError.badRequest(`${field} must not target localhost or internal names`);
   }
-  if (net.isIP(host)) {
+  const literal = net.isIP(host);
+  if (literal) {
     if (!allowPrivate && isPrivateOrReservedIp(host)) {
       throw HttpError.badRequest(`${field} must not be a private or reserved IP`);
     }
-    return host;
+    return [{ address: host, family: literal }];
   }
   let addrs;
   try {
@@ -61,7 +67,12 @@ async function resolveAndAssertPublicHost(hostname, { field = 'host', allowPriva
       }
     }
   }
-  return host;
+  return addrs.map((a) => ({ address: a.address, family: a.family }));
+}
+
+async function resolveAndAssertPublicHost(hostname, opts = {}) {
+  await resolveValidatedAddrs(hostname, opts);
+  return String(hostname || '').trim().toLowerCase().replace(/\.$/, '');
 }
 
 /**
@@ -76,6 +87,28 @@ async function assertSafeOutboundUrl(raw, { max = 500, field = 'url', allowPriva
   return href;
 }
 
+/**
+ * Like assertSafeOutboundUrl, but also returns a `lookup` that pins the socket
+ * to the exact address(es) validated here — closing the DNS-rebinding (TOCTOU)
+ * window between validation and connect. Pass `lookup` to http(s).request; the
+ * request still carries the original hostname, so Host header, TLS SNI and
+ * certificate validation are unchanged.
+ * @returns {Promise<{ href:string, lookup:Function }>}
+ */
+async function assertSafeOutboundUrlPinned(raw, { max = 500, field = 'url', allowPrivate = false } = {}) {
+  const href = sanitizeHttpUrl(raw, { max, field });
+  if (!href) throw HttpError.badRequest(`${field} is required`);
+  const u = new URL(href);
+  const addrs = await resolveValidatedAddrs(u.hostname, { field, allowPrivate });
+  const lookup = (_hostname, options, cb) => {
+    // Ignore the hostname entirely — only ever hand back pre-validated addresses,
+    // so a rebind after validation cannot redirect the socket to a private IP.
+    if (options && options.all) return cb(null, addrs);
+    return cb(null, addrs[0].address, addrs[0].family);
+  };
+  return { href, lookup };
+}
+
 function smtpAllowsPrivate() {
   return ['1', 'true', 'yes'].includes(String(process.env.SMTP_ALLOW_PRIVATE || '').toLowerCase());
 }
@@ -83,7 +116,9 @@ function smtpAllowsPrivate() {
 module.exports = {
   isPrivateOrReservedIp,
   hostLooksDangerous,
+  resolveValidatedAddrs,
   resolveAndAssertPublicHost,
   assertSafeOutboundUrl,
+  assertSafeOutboundUrlPinned,
   smtpAllowsPrivate,
 };

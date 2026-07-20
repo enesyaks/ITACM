@@ -214,7 +214,9 @@ function checkRoleFallback(user, resource, action) {
 
     case 'Helpdesk':
       // Helpdesk: asset, license, employee, line, consumable, maintenance, handover, onboarding
-      // üzerinde create/update/assign yapabilir
+      // üzerinde create/update/assign yapabilir. General document:* kapalı; zimmet
+      // arşivi handover_document:* ile (delete hariç).
+      if (resource === 'document') return false;
       if (['provider', 'contract'].includes(resource) && action !== 'read') return false;
       if (['report'].includes(resource) && action !== 'read') return false;
       if (['settings', 'user_management', 'integration', 'audit'].includes(resource)) return false;

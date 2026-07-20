@@ -1178,6 +1178,8 @@ textarea { resize: vertical; min-height: 60px; }
   background: #fff; border-radius: var(--radius-xl); width: 520px; max-width: 100%;
   box-shadow: var(--shadow-pop);
   display: flex; flex-direction: column;
+  flex: none;
+  min-height: 120px;
   max-height: min(860px, calc(100vh - 96px));
   max-height: min(860px, calc(100dvh - 96px));
 }
@@ -2020,26 +2022,33 @@ tr.net-row:hover td { background: var(--surface-low); }
   .modal-head { padding: 12px 14px; }
   .modal-head h3 { font-size: 14px; }
   .modal-body { padding: 14px; max-height: none; overscroll-behavior: contain; }
+  /* Stack footer actions full-width — 3-col grid cramped 4+ buttons
+     (e.g. onboarding-due: remind / email / add / print). */
   .modal-foot {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 6px;
+    display: flex;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    gap: 8px;
     padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
     border-radius: 0;
   }
   .modal-foot .btn {
     width: 100%;
     min-width: 0;
+    min-height: 44px;
     justify-content: center;
-    padding: 8px 4px;
-    font-size: 11px;
+    padding: 10px 12px;
+    font-size: 13px;
     font-weight: 600;
-    gap: 3px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    gap: 6px;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: unset;
+    text-align: center;
+    line-height: 1.25;
   }
-  .modal-foot .btn .ms { font-size: 16px; flex: none; }
+  .modal-foot .btn .ms { font-size: 18px; flex: none; }
   .form-grid { grid-template-columns: 1fr 1fr; gap: 10px 12px; }
   .form-grid .full { grid-column: 1 / -1; }
   .af-sec { grid-template-columns: 1fr; gap: 10px; padding: 12px; }
@@ -2106,7 +2115,6 @@ tr.net-row:hover td { background: var(--surface-low); }
   .topbar-actions .topbar-search-btn { display: inline-flex !important; }
   table.data { min-width: 480px; }
   .qs-card-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
-  .modal-foot { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   /* Dashboard KPI trend pills (.metric2 .trend-chip): the 55% cap hard-clips
      long labels like "Needs attention" (inline-flex ignores text-overflow).
      Let the head wrap so the pill drops to its own line and shows in full. */
@@ -2707,6 +2715,82 @@ tr.net-row:hover td { background: var(--surface-low); }
   font-size: 12.5px; font-weight: 600; line-height: 1.35;
 }
 
+.af-parent-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 220px;
+  overflow: auto;
+  border: 1px solid var(--outline-variant);
+  border-radius: 10px;
+  padding: 8px;
+  background: var(--surface-low, #f8fafc);
+}
+.af-parent-empty { color: var(--outline); font-size: 13px; padding: 8px; }
+/* Button rows: relative + zero-size input; no focus scroll / form submit. */
+button.af-parent-item,
+.af-parent-item {
+  position: relative;
+  display: flex !important;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0 !important;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  background: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--on-surface);
+  text-align: left;
+  width: 100%;
+  box-sizing: border-box;
+  appearance: none;
+  -webkit-appearance: none;
+  transition: background .12s, border-color .12s;
+}
+.af-parent-item:focus,
+.af-parent-item:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+.af-parent-item:hover { border-color: var(--outline-variant); }
+.af-parent-item.on {
+  border-color: var(--primary);
+  background: var(--indigo-50, #eef0fe);
+}
+.af-parent-item input {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+.af-parent-check {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  border: 1.5px solid var(--outline-variant);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 1px;
+  color: transparent;
+  background: #fff;
+  transition: background .12s, border-color .12s, color .12s;
+}
+.af-parent-item.on .af-parent-check {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+.af-parent-check .ms { font-size: 14px; }
+.af-parent-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+
 .net-viz-toolbar {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   margin-bottom: 14px; flex-wrap: wrap;
@@ -2747,8 +2831,11 @@ tr.net-row:hover td { background: var(--surface-low); }
 .net-topo-edge {
   fill: none; stroke: #98a2b3; stroke-width: 2; stroke-linecap: round;
 }
-.net-topo-node { cursor: pointer; }
+.net-topo-node { cursor: grab; touch-action: none; }
 .net-topo-node:hover .net-topo-node-bg { filter: drop-shadow(0 4px 10px rgba(53,37,205,.18)); }
+.net-topo-node.is-dragging { cursor: grabbing; }
+.net-topo-node.is-dragging .net-topo-node-bg { filter: drop-shadow(0 8px 16px rgba(53,37,205,.28)); }
+.net-topo-reset:disabled { opacity: .45; cursor: not-allowed; }
 .net-topo-title { font: 700 12px var(--font); fill: #101828; }
 .net-topo-sub { font: 500 11px var(--font); fill: #344054; }
 .net-topo-meta { font: 400 10px var(--font-mono, monospace); fill: #667085; }

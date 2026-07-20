@@ -196,6 +196,9 @@ Views.assets = async function (el, params = {}) {
           ${canUpdate ? `<button type="button" class="hw-icon-btn" data-edit="${esc(x.id)}" title="${esc(t('common.edit'))}" aria-label="${esc(t('common.edit'))}">
             <span class="ms">edit</span>
           </button>` : ''}
+          ${canCreate ? `<button type="button" class="hw-icon-btn" data-duplicate="${esc(x.id)}" title="${esc(t('common.duplicate'))}" aria-label="${esc(t('common.duplicate'))}">
+            <span class="ms">content_copy</span>
+          </button>` : ''}
           ${canUnassign && x.status === 'Assigned' ? `<button type="button" class="hw-icon-btn" data-return="${esc(x.id)}" title="${esc(t('common.return'))}" aria-label="${esc(t('common.return'))}">
             <span class="ms">undo</span>
           </button>` : ''}
@@ -441,6 +444,7 @@ Views.assets = async function (el, params = {}) {
     }
     if (b.dataset.view) showAssetDetail(b.dataset.view, () => rerender({}));
     if (b.dataset.edit) assetForm(byId(b.dataset.edit), () => rerender({}));
+    if (b.dataset.duplicate) assetForm(duplicateAssetSeed(byId(b.dataset.duplicate)), () => rerender({}));
     if (b.dataset.return) {
       const x = byId(b.dataset.return);
       formModal({
@@ -481,12 +485,36 @@ function exportCsv(items) {
     x.assetTag, x.brand, x.model, x.category, x.serialNumber,
     x.macEthernet || '', x.macWifi || '', x.status, x.currentEmployee ? x.currentEmployee.fullName : '',
   ]);
-  const csvEsc = (v) => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
+  const csvEsc = (v) => `"${csvCell(v).replace(/"/g, '""')}"`;
   const csv = [head, ...rows].map((r) => r.map(csvEsc).join(',')).join('\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
   a.download = 'hardware-inventory.csv';
   a.click();
+}
+
+/**
+ * Build a prefilled create-mode seed from an existing asset. Per-device
+ * identity (tag, serial, MACs) and the occupied rack U slot never carry over;
+ * `duplicateOf` keeps the source id/tag for the modal title and for copying
+ * custom-field values onto the new record.
+ */
+function duplicateAssetSeed(x) {
+  const clone = JSON.parse(JSON.stringify(x));
+  delete clone.id;
+  delete clone.assetTag;
+  delete clone.serialNumber;
+  delete clone.macEthernet;
+  delete clone.macWifi;
+  delete clone.rackUStart;
+  delete clone.rackUSize;
+  clone.status = 'In Stock';
+  delete clone.assignedEmployeeId;
+  delete clone.assignedEmployee;
+  delete clone.assignedTo;
+  delete clone.history; // detail-view payload only; the form never reads it
+  clone.duplicateOf = { id: x.id, assetTag: x.assetTag };
+  return clone;
 }
 
 async function assetForm(asset, done) {
@@ -501,7 +529,8 @@ async function assetForm(asset, done) {
   const CATS = infraMode ? INFRA_CATS : HW_CATS;
   const [catalog, cfBundle] = await Promise.all([
     api('/catalog').catch(() => []),
-    fetchCustomFields('asset', asset && asset.id),
+    // A duplicate seed has no id yet — prefill custom-field values from the source asset.
+    fetchCustomFields('asset', (asset && asset.id) || (asset && asset.duplicateOf && asset.duplicateOf.id)),
   ]);
   const cfDefs = cfBundle.defs;
   const cfValues = cfBundle.values;
@@ -534,7 +563,9 @@ async function assetForm(asset, done) {
 
   const title = isEdit
     ? `Edit ${asset.assetTag}`
-    : (infraMode ? 'Add Network / Server device' : 'Add New Asset');
+    : (asset && asset.duplicateOf
+      ? `${t('common.duplicate')} — ${asset.duplicateOf.assetTag}`
+      : (infraMode ? 'Add Network / Server device' : 'Add New Asset'));
 
   const tagField = isEdit
     ? `<div class="form-field"><label>Asset tag</label>
@@ -601,10 +632,11 @@ async function assetForm(asset, done) {
             <input type="date" name="firmwareUpdatedAt" value="${asset && asset.firmwareUpdatedAt ? String(asset.firmwareUpdatedAt).slice(0, 10) : ''}"></div>
           <div class="form-field" data-f="warrantyEnd"><label>Warranty / support ends</label>
             <input type="date" name="warrantyEndDate" value="${asset && asset.warrantyEndDate ? String(asset.warrantyEndDate).slice(0, 10) : ''}"></div>
-          <div class="form-field full" data-f="parentDevice"><label>Parent device <span class="ob-hint">optional uplink / host</span></label>
-            <select name="parentAssetId" id="af-parent">
-              <option value="">— No parent —</option>
-            </select></div>
+          <div class="form-field full" data-f="parentDevice">
+            <label>Parent devices <span class="ob-hint">optional — pick one or more (HA / dual uplink)</span></label>
+            <div id="af-parents" class="af-parent-list"></div>
+            <div class="cell-sub" style="margin-top:6px">A switch can sit under both firewalls in an HA pair.</div>
+          </div>
         </section>
 
         <section class="af-sec">
@@ -728,18 +760,22 @@ async function assetForm(asset, done) {
 
       function placementOf(d) {
         if (typeof NetViz !== 'undefined' && NetViz.rackPlacement) return NetViz.rackPlacement(d);
-        let start = d.rackUStart != null ? Number(d.rackUStart) : null;
-        let size = d.rackUSize != null ? Number(d.rackUSize) : 1;
+        let start = d.rackUStart != null && d.rackUStart !== '' ? Number(d.rackUStart) : null;
+        let size = d.rackUSize != null && d.rackUSize !== '' ? Number(d.rackUSize) : null;
+        if (!Number.isFinite(start) || start < 1) start = null;
+        if (!Number.isFinite(size) || size < 1) size = null;
         if (start == null && d.rackUnit) {
           const range = String(d.rackUnit).match(/^\s*(\d+)\s*[-–]\s*(\d+)\s*$/);
           if (range) {
             const a = Number(range[1]); const b = Number(range[2]);
-            start = Math.min(a, b); size = Math.abs(b - a) + 1;
+            start = Math.min(a, b);
+            if (size == null) size = Math.abs(b - a) + 1;
           } else {
             const n = parseInt(String(d.rackUnit), 10);
-            if (Number.isFinite(n)) { start = n; size = 1; }
+            if (Number.isFinite(n) && n >= 1) start = n;
           }
         }
+        if (start != null && size == null) size = 1;
         return { start, size: size || 1 };
       }
 
@@ -763,6 +799,45 @@ async function assetForm(asset, done) {
         return map;
       }
 
+      function currentUSize() {
+        const sizeInp = $('#af-u-size', overlay);
+        const n = sizeInp && sizeInp.value ? Number(sizeInp.value) : NaN;
+        if (Number.isFinite(n) && n >= 1) return Math.min(20, Math.floor(n));
+        return state.rackUStart != null ? 1 : 1;
+      }
+
+      /** Cabinet height from siblings + current draft (matches rack viz). */
+      function cabinetMaxU(occ, size) {
+        let needed = 42;
+        const loc = currentLocation();
+        const rack = currentRackName();
+        if (loc && rack) {
+          infraDevices.forEach((d) => {
+            if ((d.location || '') !== loc) return;
+            if ((d.rack || '').trim() !== rack) return;
+            const p = placementOf(d);
+            if (p.start != null) needed = Math.max(needed, p.start + p.size - 1);
+          });
+        }
+        if (state.rackUStart != null) {
+          needed = Math.max(needed, state.rackUStart + (size || 1) - 1);
+        }
+        if (typeof NetViz !== 'undefined' && NetViz.cabinetHeight) return NetViz.cabinetHeight(needed);
+        if (needed <= 24) return 24;
+        if (needed <= 42) return 42;
+        if (needed <= 48) return 48;
+        return Math.min(60, Math.ceil(needed / 6) * 6);
+      }
+
+      function rangeBlockers(start, size, occ) {
+        const blockers = [];
+        for (let u = start; u < start + size; u++) {
+          const who = occ.get(u);
+          if (who) blockers.push(`U${u} (${who.assetTag})`);
+        }
+        return blockers;
+      }
+
       function renderUPicker() {
         const slot = $('#af-u-slot', overlay);
         if (!slot) return;
@@ -770,7 +845,8 @@ async function assetForm(asset, done) {
         const rack = currentRackName();
         const occ = occupancyMap();
         const cur = state.rackUStart;
-        const maxU = 42;
+        const size = currentUSize();
+        const maxU = cabinetMaxU(occ, size);
         const freeCount = (() => {
           let n = 0;
           for (let u = 1; u <= maxU; u++) if (!occ.has(u)) n += 1;
@@ -788,25 +864,26 @@ async function assetForm(asset, done) {
 
         const opts = [];
         for (let u = maxU; u >= 1; u--) {
+          const fits = u + size - 1 <= maxU;
+          const blockers = fits ? rangeBlockers(u, size, occ) : [`exceeds ${maxU}U`];
+          const blocked = blockers.length > 0;
           const who = occ.get(u);
-          const taken = !!who;
-          const label = taken
-            ? `U${u} — occupied (${who.assetTag})`
-            : `U${u}`;
-          opts.push(`<option value="${u}" ${cur === u ? 'selected' : ''} ${taken && cur !== u ? 'disabled' : ''}>${esc(label)}</option>`);
+          let label = `U${u}`;
+          if (!fits) label = `U${u} — too high for ${size}U`;
+          else if (blocked) label = `U${u} — overlaps (${blockers[0]})`;
+          else if (size > 1) label = `U${u}–${u + size - 1}`;
+          // Keep current start selectable even if it still clashes (so the hint can explain).
+          const disabled = blocked && cur !== u;
+          opts.push(`<option value="${u}" ${cur === u ? 'selected' : ''} ${disabled ? 'disabled' : ''}>${esc(label)}</option>`);
         }
 
-        const sizeInp = $('#af-u-size', overlay);
-        const size = sizeInp && sizeInp.value ? Number(sizeInp.value) : (cur != null ? 1 : 1);
         let clashHint = '';
         if (cur != null && size >= 1) {
-          const blockers = [];
-          for (let u = cur; u < cur + size; u++) {
-            const who = occ.get(u);
-            if (who) blockers.push(`U${u} (${who.assetTag})`);
-          }
+          const blockers = rangeBlockers(cur, size, occ);
+          if (cur + size - 1 > maxU) blockers.push(`U${cur + size - 1} (cabinet is ${maxU}U)`);
           if (blockers.length) {
-            clashHint = `<div class="af-u-clash">Overlaps occupied units: ${esc(blockers.join(', '))}</div>`;
+            const msg = (typeof t === 'function' ? t('network.uClashHint') : '') || 'Overlaps occupied units: {list}';
+            clashHint = `<div class="af-u-clash">${esc(msg.replace('{list}', blockers.join(', ')))}</div>`;
           }
         }
 
@@ -817,6 +894,7 @@ async function assetForm(asset, done) {
           </select>
           <div class="cell-sub" style="margin-top:6px">
             U1 = bottom · ${freeCount} free / ${maxU}U in <strong>${esc(rack)}</strong>
+            ${size > 1 ? ` · height ${size}U` : ''}
           </div>
           ${clashHint}`;
 
@@ -970,6 +1048,7 @@ async function assetForm(asset, done) {
       }
       $('#af-location', overlay).addEventListener('change', () => {
         renderRackPicker();
+        renderParentPicker();
       });
       const uSize = $('#af-u-size', overlay);
       if (uSize) {
@@ -1072,17 +1151,89 @@ async function assetForm(asset, done) {
         renderRackPicker();
         renderUPicker();
 
-        const sel = $('#af-parent', overlay);
-        if (!sel) return;
-        const cur = (asset && (asset.parentAssetId || (asset.parentAsset && asset.parentAsset.id))) || '';
-        const selfId = asset && asset.id;
-        sel.innerHTML = `<option value="">— No parent —</option>` +
-          list.filter((p) => p.id !== selfId).map((p) => {
-            const host = (p.specs && p.specs.hostname) ? ' · ' + p.specs.hostname : '';
-            const role = p.infraRole ? ' · ' + p.infraRole : '';
-            return `<option value="${esc(p.id)}" ${cur === p.id ? 'selected' : ''}>${esc(p.assetTag)} — ${esc(p.brand)} ${esc(p.model)}${esc(role)}${esc(host)}</option>`;
-          }).join('');
+        renderParentPicker();
       }).catch(() => {});
+
+      /** Selected parent ids — survives location filter rebuilds. */
+      const selectedParentIds = new Set(
+        (asset && asset.parentAssetIds && asset.parentAssetIds.length)
+          ? asset.parentAssetIds
+          : (asset && asset.parentAssets && asset.parentAssets.length)
+            ? asset.parentAssets.map((x) => x.id)
+            : (asset && (asset.parentAssetId || (asset.parentAsset && asset.parentAsset.id)))
+              ? [asset.parentAssetId || asset.parentAsset.id]
+              : []
+      );
+
+      function renderParentPicker() {
+        const box = $('#af-parents', overlay);
+        if (!box) return;
+        const selfId = asset && asset.id;
+        const loc = currentLocation();
+        // Filter candidates by location when set; show all when cleared.
+        let candidates = infraDevices.filter((p) => p.id !== selfId);
+        if (loc) {
+          candidates = candidates.filter((p) => (p.location || '') === loc);
+          // Drop selections that are no longer at this location.
+          [...selectedParentIds].forEach((id) => {
+            if (!candidates.some((p) => p.id === id)) selectedParentIds.delete(id);
+          });
+        }
+        if (!infraDevices.length) {
+          box.innerHTML = '<div class="af-parent-empty">No other Network/Server devices yet.</div>';
+          return;
+        }
+        if (loc && !candidates.length) {
+          box.innerHTML = `<div class="af-parent-empty">No Network/Server devices at ${esc(loc)}.</div>`;
+          return;
+        }
+        if (!candidates.length) {
+          box.innerHTML = '<div class="af-parent-empty">No other Network/Server devices yet.</div>';
+          return;
+        }
+        // Div rows (not <label>/<button>+input): pointerdown preventDefault
+        // stops focus/scroll-into-view that was landing pointerup on the backdrop.
+        box.innerHTML = candidates.map((p) => {
+          const host = (p.specs && p.specs.hostname) ? ' · ' + p.specs.hostname : '';
+          const role = p.infraRole ? ' · ' + p.infraRole : '';
+          const on = selectedParentIds.has(p.id);
+          const locHint = (!loc && p.location) ? ` · ${p.location}` : '';
+          return `<div class="af-parent-item${on ? ' on' : ''}" role="checkbox" tabindex="0"
+              aria-checked="${on ? 'true' : 'false'}" data-parent-id="${esc(p.id)}">
+            <input type="checkbox" name="parentAssetIds" value="${esc(p.id)}" tabindex="-1"
+              ${on ? 'checked' : ''} aria-hidden="true">
+            <span class="af-parent-check" aria-hidden="true"><span class="ms">check</span></span>
+            <span class="af-parent-body">
+              <strong class="mono">${esc(p.assetTag)}</strong>
+              <span class="cell-sub">${esc(p.brand)} ${esc(p.model)}${esc(role)}${esc(host)}${esc(locHint)}</span>
+            </span>
+          </div>`;
+        }).join('');
+        box.querySelectorAll('.af-parent-item').forEach((row) => {
+          const inp = row.querySelector('input');
+          const sync = () => {
+            const checked = !!(inp && inp.checked);
+            row.classList.toggle('on', checked);
+            row.setAttribute('aria-checked', checked ? 'true' : 'false');
+            const id = inp && inp.value;
+            if (!id) return;
+            if (checked) selectedParentIds.add(id);
+            else selectedParentIds.delete(id);
+          };
+          const toggle = (e) => {
+            e.preventDefault();
+            if (!inp) return;
+            inp.checked = !inp.checked;
+            sync();
+          };
+          // Mouse/touch: preventDefault so the row is not focused → no sheet scroll.
+          row.addEventListener('pointerdown', (e) => { if (e.pointerType !== 'keyboard') e.preventDefault(); });
+          row.addEventListener('click', toggle);
+          row.addEventListener('keydown', (e) => {
+            if (e.key === ' ' || e.key === 'Enter') toggle(e);
+          });
+        });
+      }
 
       $('#af', overlay).addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -1145,12 +1296,14 @@ async function assetForm(asset, done) {
           firmwareVersion: allowed.includes('firmwareVersion') ? (f.firmwareVersion.value.trim() || null) : null,
           firmwareUpdatedAt: allowed.includes('firmwareUpdatedAt') ? (f.firmwareUpdatedAt.value || null) : null,
           warrantyEndDate: allowed.includes('warrantyEnd') ? (f.warrantyEndDate.value || null) : undefined,
-          parentAssetId: allowed.includes('parentDevice') && f.parentAssetId
-            ? (f.parentAssetId.value || null) : null,
+          parentAssetIds: allowed.includes('parentDevice')
+            ? [...overlay.querySelectorAll('input[name="parentAssetIds"]:checked')].map((c) => c.value)
+            : undefined,
         };
         // Clear linked licenses / site owner / infra meta when switching away from Network/Server
         if (!allowed.includes('relatedLicense')) body.licenseIds = [];
         if (!allowed.includes('responsible')) body.responsibleEmployeeId = null;
+        if (!allowed.includes('parentDevice')) body.parentAssetIds = [];
         try {
           if (!infraMode && state.category === 'Other') {
             if (!resolvedCategory) {
@@ -1175,6 +1328,21 @@ async function assetForm(asset, done) {
             }
             if (!body.responsibleEmployeeId) {
               throw new Error(t('network.ownerRequired') || 'Responsible person is required for Network/Server equipment');
+            }
+            if (body.rack && body.rackUStart != null) {
+              const size = body.rackUSize != null && body.rackUSize >= 1 ? body.rackUSize : 1;
+              const occ = occupancyMap();
+              const blockers = rangeBlockers(body.rackUStart, size, occ);
+              const maxU = cabinetMaxU(occ, size);
+              if (body.rackUStart + size - 1 > maxU) {
+                blockers.push(`U${body.rackUStart + size - 1} (cabinet is ${maxU}U)`);
+              }
+              if (blockers.length) {
+                throw new Error(
+                  (typeof t === 'function' ? t('network.uClashSave') : '')
+                  || 'This rack placement overlaps another device — pick free U units or reduce height.'
+                );
+              }
             }
           }
           // CPU / RAM / Storage are mandatory whenever the category uses them
@@ -1207,7 +1375,12 @@ async function assetForm(asset, done) {
           closeModal();
           done();
         } catch (err) {
-          toast(err.message, 'error');
+          let msg = err.message;
+          if (err.details && err.details.code === 'DUPLICATE_SERIAL') {
+            msg = (typeof t === 'function' && t('assets.serialTaken')) || msg;
+            if (err.details.assetTag) msg += ` (${err.details.assetTag})`;
+          }
+          toast(msg, 'error');
           const box = $('#af-error', overlay);
           if (box) box.innerHTML = '';
         }
@@ -1253,16 +1426,31 @@ async function showQrModal(asset) {
 }
 
 async function showAssetDetail(id, onChange) {
-  const [x, repairs, repairDocs, cfBundle] = await Promise.all([
-    api(`/assets/${id}`),
-    api(`/maintenance?assetId=${encodeURIComponent(id)}`).catch(() => []), // Viewer role → 403 → []
-    api(`/maintenance/asset/${encodeURIComponent(id)}/documents`).catch(() => []),
-    fetchCustomFields('asset', id),
-  ]);
+  if (!id) return;
+  let x;
+  let repairs;
+  let repairDocs;
+  let cfBundle;
+  try {
+    [x, repairs, repairDocs, cfBundle] = await Promise.all([
+      api(`/assets/${id}`),
+      api(`/maintenance?assetId=${encodeURIComponent(id)}`).catch(() => []), // Viewer role → 403 → []
+      api(`/maintenance/asset/${encodeURIComponent(id)}/documents`).catch(() => []),
+      fetchCustomFields('asset', id),
+    ]);
+  } catch (err) {
+    toast((err && err.message) || 'Could not load asset', 'error');
+    return;
+  }
+  if (!x) {
+    toast('Asset not found', 'error');
+    return;
+  }
   const docsByLog = {};
   repairDocs.forEach((d) => { (docsByLog[d.maintenanceId] = docsByLog[d.maintenanceId] || []).push(d); });
   const s = x.specs || {};
   const canUpdate = Auth.canIam('asset', 'update') || Auth.canIam('asset', 'manage');
+  const canCreate = Auth.canIam('asset', 'create');
   const canUnassign = Auth.canIam('asset', 'unassign') || Auth.canIam('asset', 'manage');
   const canRepair = Auth.canIam('maintenance', 'create');
   const canDownloadDocs = Auth.canIam('document', 'download') || Auth.can('canDownloadDocuments');
@@ -1280,7 +1468,7 @@ async function showAssetDetail(id, onChange) {
     return [x.rack, u].filter(Boolean).join(' · ');
   })();
   const specBits = [s.cpu, s.ram, s.storage, s.os].filter(Boolean);
-  const hasInfraMeta = !!(x.infraRole || rackLine || x.firmwareVersion || x.parentAsset || x.mgmtIp);
+  const hasInfraMeta = !!(x.infraRole || rackLine || x.firmwareVersion || x.parentAsset || (x.parentAssets && x.parentAssets.length) || x.mgmtIp);
 
   const kv = (label, valueHtml, { full = false, skipEmpty = true } = {}) => {
     if (skipEmpty && (valueHtml == null || valueHtml === '' || valueHtml === '—')) return '';
@@ -1352,10 +1540,16 @@ async function showAssetDetail(id, onChange) {
     kv('Firmware', x.firmwareVersion
       ? `${esc(x.firmwareVersion)}${x.firmwareUpdatedAt ? ` <span class="cell-sub">· ${esc(fmtDate(x.firmwareUpdatedAt))}</span>` : ''}`
       : ''),
-    kv('Parent device', x.parentAsset
-      ? `<a href="#/network?view=topo&search=${encodeURIComponent(x.parentAsset.assetTag)}">${esc(x.parentAsset.assetTag)}</a>
-         <span class="cell-sub"> · ${esc(x.parentAsset.brand)} ${esc(x.parentAsset.model)}</span>`
-      : ''),
+    kv('Parent devices', (() => {
+      const parents = (x.parentAssets && x.parentAssets.length)
+        ? x.parentAssets
+        : (x.parentAsset ? [x.parentAsset] : []);
+      if (!parents.length) return '';
+      return parents.map((pa) =>
+        `<a href="#/network?view=topo&search=${encodeURIComponent(pa.assetTag)}">${esc(pa.assetTag)}</a>
+         <span class="cell-sub"> · ${esc(pa.brand || '')} ${esc(pa.model || '')}</span>`
+      ).join('<br>');
+    })()),
   ].join('');
 
   const licenseHtml = licenses.length
@@ -1452,6 +1646,7 @@ async function showAssetDetail(id, onChange) {
       <button class="btn btn-outline" id="ad-qr"><span class="ms">qr_code_2</span> QR</button>
       <button class="btn btn-outline" id="ad-label"><span class="ms">barcode</span> Label</button>
       ${canUpdate ? `<button class="btn btn-outline" id="ad-edit"><span class="ms">edit</span> Edit</button>` : ''}
+      ${canCreate ? `<button class="btn btn-outline" id="ad-duplicate"><span class="ms">content_copy</span> ${esc(t('common.duplicate'))}</button>` : ''}
       ${canUnassign && !isInfra && x.status === 'Assigned' ? '<button class="btn btn-outline" id="ad-return"><span class="ms">undo</span> Return</button>' : ''}
       ${canRepair && (x.status === 'In Stock' || x.status === 'Assigned') ? '<button class="btn btn-primary" id="ad-repair"><span class="ms">build</span> Repair</button>' : ''}
       ${canUpdate && isInfra
@@ -1498,6 +1693,8 @@ async function showAssetDetail(id, onChange) {
       }));
       const adEdit = $('#ad-edit', overlay);
       if (adEdit) adEdit.addEventListener('click', () => assetForm(x, () => { refresh(); showAssetDetail(id, onChange); }));
+      const adDup = $('#ad-duplicate', overlay);
+      if (adDup) adDup.addEventListener('click', () => assetForm(duplicateAssetSeed(x), () => refresh()));
       const adReturn = $('#ad-return', overlay);
       if (adReturn) adReturn.addEventListener('click', () => formModal({
         title: `Return ${x.assetTag} to stock`,

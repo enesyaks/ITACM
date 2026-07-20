@@ -73,7 +73,11 @@ test('tour groups tile every slide exactly once', () => {
     }
   }
   covered.sort((a, b) => a - b);
-  assert.deepEqual(covered, OB_TOUR.map((_, i) => i),
+  // Build the expected array in THIS realm. OB_TOUR came out of runInNewContext, so
+  // OB_TOUR.map(...) would carry the sandbox's Array.prototype and assert/strict's
+  // deepEqual (aliased to deepStrictEqual) rejects it as cross-realm despite equal values.
+  const expected = Array.from({ length: OB_TOUR.length }, (_, i) => i);
+  assert.deepEqual(covered, expected,
     'group ranges do not cover exactly slides 0..' + (OB_TOUR.length - 1));
 });
 

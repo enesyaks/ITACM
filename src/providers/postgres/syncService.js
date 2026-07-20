@@ -60,7 +60,7 @@ async function syncAssets(items = [], actor) {
         id = r.rows[0]?.id || null;
       }
       if (!id && serial) {
-        const r = await query('SELECT id FROM assets WHERE serial_number = $1', [serial]);
+        const r = await query('SELECT id FROM assets WHERE lower(btrim(serial_number)) = lower($1)', [serial]);
         id = r.rows[0]?.id || null;
       }
       const payload = {

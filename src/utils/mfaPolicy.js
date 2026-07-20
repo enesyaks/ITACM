@@ -1,10 +1,19 @@
 /**
  * MFA policy helpers — which roles must have TOTP enabled.
+ *
+ * OWNER_MFA_REQUIRED defaults to on. Set to 0/false/off/no to let Owners
+ * use the app without enrolling MFA (local/dev recovery).
  */
 'use strict';
 
+function ownerMfaRequiredByEnv() {
+  const v = String(process.env.OWNER_MFA_REQUIRED || '').trim().toLowerCase();
+  if (!v) return true;
+  return !['0', 'false', 'off', 'no'].includes(v);
+}
+
 function roleRequiresMfa(role) {
-  return role === 'Owner';
+  return role === 'Owner' && ownerMfaRequiredByEnv();
 }
 
 function isServiceActor(user) {

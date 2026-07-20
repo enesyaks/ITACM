@@ -1,6 +1,8 @@
 /** Asset service (postgres) — Hardware Inventory backend. */
 const { query, withTransaction } = require('./pool');
 const { mapAsset, mapRows, isUuid } = require('./rowMapper');
+const { parseParentIdsFromBody, syncAssetParents } = require('./assetParentLinks');
+const { normalizeSerial, assertSerialAvailable, conflictFromUniqueViolation } = require('./assetSerial');
 const { HttpError } = require('../../utils/httpError');
 const { normalizeSale, formatSaleSummary, appendSaleToNotes } = require('../../utils/saleNote');
 
@@ -25,26 +27,6 @@ async function resolveResponsibleEmployee(employeeId) {
     responsible_employee_id: rows[0].id,
     responsible_employee_name: rows[0].full_name,
   };
-}
-
-async function resolveParentAsset(parentId, selfId) {
-  if (parentId === null || parentId === '') return { parent_asset_id: null };
-  if (!isUuid(parentId)) throw HttpError.badRequest('parentAssetId must be a valid UUID');
-  if (selfId && parentId === selfId) {
-    throw HttpError.badRequest('A device cannot be its own parent');
-  }
-  const { rows } = await query(
-    'SELECT id, category, parent_asset_id FROM assets WHERE id = $1',
-    [parentId]
-  );
-  if (!rows[0]) throw HttpError.badRequest('Parent device not found');
-  if (!INFRA_CATEGORIES.has(rows[0].category)) {
-    throw HttpError.badRequest('Parent device must be Network or Server equipment');
-  }
-  if (selfId && rows[0].parent_asset_id === selfId) {
-    throw HttpError.badRequest('Circular parent relationship is not allowed');
-  }
-  return { parent_asset_id: rows[0].id };
 }
 
 function assertInfraPlacement({ category, location, responsible_employee_id }) {
@@ -200,21 +182,32 @@ function mapAssetRow(row) {
   delete a.licenseVendor;
   delete a.relatedLicensesJson;
 
-  if (row.parent_asset_id && row.parent_asset_tag) {
-    a.parentAsset = {
+  let parents = [];
+  const rawParents = row.parents_json;
+  if (Array.isArray(rawParents)) parents = rawParents;
+  else if (typeof rawParents === 'string') {
+    try { parents = JSON.parse(rawParents) || []; } catch { parents = []; }
+  }
+  if (!parents.length && row.parent_asset_id && row.parent_asset_tag) {
+    parents = [{
       id: row.parent_asset_id,
       assetTag: row.parent_asset_tag,
       brand: row.parent_brand || null,
       model: row.parent_model || null,
       category: row.parent_category || null,
-    };
-  } else {
-    a.parentAsset = null;
+      location: row.parent_location || null,
+    }];
   }
+  a.parentAssets = parents;
+  a.parentAssetIds = parents.map((x) => x.id);
+  a.parentAsset = parents[0] || null;
+  a.parentAssetId = parents[0] ? parents[0].id : null;
   delete a.parentAssetTag;
   delete a.parentBrand;
   delete a.parentModel;
   delete a.parentCategory;
+  delete a.parentLocation;
+  delete a.parentsJson;
   return a;
 }
 
@@ -223,8 +216,10 @@ const ASSET_SELECT = `SELECT a.*,
   p.brand AS parent_brand,
   p.model AS parent_model,
   p.category AS parent_category,
+  p.location AS parent_location,
   cm.lifecycle_months AS model_lifecycle_months,
-  COALESCE(lic.related_licenses, '[]'::json) AS related_licenses_json
+  COALESCE(lic.related_licenses, '[]'::json) AS related_licenses_json,
+  COALESCE(par.parents_json, '[]'::json) AS parents_json
  FROM assets a
  LEFT JOIN assets p ON p.id = a.parent_asset_id
  LEFT JOIN catalog_models cm ON cm.category = a.category AND cm.brand = a.brand AND cm.model = a.model
@@ -238,7 +233,20 @@ const ASSET_SELECT = `SELECT a.*,
    FROM asset_licenses al
    JOIN licenses lx ON lx.id = al.license_id
    WHERE al.asset_id = a.id
- ) lic ON true`;
+ ) lic ON true
+ LEFT JOIN LATERAL (
+   SELECT json_agg(json_build_object(
+     'id', pp.id,
+     'assetTag', pp.asset_tag,
+     'brand', pp.brand,
+     'model', pp.model,
+     'category', pp.category,
+     'location', pp.location
+   ) ORDER BY pp.asset_tag) AS parents_json
+   FROM asset_parent_links apl
+   JOIN assets pp ON pp.id = apl.parent_asset_id
+   WHERE apl.child_asset_id = a.id
+ ) par ON true`;
 
 function sanitize(body, { partial = false } = {}) {
   const {
@@ -248,7 +256,10 @@ function sanitize(body, { partial = false } = {}) {
 
   if (!partial) {
     for (const [name, value] of Object.entries({ serialNumber, brand, model, category })) {
-      if (!value || typeof value !== 'string') {
+      if (name === 'serialNumber') {
+        const sn = normalizeSerial(value);
+        if (!sn) throw HttpError.badRequest('Field "serialNumber" is required and must be a string');
+      } else if (!value || typeof value !== 'string') {
         throw HttpError.badRequest(`Field "${name}" is required and must be a string`);
       }
     }
@@ -259,7 +270,7 @@ function sanitize(body, { partial = false } = {}) {
 
   const data = {};
   if (!partial && assetTag) data.asset_tag = String(assetTag).trim().slice(0, 64);
-  if (serialNumber !== undefined) data.serial_number = serialNumber.trim();
+  if (serialNumber !== undefined) data.serial_number = normalizeSerial(serialNumber);
   if (brand !== undefined) data.brand = brand;
   if (model !== undefined) data.model = model;
   if (category !== undefined) data.category = category;
@@ -351,10 +362,9 @@ function sanitize(body, { partial = false } = {}) {
   if (body.mgmtIp !== undefined) {
     data.mgmt_ip = body.mgmtIp ? String(body.mgmtIp).trim().slice(0, 80) : null;
   }
-  if (body.parentAssetId !== undefined) {
-    data._parentAssetId = body.parentAssetId === null || body.parentAssetId === ''
-      ? null
-      : body.parentAssetId;
+  const parsedParents = parseParentIdsFromBody(body);
+  if (parsedParents !== undefined) {
+    data._parentAssetIds = parsedParents;
   }
 
   applyRackCoordinates(data);
@@ -397,12 +407,10 @@ async function createAsset(body, itUser) {
     data.responsible_employee_name = null;
   }
 
-  if (data._parentAssetId !== undefined) {
-    Object.assign(data, await resolveParentAsset(data._parentAssetId, null));
-    delete data._parentAssetId;
-  } else {
-    data.parent_asset_id = null;
-  }
+  const parentIds = data._parentAssetIds !== undefined ? data._parentAssetIds : [];
+  delete data._parentAssetIds;
+  // Denormalized column filled after insert via syncAssetParents.
+  data.parent_asset_id = null;
 
   assertInfraPlacement({
     category: data.category,
@@ -416,6 +424,8 @@ async function createAsset(body, itUser) {
 
   await assertLicensesExist(null, licenseIds);
   data.license_id = licenseIds[0] || null;
+
+  await assertSerialAvailable(data.serial_number);
 
   for (let attempt = 0; attempt < 3; attempt++) {
     if (autoTag) data.asset_tag = await nextAssetTag();
@@ -446,6 +456,7 @@ async function createAsset(body, itUser) {
         );
         const id = rows[0].id;
         if (licenseIds.length) await syncAssetLicenses(t, id, licenseIds);
+        if (parentIds.length) await syncAssetParents(t, id, parentIds);
 
         const createdNotes = isInfra
           ? [
@@ -469,9 +480,11 @@ async function createAsset(body, itUser) {
         return { id, assetTag: rows[0].asset_tag };
       });
     } catch (err) {
+      if (err instanceof HttpError) throw err;
       if (err.code === '23505') {
-        if (autoTag && attempt < 2) continue;
-        throw HttpError.conflict(`Asset tag "${data.asset_tag}" is already registered`);
+        const hay = `${err.constraint || ''} ${err.detail || ''}`.toLowerCase();
+        if (!hay.includes('serial') && autoTag && attempt < 2) continue;
+        conflictFromUniqueViolation(err, data);
       }
       throw err;
     }
@@ -489,12 +502,10 @@ async function updateAsset(assetId, body, itUser) {
     delete data._responsibleEmployeeId;
   }
 
-  if (data._parentAssetId !== undefined) {
-    Object.assign(data, await resolveParentAsset(data._parentAssetId, assetId));
-    delete data._parentAssetId;
-  }
+  const parentIds = data._parentAssetIds;
+  delete data._parentAssetIds;
 
-  if (Object.keys(data).length === 0 && licenseIds === undefined) {
+  if (Object.keys(data).length === 0 && licenseIds === undefined && parentIds === undefined) {
     throw HttpError.badRequest('No updatable fields provided');
   }
 
@@ -553,6 +564,7 @@ async function updateAsset(assetId, body, itUser) {
       if (licenseIds === undefined) {
         await syncAssetLicenses(t, assetId, []);
       }
+      await syncAssetParents(t, assetId, []);
     }
 
     const unassignStatuses = ['In Stock', 'Scrap', 'Sold'];
@@ -571,6 +583,10 @@ async function updateAsset(assetId, body, itUser) {
       data.license_id = licenseIds[0] || null;
     }
 
+    if (data.serial_number !== undefined) {
+      await assertSerialAvailable(data.serial_number, { excludeId: assetId, client: t });
+    }
+
     let updatedRow = current;
     if (Object.keys(data).length) {
       const cols = Object.keys(data);
@@ -582,9 +598,8 @@ async function updateAsset(assetId, body, itUser) {
         );
         updatedRow = updated.rows[0];
       } catch (err) {
-        if (err.code === '23505') {
-          throw HttpError.conflict(`Asset tag "${data.asset_tag}" is already registered`);
-        }
+        if (err instanceof HttpError) throw err;
+        if (err.code === '23505') conflictFromUniqueViolation(err, { ...current, ...data });
         throw err;
       }
     }
@@ -598,6 +613,9 @@ async function updateAsset(assetId, body, itUser) {
 
     if (licenseIds !== undefined) {
       await syncAssetLicenses(t, assetId, licenseIds);
+    }
+    if (parentIds !== undefined) {
+      await syncAssetParents(t, assetId, parentIds);
     }
 
     await writeUpdateHistory(t, current, updatedRow, data, licenseIds, itUser, saleMeta);

@@ -467,7 +467,7 @@ async function showMaintNotes(log, onDone) {
 
 /* ================================ REPORTS ================================ */
 function csvDownload(filename, cols, rows) {
-  const csvEsc = (v) => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
+  const csvEsc = (v) => `"${csvCell(v).replace(/"/g, '""')}"`;
   // \uFEFF BOM so Excel opens Turkish characters correctly.
   const csv = '\uFEFF' + [cols, ...rows].map((r) => r.map(csvEsc).join(';')).join('\n');
   const a = document.createElement('a');

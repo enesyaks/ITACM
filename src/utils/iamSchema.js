@@ -15,7 +15,7 @@ const RESOURCES = Object.freeze([
   'asset', 'license', 'employee', 'contract', 'provider',
   'line', 'consumable', 'maintenance', 'stock_count', 'report',
   'audit', 'dashboard', 'settings', 'user_management',
-  'integration', 'document', 'catalog', 'handover', 'onboarding',
+  'integration', 'document', 'handover_document', 'catalog', 'handover', 'onboarding',
 ]);
 
 /** Full union of actions (legacy rows + matrix). */
@@ -46,6 +46,8 @@ const ACTIONS_BY_RESOURCE = Object.freeze({
   ]),
   handover: Object.freeze(['read', 'create', 'update']),
   document: Object.freeze(['read', 'download', 'upload', 'delete']),
+  // Employee zimmet / handover PDF archive (separate from general document:* for licenses, contracts, …)
+  handover_document: Object.freeze(['read', 'download', 'upload', 'delete']),
   contract: Object.freeze([
     'read', 'create', 'update', 'delete', 'view_confidential', 'manage',
   ]),
@@ -123,12 +125,13 @@ function getIamSchema() {
     tips: {
       ownerBypass: 'Owner always has full access. Test matrix changes as a user assigned to that group.',
       manage: 'manage enables read/update/delete/(assign). Not create, export, import, costs, or employee view_*. Toggle create separately for Add buttons.',
-      document: 'read = file listed (blurred name if no download). download = view/open file. upload = upload. delete = remove. Employee docs also need employee:view_handover.',
+      document: 'General files (providers, contracts, licenses, repair paperwork). read = listed (blurred if no download). download = open. upload / delete = mutate. Not employee zimmet scans.',
+      handover_document: 'Employee zimmet / handover PDF archive only. Also needs employee:view_handover for the Documents tab. Independent from document:*.',
       report: 'report:read = Reports page. report:export = CSV/print. Each preset also needs that module read (e.g. maintenance:read).',
       integration: 'read = view blurred secrets. update = custom-field values on forms. manage = SMTP, webhooks, API keys, field defs.',
       consumable: 'read = stock list. create = new item. update = adjust stock. manage = read+update+delete (not create).',
       maintenance: 'read = logs & reports. create = send to repair. update = close/notes. view_confidential = costs.',
-      handover: 'handover:create = make zimmet form. employee:view_handover = Documents tab.',
+      handover: 'handover:create = make zimmet form. employee:view_handover + handover_document:* = Documents tab / scans.',
       assign: 'license:assign / line:assign / asset:assign|unassign control employee-card and list assign actions.',
     },
   };

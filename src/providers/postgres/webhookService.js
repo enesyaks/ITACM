@@ -1,8 +1,10 @@
 /** Outbound webhooks with HMAC-SHA256 signature. */
 const crypto = require('crypto');
+const http = require('http');
+const https = require('https');
 const { query } = require('./pool');
 const { HttpError } = require('../../utils/httpError');
-const { assertSafeOutboundUrl } = require('../../utils/safeOutbound');
+const { assertSafeOutboundUrl, assertSafeOutboundUrlPinned } = require('../../utils/safeOutbound');
 
 const KNOWN_EVENTS = [
   'handover.completed',
@@ -71,6 +73,32 @@ function sign(secret, body) {
   return crypto.createHmac('sha256', secret).update(body).digest('hex');
 }
 
+/**
+ * Fire-and-forget POST that pins the socket to a pre-validated public IP
+ * (`lookup`) so DNS cannot rebind to an internal address between validation and
+ * connect. Redirects are never followed (a 3xx body is simply drained), and the
+ * request aborts after `timeoutMs`. Resolves once the response completes; the
+ * body is discarded (webhooks are one-way).
+ */
+function postWebhook(href, { body, headers, lookup, timeoutMs }) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(href);
+    const transport = u.protocol === 'http:' ? http : https;
+    const req = transport.request(
+      href,
+      { method: 'POST', headers, lookup, servername: u.hostname, timeout: timeoutMs },
+      (res) => {
+        res.resume(); // drain & discard — do not follow 3xx
+        res.on('end', resolve);
+        res.on('error', reject);
+      }
+    );
+    req.on('timeout', () => req.destroy(new Error('Webhook request timed out')));
+    req.on('error', reject);
+    req.end(body);
+  });
+}
+
 async function emit(event, payload) {
   try {
     const hooks = await listWebhooks({ includeSecrets: true });
@@ -82,30 +110,26 @@ async function emit(event, payload) {
       data: payload,
     });
     await Promise.allSettled(targets.map(async (h) => {
-      // Re-validate at emit time so saved malicious URLs cannot fire after a policy tighten.
+      // Re-validate at emit time so saved malicious URLs cannot fire after a policy
+      // tighten, and pin the connection to the validated IP (no DNS rebinding).
+      let href;
+      let lookup;
       try {
-        await assertSafeOutboundUrl(h.url, { field: 'Webhook URL', max: 500 });
+        ({ href, lookup } = await assertSafeOutboundUrlPinned(h.url, { field: 'Webhook URL', max: 500 }));
       } catch {
         console.warn('[webhook] skip unsafe URL for event', event);
         return;
       }
-      const controller = new AbortController();
-      const t = setTimeout(() => controller.abort(), 8000);
-      try {
-        await fetch(h.url, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-ITACM-Event': event,
-            'X-ITACM-Signature': sign(h.secret, body),
-          },
-          body,
-          signal: controller.signal,
-          redirect: 'error',
-        });
-      } finally {
-        clearTimeout(t);
-      }
+      await postWebhook(href, {
+        body,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-ITACM-Event': event,
+          'X-ITACM-Signature': sign(h.secret, body),
+        },
+        lookup,
+        timeoutMs: 8000,
+      });
     }));
   } catch (err) {
     console.warn('[webhook] emit failed:', err.message);

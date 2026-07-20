@@ -151,7 +151,7 @@ Views.users = async function (el) {
     'asset', 'license', 'employee', 'contract', 'provider',
     'line', 'consumable', 'maintenance', 'stock_count', 'report',
     'audit', 'dashboard', 'settings', 'user_management',
-    'integration', 'document', 'catalog', 'handover', 'onboarding',
+    'integration', 'document', 'handover_document', 'catalog', 'handover', 'onboarding',
   ];
   const ACTIONS_BY_RESOURCE = {
     asset: ['read', 'create', 'update', 'delete', 'assign', 'unassign', 'export', 'import', 'manage'],
@@ -160,6 +160,7 @@ Views.users = async function (el) {
     employee: ['read', 'create', 'update', 'delete', 'view_inventory', 'view_history', 'view_handover', 'manage'],
     handover: ['read', 'create', 'update'],
     document: ['read', 'download', 'upload', 'delete'],
+    handover_document: ['read', 'download', 'upload', 'delete'],
     contract: ['read', 'create', 'update', 'delete', 'view_confidential', 'manage'],
     provider: ['read', 'create', 'update', 'delete', 'manage'],
     consumable: ['read', 'create', 'update', 'delete', 'manage'],
@@ -222,13 +223,13 @@ Views.users = async function (el) {
         key: 'document',
         icon: 'description',
         label: 'document',
-        title: 'Documents (PDF / scans)',
-        lead: 'Providers, contracts, licenses, employee handover scans, repair paperwork.',
+        title: 'General documents (PDF / scans)',
+        lead: 'Providers, contracts, licenses, and repair paperwork — not employee zimmet scans.',
         shot: shot('Provider · Documents', `
           <div class="iam-shot-row">
             <div class="iam-shot-lock">
               <span class="ms" style="color:#777">picture_as_pdf</span>
-              <span class="iam-shot-blur">zimmet-HF-51C80A1F.pdf</span>
+              <span class="iam-shot-blur">contract-invoice.pdf</span>
             </div>
             <span class="iam-shot-badge"><span class="ms ms-sm">lock</span> File on file — viewing locked</span>
             <div class="iam-shot-btns"><em class="lock">visibility</em><em class="lock">download</em>
@@ -237,7 +238,7 @@ Views.users = async function (el) {
           <div class="iam-shot-row">
             <div class="iam-shot-lock">
               <span class="ms" style="color:#777">picture_as_pdf</span>
-              <strong style="color:var(--primary,#3525cd)">zimmet-HF-51C80A1F.pdf</strong>
+              <strong style="color:var(--primary,#3525cd)">contract-invoice.pdf</strong>
             </div>
             <span class="muted">39 KB · openable</span>
             <div class="iam-shot-btns"><em>visibility</em><em>download</em>
@@ -246,8 +247,31 @@ Views.users = async function (el) {
         keys: [
           keyRow('document:read', 'File is listed (blurred name, size, date). No open/download buttons.'),
           keyRow('document:download', 'View popup + download. Read alone does <strong>not</strong> open the file.'),
-          keyRow('document:upload', 'Upload button. Employee docs also need employee:view_handover.'),
+          keyRow('document:upload', 'Upload button on provider / contract / license / repair docs.'),
           keyRow('document:delete', 'Delete / remove file button.'),
+        ],
+      },
+      {
+        key: 'handover_document',
+        icon: 'assignment',
+        label: 'handover_document',
+        title: 'Zimmet / handover documents',
+        lead: 'Employee card Documents tab — generated zimmet PDFs and signed scans. Independent from document:*.',
+        shot: shot('Employee · Documents', `
+          <div class="iam-shot-row">
+            <strong>Documents tab</strong>
+            <span class="muted">needs employee:view_handover</span>
+            <span class="iam-shot-callout ok">view_handover</span>
+          </div>
+          <div class="iam-shot-row">
+            <div class="iam-shot-btns"><em>Upload scan</em></div>
+            <span class="iam-shot-callout ok">handover_document:upload</span>
+          </div>`),
+        keys: [
+          keyRow('handover_document:read', 'List zimmet PDFs / scans on the employee card.'),
+          keyRow('handover_document:download', 'View / download zimmet files.'),
+          keyRow('handover_document:upload', 'Upload signed scan. Also needs employee:view_handover.'),
+          keyRow('handover_document:delete', 'Delete a zimmet archive file.'),
         ],
       },
       {
@@ -422,7 +446,7 @@ Views.users = async function (el) {
           </div>`),
         keys: [
           keyRow('handover:create', 'Make zimmet / handover form.'),
-          keyRow('employee:view_handover', 'Documents tab on employee card.'),
+          keyRow('employee:view_handover', 'Handover receipts + Documents tab (files still need handover_document:*).'),
           keyRow('employee:view_inventory|view_history', 'Extra tabs on the employee card.'),
           keyRow('license:assign · line:assign · asset:unassign', 'Assign software / lines / return device from the card.'),
         ],
@@ -512,6 +536,7 @@ Views.users = async function (el) {
 
   const RESOURCE_GUIDE_KEY = {
     document: 'document',
+    handover_document: 'handover_document',
     report: 'report',
     integration: 'integration',
     consumable: 'consumable',
@@ -562,9 +587,11 @@ Views.users = async function (el) {
               <span>${esc(act)}</span>
             </label>`;
         }).join('');
+        const resLabelRaw = (typeof t === 'function') ? t(`iam.resource.${res}`) : '';
+        const resLabel = (resLabelRaw && resLabelRaw !== `iam.resource.${res}`) ? resLabelRaw : res;
         return `<tr>
           <td class="iam-resource-cell">
-            <strong>${esc(res)}</strong>
+            <strong title="${esc(res)}">${esc(resLabel)}</strong>
             <button type="button" class="iam-row-help" data-iam-resource-help="${esc(res)}"
               title="What does ${esc(res)} control?" aria-label="Help for ${esc(res)}">
               <span class="ms">help</span>

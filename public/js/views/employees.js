@@ -282,11 +282,11 @@ async function showEmployeeDetail(emp) {
   const canUnassignLine = Auth.canIam('line', 'unassign') || Auth.canIam('line', 'manage');
   const canReturnAsset = Auth.canIamOp('asset', 'unassign');
   const canReadContracts = Auth.canIamOp('contract', 'read');
-  const canReadDocs = Auth.canIam('document', 'read') || Auth.can('canReadDocuments');
-  const canDownloadDocs = Auth.canIam('document', 'download') || Auth.can('canDownloadDocuments');
-  const canUploadDocs = (Auth.canIam('document', 'upload') || Auth.canIam('document', 'create') || Auth.can('canUploadDocuments'))
-    && canViewHandover;
-  const canDelDoc = Auth.canIam('document', 'delete') || Auth.can('canDeleteDocuments');
+  // Zimmet / handover archive — separate from general document:* (licenses, contracts, …)
+  const canReadDocs = Auth.canIam('handover_document', 'read');
+  const canDownloadDocs = Auth.canIam('handover_document', 'download');
+  const canUploadDocs = Auth.canIam('handover_document', 'upload') && canViewHandover;
+  const canDelDoc = Auth.canIam('handover_document', 'delete');
   const canSeeDocsTab = canViewHandover && (canReadDocs || canDownloadDocs || canUploadDocs);
   const emptyList = () => [];
   const emptyItems = () => ({ items: [] });
@@ -510,7 +510,7 @@ async function showEmployeeDetail(emp) {
         </div>
         <input type="file" id="doc-file" accept="application/pdf,image/png,image/jpeg,image/webp,.pdf,.png,.jpg,.jpeg,.webp" class="hidden">
         ${!canReadDocs
-          ? '<div class="table-empty">No permission to view documents (needs <strong>document:read</strong>).</div>'
+          ? '<div class="table-empty">No permission to view zimmet documents (needs <strong>handover_document:read</strong>).</div>'
           : documents.length === 0
             ? '<div class="table-empty">No documents yet. Execute a handover or upload a signed scan.</div>'
             : `

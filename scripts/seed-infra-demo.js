@@ -131,7 +131,7 @@ async function main() {
 
     /**
      * Device blueprint.
-     * parentTag: asset_tag of upstream device (same or cross-site).
+     * parentTag / parentTags: upstream device tag(s) — use parentTags for HA pairs.
      */
     const devices = [
       /* -------- Main Office DC -------- */
@@ -143,17 +143,25 @@ async function main() {
         licenses: ['DEMO FortiGate Support'],
       },
       {
+        // HA peer — shared children demonstrate multi-parent topology
+        tag: 'DEMO-FW-HQ-B', category: 'Network', brand: 'Fortinet', model: 'FortiGate 100F',
+        role: 'Firewall', location: LOC.hq, rack: 'RACK-A01', uStart: 41, uSize: 1,
+        host: 'fw-hq-02', ip: '10.0.0.3', mgmt: '10.255.0.3',
+        firmware: '7.2.8', parentTag: null,
+        licenses: ['DEMO FortiGate Support'],
+      },
+      {
         tag: 'DEMO-LB-HQ', category: 'Network', brand: 'F5', model: 'BIG-IP i2800',
         role: 'Load Balancer', location: LOC.hq, rack: 'RACK-A01', uStart: 40, uSize: 1,
         host: 'lb-hq-01', ip: '10.0.0.2', mgmt: '10.255.0.2',
-        firmware: '17.1.0', parentTag: 'DEMO-FW-HQ',
+        firmware: '17.1.0', parentTags: ['DEMO-FW-HQ', 'DEMO-FW-HQ-B'],
         licenses: [],
       },
       {
         tag: 'DEMO-SW-HQ-CORE', category: 'Network', brand: 'Cisco', model: 'Catalyst 9300',
         role: 'Switch', location: LOC.hq, rack: 'RACK-A01', uStart: 38, uSize: 1,
         host: 'sw-hq-core', ip: '10.0.0.10', mgmt: '10.255.0.10',
-        firmware: '17.9.4a', parentTag: 'DEMO-FW-HQ',
+        firmware: '17.9.4a', parentTags: ['DEMO-FW-HQ', 'DEMO-FW-HQ-B'],
         licenses: ['DEMO Cisco DNA Center'],
       },
       {
@@ -349,13 +357,14 @@ async function main() {
       }
     }
 
-    // Wire parent_asset_id
+    // Wire parent links (supports parentTag or parentTags[] for HA / dual-uplink)
+    const { syncAssetParents } = require('../src/providers/postgres/assetParentLinks');
     for (const d of devices) {
-      if (!d.parentTag) continue;
-      const parentId = idByTag[d.parentTag];
-      if (!parentId) continue;
-      await t.query('UPDATE assets SET parent_asset_id = $2 WHERE id = $1',
-        [idByTag[d.tag], parentId]);
+      const tags = d.parentTags
+        || (d.parentTag ? [d.parentTag] : []);
+      const parentIds = tags.map((tag) => idByTag[tag]).filter(Boolean);
+      if (!parentIds.length) continue;
+      await syncAssetParents(t, idByTag[d.tag], parentIds);
     }
 
     console.log(`[seed:infra] inserted ${devices.length} devices across ${Object.keys(LOC).length} locations`);

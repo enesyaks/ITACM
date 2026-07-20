@@ -202,7 +202,12 @@ Views.network = async function (el, params = {}) {
 
   const panel = $('#net-panel', el);
   const refresh = () => Views.network(el, params);
-  const openDevice = (id) => showAssetDetail(id, refresh);
+  const openDevice = (id) => {
+    if (!id) return;
+    Promise.resolve(showAssetDetail(id, refresh)).catch((err) => {
+      toast((err && err.message) || 'Could not open device', 'error');
+    });
+  };
 
   if (view === 'topo') {
     NetViz.renderTopology(panel, items, { onSelect: openDevice });
@@ -321,13 +326,13 @@ function exportNetworkCsv(items) {
       x.warrantyEndDate ? fmtDate(x.warrantyEndDate) : '',
       x.location || '',
       x.responsibleEmployee ? x.responsibleEmployee.fullName : '',
-      x.parentAsset ? x.parentAsset.assetTag : '',
+      (x.parentAssets && x.parentAssets.length ? x.parentAssets.map((pa) => pa.assetTag).join(' | ') : (x.parentAsset ? x.parentAsset.assetTag : '')),
       lics,
       x.serialNumber || '',
       x.notes || '',
     ];
   });
-  const csvEsc = (v) => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
+  const csvEsc = (v) => `"${csvCell(v).replace(/"/g, '""')}"`;
   // BOM + semicolon so Excel (TR/EU) opens UTF-8 correctly.
   const csv = '\uFEFF' + [cols, ...rows].map((r) => r.map(csvEsc).join(';')).join('\n');
   const a = document.createElement('a');
@@ -472,7 +477,11 @@ function renderListTable(items, canEdit) {
 }
 
 function parentBitHtml(x) {
-  return x.parentAsset ? `<div class="cell-sub">↑ ${esc(x.parentAsset.assetTag)}</div>` : '';
+  const parents = (x.parentAssets && x.parentAssets.length)
+    ? x.parentAssets
+    : (x.parentAsset ? [x.parentAsset] : []);
+  if (!parents.length) return '';
+  return `<div class="cell-sub">↑ ${parents.map((pa) => esc(pa.assetTag)).join(', ')}</div>`;
 }
 function eolBadgeHtml(lc) {
   if (!lc || lc.excluded) return '';
