@@ -60,6 +60,9 @@ function renderNav() {
 
 async function navigate() {
   closeNav();
+  // Drop any open modal when the route changes — otherwise overlays from Users /
+  // asset detail / etc. stay on top of the next page and block clicks.
+  if (typeof closeModal === 'function') closeModal(true);
   const gen = bumpNavGen();
   // Support query params in the hash, e.g. #/assets?lifecycle=overdue
   const [rawHash, rawQuery] = location.hash.split('?');
