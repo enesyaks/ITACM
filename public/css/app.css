@@ -1031,9 +1031,9 @@ code, .mono { font-family: var(--mono); font-size: 12px; }
 }
 .card { background: #fff; border: 1px solid var(--outline-variant); border-radius: var(--radius-lg); box-shadow: var(--shadow-card); }
 .card-pad { padding: 20px; }
-.card h3.card-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--on-surface-variant); opacity: .8; }
+.card h3.card-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--on-surface-variant); opacity: .85; }
 .card-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--surface-container); }
-.card-head h3 { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--on-surface-variant); }
+.card-head h3 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--on-surface-variant); }
 
 /* metric cards */
 .metric { display: flex; flex-direction: column; gap: 10px; }
@@ -1056,7 +1056,7 @@ code, .mono { font-family: var(--mono); font-size: 12px; }
 /* ---------- table ---------- */
 .table-wrap { overflow-x: auto; max-width: 100%; -webkit-overflow-scrolling: touch; }
 table.data { width: 100%; border-collapse: collapse; table-layout: auto; }
-table.data th { text-align: left; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--on-surface-variant); opacity: .75; background: var(--surface-low); padding: 12px 16px; border-bottom: 1px solid var(--outline-variant); white-space: nowrap; }
+table.data th { text-align: left; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--on-surface-variant); opacity: .8; background: var(--surface-low); padding: 12px 16px; border-bottom: 1px solid var(--outline-variant); white-space: nowrap; }
 table.data td { padding: 12px 16px; border-bottom: 1px solid var(--surface-container); vertical-align: middle; }
 table.data tbody tr:hover td { background: var(--surface-low); }
 table.data td.actions { text-align: right; white-space: nowrap; }
