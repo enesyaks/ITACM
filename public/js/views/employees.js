@@ -252,11 +252,44 @@ function reportPortalGrantResult(r) {
       || (r.emailStatus === 'failed'
         ? (t('emp.grantEmailFailed') || 'Email could not be sent.')
         : (t('emp.grantSmtpOff') || 'SMTP is not configured.'));
-    window.alert(`${why}\n\n${t('emp.grantTemp')}\n\n${email}\n${r.tempPassword}`);
+    showPortalCredentials({ why, email, password: r.tempPassword });
     toast(t('emp.grantEmailFailed') || 'Portal access created — email not sent', 'warning');
-    return;
+    return true;
   }
   toast(r.emailError || t('emp.grantEmailFailed') || 'Portal access created — email not sent', 'warning');
+}
+
+/** One-time portal credentials shown in a styled modal (replaces window.alert). */
+function showPortalCredentials({ why, email, password }) {
+  const tr = (typeof window.i18nLang === 'function' && window.i18nLang() === 'tr');
+  const L = (en, trText) => (tr ? trText : en);
+  openModal({
+    title: L('Portal access created', 'Portal erişimi oluşturuldu'),
+    stack: true,
+    body: `
+      ${why ? `<div class="banner banner-amber" style="margin-bottom:14px"><span class="ms">warning</span> ${esc(why)}</div>` : ''}
+      <p class="cell-sub" style="margin:0 0 10px">${esc(t('emp.grantTemp') || L('Share these credentials securely — they are shown only once:', 'Bu bilgileri güvenli şekilde paylaşın — yalnızca bir kez gösterilir:'))}</p>
+      <div class="table-wrap" style="border:1px solid var(--outline-variant);border-radius:var(--radius-lg)">
+        <table class="data"><tbody>
+          <tr><td class="cell-sub" style="width:120px">${esc(L('Email', 'E-posta'))}</td>
+              <td class="mono" style="user-select:all">${esc(email)}</td></tr>
+          <tr><td class="cell-sub">${esc(L('Temporary password', 'Geçici şifre'))}</td>
+              <td class="mono" style="user-select:all">${esc(password)}</td></tr>
+        </tbody></table>
+      </div>`,
+    foot: `
+      <button class="btn btn-outline" id="pc-copy"><span class="ms">content_copy</span> ${esc(L('Copy password', 'Şifreyi kopyala'))}</button>
+      <button class="btn btn-primary" data-close>${esc(L('OK', 'Tamam'))}</button>`,
+    onMount(overlay) {
+      const btn = $('#pc-copy', overlay);
+      if (btn) btn.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(password);
+          toast(L('Password copied', 'Şifre kopyalandı'), 'success');
+        } catch { /* clipboard blocked — user can select the value manually */ }
+      });
+    },
+  });
 }
 
 async function showEmployeeDetail(emp) {
@@ -571,35 +604,38 @@ async function showEmployeeDetail(emp) {
 
       // Provision (or re-provision) a self-service Portal login for this employee.
       const gaBtn = $('#emp-grant-access', overlay);
-      if (gaBtn) gaBtn.addEventListener('click', async () => {
-        if (!window.confirm(t('emp.grantConfirm'))) return;
-        gaBtn.disabled = true;
-        try {
-          const r = await api(`/employees/${encodeURIComponent(emp.id)}/grant-access`, { method: 'POST' });
-          reportPortalGrantResult(r);
-          closeModal();
-          showEmployeeDetail(emp);
-        } catch (err) {
-          toast(err.message, 'error');
-        } finally {
-          gaBtn.disabled = false;
-        }
+      if (gaBtn) gaBtn.addEventListener('click', () => {
+        confirmModal(t('emp.grantConfirm'), async () => {
+          gaBtn.disabled = true;
+          try {
+            const r = await api(`/employees/${encodeURIComponent(emp.id)}/grant-access`, { method: 'POST' });
+            // Defer to a macrotask so confirmModal's own closeModal() (which runs
+            // right after this callback) doesn't dismiss the credentials popup.
+            setTimeout(() => {
+              if (!reportPortalGrantResult(r)) showEmployeeDetail(emp);
+            }, 0);
+          } catch (err) {
+            toast(err.message, 'error');
+          } finally {
+            gaBtn.disabled = false;
+          }
+        });
       });
 
       // Revoke Portal login (delete Portal user + invalidate sessions).
       const revBtn = $('#emp-revoke-access', overlay);
-      if (revBtn) revBtn.addEventListener('click', async () => {
-        if (!window.confirm(t('emp.revokeConfirm'))) return;
-        revBtn.disabled = true;
-        try {
-          await api(`/employees/${encodeURIComponent(emp.id)}/revoke-access`, { method: 'DELETE' });
-          toast(t('emp.revokeDone'), 'success');
-          closeModal();
-          showEmployeeDetail(emp);
-        } catch (err) {
-          toast(err.message, 'error');
-          revBtn.disabled = false;
-        }
+      if (revBtn) revBtn.addEventListener('click', () => {
+        confirmModal(t('emp.revokeConfirm'), async () => {
+          revBtn.disabled = true;
+          try {
+            await api(`/employees/${encodeURIComponent(emp.id)}/revoke-access`, { method: 'DELETE' });
+            toast(t('emp.revokeDone'), 'success');
+            setTimeout(() => showEmployeeDetail(emp), 0);
+          } catch (err) {
+            toast(err.message, 'error');
+            revBtn.disabled = false;
+          }
+        });
       });
 
       // Filename or eye icon → stacked document lightbox (keeps employee modal open).
@@ -667,7 +703,13 @@ async function showEmployeeDetail(emp) {
           async onSubmit(d) {
             if (!d.licenseId) throw new Error('Select a license');
             const r = await api(`/licenses/${d.licenseId}/assign`, { method: 'POST', body: { employeeId: emp.id } });
-            toast(`${r.softwareName} assigned to ${r.employeeName}`, 'success');
+            if (r && r.pendingApproval) {
+              toast((window.i18nLang && window.i18nLang() === 'tr')
+                ? 'Onaya gönderildi — yönetici onayından sonra atanacak'
+                : 'Sent for approval — will be assigned after manager approval', 'info');
+            } else {
+              toast(`${r.softwareName} assigned to ${r.employeeName}`, 'success');
+            }
             showEmployeeDetail(emp);
           },
         });
@@ -1191,10 +1233,12 @@ async function employeeForm(emp, done) {
       delete d.grantAccess;
       const { body, values } = peelCustomFieldPayload(d, cfDefs);
       let id = emp?.id;
-      if (emp) await api(`/employees/${emp.id}`, { method: 'PUT', body });
-      else {
-        const created = await api('/employees', { method: 'POST', body });
-        id = created?.id;
+      let saved = emp || null;
+      if (emp) {
+        saved = await api(`/employees/${emp.id}`, { method: 'PUT', body });
+      } else {
+        saved = await api('/employees', { method: 'POST', body });
+        id = saved?.id;
       }
       if (cfDefs.length && id) await saveCustomFieldValues('employee', id, values);
       toast(emp ? 'Employee updated' : 'Employee created', 'success');
@@ -1208,7 +1252,7 @@ async function employeeForm(emp, done) {
           toast(err.message, 'error');
         }
       }
-      done();
+      if (typeof done === 'function') done(saved);
     },
   });
 }

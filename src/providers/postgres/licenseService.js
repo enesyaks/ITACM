@@ -569,9 +569,16 @@ async function cancelLicense(licenseId, { note } = {}, itUser) {
   return mapLicenseRow(rows[0], true);
 }
 
+/** Replay a license assignment that was approved through the approval workflow.
+ *  payload = { licenseId, employeeId, itUser }; itUser is the original requester. */
+async function replayApproved(payload = {}, actor = {}) {
+  const itUser = payload.itUser || { uid: 'approval', username: actor.name || 'Approval', email: null };
+  return assignLicense(payload.licenseId, payload.employeeId, itUser);
+}
+
 module.exports = {
   listLicenses, getLicense, createLicense, updateLicense, adjustSeats,
-  assignLicense, revokeAssignment, listAssignments,
+  assignLicense, replayApproved, revokeAssignment, listAssignments,
   listLinkedAssets, assertCanLinkAsset, renewLicense, cancelLicense,
   maskLicenseKey, PRIVILEGED_ROLES,
 };

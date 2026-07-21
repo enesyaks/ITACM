@@ -6,6 +6,8 @@ module.exports = {
   maintenanceService: require('./maintenanceService'),
   dashboardService: require('./dashboardService'),
   employeeService: require('./employeeService'),
+  orgService: require('./orgService'),
+  approvalService: require('./approvalService'),
   offboardService: require('./offboardService'),
   onboardingService: require('./onboardingService'),
   licenseService: require('./licenseService'),

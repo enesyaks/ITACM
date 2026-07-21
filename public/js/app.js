@@ -16,6 +16,7 @@ const ROUTES = {
   '#/providers': { title: 'Providers & Contracts', view: 'providers', icon: 'apartment' },
   '#/consumables': { title: 'Consumables', view: 'consumables', icon: 'inventory_2' },
   '#/employees': { title: 'Employees', view: 'employees', icon: 'badge' },
+  '#/org': { title: 'Organization', view: 'org', icon: 'account_tree' },
   '#/handover': { title: 'Handover Ops', view: 'handover', icon: 'assignment_turned_in' },
   '#/maintenance': { title: 'Maintenance & Repair', view: 'maintenance', icon: 'build' },
   '#/stockcount': { title: 'Stock Count', view: 'stockcount', icon: 'fact_check' },

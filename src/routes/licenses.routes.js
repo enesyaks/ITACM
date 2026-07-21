@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { authenticate, requireRole, requirePermission, requireAnyPermission } = require('../middleware/auth');
 const { asyncHandler } = require('../utils/asyncHandler');
-const { licenseService, documentService } = require('../services');
+const { licenseService, documentService, approvalService } = require('../services');
 const { validateUpload } = require('../utils/uploadGuard');
 const { contentDisposition } = require('../utils/contentDisposition');
 const { redactCosts, redactDocsMeta, gateCostWrite } = require('../utils/financialAccess');
@@ -65,9 +65,25 @@ router.post('/:id/seats', requirePermission('license', 'update'), asyncHandler(a
 router.post('/:id/assign',
   requireAnyPermission([['license', 'assign'], ['license', 'manage']]),
   asyncHandler(async (req, res) => {
+    const employeeId = req.body.employeeId;
+    // Route through the approval workflow when it is enabled and policy requires
+    // it; otherwise (passive default) fall straight through to the assignment.
+    const ap = await approvalService.createRequest({
+      type: 'license_assign',
+      requesterEmployeeId: employeeId,
+      payload: {
+        licenseId: req.params.id,
+        employeeId,
+        itUser: { uid: req.user.uid, username: req.user.username, email: req.user.email },
+      },
+      resourceRef: req.params.id,
+    });
+    if (ap.required) {
+      return res.status(202).json({ success: true, data: { pendingApproval: true, request: ap.request } });
+    }
     res.status(201).json({
       success: true,
-      data: await licenseService.assignLicense(req.params.id, req.body.employeeId, req.user),
+      data: await licenseService.assignLicense(req.params.id, employeeId, req.user),
     });
   }));
 

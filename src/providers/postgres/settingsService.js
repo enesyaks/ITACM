@@ -290,10 +290,18 @@ async function getSettings() {
     `SELECT company_name, company_logo, company_address, onboarded, handover_terms, lifecycles,
             locations, default_location, spec_options, document_storage, handover_template,
             handover_templates, departments, language, currency, label_config,
-            provider_categories, contract_categories, asset_tag_prefix
+            provider_categories, contract_categories, asset_tag_prefix, approvals
      FROM app_settings WHERE id = 1`
   );
   const s = rows[0] || {};
+  // Departments live in their own table now (single source of truth for the org
+  // chart + the Product Catalog list). Fall back to the legacy JSONB column, then
+  // the built-in defaults, so a fresh or mid-migration DB never returns an empty list.
+  let departmentNames = null;
+  try {
+    const dres = await query('SELECT name FROM departments ORDER BY name');
+    departmentNames = dres.rows.map((r) => r.name);
+  } catch { departmentNames = null; }
   const handoverTemplates = normalizeTemplates(s.handover_templates, s.handover_template);
   const handoverTemplate = { ...DEFAULT_HANDOVER_TEMPLATE, ...handoverTemplates[0] };
   let currency = DEFAULT_CURRENCY;
@@ -317,7 +325,10 @@ async function getSettings() {
     lifecycles: sanitizeLifecycles(s.lifecycles),
     locations: (s.locations && s.locations.length) ? s.locations : [...DEFAULT_LOCATIONS],
     defaultLocation: s.default_location || null,
-    departments: (s.departments && s.departments.length) ? s.departments : [...DEFAULT_DEPARTMENTS],
+    departments: (departmentNames && departmentNames.length)
+      ? departmentNames
+      : ((s.departments && s.departments.length) ? s.departments : [...DEFAULT_DEPARTMENTS]),
+    approvals: (s.approvals && typeof s.approvals === 'object') ? s.approvals : { enabled: false },
     providerCategories: (s.provider_categories && s.provider_categories.length)
       ? s.provider_categories : [...DEFAULT_PROVIDER_CATEGORIES],
     contractCategories: (s.contract_categories && s.contract_categories.length)
@@ -383,7 +394,7 @@ async function saveSettings({
   companyName, companyLogo, companyAddress, onboarded, handoverTerms, lifecycles,
   locations, defaultLocation, specOptions, documentStorage, handoverTemplate,
   handoverTemplates, defaultTemplateId, departments, language, currency, labelConfig,
-  providerCategories, contractCategories, assetTagPrefix,
+  providerCategories, contractCategories, assetTagPrefix, approvals,
 }) {
   if (language !== undefined && language !== null && !/^[a-z]{2}(-[A-Za-z]{2,4})?$/.test(String(language))) {
     throw HttpError.badRequest('language must be a short code like "en" or "tr"');
@@ -465,7 +476,8 @@ async function saveSettings({
        provider_categories = CASE WHEN $16::jsonb IS NOT NULL THEN $16 ELSE provider_categories END,
        contract_categories = CASE WHEN $17::jsonb IS NOT NULL THEN $17 ELSE contract_categories END,
        currency = CASE WHEN $18::text IS NOT NULL THEN $18 ELSE currency END,
-       asset_tag_prefix = CASE WHEN $19::text IS NOT NULL THEN $19 ELSE asset_tag_prefix END
+       asset_tag_prefix = CASE WHEN $19::text IS NOT NULL THEN $19 ELSE asset_tag_prefix END,
+       approvals = CASE WHEN $20::jsonb IS NOT NULL THEN $20 ELSE approvals END
      WHERE id = 1`,
     [companyName ?? null, companyLogo ?? null, onboarded ?? null, handoverTerms ?? null,
      lifecyclesClean ? JSON.stringify(lifecyclesClean) : null,
@@ -486,7 +498,8 @@ async function saveSettings({
        ? JSON.stringify(contractCategories.map((d) => String(d).trim()).filter(Boolean))
        : null,
      currencyClean ?? null,
-     assetTagPrefixClean ?? null]
+     assetTagPrefixClean ?? null,
+     approvals !== undefined ? JSON.stringify(approvals) : null]
   );
   return getSettings();
 }

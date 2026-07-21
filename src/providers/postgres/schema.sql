@@ -741,3 +741,49 @@ CREATE TABLE IF NOT EXISTS software_installs (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_software_installs_dedupe ON software_installs (dedupe_key);
 CREATE INDEX IF NOT EXISTS idx_software_installs_name ON software_installs (lower(software_name));
 CREATE INDEX IF NOT EXISTS idx_software_installs_asset ON software_installs (asset_id);
+
+-- Organization chart: departments (with a manager), teams (with a lead) and the
+-- employee hierarchy columns. See migration 036 for the promotion/seed details.
+CREATE TABLE IF NOT EXISTS departments (
+  id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name                TEXT NOT NULL UNIQUE,
+  manager_employee_id UUID REFERENCES employees(id) ON DELETE SET NULL,
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS teams (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name             TEXT NOT NULL,
+  department_id    UUID NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
+  lead_employee_id UUID REFERENCES employees(id) ON DELETE SET NULL,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (department_id, name)
+);
+CREATE INDEX IF NOT EXISTS idx_teams_dept ON teams (department_id);
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS team_id UUID REFERENCES teams(id) ON DELETE SET NULL;
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS manager_employee_id UUID REFERENCES employees(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_emp_team ON employees (team_id) WHERE team_id IS NOT NULL;
+
+-- Generic approval workflow. Ships passive — gated by app_settings.approvals.enabled.
+CREATE TABLE IF NOT EXISTS approval_requests (
+  id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  type                  TEXT NOT NULL,
+  status                TEXT NOT NULL DEFAULT 'pending'
+                          CHECK (status IN ('pending', 'approved', 'rejected', 'cancelled')),
+  requester_employee_id UUID REFERENCES employees(id) ON DELETE SET NULL,
+  requester_name        TEXT,
+  approver_employee_id  UUID REFERENCES employees(id) ON DELETE SET NULL,
+  approver_name         TEXT,
+  levels                JSONB NOT NULL DEFAULT '[]'::jsonb,
+  current_level         INTEGER NOT NULL DEFAULT 0,
+  payload               JSONB NOT NULL DEFAULT '{}'::jsonb,
+  resource_ref          TEXT,
+  summary               TEXT,
+  decided_by            TEXT,
+  decided_at            TIMESTAMPTZ,
+  decision_note         TEXT,
+  created_at            TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_approvals_approver_status ON approval_requests (approver_employee_id, status);
+CREATE INDEX IF NOT EXISTS idx_approvals_requester ON approval_requests (requester_employee_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_approvals_status ON approval_requests (status, created_at DESC);
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS approvals JSONB;

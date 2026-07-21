@@ -1,6 +1,7 @@
 /* =============================== HANDOVERS =============================== */
 Views.handover = async function (el) {
   const canDo = Auth.canIam('handover', 'create');
+  const canCreateEmp = Auth.canIam('employee', 'create');
   const [initialEmpsRes, past] = await Promise.all([
     api('/employees?status=Active&limit=50'),
     api('/handovers?limit=8'),
@@ -22,7 +23,10 @@ Views.handover = async function (el) {
     <div class="ho-grid">
       <div>
         <div class="card card-pad" style="margin-bottom:20px">
-          <div class="section-title" style="margin-bottom:14px"><span class="ms">person_search</span> ${esc(t('handover.selectEmployee'))}</div>
+          <div class="section-title" style="justify-content:space-between;margin-bottom:14px">
+            <span style="display:flex;align-items:center;gap:10px"><span class="ms">person_search</span> ${esc(t('handover.selectEmployee'))}</span>
+            <span id="ho-emp-add-wrap"></span>
+          </div>
           <div class="search-box" style="margin-bottom:14px"><span class="ms">search</span>
             <input type="search" id="ho-emp-search" placeholder="${esc(t('handover.searchEmployee'))}"></div>
           <div id="ho-emp-list" style="max-height:320px;overflow-y:auto"></div>
@@ -140,6 +144,34 @@ Views.handover = async function (el) {
       renderSelEmp();
       renderBasket();
     }));
+
+    // Top-right "Add employee" when the current list is empty (no employees / no search hits).
+    const addWrap = $('#ho-emp-add-wrap', el);
+    if (addWrap) {
+      if (canCreateEmp && empList.length === 0) {
+        addWrap.innerHTML = `<button type="button" class="btn btn-outline btn-sm" id="ho-emp-add"><span class="ms">person_add</span> ${esc(t('common.addNewEmployee'))}</button>`;
+        $('#ho-emp-add', addWrap).addEventListener('click', () => {
+          if (typeof employeeForm !== 'function') return;
+          employeeForm(null, async (created) => {
+            const searchEl = $('#ho-emp-search', el);
+            if (searchEl) searchEl.value = '';
+            await searchEmps('');
+            if (created?.id && (created.status || 'Active') === 'Active') {
+              state.emp = created.id;
+              state.empObj = empList.find((p) => p.id === created.id) || {
+                ...created,
+                activeAssetCount: created.activeAssetCount ?? 0,
+              };
+            }
+            renderEmps();
+            renderSelEmp();
+            renderBasket();
+          });
+        });
+      } else {
+        addWrap.innerHTML = '';
+      }
+    }
   }
 
   /* Server-side employee search (debounced) so all employees are reachable,

@@ -178,6 +178,8 @@ function createApp() {
   app.use('/api/dashboard', require('./routes/dashboard.routes'));
   app.use('/api/assets', require('./routes/assets.routes'));
   app.use('/api/employees', require('./routes/employees.routes'));
+  app.use('/api/org', require('./routes/org.routes'));
+  app.use('/api/approvals', require('./routes/approvals.routes'));
   app.use('/api/onboardings', require('./routes/onboarding.routes'));
   app.use('/api/handovers', require('./routes/handovers.routes'));
   app.use('/api/maintenance', require('./routes/maintenance.routes'));

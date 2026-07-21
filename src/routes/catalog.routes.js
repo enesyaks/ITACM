@@ -1,7 +1,7 @@
 const router = require('express').Router();
 const { authenticate, requireRole, requirePermission } = require('../middleware/auth');
 const { asyncHandler } = require('../utils/asyncHandler');
-const { catalogService, settingsService } = require('../services');
+const { catalogService, settingsService, orgService } = require('../services');
 const { HttpError } = require('../utils/httpError');
 
 router.use(authenticate);
@@ -125,26 +125,17 @@ router.get('/departments', requirePermission('catalog', 'read'), asyncHandler(as
   res.json({ success: true, data: s.departments });
 }));
 
-/** POST /api/catalog/departments — add a department. İzin: catalog:create */
+/** POST /api/catalog/departments — add a department. İzin: catalog:create
+ *  Single source of truth: writes the `departments` table (org chart reads it too). */
 router.post('/departments', requirePermission('catalog', 'create'), asyncHandler(async (req, res) => {
-  const name = String((req.body || {}).name || '').trim();
-  if (!name || name.length > 60) throw HttpError.badRequest('Department name is required (max 60 chars)');
-  const s = await settingsService.getSettings();
-  if (s.departments.some((d) => d.toLowerCase() === name.toLowerCase())) {
-    throw HttpError.conflict(`Department "${name}" already exists`);
-  }
-  const saved = await settingsService.saveSettings({ departments: [...s.departments, name] });
-  res.status(201).json({ success: true, data: saved.departments });
+  const names = await orgService.addDepartment((req.body || {}).name);
+  res.status(201).json({ success: true, data: names });
 }));
 
 /** DELETE /api/catalog/departments/:name — remove a department. İzin: catalog:delete */
 router.delete('/departments/:name', requirePermission('catalog', 'delete'), asyncHandler(async (req, res) => {
-  const name = req.params.name;
-  const s = await settingsService.getSettings();
-  if (!s.departments.includes(name)) throw HttpError.notFound(`Department "${name}" not found`);
-  if (s.departments.length <= 1) throw HttpError.badRequest('At least one department must remain');
-  const saved = await settingsService.saveSettings({ departments: s.departments.filter((d) => d !== name) });
-  res.json({ success: true, data: saved.departments });
+  const names = await orgService.removeDepartment(req.params.name);
+  res.json({ success: true, data: names });
 }));
 
 /* ---- Provider / contract categories (Providers & Contracts forms) ---- */
