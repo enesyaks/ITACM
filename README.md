@@ -379,7 +379,7 @@ If **any** asset is locked, the API returns `409` with a per-asset conflict list
 │       ├── migrations/        Tracked versioned migrations (schema_migrations)
 │       ├── migrate.js         Applies schema.sql + pending migrations
 │       └── *Service.js        assets, employees, providers, audit, offboard, onboarding, …
-├── scripts/                   setup · seed-demo · seed-infra · seed-providers · backup · restore
+├── scripts/                   setup · seed-all · seed-demo · seed-infra · seed-providers · backup · restore
 ├── docker-compose.yml         Self-hosted stack (API + Postgres)
 ├── Dockerfile · docker-entrypoint.sh
 └── .env.example               Fully documented configuration template

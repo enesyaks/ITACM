@@ -379,7 +379,7 @@ POST /api/handovers
 │       ├── migrations/        İzlenen sürümlü migration'lar (schema_migrations)
 │       ├── migrate.js         schema.sql + bekleyen migration'ları uygular
 │       └── *Service.js        assets, employees, providers, audit, offboard, onboarding, …
-├── scripts/                   setup · seed-demo · seed-infra · seed-providers · backup · restore
+├── scripts/                   setup · seed-all · seed-demo · seed-infra · seed-providers · backup · restore
 ├── docker-compose.yml         Kendi sunucunuzda yığın (API + Postgres)
 ├── Dockerfile · docker-entrypoint.sh
 └── .env.example               Tamamı belgeli yapılandırma şablonu
@@ -397,8 +397,8 @@ npm run lint       # sözdizimi kontrolü (server + tüm src/scripts)
 npm run migrate    # şema + bekleyen migration'ları elle uygula (opsiyonel)
 
 # Demo veri (API container içinde — host’ta `npm run seed:*` için DB portunu açmanız gerekir)
-docker compose exec api npm run seed:demo                        # ~500 personel
-docker compose exec -e SEED_EMPLOYEES=2000 api npm run seed:demo -- --reset
+docker compose exec api npm run seed:all -- --reset              # ~100 personel + org şeması + infra + tedarikçi
+docker compose exec -e SEED_EMPLOYEES=100 api npm run seed:demo -- --reset
 docker compose exec api npm run seed:infra                       # ağ/sunucu cihazları + topoloji
 docker compose exec api npm run seed:providers                   # tedarikçi + sözleşmeler
 ```
