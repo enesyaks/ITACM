@@ -151,8 +151,8 @@ Seat pools with atomic claim/release and 30-day expiry alerts. Print scannable *
 </table>
 
 > 🚀 **First-run onboarding** sets your company name, logo and Owner account; branding flows into the UI and every printed receipt.
-> 🧪 **Demo dataset** — with Docker Compose (Postgres is not published on the host by default), seed **inside** the API container:
-> `docker compose exec api npm run seed:demo`, then `seed:infra` / `seed:providers`. Scale with `docker compose exec -e SEED_EMPLOYEES=2000 api npm run seed:demo -- --reset`.
+> 🧪 **Demo dataset** (~100 employees by default) — seed **inside** the API container:
+> `docker compose exec api npm run seed:all -- --reset` (demo + infra + providers). Scale with `SEED_EMPLOYEES=200`. Password for demo IT/Portal users: `Demo123!`.
 
 ---
 
@@ -397,10 +397,11 @@ npm run lint       # syntax check (server + all src/scripts)
 npm run migrate    # apply schema + pending migrations manually (optional)
 
 # Demo data (run inside the API container — host `npm run seed:*` needs DB port published)
-docker compose exec api npm run seed:demo                        # ~500 employees
-docker compose exec -e SEED_EMPLOYEES=2000 api npm run seed:demo -- --reset
+docker compose exec api npm run seed:all -- --reset              # ~100 employees + infra + providers
+docker compose exec -e SEED_EMPLOYEES=100 api npm run seed:demo -- --reset
 docker compose exec api npm run seed:infra                       # network/server gear + topology
 docker compose exec api npm run seed:providers                   # vendors + contracts
+# Demo logins: demo.admin|helpdesk|viewer|user01@example.com / Demo123!
 ```
 
 ---

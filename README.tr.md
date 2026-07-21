@@ -152,7 +152,7 @@ Atomik al/bırak ve 30 günlük süre uyarılı koltuk havuzları. Taranabilir *
 
 > 🚀 **İlk çalıştırma sihirbazı** şirket adınızı, logonuzu ve Owner hesabınızı ayarlar; marka arayüze ve her yazdırılan tutanağa yansır.
 > 🧪 **Demo veri seti** — Docker Compose’ta Postgres varsayılan olarak host’a açılmaz; seed’i **API container içinde** çalıştırın:
-> `docker compose exec api npm run seed:demo`, ardından `seed:infra` / `seed:providers`. Ölçek için `docker compose exec -e SEED_EMPLOYEES=2000 api npm run seed:demo -- --reset`.
+> `docker compose exec api npm run seed:all -- --reset` (demo + infra + providers). Ölçek: `SEED_EMPLOYEES=200`. Demo IT/Portal şifresi: `Demo123!`.
 
 ---
 
