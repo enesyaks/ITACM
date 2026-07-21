@@ -99,7 +99,7 @@ Most asset trackers are either a spreadsheet that rots or a heavyweight SaaS you
 <td width="50%" valign="top">
 
 ### 🖥 Built-in, mobile-ready web UI
-Served by the backend itself — no build step, strict same-origin CSP. 15 modules, global search (Cmd/Ctrl+K), QR codes, dark-mode aware, and a responsive shell with mobile bottom-nav + camera scanner. Just open `http://localhost:8000`.
+Served by the backend itself — no build step, strict same-origin CSP. 16 modules, global search (Cmd/Ctrl+K), QR codes, dark-mode aware, and a responsive shell with mobile bottom-nav + camera scanner. Just open `http://localhost:8000`.
 
 ### 🤝 Atomic handover basket
 Assign multiple assets to an employee in one all-or-nothing transaction, producing a printable handover receipt (Zimmet Tutanağı). Row locks make double-assignment impossible; reprints preserve the original issuer's name.
@@ -118,6 +118,9 @@ Company SIM cards & phone numbers as first-class inventory: operator, plan, ICCI
 
 ### 🧑‍💼 Guided onboarding & offboarding
 Schedule a new hire's kit (reserve assets + lines), then complete it into a single handover. Offboarding is a **transactional checklist** that returns, reassigns, scraps or sells every asset, seat, line and infra responsibility before deactivating the employee.
+
+### 🌳 Organization chart
+Departments (with a **manager**), teams (with a **lead**) and their members drawn as an interactive **topology graph** — the same node-and-edge style as the network view. Assign or change a manager/lead in one click, add teams, and move people between them. Departments are a **single source of truth**: add one in the Product Catalog and it shows up here instantly, ready for a manager. Great for helpdesk escalation — one glance shows who to contact.
 
 </td>
 <td width="50%" valign="top">
@@ -168,6 +171,7 @@ The sidebar maps 1:1 to the feature set:
 | **Providers & Contracts** | Vendor directory + commercial agreements with renewal tracking and documents |
 | **Consumables** | Stock movements with low-stock alerts |
 | **Employees** | Directory, per-person detail (assets/licenses/lines/infra), onboarding & offboarding |
+| **Organization** | Department → team → member topology chart; assign managers/leads, move people, helpdesk escalation |
 | **Handover Ops** | Atomic handover basket + printable/PDF receipts |
 | **Maintenance & Repair** | Send to repair / return / scrap, with document attachments |
 | **Stock Count** | Physical count sessions with camera scanning and reconciliation |

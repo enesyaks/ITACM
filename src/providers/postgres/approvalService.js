@@ -119,8 +119,10 @@ async function listAllPending() {
 async function decide(id, { decision, note = '', deciderName = '', deciderEmployeeId = null, isAdmin = false }) {
   const req = await getRequest(id);
   if (req.status !== 'pending') throw HttpError.badRequest('This request has already been decided');
-  // Only the assigned approver (or an admin override) may decide.
-  if (!isAdmin && deciderEmployeeId && req.approverEmployeeId && deciderEmployeeId !== req.approverEmployeeId) {
+  // Only the assigned approver (or an admin override) may decide. A non-admin
+  // caller MUST resolve to an employee that matches the request's approver — a
+  // null deciderEmployeeId (no linked employee record) is never authorized.
+  if (!isAdmin && (!deciderEmployeeId || deciderEmployeeId !== req.approverEmployeeId)) {
     throw HttpError.forbidden('You are not the approver for this request');
   }
 

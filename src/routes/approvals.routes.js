@@ -18,8 +18,8 @@ const isAdmin = (req) => ['Owner', 'Admin'].includes(req.user && req.user.role);
 
 /* ------------------------- Feature flag / policy ------------------------- */
 
-/** GET /api/approvals/config — current enabled state + per-action policy. */
-router.get('/config', asyncHandler(async (req, res) => {
+/** GET /api/approvals/config — current enabled state + per-action policy. Owner/Admin only. */
+router.get('/config', requireRole('Owner', 'Admin'), asyncHandler(async (req, res) => {
   res.json({ success: true, data: await approvalService.getConfig() });
 }));
 

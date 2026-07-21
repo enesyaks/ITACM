@@ -99,7 +99,7 @@ Donanım ve ağ envanteri · yazdırılabilir PDF tutanaklı personel zimmetleri
 <td width="50%" valign="top">
 
 ### 🖥 Dahili, mobil uyumlu web arayüzü
-Backend'in kendisi sunar — build adımı yok, katı same-origin CSP. 15 modül, global arama (Cmd/Ctrl+K), QR kodlar, koyu tema uyumu ve mobil alt menü + kamera tarayıcılı duyarlı kabuk. Sadece `http://localhost:8000` adresini açın.
+Backend'in kendisi sunar — build adımı yok, katı same-origin CSP. 16 modül, global arama (Cmd/Ctrl+K), QR kodlar, koyu tema uyumu ve mobil alt menü + kamera tarayıcılı duyarlı kabuk. Sadece `http://localhost:8000` adresini açın.
 
 ### 🤝 Atomik zimmet sepeti
 Birden çok cihazı tek "ya hep ya hiç" işlemle bir personele atayın; yazdırılabilir Zimmet Tutanağı üretir. Satır kilitleri çift atamayı imkânsız kılar; yeniden yazdırmada orijinal teslim edenin adı korunur.
@@ -118,6 +118,9 @@ Kurumsal SIM kartlar ve telefon numaraları birer envanter kalemi: operatör, ta
 
 ### 🧑‍💼 Rehberli işe alım & çıkış
 Yeni çalışanın setini planlayın (cihaz + hat rezerve edin), sonra tek zimmete dönüştürün. Çıkış (offboarding) ise **işlemsel bir kontrol listesidir**: personeli pasifleştirmeden önce her cihazı, koltuğu, hattı ve altyapı sorumluluğunu iade eder, devreder, hurdaya ayırır veya satar.
+
+### 🌳 Organizasyon şeması
+**Yöneticili** departmanlar, **lead'li** takımlar ve üyeleri; ağ görünümüyle aynı düğüm-bağlantı stilinde **interaktif topoloji grafiği** olarak. Yönetici/lead'i tek tıkla ata veya değiştir, takım ekle, kişileri aralarında taşı. Departmanlar **tek kaynak**: Ürün Kataloğu'ndan eklediğin anında burada belirir, yöneticisi atanmaya hazır. Helpdesk eskalasyonu için ideal — kiminle iletişime geçileceği tek bakışta belli.
 
 </td>
 <td width="50%" valign="top">
@@ -168,6 +171,7 @@ Kenar menü, özellik setiyle bire bir eşleşir:
 | **Tedarikçi & Sözleşmeler** | Tedarikçi rehberi + yenileme takipli ticari sözleşmeler ve belgeler |
 | **Sarf Malzemeleri** | Düşük stok uyarılı stok hareketleri |
 | **Personel** | Rehber, kişi bazlı detay (cihaz/lisans/hat/altyapı), işe alım & çıkış |
+| **Organizasyon** | Departman → takım → üye topoloji şeması; yönetici/lead ata, kişileri taşı, helpdesk eskalasyonu |
 | **Zimmet İşlemleri** | Atomik zimmet sepeti + yazdırılabilir/PDF tutanaklar |
 | **Bakım & Onarım** | Servise gönder / iade / hurda, belge ekleriyle |
 | **Sayım** | Kamera taramalı fiziksel sayım oturumları ve mutabakat |
