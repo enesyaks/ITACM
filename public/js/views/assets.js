@@ -18,6 +18,27 @@ Views.assets = async function (el, params = {}) {
     : (assignScopeOnly ? ['Assigned'] : (assignUnassignScopeOnly ? ['In Stock', 'Assigned'] : null));
   const canEdit = canCreate || canUpdate;
   const PAGE_SIZE = 50;
+  const HW_SORT_KEYS = new Set(['assetTag', 'brand', 'category', 'serialNumber', 'mac', 'location', 'status']);
+  const HW_SORT_LS_KEY = 'itacm_hw_sort';
+  const loadHwSortPref = () => {
+    try {
+      const raw = JSON.parse(localStorage.getItem(HW_SORT_LS_KEY) || 'null');
+      if (raw && HW_SORT_KEYS.has(raw.sort)) {
+        return { sort: raw.sort, order: raw.order === 'desc' ? 'desc' : 'asc' };
+      }
+    } catch { /* private mode */ }
+    return { sort: 'assetTag', order: 'asc' };
+  };
+  const saveHwSortPref = (sort, order) => {
+    try { localStorage.setItem(HW_SORT_LS_KEY, JSON.stringify({ sort, order })); } catch { /* ignore */ }
+  };
+  const sortHwItems = (list, sort, order) =>
+    sortByKey(list, sort, order, assetFieldSortValue, 'assetTag');
+  const pref = loadHwSortPref();
+  const sortKey = HW_SORT_KEYS.has(params.sort) ? params.sort : pref.sort;
+  const sortOrder = (params.order === 'asc' || params.order === 'desc')
+    ? params.order
+    : (params.sort ? 'asc' : pref.order);
   const useLifecycle = params.lifecycle === 'overdue' || params.lifecycle === 'soon';
   const page = Math.max(1, Number(params.page) || 1);
   const HW_CATS = ['Laptop', 'Desktop', 'Monitor', 'Television', 'Phone', 'Tablet', 'Printer', 'Keyboard', 'Mouse', 'Headset', 'Docking Station', 'Webcam', 'Peripheral', 'Accessory', 'Other'];
@@ -34,6 +55,8 @@ Views.assets = async function (el, params = {}) {
   else q.set('categories', HW_CATS.join(','));
   if (selectedLocs.length) q.set('location', selectedLocs.join(','));
   if (params.search) q.set('search', params.search);
+  q.set('sort', sortKey);
+  q.set('order', sortOrder);
   if (useLifecycle) {
     q.set('limit', '2000');
   } else {
@@ -81,6 +104,7 @@ Views.assets = async function (el, params = {}) {
       });
     }
     total = items.length;
+    items = sortHwItems(items, sortKey, sortOrder);
   }
 
   const pages = Math.max(1, Math.ceil((useLifecycle ? items.length : total) / PAGE_SIZE));
@@ -107,8 +131,12 @@ Views.assets = async function (el, params = {}) {
     category: selectedCats.join(','),
     location: selectedLocs.join(','),
     lifecycle: params.lifecycle || '',
+    sort: sortKey,
+    order: sortOrder,
     page: String(safePage),
   });
+  const sortTh = (key, label, extraClass = '') =>
+    sortThHtml(key, label, sortKey, sortOrder, extraClass);
 
   el.innerHTML = `
     ${pageHead(
@@ -231,12 +259,12 @@ Views.assets = async function (el, params = {}) {
     <div class="table-wrap"><table class="data hw-table">
       <thead><tr>
         <th class="hw-col-check"><input type="checkbox" id="sel-all" ${!(canUpdate || canUnassign || canRepair) ? 'disabled' : ''}></th>
-        <th class="hw-col-id">Asset ID</th>
-        <th>Brand &amp; Model</th>
-        <th>Serial No</th>
-        <th class="hw-col-mac">MAC</th>
-        <th>Location</th>
-        <th>${esc(t('common.status'))}</th>
+        ${sortTh('assetTag', t('hw.colAssetId') || 'Asset ID', 'hw-col-id')}
+        ${sortTh('brand', t('hw.colBrandModel') || 'Brand & Model')}
+        ${sortTh('serialNumber', t('hw.colSerial') || 'Serial No')}
+        ${sortTh('mac', t('hw.colMac') || 'MAC', 'hw-col-mac')}
+        ${sortTh('location', t('network.colLocation') || 'Location')}
+        ${sortTh('status', t('common.status'))}
         <th class="hw-col-actions"></th>
       </tr></thead>
       <tbody>
@@ -429,6 +457,13 @@ Views.assets = async function (el, params = {}) {
       return;
     }
     if (b.dataset.qr) { showQrModal(byId(b.dataset.qr)); return; }
+    if (b.dataset.sort) {
+      const nextSort = b.dataset.sort;
+      const nextOrder = b.dataset.order === 'desc' ? 'desc' : 'asc';
+      saveHwSortPref(nextSort, nextOrder);
+      rerender({ sort: nextSort, order: nextOrder, page: 1 });
+      return;
+    }
     if (b.dataset.page) { rerender({ page: Number(b.dataset.page) }); return; }
     if (b.dataset.clear) {
       const key = b.dataset.clear;

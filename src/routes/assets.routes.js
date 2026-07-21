@@ -81,6 +81,8 @@ function assertAssetInScope(caps, asset) {
  *  İzin: asset:read | manage | unassign | assign  (create/update alone do NOT list)
  *  Scoped (no read/manage):
  *    unassign → In Stock | assign → Assigned | both → In Stock + Assigned
+ *  Query: sort=assetTag|brand|category|serialNumber|mac|location|status
+ *         order=asc|desc
  */
 router.get('/', asyncHandler(async (req, res) => {
   const caps = await assetCaps(req.user);

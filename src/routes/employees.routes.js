@@ -50,7 +50,9 @@ async function applyDepartmentScope(user, query) {
   return { ...query, department: allowed.join(',') };
 }
 
-/** GET /api/employees — Employee Directory. İzin: employee:read (+ optional department constraint) */
+/** GET /api/employees — Employee Directory. İzin: employee:read (+ optional department constraint)
+ *  Query: sort=name|department|assets|status  order=asc|desc
+ */
 router.get('/', requirePermission('employee', 'read'), asyncHandler(async (req, res) => {
   const query = await applyDepartmentScope(req.user, { ...req.query });
   if (query.department === '__none__') {

@@ -4070,6 +4070,48 @@ table.data.audit-table tr.audit-row:focus-visible {
 /* Hardware inventory table */
 .hw-card { overflow: hidden; }
 .hw-table td { vertical-align: middle; }
+/* Sortable column headers (shared) */
+th.col-sort,
+th.hw-col-sort { padding: 0; }
+.th-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  margin: 0;
+  padding: 12px 16px;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.th-sort:hover,
+.th-sort:focus-visible {
+  color: var(--on-surface);
+  opacity: 1;
+  outline: none;
+}
+.th-sort .sort-ind {
+  font-size: 16px;
+  line-height: 1;
+  opacity: .4;
+}
+.th-sort.is-active .sort-ind {
+  opacity: 1;
+  color: var(--primary);
+}
+th.col-sort.is-sorted,
+th.hw-col-sort.is-sorted {
+  color: var(--on-surface);
+  opacity: 1;
+}
 .hw-table th.hw-col-check,
 .hw-table td.hw-col-check {
   width: 36px;

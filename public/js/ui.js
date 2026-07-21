@@ -1018,3 +1018,193 @@ function customFieldsDetailHtml(defs, values = {}) {
   if (!rows.length) return '';
   return `<div class="full"><span class="cell-sub">Custom fields</span></div>${rows.join('')}`;
 }
+
+/* ---------- Shared column sorting (hardware list, assign pickers, …) ---------- */
+
+/** Locale + numeric compare for A→Z / 1→9 (and desc). */
+function localeCmp(a, b) {
+  return String(a ?? '').localeCompare(String(b ?? ''), undefined, { numeric: true, sensitivity: 'base' });
+}
+
+/**
+ * Clickable sortable `<th>` matching the hardware inventory pattern.
+ * Uses `data-sort` / `data-order` on the button for handlers.
+ */
+function sortThHtml(key, label, sortKey, sortOrder, extraClass = '') {
+  const active = sortKey === key;
+  const icon = !active ? 'unfold_more' : (sortOrder === 'desc' ? 'arrow_downward' : 'arrow_upward');
+  const nextOrder = active && sortOrder === 'asc' ? 'desc' : 'asc';
+  const aria = active
+    ? (sortOrder === 'asc' ? (t('hw.sortAsc') || 'Sorted ascending') : (t('hw.sortDesc') || 'Sorted descending'))
+    : `${t('hw.sortBy') || 'Sort by'} ${label}`;
+  const cls = ['hw-col-sort', extraClass, active ? 'is-sorted' : ''].filter(Boolean).join(' ');
+  return `<th class="${cls}" aria-sort="${active ? (sortOrder === 'asc' ? 'ascending' : 'descending') : 'none'}">
+    <button type="button" class="th-sort${active ? ' is-active' : ''}" data-sort="${esc(key)}" data-order="${esc(nextOrder)}" title="${esc(aria)}" aria-label="${esc(aria)}">
+      <span>${esc(label)}</span>
+      <span class="ms sort-ind" aria-hidden="true">${icon}</span>
+    </button>
+  </th>`;
+}
+
+/**
+ * Stable client-side sort. `getValue(item, key)` returns the compare string/number.
+ * Optional `tieKey` (string field or fn) breaks ties.
+ */
+function sortByKey(list, key, order, getValue, tieKey = null) {
+  const mul = order === 'desc' ? -1 : 1;
+  const tieOf = (row) => {
+    if (!tieKey) return '';
+    if (typeof tieKey === 'function') return tieKey(row);
+    return row[tieKey];
+  };
+  return (list || []).slice().sort((a, b) => {
+    const c = localeCmp(getValue(a, key), getValue(b, key));
+    if (c) return c * mul;
+    return localeCmp(tieOf(a), tieOf(b)) * mul;
+  });
+}
+
+/** Common asset field extractor for inventory / assign pickers. */
+function assetFieldSortValue(x, key) {
+  switch (key) {
+    case 'brand':
+    case 'name':
+      return `${x.brand || ''} ${x.model || ''}`.trim().toLowerCase();
+    case 'category':
+      return String(x.category || '').toLowerCase();
+    case 'serialNumber':
+      return String(x.serialNumber || '').toLowerCase();
+    case 'tagSn':
+      return `${x.assetTag || ''} ${x.serialNumber || ''}`.trim().toLowerCase();
+    case 'mac':
+      return String(x.macEthernet || x.macWifi || '').toLowerCase();
+    case 'location':
+      return String(x.location || '').toLowerCase();
+    case 'status':
+      return String(x.status || '').toLowerCase();
+    case 'assetTag':
+    default:
+      return String(x.assetTag || '').toLowerCase();
+  }
+}
+
+function lineFieldSortValue(l, key) {
+  switch (key) {
+    case 'operator':
+      return String(l.operator || '').toLowerCase();
+    case 'plan':
+      return String(l.plan || '').toLowerCase();
+    case 'simSerial':
+      return String(l.simSerial || '').toLowerCase();
+    case 'phoneNumber':
+    default:
+      return String(l.phoneNumber || '').toLowerCase();
+  }
+}
+
+/** Wire `.th-sort` clicks inside `root`; `onSort(key, order)` receives next sort. */
+function bindSortHeaders(root, onSort) {
+  if (!root || typeof onSort !== 'function') return;
+  root.addEventListener('click', (e) => {
+    const btn = e.target.closest('button.th-sort');
+    if (!btn || !root.contains(btn)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const key = btn.dataset.sort;
+    const order = btn.dataset.order === 'desc' ? 'desc' : 'asc';
+    if (key) onSort(key, order);
+  });
+}
+
+/* ---- Shared clickable table-header sorting ---- */
+function tableSortLoad(storageKey, allowed, fallback) {
+  const fb = fallback || { sort: 'name', order: 'asc' };
+  try {
+    const raw = JSON.parse(localStorage.getItem(storageKey) || 'null');
+    if (raw && allowed.has(raw.sort)) {
+      return { sort: raw.sort, order: raw.order === 'desc' ? 'desc' : 'asc' };
+    }
+  } catch { /* private mode */ }
+  return { sort: fb.sort, order: fb.order === 'desc' ? 'desc' : 'asc' };
+}
+
+function tableSortSave(storageKey, sort, order) {
+  try { localStorage.setItem(storageKey, JSON.stringify({ sort, order })); } catch { /* ignore */ }
+}
+
+function tableSortResolve(params, { allowed, storageKey, defaultSort, defaultOrder }) {
+  const pref = tableSortLoad(storageKey, allowed, { sort: defaultSort, order: defaultOrder || 'asc' });
+  const sort = allowed.has(params && params.sort) ? params.sort : pref.sort;
+  const order = (params && (params.order === 'asc' || params.order === 'desc'))
+    ? params.order
+    : ((params && params.sort) ? 'asc' : pref.order);
+  return { sort, order };
+}
+
+function tableSortNext(active, currentOrder) {
+  return active && currentOrder === 'asc' ? 'desc' : 'asc';
+}
+
+function tableSortToggle(state, clickedKey) {
+  const active = state.sort === clickedKey;
+  return { sort: clickedKey, order: tableSortNext(active, state.order) };
+}
+
+/** HTML for a sortable <th> button. */
+function tableSortTh(key, label, { sort, order, extraClass = '', scope = '' } = {}) {
+  const active = sort === key;
+  const icon = !active ? 'unfold_more' : (order === 'desc' ? 'arrow_downward' : 'arrow_upward');
+  const nextOrder = tableSortNext(active, order);
+  const aria = active
+    ? (order === 'asc' ? (t('hw.sortAsc') || 'Sorted ascending') : (t('hw.sortDesc') || 'Sorted descending'))
+    : `${t('hw.sortBy') || 'Sort by'} ${label}`;
+  const cls = ['col-sort', extraClass, active ? 'is-sorted' : ''].filter(Boolean).join(' ');
+  const scopeAttr = scope ? ` data-sort-scope="${esc(scope)}"` : '';
+  return `<th class="${cls}" aria-sort="${active ? (order === 'asc' ? 'ascending' : 'descending') : 'none'}">
+    <button type="button" class="th-sort${active ? ' is-active' : ''}" data-sort="${esc(key)}" data-order="${esc(nextOrder)}"${scopeAttr} title="${esc(aria)}" aria-label="${esc(aria)}">
+      <span>${esc(label)}</span>
+      <span class="ms sort-ind" aria-hidden="true">${icon}</span>
+    </button>
+  </th>`;
+}
+
+function tableSortCmp(va, vb, type) {
+  if (type === 'number') {
+    const na = Number(va); const nb = Number(vb);
+    const aOk = Number.isFinite(na); const bOk = Number.isFinite(nb);
+    if (aOk && bOk) return na - nb;
+    if (aOk) return -1;
+    if (bOk) return 1;
+    return 0;
+  }
+  if (type === 'date') {
+    const ta = va ? new Date(va).getTime() : NaN;
+    const tb = vb ? new Date(vb).getTime() : NaN;
+    const aOk = Number.isFinite(ta); const bOk = Number.isFinite(tb);
+    if (aOk && bOk) return ta - tb;
+    if (aOk) return -1;
+    if (bOk) return 1;
+    return 0;
+  }
+  return String(va == null ? '' : va).localeCompare(String(vb == null ? '' : vb), undefined, {
+    numeric: true, sensitivity: 'base',
+  });
+}
+
+/**
+ * Sort a list by column key.
+ * getters: { key: (row) => value } or { key: { get, type } }
+ */
+function tableSortBy(list, key, order, getters) {
+  const spec = getters[key] || getters._default;
+  if (!spec) return list.slice();
+  const get = typeof spec === 'function' ? spec : spec.get;
+  const type = typeof spec === 'function' ? 'text' : (spec.type || 'text');
+  const mul = order === 'desc' ? -1 : 1;
+  const tie = getters._tie || ((r) => String(r.id || ''));
+  return list.slice().sort((a, b) => {
+    const c = tableSortCmp(get(a), get(b), type);
+    if (c) return c * mul;
+    return tableSortCmp(tie(a), tie(b), 'text') * mul;
+  });
+}

@@ -15,6 +15,22 @@ Views.handover = async function (el) {
   // empObj holds the SELECTED employee object so it survives a new search that
   // no longer contains them.
   const state = { emp: null, empObj: null, hwFilter: '', lineFilter: '', docType: 'single' };
+  const HW_SORT_KEYS = new Set(['brand', 'tag', 'category']);
+  const LINE_SORT_KEYS = new Set(['phone', 'operator', 'plan']);
+  let hwSort = tableSortLoad('itacm_ho_hw_sort', HW_SORT_KEYS, { sort: 'brand', order: 'asc' });
+  let lineSort = tableSortLoad('itacm_ho_line_sort', LINE_SORT_KEYS, { sort: 'phone', order: 'asc' });
+  const HW_GETTERS = {
+    brand: (x) => `${x.brand || ''} ${x.model || ''}`.trim(),
+    tag: (x) => `${x.assetTag || ''} ${x.serialNumber || ''}`.trim(),
+    category: (x) => x.category || '',
+    _tie: (x) => x.assetTag,
+  };
+  const LINE_GETTERS = {
+    phone: (l) => l.phoneNumber,
+    operator: (l) => l.operator || '',
+    plan: (l) => l.plan || '',
+    _tie: (l) => l.phoneNumber,
+  };
 
   /* ---- static shell: rendered ONCE so search inputs never lose focus ---- */
   el.innerHTML = `
@@ -45,7 +61,7 @@ Views.handover = async function (el) {
               <input type="search" id="ho-hw-search" placeholder="${esc(t('handover.searchHardware'))}"></div>
           </div>
           <div class="table-wrap" style="max-height:280px;overflow-y:auto"><table class="data">
-            <thead><tr><th style="width:34px"></th><th>Asset Name</th><th>Tag / SN</th><th style="text-align:right">Category</th></tr></thead>
+            <thead id="ho-stock-head"></thead>
             <tbody id="ho-stock-body"></tbody>
           </table></div>
         </div>
@@ -63,7 +79,7 @@ Views.handover = async function (el) {
               <input type="search" id="ho-line-search" placeholder="${esc(t('handover.searchLines'))}"></div>
           </div>
           <div class="table-wrap" style="max-height:220px;overflow-y:auto"><table class="data">
-            <thead><tr><th style="width:34px"></th><th>${esc(t('lines.phone'))}</th><th>${esc(t('lines.operator'))}</th><th>${esc(t('lines.plan'))}</th></tr></thead>
+            <thead id="ho-line-head"></thead>
             <tbody id="ho-line-body"></tbody>
           </table></div>
         </div>
@@ -203,7 +219,13 @@ Views.handover = async function (el) {
 
   function renderStock() {
     $('#ho-stock-count', el).textContent = `${t('handover.availableHardware')} (${stockTotal})`;
-    const rows = stock.slice(0, 200);
+    const head = $('#ho-stock-head', el);
+    if (head) {
+      const th = (k, lab, extra) => tableSortTh(k, lab, { sort: hwSort.sort, order: hwSort.order, extraClass: extra || '', scope: 'ho-hw' });
+      head.innerHTML = `<tr><th style="width:34px"></th>${th('brand', t('handover.colAssetName') || 'Asset Name')}${th('tag', t('handover.colTagSn') || 'Tag / SN')}${th('category', t('emp.colCategory') || 'Category')}</tr>`;
+    }
+    const sorted = tableSortBy(stock, hwSort.sort, hwSort.order, HW_GETTERS);
+    const rows = sorted.slice(0, 200);
     const tbody = $('#ho-stock-body', el);
     tbody.innerHTML = (rows.length === 0
       ? '<tr><td colspan="4" class="table-empty">No in-stock assets match your search.</td></tr>'
@@ -235,10 +257,16 @@ Views.handover = async function (el) {
 
   function renderLines() {
     $('#ho-line-count', el).textContent = `${t('handover.availableLines')} (${freeLines.length})`;
+    const head = $('#ho-line-head', el);
+    if (head) {
+      const th = (k, lab) => tableSortTh(k, lab, { sort: lineSort.sort, order: lineSort.order, scope: 'ho-line' });
+      head.innerHTML = `<tr><th style="width:34px"></th>${th('phone', t('lines.phone'))}${th('operator', t('lines.operator'))}${th('plan', t('lines.plan'))}</tr>`;
+    }
+    const sortedLines = tableSortBy(freeLines, lineSort.sort, lineSort.order, LINE_GETTERS);
     const tbody = $('#ho-line-body', el);
-    tbody.innerHTML = freeLines.length === 0
+    tbody.innerHTML = sortedLines.length === 0
       ? `<tr><td colspan="4" class="table-empty">${esc(t('handover.noFreeLines'))}</td></tr>`
-      : freeLines.map((l) => `
+      : sortedLines.map((l) => `
         <tr class="hw-row" data-line="${esc(l.id)}">
           <td><input type="checkbox" ${lineBasket.has(l.id) ? 'checked' : ''} ${!canDo ? 'disabled' : ''}></td>
           <td class="mono cell-title">${esc(l.phoneNumber)}</td>
@@ -354,6 +382,22 @@ Views.handover = async function (el) {
   }
 
   /* ---- static bindings (attached once — inputs keep focus while typing) ---- */
+  el.addEventListener('click', (e) => {
+    const b = e.target.closest('button.th-sort[data-sort-scope]');
+    if (!b) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const scope = b.dataset.sortScope;
+    if (scope === 'ho-hw') {
+      hwSort = tableSortToggle(hwSort, b.dataset.sort);
+      tableSortSave('itacm_ho_hw_sort', hwSort.sort, hwSort.order);
+      renderStock();
+    } else if (scope === 'ho-line') {
+      lineSort = tableSortToggle(lineSort, b.dataset.sort);
+      tableSortSave('itacm_ho_line_sort', lineSort.sort, lineSort.order);
+      renderLines();
+    }
+  });
   $('#ho-emp-search', el).addEventListener('input', (e) => {
     const term = e.target.value.trim();
     clearTimeout(empSearchTimer);

@@ -6,6 +6,13 @@ Views.employees = async function (el, params = {}) {
   const canOnboard = Auth.canIam('onboarding', 'create') || Auth.canIam('onboarding', 'update');
   const PAGE = 50;
   const page = Math.max(1, Number(params.page) || 1);
+  const EMP_SORT_KEYS = new Set(['name', 'department', 'assets', 'status']);
+  const { sort: sortKey, order: sortOrder } = tableSortResolve(params, {
+    allowed: EMP_SORT_KEYS,
+    storageKey: 'itacm_emp_sort',
+    defaultSort: 'name',
+    defaultOrder: 'asc',
+  });
   const EMP_STATUSES = ['Active', 'Inactive'];
   const selectedStatus = csvList(params.status).filter((s) => EMP_STATUSES.includes(s));
   const deptCatalog = AppConfig.departments || [];
@@ -15,6 +22,8 @@ Views.employees = async function (el, params = {}) {
   if (params.search) q.set('search', params.search);
   if (selectedStatus.length) q.set('status', selectedStatus.join(','));
   if (selectedDepts.length) q.set('department', selectedDepts.join(','));
+  q.set('sort', sortKey);
+  q.set('order', sortOrder);
   q.set('limit', String(PAGE));
   q.set('offset', String((page - 1) * PAGE));
   const { items, total, summary } = employeeList(await api('/employees?' + q.toString()));
@@ -40,8 +49,11 @@ Views.employees = async function (el, params = {}) {
     search: params.search || '',
     status: selectedStatus.join(','),
     department: selectedDepts.join(','),
+    sort: sortKey,
+    order: sortOrder,
     page: String(page),
   });
+  const empTh = (key, label) => tableSortTh(key, label, { sort: sortKey, order: sortOrder });
 
   el.innerHTML = `
     ${pageHead('Employee Directory', 'Manage personnel and their assigned IT assets.', `
@@ -94,7 +106,14 @@ Views.employees = async function (el, params = {}) {
     <div class="card">
       <div class="m-emp-list" id="emp-mlist"></div>
       <div class="table-wrap"><table class="data">
-        <thead><tr><th>Employee</th><th>ID / Sicil No</th><th>Department</th><th>Assigned Assets</th><th>Status</th><th style="text-align:right">Actions</th></tr></thead>
+        <thead><tr>
+          ${empTh('name', t('emp.colEmployee') || 'Employee')}
+          <th>ID / Sicil No</th>
+          ${empTh('department', t('emp.colDepartment') || 'Department')}
+          ${empTh('assets', t('emp.assignedAssets') || 'Assigned Assets')}
+          ${empTh('status', t('common.status') || 'Status')}
+          <th style="text-align:right">Actions</th>
+        </tr></thead>
         <tbody id="emp-tbody"></tbody>
       </table></div>
       <div class="table-foot" id="emp-foot"></div>
@@ -197,6 +216,12 @@ Views.employees = async function (el, params = {}) {
   bindView(el, (e) => {
     if (e.target.closest('.msel')) return;
     const btn = e.target.closest('button');
+    if (btn && btn.dataset.sort) {
+      const next = tableSortToggle({ sort: sortKey, order: sortOrder }, btn.dataset.sort);
+      tableSortSave('itacm_emp_sort', next.sort, next.order);
+      setHash({ ...cur(), sort: next.sort, order: next.order, page: 1 });
+      return;
+    }
     if (btn && btn.dataset.edit) {
       if (!canUpdate) return;
       employeeForm(items.find((x) => x.id === btn.dataset.edit), () => setHash(cur()));
@@ -374,7 +399,102 @@ async function showEmployeeDetail(emp) {
   ].sort((a, b) => new Date(b.ts) - new Date(a.ts));
   const fmtKB = (n) => (n >= 1024 * 1024 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB');
 
+  const ASSET_GETTERS = {
+    assetTag: (a) => a.assetTag,
+    brand: (a) => `${a.brand || ''} ${a.model || ''}`.trim(),
+    serialNumber: (a) => a.serialNumber,
+    category: (a) => a.category,
+    location: (a) => a.location || '',
+    _tie: (a) => a.assetTag,
+  };
+  const LINE_GETTERS = {
+    phone: (l) => l.phoneNumber,
+    operator: (l) => l.operator || '',
+    plan: (l) => l.plan || '',
+    sim: (l) => l.simSerial || '',
+    _tie: (l) => l.phoneNumber,
+  };
+  let detailSort = {
+    assets: tableSortLoad('itacm_emp_detail_assets', new Set(['assetTag', 'brand', 'serialNumber', 'category']), { sort: 'assetTag', order: 'asc' }),
+    infra: tableSortLoad('itacm_emp_detail_infra', new Set(['assetTag', 'brand', 'location', 'category']), { sort: 'assetTag', order: 'asc' }),
+    lines: tableSortLoad('itacm_emp_detail_lines', new Set(['phone', 'operator', 'plan', 'sim']), { sort: 'phone', order: 'asc' }),
+  };
+
+  function renderAssignedAssetsHtml() {
+    const st = detailSort.assets;
+    const th = (k, lab) => tableSortTh(k, lab, { sort: st.sort, order: st.order, scope: 'assets' });
+    if (!assets.length) return `<div class="cell-sub" style="margin-bottom:16px">${esc(t('emp.noAssets'))}</div>`;
+    const rows = tableSortBy(assets, st.sort, st.order, ASSET_GETTERS);
+    return `<div class="table-wrap" style="margin-bottom:18px;border:1px solid var(--outline-variant);border-radius:var(--radius-lg)">
+        <table class="data">
+          <thead><tr>${th('assetTag', t('hw.colAssetId') || 'Asset Tag')}${th('brand', t('hw.colBrandModel') || 'Brand & Model')}${th('serialNumber', t('hw.colSerial') || 'Serial No')}${th('category', t('emp.colCategory') || 'Category')}${canReturnAsset ? '<th style="text-align:right"></th>' : ''}</tr></thead>
+          <tbody>
+            ${rows.map((a) => `
+            <tr>
+              <td class="mono">${esc(a.assetTag)}</td>
+              <td><div style="display:flex;align-items:center;gap:8px">
+                <span class="ms" style="color:var(--on-surface-variant)">${catIcon(a.category)}</span>
+                <span class="cell-title">${esc(a.brand)} ${esc(a.model)}</span></div></td>
+              <td class="mono">${esc(a.serialNumber)}</td>
+              <td class="cell-sub">${esc(a.category)}</td>
+              ${canReturnAsset ? `<td class="actions">
+                <button class="btn btn-outline btn-sm" data-return-asset="${esc(a.id)}">
+                  <span class="ms">undo</span> Return</button></td>` : ''}
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`;
+  }
+
+  function renderInfraHtml() {
+    const st = detailSort.infra;
+    const th = (k, lab) => tableSortTh(k, lab, { sort: st.sort, order: st.order, scope: 'infra' });
+    if (!infra.length) return `<div class="cell-sub" style="margin-bottom:16px">${esc(t('emp.noInfra'))}</div>`;
+    const rows = tableSortBy(infra, st.sort, st.order, ASSET_GETTERS);
+    return `<div class="table-wrap" style="margin-bottom:18px;border:1px solid var(--outline-variant);border-radius:var(--radius-lg)">
+        <table class="data">
+          <thead><tr>${th('assetTag', t('hw.colAssetId') || 'Asset Tag')}${th('brand', t('emp.colDevice') || 'Device')}${th('location', t('network.colLocation') || 'Location')}${th('category', t('emp.colCategory') || 'Category')}</tr></thead>
+          <tbody>
+            ${rows.map((a) => `
+            <tr>
+              <td class="mono">${esc(a.assetTag)}</td>
+              <td><div style="display:flex;align-items:center;gap:8px">
+                <span class="ms" style="color:var(--on-surface-variant)">${catIcon(a.category)}</span>
+                <span class="cell-title">${esc(a.brand)} ${esc(a.model)}</span></div></td>
+              <td>${esc(a.location || '—')}</td>
+              <td class="cell-sub">${esc(a.category)}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`;
+  }
+
+  function renderLinesHtml() {
+    const st = detailSort.lines;
+    const th = (k, lab) => tableSortTh(k, lab, { sort: st.sort, order: st.order, scope: 'lines' });
+    if (!lines.length) return `<div class="cell-sub" style="margin-bottom:16px">${esc(t('emp.noLines'))}</div>`;
+    const rows = tableSortBy(lines, st.sort, st.order, LINE_GETTERS);
+    return `<div class="table-wrap" style="margin-bottom:18px;border:1px solid var(--outline-variant);border-radius:var(--radius-lg)">
+        <table class="data">
+          <thead><tr>${th('phone', t('lines.phone'))}${th('operator', t('lines.operator'))}${th('plan', t('lines.plan'))}${th('sim', t('lines.sim'))}${(canAssignLine || canUnassignLine) ? '<th style="text-align:right"></th>' : ''}</tr></thead>
+          <tbody>
+            ${rows.map((l) => `
+            <tr>
+              <td class="mono cell-title">${esc(l.phoneNumber)}</td>
+              <td>${esc(l.operator || '—')}</td>
+              <td class="cell-sub">${esc(l.plan || '—')}</td>
+              <td class="mono cell-sub">${esc(l.simSerial || '—')}</td>
+              ${canUnassignLine ? `<td class="actions">
+                <button class="btn btn-outline btn-sm" data-return-line="${esc(l.id)}">
+                  <span class="ms">undo</span> ${esc(t('emp.unassign'))}</button></td>` : (canAssignLine ? '<td></td>' : '')}
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`;
+  }
+
   openModal({
+
     title: `${emp.fullName}`,
     wide: true,
     body: `
@@ -398,48 +518,13 @@ async function showEmployeeDetail(emp) {
       ` : `
       <h3 style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--on-surface-variant);margin:0 0 8px">
         ${esc(t('emp.assignedAssets'))} (${assets.length})</h3>
-      ${assets.length === 0 ? `<div class="cell-sub" style="margin-bottom:16px">${esc(t('emp.noAssets'))}</div>` : `
-      <div class="table-wrap" style="margin-bottom:18px;border:1px solid var(--outline-variant);border-radius:var(--radius-lg)">
-        <table class="data">
-          <thead><tr><th>Asset Tag</th><th>Brand &amp; Model</th><th>Serial No</th><th>Category</th>${canReturnAsset ? '<th style="text-align:right"></th>' : ''}</tr></thead>
-          <tbody>
-            ${assets.map((a) => `
-            <tr>
-              <td class="mono">${esc(a.assetTag)}</td>
-              <td><div style="display:flex;align-items:center;gap:8px">
-                <span class="ms" style="color:var(--on-surface-variant)">${catIcon(a.category)}</span>
-                <span class="cell-title">${esc(a.brand)} ${esc(a.model)}</span></div></td>
-              <td class="mono">${esc(a.serialNumber)}</td>
-              <td class="cell-sub">${esc(a.category)}</td>
-              ${canReturnAsset ? `<td class="actions">
-                <button class="btn btn-outline btn-sm" data-return-asset="${esc(a.id)}">
-                  <span class="ms">undo</span> Return</button></td>` : ''}
-            </tr>`).join('')}
-          </tbody>
-        </table>
-      </div>`}
+      <div id="emp-assigned-assets">${renderAssignedAssetsHtml()}</div>
       `}
 
       ${canViewInventory ? `
       <h3 style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--on-surface-variant);margin:0 0 8px">
         ${esc(t('emp.infraResponsible'))} (${infra.length})</h3>
-      ${infra.length === 0 ? `<div class="cell-sub" style="margin-bottom:16px">${esc(t('emp.noInfra'))}</div>` : `
-      <div class="table-wrap" style="margin-bottom:18px;border:1px solid var(--outline-variant);border-radius:var(--radius-lg)">
-        <table class="data">
-          <thead><tr><th>Asset Tag</th><th>Device</th><th>Location</th><th>Category</th></tr></thead>
-          <tbody>
-            ${infra.map((a) => `
-            <tr>
-              <td class="mono">${esc(a.assetTag)}</td>
-              <td><div style="display:flex;align-items:center;gap:8px">
-                <span class="ms" style="color:var(--on-surface-variant)">${catIcon(a.category)}</span>
-                <span class="cell-title">${esc(a.brand)} ${esc(a.model)}</span></div></td>
-              <td>${esc(a.location || '—')}</td>
-              <td class="cell-sub">${esc(a.category)}</td>
-            </tr>`).join('')}
-          </tbody>
-        </table>
-      </div>`}
+      <div id="emp-infra-assets">${renderInfraHtml()}</div>
 
       <div style="display:flex;align-items:center;justify-content:space-between;margin:0 0 8px">
         <h3 style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--on-surface-variant);margin:0">
@@ -462,24 +547,7 @@ async function showEmployeeDetail(emp) {
           ${esc(t('emp.mobileLines'))} (${lines.length})</h3>
         ${canAssignLine ? `<button class="btn btn-outline btn-sm" id="emp-assign-line"><span class="ms">add</span> ${esc(t('emp.assignLine'))}</button>` : ''}
       </div>
-      ${lines.length === 0 ? `<div class="cell-sub" style="margin-bottom:16px">${esc(t('emp.noLines'))}</div>` : `
-      <div class="table-wrap" style="margin-bottom:18px;border:1px solid var(--outline-variant);border-radius:var(--radius-lg)">
-        <table class="data">
-          <thead><tr><th>${esc(t('lines.phone'))}</th><th>${esc(t('lines.operator'))}</th><th>${esc(t('lines.plan'))}</th><th>${esc(t('lines.sim'))}</th>${(canAssignLine || canUnassignLine) ? '<th style="text-align:right"></th>' : ''}</tr></thead>
-          <tbody>
-            ${lines.map((l) => `
-            <tr>
-              <td class="mono cell-title">${esc(l.phoneNumber)}</td>
-              <td>${esc(l.operator || '—')}</td>
-              <td class="cell-sub">${esc(l.plan || '—')}</td>
-              <td class="mono cell-sub">${esc(l.simSerial || '—')}</td>
-              ${canUnassignLine ? `<td class="actions">
-                <button class="btn btn-outline btn-sm" data-return-line="${esc(l.id)}">
-                  <span class="ms">undo</span> ${esc(t('emp.unassign'))}</button></td>` : (canAssignLine ? '<td></td>' : '')}
-            </tr>`).join('')}
-          </tbody>
-        </table>
-      </div>`}
+      <div id="emp-lines-table">${renderLinesHtml()}</div>
       ` : ''}
 
       ${canReadContracts && contracts.length ? `
@@ -579,6 +647,31 @@ async function showEmployeeDetail(emp) {
       ${canGenerateForm ? `<button class="btn btn-primary" id="emp-print-current" ${assets.length === 0 ? 'disabled' : ''}>
         <span class="ms">print</span> Generate Current Asset Form</button>` : ''}`,
     onMount(overlay) {
+      const refreshDetailSort = (scope) => {
+        if (scope === 'assets') {
+          const host = $('#emp-assigned-assets', overlay);
+          if (host) host.innerHTML = renderAssignedAssetsHtml();
+        } else if (scope === 'infra') {
+          const host = $('#emp-infra-assets', overlay);
+          if (host) host.innerHTML = renderInfraHtml();
+        } else if (scope === 'lines') {
+          const host = $('#emp-lines-table', overlay);
+          if (host) host.innerHTML = renderLinesHtml();
+        }
+      };
+      overlay.addEventListener('click', (e) => {
+        const b = e.target.closest('button.th-sort[data-sort-scope]');
+        if (!b) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const scope = b.dataset.sortScope;
+        const key = b.dataset.sort;
+        if (!detailSort[scope]) return;
+        detailSort[scope] = tableSortToggle(detailSort[scope], key);
+        tableSortSave(`itacm_emp_detail_${scope}`, detailSort[scope].sort, detailSort[scope].order);
+        refreshDetailSort(scope);
+      });
+
       // Tab switching
       overlay.querySelectorAll('.tab').forEach((tb) => tb.addEventListener('click', () => {
         overlay.querySelectorAll('.tab').forEach((t2) => t2.classList.toggle('active', t2 === tb));
@@ -748,18 +841,22 @@ async function showEmployeeDetail(emp) {
         });
       });
 
-      overlay.querySelectorAll('[data-return-line]').forEach((b) => b.addEventListener('click', () => {
-        const line = lines.find((x) => x.id === b.dataset.returnLine);
-        confirmModal(`Unassign ${line ? line.phoneNumber : 'this line'} from ${emp.fullName}?`, async () => {
-          await api(`/lines/${b.dataset.returnLine}/unassign`, { method: 'POST' });
-          toast('Mobile line returned', 'success');
-          showEmployeeDetail(emp);
-        });
-      }));
-
-      // Return (zimmet düşürme): take an asset off this employee, back to stock.
-      overlay.querySelectorAll('[data-return-asset]').forEach((b) => b.addEventListener('click', () => {
-        const a = assets.find((x) => x.id === b.dataset.returnAsset);
+      // Delegated so sort re-renders keep Return / Unassign working.
+      overlay.addEventListener('click', (e) => {
+        const lineBtn = e.target.closest('[data-return-line]');
+        if (lineBtn) {
+          const line = lines.find((x) => x.id === lineBtn.dataset.returnLine);
+          confirmModal(`Unassign ${line ? line.phoneNumber : 'this line'} from ${emp.fullName}?`, async () => {
+            await api(`/lines/${lineBtn.dataset.returnLine}/unassign`, { method: 'POST' });
+            toast('Mobile line returned', 'success');
+            showEmployeeDetail(emp);
+          });
+          return;
+        }
+        const assetBtn = e.target.closest('[data-return-asset]');
+        if (!assetBtn) return;
+        const a = assets.find((x) => x.id === assetBtn.dataset.returnAsset);
+        if (!a) return;
         formModal({
           title: `Return ${a.assetTag} — ${a.brand} ${a.model}`,
           fields: [{
@@ -770,13 +867,12 @@ async function showEmployeeDetail(emp) {
           async onSubmit(d) {
             await api(`/assets/${a.id}/return`, { method: 'POST', body: d });
             toast(`${a.assetTag} returned to stock — removed from ${emp.fullName}`, 'success');
-            // Refresh the employees table underneath, then reopen this detail.
             if (location.hash === '#/employees') Views.employees($('#view'));
             const fresh = await api(`/employees/${emp.id}`).catch(() => emp);
             showEmployeeDetail(fresh);
           },
         });
-      }));
+      });
       // Reprint a past receipt exactly as it was recorded.
       overlay.querySelectorAll('[data-reprint]').forEach((b) => b.addEventListener('click', async () => {
         printHandover(await api('/handovers/' + b.dataset.reprint));

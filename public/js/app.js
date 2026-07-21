@@ -227,6 +227,27 @@ async function showMandatoryPasswordChange() {
   });
 }
 
+/** Trigger a client-side text-file download (used for MFA backup codes). */
+function downloadTextFile(filename, text) {
+  try {
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch { /* download blocked — codes stay visible on screen */ }
+}
+
+/** Wrap raw backup codes in a friendly, dated text file body. */
+function mfaCodesFileBody(codes) {
+  return `ITACM — MFA backup codes\nGenerated: ${new Date().toISOString()}\n`
+    + `Each code works once. Keep them somewhere safe.\n\n${codes}\n`;
+}
+
 async function showMandatoryOwnerMfa() {
   $('#onboarding-screen').classList.add('hidden');
   $('#login-screen').classList.add('hidden');
@@ -292,6 +313,7 @@ async function showMandatoryOwnerMfa() {
                 Auth.persistProfile();
               }
               $('#owner-mfa-continue', box).addEventListener('click', () => {
+                if (codes) downloadTextFile('itacm-mfa-backup-codes.txt', mfaCodesFileBody(codes));
                 closeModal();
                 showApp();
               });
@@ -2548,6 +2570,7 @@ async function showAccountSecurity() {
             <p class="pill pill-emerald">MFA enabled</p>
             <p class="cell-sub">Save these backup codes somewhere safe — each works once:</p>
             <pre class="mono" style="background:var(--surface-low);padding:12px;border-radius:8px;white-space:pre-wrap">${esc(codes)}</pre>`;
+          if (codes) downloadTextFile('itacm-mfa-backup-codes.txt', mfaCodesFileBody(codes));
           if (Auth.profile) Auth.profile.mfaEnabled = true;
           toast('MFA enabled', 'success');
         } catch (err) { toast(err.message, 'error'); }

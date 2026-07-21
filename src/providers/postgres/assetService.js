@@ -766,9 +766,26 @@ async function writeUpdateHistory(t, before, after, patch, licenseIds, itUser, s
   }
 }
 
+/** Whitelisted Hardware list sorts → SQL ORDER BY expressions (never interpolate raw input). */
+const ASSET_SORT_SQL = {
+  assetTag: ['a.asset_tag'],
+  brand: ['a.brand', 'a.model', 'a.asset_tag'],
+  category: ['a.category', 'a.brand', 'a.model', 'a.asset_tag'],
+  serialNumber: ['a.serial_number'],
+  mac: ["COALESCE(NULLIF(a.mac_ethernet, ''), NULLIF(a.mac_wifi, ''), '')", 'a.asset_tag'],
+  location: ['a.location', 'a.asset_tag'],
+  status: ['a.status', 'a.asset_tag'],
+};
+
+function assetOrderBySql(sort, order) {
+  const cols = ASSET_SORT_SQL[sort] || ASSET_SORT_SQL.assetTag;
+  const dir = String(order || '').toLowerCase() === 'desc' ? 'DESC' : 'ASC';
+  return cols.map((c) => `${c} ${dir}`).join(', ');
+}
+
 async function listAssets({
   status, category, categories, employeeId, responsibleEmployeeId,
-  infraRole, search, location, limit = 100, offset = 0,
+  infraRole, search, location, sort, order, limit = 100, offset = 0,
 } = {}) {
   const where = [];
   const params = [];
@@ -832,9 +849,10 @@ async function listAssets({
   const totalRes = await query(`SELECT COUNT(*)::int AS n FROM assets a ${whereSql}`, [...params]);
 
   params.push(Math.min(Number(limit) || 100, 2000), Number(offset) || 0);
+  const orderSql = assetOrderBySql(sort, order);
   const { rows } = await query(
     `${ASSET_SELECT} ${whereSql}
-     ORDER BY a.asset_tag LIMIT $${params.length - 1} OFFSET $${params.length}`,
+     ORDER BY ${orderSql} LIMIT $${params.length - 1} OFFSET $${params.length}`,
     params
   );
   return { items: rows.map(mapAssetRow), total: totalRes.rows[0].n, nextCursor: null };

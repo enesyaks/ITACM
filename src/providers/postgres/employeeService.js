@@ -6,7 +6,21 @@ const authProvider = require('./authProvider');
 
 const STATUSES = ['Active', 'Inactive'];
 
-async function listEmployees({ status, department, search, limit = 200, offset = 0 } = {}) {
+/** Whitelisted Employee Directory sorts (never interpolate raw input). */
+const EMP_SORT_SQL = {
+  name: ['full_name'],
+  department: ['department', 'full_name'],
+  assets: ['active_asset_count', 'full_name'],
+  status: ['status', 'full_name'],
+};
+
+function empOrderBySql(sort, order) {
+  const cols = EMP_SORT_SQL[sort] || EMP_SORT_SQL.name;
+  const dir = String(order || '').toLowerCase() === 'desc' ? 'DESC' : 'ASC';
+  return cols.map((c) => `${c} ${dir}`).join(', ');
+}
+
+async function listEmployees({ status, department, search, sort, order, limit = 200, offset = 0 } = {}) {
   const where = [];
   const params = [];
   const asList = (v) => (Array.isArray(v) ? v : String(v || '').split(','))
@@ -46,9 +60,10 @@ async function listEmployees({ status, department, search, limit = 200, offset =
   params.push(Math.min(Number(limit) || 200, 10000));
   params.push(Math.max(0, Number(offset) || 0));
 
+  const orderSql = empOrderBySql(sort, order);
   const { rows } = await query(
     `SELECT * FROM employees ${whereSql}
-     ORDER BY full_name LIMIT $${params.length - 1} OFFSET $${params.length}`,
+     ORDER BY ${orderSql} LIMIT $${params.length - 1} OFFSET $${params.length}`,
     params
   );
 
