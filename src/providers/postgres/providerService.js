@@ -2,6 +2,7 @@
 const { query, withTransaction } = require('./pool');
 const { isUuid } = require('./rowMapper');
 const { HttpError } = require('../../utils/httpError');
+const { toDateString } = require('../../utils/pgDate');
 const { DEFAULT_CURRENCY } = require('../../utils/defaults');
 const { getSettings } = require('./settingsService');
 const { sanitizeHttpUrl } = require('../../utils/httpUrl');
@@ -616,9 +617,12 @@ async function updateContract(id, body = {}, { user } = {}) {
       category,
       status,
       visibility,
-      body.startDate !== undefined ? parseDate(body.startDate) : (cur.startDate ? String(cur.startDate).slice(0, 10) : null),
-      body.endDate !== undefined ? parseDate(body.endDate) : (cur.endDate ? String(cur.endDate).slice(0, 10) : null),
-      body.renewalDate !== undefined ? parseDate(body.renewalDate) : (cur.renewalDate ? String(cur.renewalDate).slice(0, 10) : null),
+      // cur.* are pg DATE values, i.e. JS Date objects — String(d).slice(0,10)
+      // yields "Thu Jan 01" and postgres rejects it, so a PATCH that did not
+      // resend the dates used to 500. toDateString handles both shapes.
+      body.startDate !== undefined ? parseDate(body.startDate) : toDateString(cur.startDate),
+      body.endDate !== undefined ? parseDate(body.endDate) : toDateString(cur.endDate),
+      body.renewalDate !== undefined ? parseDate(body.renewalDate) : toDateString(cur.renewalDate),
       body.noticeDays !== undefined
         ? (body.noticeDays === '' || body.noticeDays == null ? null : Number(body.noticeDays))
         : cur.noticeDays,

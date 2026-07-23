@@ -361,6 +361,27 @@ async function executeOffboard(employeeId, body, itUser) {
     assets = [], lines = [], licenses = [], infra = [], contracts = [], deactivate = true,
   } = body || {};
 
+  // Offboarding runs as one atomic transaction, so a disposal that needs
+  // sign-off cannot be deferred half-way through it. Refuse up front instead of
+  // silently selling/scrapping around the approval policy.
+  const disposals = assets.filter((i) => i && (i.action === 'sell' || i.action === 'scrap'));
+  if (disposals.length) {
+    const config = await require('./approvalService').getConfig().catch(() => ({ enabled: false }));
+    if (config.enabled) {
+      const needsApproval = disposals.filter((i) => {
+        const levels = config.policy[i.action === 'sell' ? 'asset_sale' : 'asset_scrap'];
+        return Array.isArray(levels) && levels.length;
+      });
+      if (needsApproval.length) {
+        throw HttpError.conflict(
+          `${needsApproval.length} item(s) are marked sell/scrap, which your approval policy requires `
+          + 'sign-off for. Return them to stock here, then sell or scrap them from the Hardware screen '
+          + 'so the request goes through approval.'
+        );
+      }
+    }
+  }
+
   const result = await withTransaction(async (t) => {
     const fromEmp = await loadActiveEmployee(t, employeeId);
     if (fromEmp.status === 'Inactive') {
@@ -551,4 +572,91 @@ async function executeOffboard(employeeId, body, itUser) {
   return result;
 }
 
-module.exports = { getOffboardingChecklist, executeOffboard };
+/**
+ * Perform a sale/scrap that an approver has just signed off.
+ *
+ * approvalService.dispatch() has always routed 'asset_sale' / 'asset_scrap'
+ * here; until now the function did not exist, so dispatch silently returned
+ * null and an approved request changed nothing. This is that missing half.
+ *
+ * @param {'asset_sale'|'asset_scrap'} type
+ * @param {{assetId:string, sale?:object, note?:string, itUser?:object}} payload
+ * @param {{name?:string, viaApproval?:string}} actor
+ */
+async function replayApproved(type, payload = {}, actor = {}) {
+  const action = type === 'asset_sale' ? 'sell' : type === 'asset_scrap' ? 'scrap' : null;
+  if (!action) throw HttpError.badRequest(`Unsupported approval type: ${type}`);
+  const assetId = payload.assetId;
+  if (!isUuid(assetId)) throw HttpError.badRequest('Approved payload has no valid assetId');
+
+  const itUser = payload.itUser || {};
+  const via = actor.viaApproval ? ` · approval ${actor.viaApproval}` : '';
+  const note = [payload.note, actor.name ? `Approved by ${actor.name}` : ''].filter(Boolean).join(' · ') + via;
+
+  return withTransaction(async (t) => {
+    const { rows } = await t.query('SELECT * FROM assets WHERE id = $1 FOR UPDATE', [assetId]);
+    const asset = rows[0];
+    if (!asset) throw HttpError.notFound(`Asset ${assetId} not found`);
+    if (asset.status === 'Sold' || asset.status === 'Scrap') {
+      // Already disposed — no-op so a replayed/double approval cannot
+      // decrement the holder's counter twice.
+      return { assetId, assetTag: asset.asset_tag, action, alreadyApplied: true };
+    }
+
+    const holder = asset.current_employee_id
+      ? { id: asset.current_employee_id, full_name: asset.current_employee_name }
+      : { id: null, full_name: null };
+
+    const status = action === 'sell' ? 'Sold' : 'Scrap';
+    const sale = action === 'sell' ? normalizeSale(payload.sale, { required: true }) : null;
+    const saleSummary = sale ? formatSaleSummary(sale) : '';
+    const newNotes = sale ? appendSaleToNotes(asset.notes, sale) : null;
+
+    if (sale) {
+      await t.query(
+        `UPDATE assets SET status = $2, current_employee_id = NULL,
+           current_employee_name = NULL, notes = $3, updated_at = now() WHERE id = $1`,
+        [asset.id, status, newNotes]
+      );
+    } else {
+      await t.query(
+        `UPDATE assets SET status = $2, current_employee_id = NULL,
+           current_employee_name = NULL, updated_at = now() WHERE id = $1`,
+        [asset.id, status]
+      );
+    }
+    if (holder.id) {
+      await t.query(
+        'UPDATE employees SET active_asset_count = GREATEST(active_asset_count - 1, 0) WHERE id = $1',
+        [holder.id]
+      );
+    }
+    await insertAssetHistory(t, {
+      assetId: asset.id,
+      assetTag: asset.asset_tag,
+      actionType: action === 'sell' ? 'sold' : 'status_changed',
+      notes: [action === 'sell' ? 'Approved sale' : 'Approved scrap', saleSummary, note]
+        .filter(Boolean).join(' · '),
+      employeeId: holder.id,
+      employeeName: holder.full_name,
+      itUser,
+    });
+
+    auditService.logEvent({
+      action: action === 'sell' ? 'asset.sold' : 'asset.scrapped',
+      source: 'approvals',
+      summary: `${asset.asset_tag} ${action === 'sell' ? 'sold' : 'scrapped'} after approval`,
+      actorId: itUser.uid || null,
+      actorEmail: itUser.email || null,
+      actorName: actor.name || itUser.username || 'Approval',
+      entityType: 'asset',
+      entityId: asset.id,
+      entityLabel: asset.asset_tag,
+      meta: { action, sale: sale || undefined, viaApproval: actor.viaApproval || null },
+    }).catch(() => {});
+
+    return { assetId: asset.id, assetTag: asset.asset_tag, action, sale: sale || undefined };
+  });
+}
+
+module.exports = { getOffboardingChecklist, executeOffboard, replayApproved };

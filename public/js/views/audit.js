@@ -1,20 +1,55 @@
 /* =============================== SYSTEM AUDIT LOG =============================== */
 
+const AUDIT_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const AUDIT_VERB_KEY = {
+  post: 'audit.verb.post', put: 'audit.verb.put', patch: 'audit.verb.patch',
+  delete: 'audit.verb.delete', get: 'audit.verb.get',
+};
+
+/** Drop the record ids baked into HTTP-derived actions so a lookup can match:
+ *  "put.auth.users.32e7cbd7-….permission-group" → "put.auth.users.permission-group" */
+function auditActionSegments(action) {
+  return String(action || '')
+    .split('.')
+    .map((s) => s.trim())
+    .filter((s) => s && !AUDIT_UUID_RE.test(s) && !/^\d+$/.test(s));
+}
+
+function auditLookup(prefix, action) {
+  const tryKey = (a) => {
+    const key = prefix + String(a).replace(/\./g, '_');
+    const v = t(key);
+    return v !== key ? v : null;
+  };
+  return tryKey(action) || tryKey(auditActionSegments(action).join('.'));
+}
+
+/**
+ * Last-resort title for actions nobody wrote a translation for. Reads the
+ * remaining path segments as words and appends the verb, so
+ * "put.auth.users.<id>.permission-group" becomes
+ * "Auth · Users · Permission group — updated" instead of the raw string.
+ */
+function auditFallbackTitle(action) {
+  const segs = auditActionSegments(action);
+  if (!segs.length) return t('audit.x.generic').replace('{action}', action || '—');
+  const verbKey = AUDIT_VERB_KEY[segs[0].toLowerCase()];
+  const verb = verbKey ? t(verbKey) : '';
+  const words = (verbKey ? segs.slice(1) : segs).map(auditPrettyField);
+  if (!words.length) return verb || t('audit.x.generic').replace('{action}', action || '—');
+  const what = words.join(' · ');
+  return verb ? `${what} — ${verb}` : what;
+}
+
 function auditExplain(action) {
-  const key = 'audit.x.' + String(action || '').replace(/\./g, '_');
-  const v = t(key);
-  if (v !== key) return v;
+  const hit = auditLookup('audit.x.', action);
+  if (hit) return hit;
   // Fallback for raw HTTP-derived actions like post.auth.verify-token
-  const raw = String(action || '');
-  if (/verify.?token/i.test(raw)) {
-    const k2 = 'audit.x.auth_verify_token';
-    const v2 = t(k2);
-    if (v2 !== k2) return v2;
+  if (/verify.?token/i.test(String(action || ''))) {
+    const v2 = t('audit.x.auth_verify_token');
+    if (v2 !== 'audit.x.auth_verify_token') return v2;
   }
-  if (/^[a-z]+\./i.test(raw) && raw.includes('/')) {
-    return t('audit.x.generic').replace('{action}', raw);
-  }
-  return t('audit.x.generic').replace('{action}', action || '—');
+  return auditFallbackTitle(action);
 }
 
 function auditLooksTechnical(text) {
@@ -27,9 +62,8 @@ function auditHeadline(ev) {
   const explain = auditExplain(ev.action);
   if (!summary || auditLooksTechnical(summary) || summary === ev.action) {
     // Prefer a short friendly title over the long explanation sentence when possible.
-    const shortKey = 'audit.title.' + String(ev.action || '').replace(/\./g, '_');
-    const short = t(shortKey);
-    if (short !== shortKey) return short;
+    const short = auditLookup('audit.title.', ev.action);
+    if (short) return short;
     if (/verify.?token/i.test(String(ev.action || '')) || /verify.?token/i.test(summary)) {
       const s2 = t('audit.title.auth_verify_token');
       if (s2 !== 'audit.title.auth_verify_token') return s2;
@@ -171,6 +205,104 @@ function auditContextRows(ev) {
   return rows;
 }
 
+/* --------------------------- what actually changed --------------------------- */
+
+/** "serial_number" / "serialNumber" → "Serial number" (field names aren't localized). */
+function auditPrettyField(key) {
+  const s = String(key || '')
+    .replace(/[_-]+/g, ' ')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .trim();
+  return s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : '—';
+}
+
+/** Human-readable one-liner for any value found in a request body. */
+function auditFormatValue(v) {
+  if (v == null || v === '') return '—';
+  if (typeof v === 'boolean') return v ? t('common.yes') : t('common.no');
+  if (typeof v === 'number') return String(v);
+  if (Array.isArray(v)) {
+    if (!v.length) return '—';
+    const primitives = v.every((x) => x == null || typeof x !== 'object');
+    if (primitives) {
+      const head = v.slice(0, 5).map((x) => String(x)).join(', ');
+      return v.length > 5 ? `${head} +${v.length - 5}` : head;
+    }
+    return `${v.length} × ${t('audit.itemCount')}`;
+  }
+  if (typeof v === 'object') {
+    const json = JSON.stringify(v);
+    return json.length > 120 ? `${json.slice(0, 120)}…` : json;
+  }
+  const s = String(v);
+  return s.length > 200 ? `${s.slice(0, 200)}…` : s;
+}
+
+/**
+ * History notes are the only place a *previous* value survives. Services write
+ * them as " · "-joined fragments in three shapes:
+ *   "brand: Dell → HP"  (labelled change)
+ *   "In Stock → Sold"   (status change, label implied)
+ *   "Price: 250"        (labelled value, no previous side)
+ * Anything else is prose that already shows as the headline — skipped.
+ */
+function auditParseDiffNote(text) {
+  return String(text || '')
+    .split(' · ')
+    .map((raw) => {
+      const part = raw.trim();
+      if (!part) return null;
+      const labelled = /^([^:]{1,48}):\s*(.*?)\s*(?:→|->)\s*(.+)$/.exec(part);
+      if (labelled) return { field: labelled[1].trim(), from: labelled[2].trim(), to: labelled[3].trim() };
+      const bare = /^(.{1,60}?)\s*(?:→|->)\s*(.{1,60})$/.exec(part);
+      if (bare) return { field: t('common.status'), from: bare[1].trim(), to: bare[2].trim() };
+      const value = /^([^:]{1,48}):\s*(.+)$/.exec(part);
+      if (value) return { field: value[1].trim(), to: value[2].trim() };
+      return null;
+    })
+    .filter(Boolean);
+}
+
+/** Keys that are plumbing, not a change the reader cares about. */
+const AUDIT_BODY_SKIP = new Set(['id', 'ids', 'password', 'token', 'csrf', 'dryrun', 'confirm']);
+
+function auditChangeRows(ev) {
+  const details = ev.details || {};
+  // Prefer the diff note — it carries both sides of the change.
+  const diffs = auditParseDiffNote(details.notes || ev.summary || '');
+  if (diffs.length) return diffs;
+
+  const body = ev.meta && ev.meta.body;
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return [];
+  return Object.entries(body)
+    .filter(([k, v]) => !AUDIT_BODY_SKIP.has(k.toLowerCase()) && v !== undefined)
+    .map(([field, v]) => ({ field, to: auditFormatValue(v) }));
+}
+
+function auditChangesSection(ev) {
+  const rows = auditChangeRows(ev);
+  if (!rows.length) return '';
+  const hasBefore = rows.some((r) => r.from != null);
+  return `
+    <section class="audit-sec">
+      <div class="audit-sec-head">
+        <strong>${esc(t('audit.changes'))}</strong>
+        <span>${esc(hasBefore ? t('audit.changesSub') : t('audit.changesSubNew'))}</span>
+      </div>
+      <div class="audit-diff">
+        ${rows.map((r) => `
+          <div class="audit-diff-row">
+            <div class="audit-diff-field">${esc(auditPrettyField(r.field))}</div>
+            <div class="audit-diff-values">
+              ${r.from != null ? `<span class="audit-diff-old">${esc(r.from || '—')}</span>
+                <span class="ms audit-diff-arrow">arrow_forward</span>` : ''}
+              <span class="audit-diff-new">${esc(r.to || '—')}</span>
+            </div>
+          </div>`).join('')}
+      </div>
+    </section>`;
+}
+
 async function showAuditDetail(bucket, id) {
   openModal({
     title: t('audit.detailTitle'),
@@ -263,6 +395,7 @@ async function showAuditDetail(bucket, id) {
             </div>
           </div>
         </header>
+        ${auditChangesSection(ev)}
         <section class="audit-sec">
           <div class="audit-sec-head"><strong>${esc(t('audit.snapshot'))}</strong><span>${esc(t('audit.snapshotSub'))}</span></div>
           <div class="audit-facts">${factsHtml}</div>

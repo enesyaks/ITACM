@@ -295,6 +295,71 @@ async function downloadAuthed(url) {
 }
 
 /**
+ * PDF.js (Mozilla, Apache-2.0) vendored under js/vendor — loaded on first
+ * preview only. Handing a blob to <embed> depends on a browser PDF plugin that
+ * phones don't have (and some desktop builds don't either), so we rasterise the
+ * pages ourselves and the preview stays in the same tab everywhere.
+ */
+function loadPdfJs() {
+  if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  if (loadPdfJs._p) return loadPdfJs._p;
+  loadPdfJs._p = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = '/js/vendor/pdf.min.js';
+    s.async = true;
+    s.onload = () => {
+      if (!window.pdfjsLib) { reject(new Error('PDF viewer failed to load')); return; }
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = '/js/vendor/pdf.worker.min.js';
+      resolve(window.pdfjsLib);
+    };
+    s.onerror = () => reject(new Error('PDF viewer failed to load'));
+    document.head.appendChild(s);
+  });
+  return loadPdfJs._p;
+}
+
+const PDF_PREVIEW_MAX_PAGES = 20;
+
+/** Draw every page of `data` (ArrayBuffer) into `host` as width-fitted canvases. */
+async function renderPdfPreview(host, data, onFail) {
+  try {
+    const pdfjsLib = await loadPdfJs();
+    const pdf = await pdfjsLib.getDocument({ data }).promise;
+    const cssWidth = host.clientWidth || 600;
+    // Cap the backing store so a phone doesn't blow its memory budget on a
+    // retina-sized canvas per page.
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    host.innerHTML = '';
+    const pageCount = Math.min(pdf.numPages, PDF_PREVIEW_MAX_PAGES);
+    if (pageCount < 1) {
+      // Structurally valid but empty (demo placeholders, truncated uploads) —
+      // say so instead of leaving a blank box.
+      host.innerHTML = `<div class="table-empty" style="padding:28px">${esc(t('doc.emptyPdf'))}</div>`;
+      return;
+    }
+    for (let n = 1; n <= pageCount; n += 1) {
+      const page = await pdf.getPage(n);
+      const unit = page.getViewport({ scale: 1 });
+      const viewport = page.getViewport({ scale: (cssWidth / unit.width) * dpr });
+      const canvas = document.createElement('canvas');
+      canvas.className = 'doc-pdf-page';
+      canvas.width = Math.round(viewport.width);
+      canvas.height = Math.round(viewport.height);
+      host.appendChild(canvas);
+      await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+    }
+    if (pdf.numPages > pageCount) {
+      const more = document.createElement('div');
+      more.className = 'cell-sub doc-pdf-more';
+      more.textContent = `+${pdf.numPages - pageCount}`;
+      host.appendChild(more);
+    }
+  } catch {
+    onFail();
+  }
+}
+
+/**
  * Open a protected document in a stacked lightbox popup (does NOT close the
  * underlying employee/repair modal). PDFs and images render from a blob URL.
  */
@@ -330,8 +395,9 @@ async function viewAuthed(url, title) {
     if (isImg) {
       media = `<img class="doc-viewer-img" src="${objUrl}" alt="${esc(filename)}">`;
     } else if (isPdf) {
-      // <embed> is more reliable than iframe for Chrome's built-in PDF viewer + CSP.
-      media = `<embed class="doc-viewer" src="${objUrl}" type="application/pdf" title="${esc(filename)}">`;
+      // Pages are drawn into this host by renderPdfPreview() once the modal is in
+      // the DOM (it needs the measured width).
+      media = `<div class="doc-pdf" id="doc-pdf-host"><div class="table-empty">${esc(t('common.loading'))}</div></div>`;
     } else {
       media = `<div class="table-empty" style="padding:28px">${esc(t('doc.previewUnavailable'))}</div>`;
     }
@@ -351,18 +417,44 @@ async function viewAuthed(url, title) {
             <span class="ms">download</span> ${esc(t('common.download'))}</a>
         </div>
       </div>`;
+    let handedOff = false; // a tab now owns the blob — revoking would blank it
     const close = () => {
-      try { URL.revokeObjectURL(objUrl); } catch { /* ignore */ }
+      if (!handedOff) { try { URL.revokeObjectURL(objUrl); } catch { /* ignore */ } }
       overlay.remove();
       if (!$('#modal-root')?.firstElementChild && !$('.doc-lightbox')) {
         document.body.classList.remove('modal-open');
       }
     };
     overlay.addEventListener('click', (e) => {
+      if (e.target.closest('[data-doc-open]')) {
+        handedOff = true;
+        if (!window.open(objUrl, '_blank')) {
+          // Popup blocked (common in in-app browsers) — hand the blob to this tab
+          // instead. The native viewer takes over and Back returns to the app.
+          toast(t('doc.popupBlocked'), 'error');
+          try { window.location.assign(objUrl); } catch { /* download button remains */ }
+        }
+        return;
+      }
       if (e.target === overlay || e.target.closest('[data-doc-close]')) close();
     });
     document.body.classList.add('modal-open');
     document.body.appendChild(overlay);
+
+    if (isPdf) {
+      const host = $('#doc-pdf-host', overlay);
+      // Last resort only: if PDF.js itself can't load, offer the OS viewer.
+      const onFail = () => {
+        host.innerHTML = `
+          <div class="doc-viewer-fallback">
+            <span class="ms">picture_as_pdf</span>
+            <p class="cell-sub">${esc(t('doc.previewUnavailable'))}</p>
+            <button type="button" class="btn btn-primary btn-lg" data-doc-open>
+              <span class="ms">open_in_new</span> ${esc(t('doc.openInTab'))}</button>
+          </div>`;
+      };
+      renderPdfPreview(host, await typed.arrayBuffer(), onFail);
+    }
   } catch (err) { toast(err.message, 'error'); }
 }
 
@@ -447,6 +539,8 @@ function formModal({ title, fields, submitLabel, wide, onSubmit, onMount: extraM
           selected: f.selected || (f.value ? { id: f.value, fullName: f.selectedLabel || '' } : null),
           required: !!f.required,
           placeholder: f.placeholder,
+          searchUrl: f.searchUrl,
+          excludeIds: f.excludeIds,
         });
       });
       overlay.querySelectorAll('select[data-select-other]').forEach((sel) => {
@@ -530,6 +624,10 @@ function mountEmployeeSearchField(container, {
   placeholder,
   excludeIds = [],
   onChange,
+  // Override the source of candidates. Anything returning
+  // [{ id, fullName, email, department }] works — e.g. the IT-user form points
+  // this at employees who do NOT already hold a login.
+  searchUrl = null,
 } = {}) {
   const ph = placeholder || t('common.searchEmployee') || 'Search by name, email or department…';
   const excluded = new Set((excludeIds || []).filter(Boolean));
@@ -633,7 +731,9 @@ function mountEmployeeSearchField(container, {
       const qParam = term
         ? `&search=${encodeURIComponent(term)}`
         : '';
-      const res = await api(`/employees?status=Active&limit=40${qParam}`);
+      const base = searchUrl || '/employees?status=Active';
+      const sep = base.includes('?') ? '&' : '?';
+      const res = await api(`${base}${sep}limit=40${qParam}`);
       if (my !== seq) return;
       renderList(employeeList(res).items);
     } catch {

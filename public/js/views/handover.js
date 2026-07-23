@@ -84,7 +84,7 @@ Views.handover = async function (el) {
           </table></div>
         </div>
 
-        <div class="card" style="margin-top:20px">
+        <div class="card ho-recent" style="margin-top:20px">
           <div class="card-head"><h3>${esc(t('handover.recentReceipts'))}</h3></div>
           <div class="table-wrap"><table class="data">
             <thead><tr><th>Employee</th><th>Items</th><th>Date</th><th>Type</th><th style="text-align:right"></th></tr></thead>
@@ -477,13 +477,17 @@ function isSafariBrowser() {
 }
 
 function fitReceiptsToOnePage() {
-  // A4 @96dpi ≈ 794×1123. Leave headroom: Safari print dialog often adds margins
-  // even when @page { margin: … } is set, which otherwise spills a 2nd blank sheet.
+  // A4 @96dpi ≈ 794×1123. Leave headroom for browser print chrome / @page margins
+  // so footer + return sigs are not clipped — but do NOT shrink forms that already
+  // fit (that left empty page space and looked "yayvan"). Never scale above 1.
+  // Measurement uses screen CSS (print media is denser), so PRINT_H sits slightly
+  // below the printable area; print CSS densification covers the rest.
   const PRINT_W = 794;
   const safari = isSafariBrowser();
-  const PRINT_H = safari ? 960 : 1050;
+  const PRINT_H = safari ? 980 : 1035;
   const pr = $('#print-root');
   const restore = pr.getAttribute('style') || '';
+  pr.classList.add('print-measure');
   pr.setAttribute('style', 'display:block;position:fixed;left:-10000px;top:0;width:' + PRINT_W + 'px');
   pr.querySelectorAll('.receipt').forEach((r) => {
     r.style.zoom = '';
@@ -496,8 +500,10 @@ function fitReceiptsToOnePage() {
     r.style.marginBottom = '';
     r.style.marginRight = '';
     const h = r.scrollHeight;
+    // Shrink only when content overflows the printable headroom. Cap at 1.0 —
+    // never upscale short forms to fill the page.
     if (h > PRINT_H) {
-      const z = Math.max(0.52, PRINT_H / h);
+      const z = Math.min(1, Math.max(0.52, PRINT_H / h));
       if (safari) {
         // Safari print: zoom is a no-op; scale visually and collapse leftover layout box.
         r.style.transformOrigin = 'top left';
@@ -516,6 +522,7 @@ function fitReceiptsToOnePage() {
       r.style.maxHeight = '';
     }
   });
+  pr.classList.remove('print-measure');
   pr.setAttribute('style', restore);
 }
 

@@ -6,6 +6,7 @@
  * /api/me/* only; nothing here exposes cost or other confidential fields.
  */
 const { query } = require('./pool');
+const { HttpError } = require('../../utils/httpError');
 
 const EMPTY = Object.freeze({
   linked: false,
@@ -32,9 +33,18 @@ async function getMyZimmet(user) {
   const loadEmp = async () => {
     const { rows: emps } = await query(
       `SELECT id, full_name, email, department, title, status
-       FROM employees WHERE lower(email) = $1`,
+       FROM employees WHERE lower(email) = $1
+       ORDER BY created_at ASC, id ASC`,
       [email]
     );
+    // employees.email is UNIQUE but byte-exact, so "ali@x.com" and "Ali@x.com"
+    // can coexist on databases predating migration 037. Picking either one would
+    // hand this caller somebody else's zimmet — refuse instead of guessing.
+    if (emps.length > 1) {
+      throw HttpError.conflict(
+        'Your account matches more than one employee record — contact IT to resolve the duplicate'
+      );
+    }
     return emps[0] || null;
   };
 

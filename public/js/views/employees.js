@@ -234,6 +234,20 @@ Views.employees = async function (el, params = {}) {
     const row = e.target.closest('tr.emp-row, .m-emp-card');
     if (row) showEmployeeDetail(items.find((x) => x.id === row.dataset.open));
   });
+
+  // #/employees?offboard=<id> — deep link used after an HR offboard ticket is
+  // approved on the dashboard, so IT lands on the checklist instead of having
+  // to find the person again. Consumed once: the param is stripped afterwards.
+  if (params.offboard && canUpdate) {
+    const targetId = params.offboard;
+    history.replaceState(null, '', '#/employees');
+    try {
+      const emp = await api(`/employees/${encodeURIComponent(targetId)}`);
+      await openOffboardWizard(emp);
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+  }
 };
 
 /* Employee detail: assigned assets + handover receipts + form regeneration. */
@@ -284,12 +298,16 @@ function reportPortalGrantResult(r) {
   toast(r.emailError || t('emp.grantEmailFailed') || 'Portal access created — email not sent', 'warning');
 }
 
-/** One-time portal credentials shown in a styled modal (replaces window.alert). */
-function showPortalCredentials({ why, email, password }) {
+/**
+ * One-time credentials shown in a styled modal (replaces window.alert).
+ * `title` lets a different caller relabel it — the IT-user flow reuses this
+ * dialog but is not creating a Portal login. Omitted, the portal wording stands.
+ */
+function showPortalCredentials({ why, email, password, title }) {
   const tr = (typeof window.i18nLang === 'function' && window.i18nLang() === 'tr');
   const L = (en, trText) => (tr ? trText : en);
   openModal({
-    title: L('Portal access created', 'Portal erişimi oluşturuldu'),
+    title: title || L('Portal access created', 'Portal erişimi oluşturuldu'),
     stack: true,
     body: `
       ${why ? `<div class="banner banner-amber" style="margin-bottom:14px"><span class="ms">warning</span> ${esc(why)}</div>` : ''}

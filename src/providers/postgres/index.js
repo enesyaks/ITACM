@@ -28,6 +28,7 @@ module.exports = {
   permissionService: require('./permissionService'),
   migrationService: require('./migrationService'),
   selfService: require('./selfService'),
+  hrRequestService: require('./hrRequestService'),
   ensureDatabase: () => require('./migrate').ensureDatabase(),
   ping: (timeoutMs) => require('./pool').ping(timeoutMs),
   isAuthError: (err) => require('./pool').isAuthError(err),

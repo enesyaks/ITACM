@@ -196,6 +196,7 @@ function createApp() {
   app.use('/api/integrations', require('./routes/integrations.routes'));
   app.use('/api/ack', require('./routes/ack.routes'));
   app.use('/api/me', require('./routes/me.routes'));
+  app.use('/api/hr', require('./routes/hr.routes'));
 
   // API + missing static assets stay 404; anything else falls back to the SPA shell.
   app.use((req, res, next) => {

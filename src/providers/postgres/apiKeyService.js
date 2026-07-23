@@ -24,6 +24,11 @@ async function createKey({ name, role = 'Helpdesk', scopes = ['*'] }, actor) {
   const nm = String(name || '').trim().slice(0, 80);
   if (!nm) throw HttpError.badRequest('name is required');
   if (!ROLES.includes(role)) throw HttpError.badRequest('Invalid role');
+  // Portal is a self-service *human* login confined to /api/me by middleware.
+  // A service key must never carry it — see verifyRawKey for the read-side guard.
+  if (role === 'Portal') {
+    throw HttpError.badRequest('Portal is a self-service login role and cannot back an API key');
+  }
   if ((role === 'Owner' || role === 'Admin') && actor?.role !== 'Owner') {
     throw HttpError.forbidden('Only Owner can create Owner/Admin-scoped API keys');
   }
@@ -79,6 +84,9 @@ async function verifyRawKey(raw) {
     if (await bcrypt.compare(raw, row.key_hash)) {
       // Disabled kullanıcıya bağlı API key çalışmasın
       if (row.linked_user_status === 'Disabled') return null;
+      // Defence in depth: reject any pre-existing row that still carries the
+      // Portal role (createKey now refuses it, older rows may not have).
+      if (row.role === 'Portal') return null;
 
       await query('UPDATE api_keys SET last_used_at = now() WHERE id = $1', [row.id]).catch(() => {});
       return {

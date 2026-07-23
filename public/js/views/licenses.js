@@ -236,13 +236,17 @@ Views.licenses = async function (el) {
 
     if (b.dataset.assign && canAssign) {
       const l = lic(b.dataset.assign);
-      const employees = employeeList(await api('/employees?status=Active&limit=500')).items;
       formModal({
         title: `Assign ${l.softwareName} to employee`,
+        // Server-side search instead of pre-loading every employee into a
+        // <select>: the old list was capped at 500 and silently dropped anyone
+        // past it, and picking a name meant scrolling the whole company.
         fields: [{
-          name: 'employeeId', label: 'Employee *', type: 'select', required: true,
-          options: [{ value: '', label: 'Select employee…' },
-            ...employees.map((p) => ({ value: p.id, label: `${p.fullName} — ${p.department || ''}` }))],
+          name: 'employeeId',
+          label: t('hr.employee') + ' *',
+          type: 'employeeSearch',
+          required: true,
+          placeholder: t('hr.searchEmp'),
           full: true,
         }],
         submitLabel: 'Assign software',
@@ -287,8 +291,44 @@ Views.licenses = async function (el) {
         body: total === 0
           ? '<div class="cell-sub">No users or devices linked to this license yet.</div>'
           : `${usersBlock}${devicesBlock}`,
-        foot: `<button class="btn btn-outline" data-close>Close</button>`,
+        foot: `<button class="btn btn-outline" data-close>Close</button>
+          ${total ? `<button class="btn btn-primary" id="lic-export"><span class="ms">download</span> ${esc(t('licenses.exportAssigned'))}</button>` : ''}`,
         onMount(overlay) {
+          const exp = $('#lic-export', overlay);
+          if (exp) {
+            exp.addEventListener('click', () => {
+              // One sheet covering both blocks the modal shows — users and the
+              // devices the licence is tied to — so the export matches what is
+              // on screen instead of only half of it.
+              const rows = [
+                ...assignments.map((a) => [
+                  t('licenses.rowUser'), l.softwareName, a.employeeName || '',
+                  a.employeeEmail || '', a.department || '',
+                  fmtDate(a.assignedAt), a.assignedByName || '',
+                ]),
+                ...devices.map((d) => [
+                  t('licenses.rowDevice'), l.softwareName,
+                  [d.brand, d.model].filter(Boolean).join(' ') || d.category || '',
+                  d.assetTag || '',
+                  [d.serialNumber, d.status, d.location].filter(Boolean).join(' · '),
+                  '', '',
+                ]),
+              ];
+              // Local components, not toISOString: the latter names the file
+              // with yesterday's date before 03:00 in Istanbul.
+              const today = new Date();
+              const stamp = today.getFullYear()
+                + '-' + String(today.getMonth() + 1).padStart(2, '0')
+                + '-' + String(today.getDate()).padStart(2, '0');
+              csvDownload(
+                `${String(l.softwareName || 'license').toLowerCase().replace(/[^a-z0-9]+/g, '-')}-assigned-${stamp}.csv`,
+                [t('licenses.colType'), t('licenses.colSoftware'), t('licenses.colName'),
+                  t('licenses.colIdentifier'), t('licenses.colDetail'),
+                  t('licenses.colAssignedAt'), t('licenses.colAssignedBy')],
+                rows
+              );
+            });
+          }
           overlay.querySelectorAll('[data-revoke-lic]').forEach((rb) => rb.addEventListener('click', async () => {
             try {
               const r = await api(`/licenses/assignments/${rb.dataset.revokeLic}/revoke`, { method: 'POST' });

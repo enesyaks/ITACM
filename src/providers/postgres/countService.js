@@ -90,6 +90,58 @@ async function getCount(id) {
   return count;
 }
 
+/** Escape LIKE wildcards so a serial containing "_" or "%" stays literal. */
+function likeEscape(q) {
+  return String(q).replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
+
+/**
+ * Partial-match lookup for the scan box: typing part of a tag or serial lists
+ * the devices it could be, so the operator can pick one instead of guessing the
+ * rest of the code. Scoped to the same set the count expects (non-scrap, and
+ * the session's location when it has one) and flags what is already counted.
+ */
+async function suggestAssets(countId, q, { limit = 8 } = {}) {
+  if (!isUuid(countId)) throw HttpError.notFound('Count not found');
+  const term = String(q || '').trim();
+  if (term.length < 2) return [];
+
+  const { rows: countRows } = await query('SELECT location FROM stock_counts WHERE id = $1', [countId]);
+  if (!countRows[0]) throw HttpError.notFound('Count not found');
+
+  const escaped = likeEscape(term.slice(0, 120));
+  const params = [countId, `%${escaped}%`, `${escaped}%`];
+  let locationSql = '';
+  if (countRows[0].location) {
+    params.push(countRows[0].location);
+    locationSql = ` AND a.location = $${params.length}`;
+  }
+  params.push(Math.min(Math.max(Number(limit) || 8, 1), 25));
+
+  const { rows } = await query(
+    `SELECT a.id, a.asset_tag, a.serial_number, a.brand, a.model, a.category,
+            a.status, a.location, a.current_employee_name,
+            EXISTS (SELECT 1 FROM stock_count_scans s
+                     WHERE s.count_id = $1 AND s.asset_id = a.id) AS scanned
+       FROM assets a
+      WHERE a.status <> 'Scrap'${locationSql}
+        AND (a.asset_tag ILIKE $2 ESCAPE '\\'
+             OR COALESCE(a.serial_number, '') ILIKE $2 ESCAPE '\\'
+             OR COALESCE(a.brand, '') ILIKE $2 ESCAPE '\\'
+             OR COALESCE(a.model, '') ILIKE $2 ESCAPE '\\')
+      -- Codes the operator is actually typing rank first: starts-with, then any
+      -- tag/serial hit, and only then a brand/model coincidence.
+      ORDER BY (a.asset_tag ILIKE $3 ESCAPE '\\'
+                OR COALESCE(a.serial_number, '') ILIKE $3 ESCAPE '\\') DESC,
+               (a.asset_tag ILIKE $2 ESCAPE '\\'
+                OR COALESCE(a.serial_number, '') ILIKE $2 ESCAPE '\\') DESC,
+               LENGTH(a.asset_tag), a.asset_tag
+      LIMIT $${params.length}`,
+    params
+  );
+  return mapRows(rows);
+}
+
 /** Record one scan. Duplicates (same raw in the same count) are idempotent. */
 async function scanTag(countId, raw, itUser) {
   if (!isUuid(countId)) throw HttpError.notFound('Count not found');
@@ -162,4 +214,4 @@ async function closeCount(id, itUser) {
   return mapRow(upd.rows[0]);
 }
 
-module.exports = { createCount, listCounts, getCount, scanTag, closeCount };
+module.exports = { createCount, listCounts, getCount, suggestAssets, scanTag, closeCount };

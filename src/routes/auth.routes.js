@@ -121,10 +121,65 @@ router.get('/users', authenticate, requirePermission('user_management', 'read'),
   res.json({ success: true, data: await authProvider.listUsers() });
 }));
 
-/** POST /api/auth/users — create IT user. İzin: user_management:create */
+/**
+ * GET /api/auth/users/employee-candidates?q= — Active employees who do not yet
+ * have a login, for the "assign a role to an existing person" picker.
+ * İzin: user_management:create (same gate as creating the account).
+ */
+router.get('/users/employee-candidates', authenticate, requirePermission('user_management', 'create'), asyncHandler(async (req, res) => {
+  // `search` is what the shared employee picker sends; `q` is accepted too.
+  const term = req.query.search != null ? req.query.search : req.query.q;
+  const data = await authProvider.listEmployeeCandidates(term, req.query.limit);
+  res.json({ success: true, data });
+}));
+
+/**
+ * POST /api/auth/users — create an IT user, either from scratch
+ * ({ username, email }) or by promoting an existing person ({ employeeId }).
+ *
+ * password is optional: omitted, a temporary one is generated and the account
+ * must change it at first sign-in. Same delivery contract as employee
+ * grant-access — SMTP on → emailed and never returned; SMTP off or send
+ * failed → returned once so the admin can hand it over.
+ * İzin: user_management:create
+ */
 router.post('/users', authenticate, requirePermission('user_management', 'create'), asyncHandler(async (req, res) => {
   guardPrivilegedRoleAssignment(req);
-  res.status(201).json({ success: true, data: await authProvider.createItUser(req.body, req.user) });
+  const created = await authProvider.createItUser(req.body || {}, req.user);
+  const { tempPassword, generated, ...user } = created;
+
+  const { smtp } = await notificationService.getMailConfig();
+  const smtpOn = !!(smtp && smtp.host);
+  let emailStatus = 'skipped';
+  let emailError = null;
+  if (smtpOn) {
+    try {
+      await notificationService.sendPortalAccessEmail({
+        to: user.email,
+        username: user.username,
+        tempPassword,
+      });
+      emailStatus = 'sent';
+    } catch (err) {
+      console.warn('[notify] IT user credentials email failed:', err.message);
+      emailStatus = 'failed';
+      emailError = err.message || 'Email send failed';
+    }
+  }
+  // Reveal only when it wasn't (successfully) emailed — and never echo back a
+  // password the admin typed themselves; they already have it.
+  const reveal = generated && (!smtpOn || emailStatus === 'failed');
+  res.status(201).json({
+    success: true,
+    data: {
+      ...user,
+      generated,
+      smtpUsed: smtpOn,
+      emailStatus,
+      emailError: emailError || undefined,
+      tempPassword: reveal ? tempPassword : undefined,
+    },
+  });
 }));
 
 /** PUT /api/auth/users/:uid/role — change user role. İzin: user_management:update */
@@ -196,24 +251,16 @@ router.post('/owner/transfer', authenticate, loginLimiter, asyncHandler(async (r
   let tempPassword;
   if (smtpOn) {
     try {
-      if (mode === 'existing') {
-        await notificationService.sendMail({
-          to: newOwner.email,
-          subject: 'You are now the owner of this ITACM instance',
-          text: `Hello ${newOwner.username},\n\n`
-            + `You are now the Owner of this IT Asset Control instance.\n\n`
-            + `Sign in with your existing credentials and MFA.\n`,
-        });
-      } else {
-        await notificationService.sendMail({
-          to: newOwner.email,
-          subject: 'You are now the owner of this ITACM instance',
-          text: `Hello ${newOwner.username},\n\n`
-            + `You have been made the Owner of this IT Asset Control instance.\n\n`
-            + `Sign in with:\n  Email: ${newOwner.email}\n  Temporary password: ${password}\n\n`
-            + `Change this password right after signing in, and set up two-factor authentication when prompted.\n`,
-        });
-      }
+      // Body comes from the editable `owner_transfer` template; only the
+      // credentials line differs between an existing and a freshly created user.
+      await notificationService.sendOwnerTransferEmail({
+        to: newOwner.email,
+        username: newOwner.username,
+        credentials: mode === 'existing'
+          ? 'Sign in with your existing credentials and MFA.'
+          : `Sign in with:\n  Email: ${newOwner.email}\n  Temporary password: ${password}\n`
+            + 'Change this password right after signing in.',
+      });
       emailStatus = 'sent';
     } catch (err) {
       emailStatus = 'failed';

@@ -16,23 +16,51 @@ const { authProvider } = require('../providers');
 const { HttpError } = require('../utils/httpError');
 const { needsMfaEnrollment, isMfaEnrollmentAllowedPath } = require('../utils/mfaPolicy');
 const { needsPasswordChange, isPasswordChangeAllowedPath } = require('../utils/passwordPolicy');
-
-// Endpoints a Portal (self-service employee) account is allowed to reach:
+// Allowlist of the endpoints a Portal (self-service employee) account may reach:
 // its own zimmet plus the self-service auth actions. Everything else is 403.
-const PORTAL_AUTH_PATHS = new Set([
-  '/api/auth/logout',
-  '/api/auth/password',
-  '/api/auth/verify-token',
-  '/api/auth/my-permissions',
-  '/api/auth/mfa',
-  '/api/auth/mfa/setup',
-  '/api/auth/mfa/enable',
-  '/api/auth/mfa/disable',
-]);
-function isPortalAllowedPath(originalUrl) {
-  const path = String(originalUrl || '').split('?')[0].replace(/\/+$/, '') || '/';
-  if (path === '/api/me' || path.startsWith('/api/me/')) return true;
-  return PORTAL_AUTH_PATHS.has(path);
+const { isPortalAllowedPath } = require('../utils/portalPolicy');
+const { isHrAllowedPath } = require('../utils/hrPolicy');
+
+/**
+ * Gates every authenticated caller must clear, whatever proved their identity
+ * (session JWT or service API key). Kept in one place so a new gate can never
+ * be wired into the JWT path alone and be silently skipped by API keys.
+ */
+function applyPostAuthGates(req) {
+  // Owners without MFA may only hit enrollment / logout / verify-token.
+  // Service actors are exempt inside needsMfaEnrollment().
+  if (needsMfaEnrollment(req.user) && !isMfaEnrollmentAllowedPath(req.originalUrl)) {
+    throw HttpError.forbidden(
+      'Owners must enable MFA before using the app',
+      { code: 'MFA_ENROLLMENT_REQUIRED' }
+    );
+  }
+
+  // Users with a one-time/temp password must set a new one before normal API use.
+  if (needsPasswordChange(req.user) && !isPasswordChangeAllowedPath(req.originalUrl)) {
+    throw HttpError.forbidden(
+      'You must set a new password before continuing',
+      { code: 'PASSWORD_CHANGE_REQUIRED' }
+    );
+  }
+
+  // Portal = untrusted self-service employee login. Confine it to its OWN
+  // zimmet (/api/me/*) and self-service auth endpoints so it can never reach
+  // an authenticate-only route that assumed every caller was staff.
+  if (req.user.role === 'Portal' && !isPortalAllowedPath(req.originalUrl)) {
+    throw HttpError.forbidden(
+      'Portal accounts can only access their own zimmet',
+      { code: 'PORTAL_CONFINED' }
+    );
+  }
+
+  // HR = confined to request APIs + self zimmet + filtered dashboard.
+  if (req.user.role === 'HR' && !isHrAllowedPath(req.originalUrl)) {
+    throw HttpError.forbidden(
+      'HR accounts can only access onboarding/offboarding requests and their own zimmet',
+      { code: 'HR_CONFINED' }
+    );
+  }
 }
 
 async function authenticate(req, res, next) {
@@ -40,20 +68,15 @@ async function authenticate(req, res, next) {
     const header = req.headers.authorization || '';
     const [scheme, token] = header.split(' ');
     const apiKeyHeader = req.headers['x-api-key'];
+    const rawApiKey = apiKeyHeader
+      || (scheme === 'Bearer' && token && token.startsWith('itacm_') ? token : null);
 
-    if (apiKeyHeader) {
+    if (rawApiKey) {
       const apiKeyService = require('../providers/postgres/apiKeyService');
-      const user = await apiKeyService.verifyRawKey(String(apiKeyHeader));
+      const user = await apiKeyService.verifyRawKey(String(rawApiKey));
       if (!user) throw HttpError.unauthorized('Invalid API key');
       req.user = user;
-      return next();
-    }
-
-    if (scheme === 'Bearer' && token && token.startsWith('itacm_')) {
-      const apiKeyService = require('../providers/postgres/apiKeyService');
-      const user = await apiKeyService.verifyRawKey(token);
-      if (!user) throw HttpError.unauthorized('Invalid API key');
-      req.user = user;
+      applyPostAuthGates(req);
       return next();
     }
 
@@ -74,31 +97,7 @@ async function authenticate(req, res, next) {
       customConstraints: rows[0]?.customConstraints || null,
     };
 
-    // Owners without MFA may only hit enrollment / logout / verify-token.
-    if (needsMfaEnrollment(req.user) && !isMfaEnrollmentAllowedPath(req.originalUrl)) {
-      throw HttpError.forbidden(
-        'Owners must enable MFA before using the app',
-        { code: 'MFA_ENROLLMENT_REQUIRED' }
-      );
-    }
-
-    // Users with a one-time/temp password must set a new one before normal API use.
-    if (needsPasswordChange(req.user) && !isPasswordChangeAllowedPath(req.originalUrl)) {
-      throw HttpError.forbidden(
-        'You must set a new password before continuing',
-        { code: 'PASSWORD_CHANGE_REQUIRED' }
-      );
-    }
-
-    // Portal = untrusted self-service employee login. Confine it to its OWN
-    // zimmet (/api/me/*) and self-service auth endpoints so it can never reach
-    // an authenticate-only route that assumed every caller was staff.
-    if (req.user.role === 'Portal' && !isPortalAllowedPath(req.originalUrl)) {
-      throw HttpError.forbidden(
-        'Portal accounts can only access their own zimmet',
-        { code: 'PORTAL_CONFINED' }
-      );
-    }
+    applyPostAuthGates(req);
 
     next();
   } catch (err) {

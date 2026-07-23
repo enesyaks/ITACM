@@ -12,15 +12,18 @@
 // 'Portal' = self-service employee login. It can ONLY see its own zimmet via
 // /api/me/*; it holds none of the staff/admin capabilities below and its nav is
 // reduced to the "Zimmetlerim" page on the client.
-const ROLES = Object.freeze(['Owner', 'Admin', 'Helpdesk', 'Viewer', 'Portal']);
+// 'HR' = HR officer: onboarding/offboarding *requests* + own zimmet only.
+const ROLES = Object.freeze(['Owner', 'Admin', 'Helpdesk', 'Viewer', 'Portal', 'HR']);
 
 function buildPermissions(role) {
   const isOwner = role === 'Owner';
   const isAdmin = role === 'Admin';
+  const isHr = role === 'HR';
   const isStaff = isOwner || isAdmin || role === 'Helpdesk';
   return {
     canViewDashboard: role !== 'Portal',
     isPortal: role === 'Portal',
+    isHr,
     canManageAssets: isStaff,
     canExecuteHandovers: isStaff,
     canManageMaintenance: isStaff,

@@ -103,13 +103,48 @@ async function fetchItems(tOrQuery, onboardingId) {
   });
 }
 
+/**
+ * The HR ticket this onboarding was provisioned from, if any.
+ *
+ * IT prepares the kit from this list, so the equipment HR asked for has to
+ * travel with the onboarding rather than staying buried in a closed ticket.
+ * Tolerates a database without the hr_* tables (older deployments).
+ */
+async function fetchHrRequest(onboardingId) {
+  try {
+    const { rows } = await query(
+      `SELECT id, notes, created_by_name, fulfilled_at
+         FROM hr_requests WHERE onboarding_id = $1 LIMIT 1`,
+      [onboardingId]
+    );
+    if (!rows[0]) return null;
+    const { rows: itemRows } = await query(
+      'SELECT category, qty FROM hr_request_items WHERE request_id = $1 ORDER BY category',
+      [rows[0].id]
+    );
+    return {
+      id: rows[0].id,
+      requestedBy: rows[0].created_by_name || null,
+      notes: rows[0].notes || '',
+      fulfilledAt: rows[0].fulfilled_at || null,
+      items: itemRows.map((r) => ({ category: r.category, qty: r.qty })),
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function enrichOnboarding(row, items) {
-  const emp = await query('SELECT * FROM employees WHERE id = $1', [row.employee_id]);
+  const [emp, hrRequest] = await Promise.all([
+    query('SELECT * FROM employees WHERE id = $1', [row.employee_id]),
+    fetchHrRequest(row.id),
+  ]);
   return {
     ...mapRow(row),
     employee: emp.rows[0] ? mapRow(emp.rows[0]) : null,
     items,
     itemCount: items.length,
+    hrRequest,
   };
 }
 
@@ -286,7 +321,8 @@ async function createOnboarding(body, itUser) {
       summary: `Scheduled onboarding for ${data.employee?.fullName || ob.employee_id} on ${startDate}`,
       entityType: 'employee',
       entityId: ob.employee_id,
-      actorUserId: a.id,
+      actorId: a.id,
+      actorEmail: (itUser && itUser.email) || null,
       actorName: a.name,
       meta: { onboardingId: ob.id, itemCount: items.length },
     });
@@ -434,6 +470,20 @@ async function completeOnboarding(onboardingId, body, itUser) {
     );
   });
 
+  // Close the loop back to the HR ticket that asked for this, so HR can tell
+  // "IT picked it up" apart from "the person actually has their kit".
+  //
+  // Deliberately AFTER the transaction: a failure here (e.g. a database without
+  // the hr_* tables) must not abort and roll back a handover that already
+  // happened — inside a transaction the first error poisons every later
+  // statement regardless of any catch.
+  await query(
+    `UPDATE hr_requests
+        SET fulfilled_at = now(), fulfilled_handover_id = $2
+      WHERE onboarding_id = $1 AND fulfilled_at IS NULL`,
+    [onboardingId, receipt.handoverId]
+  ).catch(() => {});
+
   const a = actor(itUser);
   try {
     await auditService.logEvent({
@@ -442,7 +492,8 @@ async function completeOnboarding(onboardingId, body, itUser) {
       summary: `Completed onboarding zimmet for ${detail.employee?.fullName || detail.employeeId}`,
       entityType: 'employee',
       entityId: detail.employeeId,
-      actorUserId: a.id,
+      actorId: a.id,
+      actorEmail: (itUser && itUser.email) || null,
       actorName: a.name,
       meta: { onboardingId, handoverId: receipt.handoverId },
     });
@@ -483,7 +534,8 @@ async function cancelOnboarding(onboardingId, itUser) {
       summary: `Cancelled onboarding for ${data.employee?.fullName || data.employeeId}`,
       entityType: 'employee',
       entityId: data.employeeId,
-      actorUserId: a.id,
+      actorId: a.id,
+      actorEmail: (itUser && itUser.email) || null,
       actorName: a.name,
       meta: { onboardingId },
     });

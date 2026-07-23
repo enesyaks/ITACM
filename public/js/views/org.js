@@ -9,8 +9,11 @@ Views.org = async function (el) {
   const _lng = (typeof window.i18nLang === 'function' ? window.i18nLang() : 'en');
   const T = (en, tr) => (_lng === 'tr' ? tr : en);
 
-  const NW = 216, NH = 66, GAPX = 96, GAPY = 20, PAD = 30, ROWH = NH + GAPY;
-  const C_ROOT = '#7f77dd', C_DEPT = '#175cd3', C_TEAM = '#0f6e56';
+  // Top-down chart: GAPX separates sibling columns, GAPYV separates levels.
+  const NW = 216, NH = 66, GAPX = 40, GAPYV = 74, PAD = 30;
+  const C_ROOT = '#7f77dd', C_DEPT = '#175cd3', C_TEAM = '#0f6e56', C_PERSON = '#b54708';
+  // 'struct' = company → departments → teams, 'people' = who reports to whom.
+  const view = { mode: 'people', collapsed: new Set() };
   const trunc = (s, n) => { s = String(s || ''); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
 
   /* ---------- Employee picker (manager / lead) ---------- */
@@ -158,10 +161,28 @@ Views.org = async function (el) {
     });
   }
 
-  /* ---------- SVG topology builder ---------- */
-  function nodeSvg(kind, id, x, y, title, sub, meta, accent) {
+  /* ---------- SVG topology builder (top-down, draggable) ---------- */
+  const ORG_LAYOUT_KEY = 'itacm:org-topo-layout';
+  const ORG_DRAG_THRESHOLD = 5;
+
+  function loadOrgLayout() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(ORG_LAYOUT_KEY) || 'null');
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch { return {}; }
+  }
+  function saveOrgLayout(map) {
+    try { localStorage.setItem(ORG_LAYOUT_KEY, JSON.stringify(map)); } catch { /* private mode */ }
+  }
+  function clearOrgLayout() {
+    try { localStorage.removeItem(ORG_LAYOUT_KEY); } catch { /* ignore */ }
+  }
+  const hasOrgLayout = () => Object.keys(loadOrgLayout()).length > 0;
+
+  function nodeSvg(kind, id, key, x, y, title, sub, meta, accent) {
     return `
-      <g class="net-topo-node" data-kind="${kind}" data-id="${esc(id)}" transform="translate(${x},${y})" role="button" tabindex="0">
+      <g class="net-topo-node" data-kind="${kind}" data-id="${esc(id)}" data-node="${esc(key)}"
+         transform="translate(${x},${y})" role="button" tabindex="0">
         <rect class="net-topo-node-bg" width="${NW}" height="${NH}" rx="10" ry="10" fill="#fff"/>
         <rect class="net-topo-node-accent" width="6" height="${NH}" rx="3" fill="${accent}"/>
         <rect class="net-topo-node-stroke" width="${NW}" height="${NH}" rx="10" ry="10" fill="none" stroke="#e4e7ec" stroke-width="1.5"/>
@@ -170,50 +191,87 @@ Views.org = async function (el) {
         <text class="net-topo-meta" x="18" y="58">${esc(meta)}</text>
       </g>`;
   }
-  const edge = (x1, y1, x2, y2) =>
-    `<path class="net-topo-edge" d="M${x1} ${y1} C ${x1 + 46} ${y1}, ${x2 - 46} ${y2}, ${x2} ${y2}" fill="none" stroke="#cbd2dc" stroke-width="1.5" marker-end="url(#org-arrow)"/>`;
+
+  /** Classic org-chart elbow: straight down out of the parent, across, then down
+   *  into the child — stopping just short of the card so the arrow head lands on
+   *  the border instead of overlapping the accent bar. */
+  function orgEdgePath(a, b) {
+    const x1 = a.x + NW / 2;
+    const y1 = a.y + NH;
+    const x2 = b.x + NW / 2;
+    const y2 = b.y - 5;
+    const midY = y1 + Math.max(18, (y2 - y1) / 2);
+    return `M${x1} ${y1} V ${midY} H ${x2} V ${y2}`;
+  }
+  const edgeSvg = (from, to, a, b) =>
+    `<path class="net-topo-edge" data-from="${esc(from)}" data-to="${esc(to)}" d="${orgEdgePath(a, b)}"
+       fill="none" stroke="#cbd2dc" stroke-width="1.5" marker-end="url(#org-arrow)"/>`;
 
   function topologySvg(tree) {
+    // Column packing: a department owns as many columns as it has teams, so teams
+    // never collide and the parent sits centred above its own block.
     let cursor = 0;
     const layout = tree.departments.map((d) => {
       const span = Math.max(1, d.teams.length);
       const start = cursor; cursor += span;
       return { d, start, span };
     });
-    const totalRows = Math.max(1, cursor);
-    const colX = [PAD, PAD + (NW + GAPX), PAD + 2 * (NW + GAPX)];
-    const width = PAD * 2 + 3 * NW + 2 * GAPX;
-    const height = PAD * 2 + totalRows * ROWH - GAPY;
-    const rowY = (r) => PAD + r * ROWH;
-    const contentH = totalRows * ROWH - GAPY;
-    const rootY = PAD + contentH / 2 - NH / 2;
+    const cols = Math.max(1, cursor);
+    const COLW = NW + GAPX;
+    const contentW = cols * COLW - GAPX;
+    const levelY = (lv) => PAD + lv * (NH + GAPYV);
+    const saved = loadOrgLayout();
+    const at = (key, x, y) => {
+      const p = saved[key];
+      return Array.isArray(p) && Number.isFinite(p[0]) && Number.isFinite(p[1])
+        ? { x: p[0], y: p[1] } : { x, y };
+    };
+
     const peopleCount = tree.departments.reduce((n, d) => n + d.memberCount, 0) + tree.unassigned.length;
     const uPeople = T('people', 'kişi'), uTeams = T('teams', 'takım');
 
+    const placed = [];
     const edges = [];
     const nodes = [];
-    const rootRight = [colX[0] + NW, rootY + NH / 2];
-    nodes.push(nodeSvg('root', '', colX[0], rootY,
+
+    const root = at('root', PAD + contentW / 2 - NW / 2, levelY(0));
+    placed.push(root);
+    nodes.push(nodeSvg('root', '', 'root', root.x, root.y,
       AppConfig.companyName || T('Organization', 'Organizasyon'),
-      `${tree.departments.length} ${T('departments', 'departman')}`, `${peopleCount.toLocaleString()} ${uPeople}`, C_ROOT));
+      `${tree.departments.length} ${T('departments', 'departman')}`,
+      `${peopleCount.toLocaleString()} ${uPeople}`, C_ROOT));
 
     layout.forEach(({ d, start, span }) => {
-      const dy = rowY(start) + (span * ROWH - GAPY) / 2 - NH / 2;
-      edges.push(edge(rootRight[0], rootRight[1], colX[1], dy + NH / 2));
-      nodes.push(nodeSvg('dept', d.id, colX[1], dy, d.name,
+      const dKey = `dept:${d.id}`;
+      const dCentre = PAD + start * COLW + (span * COLW - GAPX) / 2;
+      const dp = at(dKey, dCentre - NW / 2, levelY(1));
+      placed.push(dp);
+      edges.push(edgeSvg('root', dKey, root, dp));
+      nodes.push(nodeSvg('dept', d.id, dKey, dp.x, dp.y, d.name,
         `${T('Mgr', 'Yön')}: ${d.manager ? d.manager.fullName : '—'}`,
         `${d.memberCount} ${uPeople} · ${d.teams.length} ${uTeams}`, C_DEPT));
+
       d.teams.forEach((tm, j) => {
-        const ty = rowY(start + j);
-        edges.push(edge(colX[1] + NW, dy + NH / 2, colX[2], ty + NH / 2));
-        nodes.push(nodeSvg('team', tm.id, colX[2], ty, tm.name,
+        const tKey = `team:${tm.id}`;
+        const tp = at(tKey, PAD + (start + j) * COLW, levelY(2));
+        placed.push(tp);
+        edges.push(edgeSvg(dKey, tKey, dp, tp));
+        nodes.push(nodeSvg('team', tm.id, tKey, tp.x, tp.y, tm.name,
           `Lead: ${tm.lead ? tm.lead.fullName : '—'}`, `${tm.members.length} ${uPeople}`, C_TEAM));
       });
     });
 
+    // The canvas must cover dragged nodes too, not just the generated grid.
+    let width = PAD * 2 + contentW;
+    let height = PAD * 2 + 3 * NH + 2 * GAPYV;
+    placed.forEach((p) => {
+      width = Math.max(width, p.x + NW + PAD);
+      height = Math.max(height, p.y + NH + PAD);
+    });
+
     return `
       <div class="net-topo-scroll" style="max-height:calc(100vh - 340px)">
-        <svg class="net-topo-svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">
+        <svg class="net-topo-svg org-topo" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">
           <defs><marker id="org-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
             <path d="M0 0 L10 5 L0 10 z" fill="#cbd2dc"/></marker></defs>
           <g class="net-topo-edges">${edges.join('')}</g>
@@ -222,8 +280,195 @@ Views.org = async function (el) {
       </div>`;
   }
 
+  /* ---------- reporting-line chart (people) ---------- */
+  /** Everyone below level 1 starts folded — 97 cards at once is unreadable. */
+  function defaultCollapsed(roots) {
+    const set = new Set();
+    const walk = (n, level) => {
+      if (level >= 1 && n.children.length) set.add(n.id);
+      n.children.forEach((c) => walk(c, level + 1));
+    };
+    roots.forEach((r) => walk(r, 0));
+    return set;
+  }
+
+  function personNodeSvg(p, x, y, folded) {
+    const key = `person:${p.id}`;
+    const badgeText = p.isDeptManager ? T('Dept manager', 'Dept. yöneticisi')
+      : p.isTeamLead ? T('Team lead', 'Takım lideri') : '';
+    const kids = p.children.length;
+    return `
+      <g class="net-topo-node org-person" data-kind="person" data-id="${esc(p.id)}" data-node="${esc(key)}"
+         transform="translate(${x},${y})" role="button" tabindex="0">
+        <rect class="net-topo-node-bg" width="${NW}" height="${NH}" rx="10" ry="10" fill="#fff"/>
+        <rect class="net-topo-node-accent" width="6" height="${NH}" rx="3" fill="${p.isDeptManager ? C_DEPT : p.isTeamLead ? C_TEAM : C_PERSON}"/>
+        <rect class="net-topo-node-stroke" width="${NW}" height="${NH}" rx="10" ry="10" fill="none" stroke="#e4e7ec" stroke-width="1.5"/>
+        <text class="net-topo-title" x="18" y="24">${esc(trunc(p.fullName, 24))}</text>
+        <text class="net-topo-sub" x="18" y="41">${esc(trunc(p.title || T('No title', 'Ünvan yok'), 30))}</text>
+        <text class="net-topo-meta" x="18" y="57">${esc(trunc([p.department, badgeText].filter(Boolean).join(' · '), kids ? 22 : 34))}</text>
+        ${kids ? `
+        <g class="org-toggle" data-toggle="${esc(p.id)}" role="button" tabindex="0">
+          <rect x="${NW - 44}" y="${NH - 24}" width="38" height="18" rx="9" fill="${folded ? '#eef2ff' : '#f2f4f7'}"/>
+          <text class="org-toggle-text" x="${NW - 25}" y="${NH - 11}" text-anchor="middle">${folded ? `+${kids}` : '−'}</text>
+        </g>` : ''}
+      </g>`;
+  }
+
+  function peopleTopologySvg(roots) {
+    const COLW = NW + GAPX;
+    const levelY = (lv) => PAD + lv * (NH + GAPYV);
+    const saved = loadOrgLayout();
+    const at = (key, x, y) => {
+      const p = saved[key];
+      return Array.isArray(p) && Number.isFinite(p[0]) && Number.isFinite(p[1])
+        ? { x: p[0], y: p[1] } : { x, y };
+    };
+
+    const nodes = [];
+    const edges = [];
+    const placed = [];
+    const nodePos = new Map();
+    let col = 0;
+
+    // Tidy layout: leaves take the next column, parents centre over their block.
+    const place = (p, level) => {
+      const folded = view.collapsed.has(p.id);
+      const kids = folded ? [] : p.children;
+      let gx;
+      if (!kids.length) {
+        gx = PAD + col * COLW;
+        col += 1;
+      } else {
+        const xs = kids.map((c) => place(c, level + 1));
+        gx = (xs[0] + xs[xs.length - 1]) / 2;
+      }
+      const pos = at(`person:${p.id}`, gx, levelY(level));
+      placed.push(pos);
+      nodes.push({ svg: personNodeSvg(p, pos.x, pos.y, folded), level });
+      kids.forEach((c) => edges.push({ from: `person:${p.id}`, to: `person:${c.id}` }));
+      nodePos.set(`person:${p.id}`, pos);
+      return gx;
+    };
+    roots.forEach((r) => place(r, 0));
+
+    const edgeHtml = edges.map((e) => {
+      const a = nodePos.get(e.from);
+      const b = nodePos.get(e.to);
+      return a && b ? edgeSvg(e.from, e.to, a, b) : '';
+    }).join('');
+
+    let width = PAD * 2 + Math.max(1, col) * COLW - GAPX;
+    let height = PAD * 2 + NH;
+    placed.forEach((p) => {
+      width = Math.max(width, p.x + NW + PAD);
+      height = Math.max(height, p.y + NH + PAD);
+    });
+
+    return `
+      <div class="net-topo-scroll" style="max-height:calc(100vh - 340px)">
+        <svg class="net-topo-svg org-topo" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">
+          <defs><marker id="org-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+            <path d="M0 0 L10 5 L0 10 z" fill="#cbd2dc"/></marker></defs>
+          <g class="net-topo-edges">${edgeHtml}</g>
+          <g class="net-topo-nodes">${nodes.map((n) => n.svg).join('')}</g>
+        </svg>
+      </div>`;
+  }
+
+  /* ---------- dragging ---------- */
+  function svgPoint(svg, clientX, clientY) {
+    const pt = svg.createSVGPoint();
+    pt.x = clientX; pt.y = clientY;
+    const ctm = svg.getScreenCTM();
+    return ctm ? pt.matrixTransform(ctm.inverse()) : { x: 0, y: 0 };
+  }
+
+  function refreshEdges(svg) {
+    const boxes = new Map();
+    svg.querySelectorAll('.net-topo-node').forEach((g) => {
+      const m = /translate\(\s*([-\d.]+)\s*,\s*([-\d.]+)\s*\)/.exec(g.getAttribute('transform') || '');
+      if (m) boxes.set(g.dataset.node, { x: Number(m[1]), y: Number(m[2]) });
+    });
+    svg.querySelectorAll('.net-topo-edge').forEach((p) => {
+      const a = boxes.get(p.dataset.from);
+      const b = boxes.get(p.dataset.to);
+      if (a && b) p.setAttribute('d', orgEdgePath(a, b));
+    });
+  }
+
+  function growCanvas(svg, x, y) {
+    const w = Math.max(Number(svg.getAttribute('width')) || 0, x + NW + PAD);
+    const h = Math.max(Number(svg.getAttribute('height')) || 0, y + NH + PAD);
+    svg.setAttribute('width', w);
+    svg.setAttribute('height', h);
+    svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+  }
+
+  function bindOrgDrag(svg, onMoved) {
+    let drag = null;
+
+    const onMove = (e) => {
+      if (!drag) return;
+      const pt = svgPoint(svg, e.clientX, e.clientY);
+      const dx = pt.x - drag.startX;
+      const dy = pt.y - drag.startY;
+      if (!drag.moved && (dx * dx + dy * dy) < ORG_DRAG_THRESHOLD * ORG_DRAG_THRESHOLD) return;
+      drag.moved = true;
+      drag.g.classList.add('is-dragging');
+      // Keep nodes on the canvas — negative coordinates would clip them away.
+      drag.x = Math.max(0, drag.originX + dx);
+      drag.y = Math.max(0, drag.originY + dy);
+      drag.g.setAttribute('transform', `translate(${drag.x},${drag.y})`);
+      refreshEdges(svg);
+      growCanvas(svg, drag.x, drag.y);
+    };
+
+    const onUp = () => {
+      if (!drag) return;
+      const { g, key, moved, x, y, pointerId } = drag;
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+      try { g.releasePointerCapture(pointerId); } catch { /* already released */ }
+      g.classList.remove('is-dragging');
+      drag = null;
+      if (!moved) return;
+      // Swallow the click that follows a drag so the node's modal stays shut.
+      g.dataset.justDragged = '1';
+      const map = loadOrgLayout();
+      map[key] = [Math.round(x), Math.round(y)];
+      saveOrgLayout(map);
+      if (onMoved) onMoved();
+    };
+
+    svg.querySelectorAll('.net-topo-node').forEach((g) => {
+      g.addEventListener('pointerdown', (e) => {
+        if (e.button != null && e.button !== 0) return;
+        const m = /translate\(\s*([-\d.]+)\s*,\s*([-\d.]+)\s*\)/.exec(g.getAttribute('transform') || '');
+        if (!m) return;
+        const pt = svgPoint(svg, e.clientX, e.clientY);
+        drag = {
+          g, key: g.dataset.node,
+          originX: Number(m[1]), originY: Number(m[2]),
+          x: Number(m[1]), y: Number(m[2]),
+          startX: pt.x, startY: pt.y,
+          moved: false, pointerId: e.pointerId,
+        };
+        try { g.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
+        window.addEventListener('pointercancel', onUp);
+        e.preventDefault();
+      });
+    });
+  }
+
   /* ------------------------------- Render ------------------------------- */
   function render(tree, approvals) {
+    const reporting = Array.isArray(tree.reporting) ? tree.reporting : [];
+    if (view.mode === 'people' && !view.collapsed.size && reporting.length) {
+      view.collapsed = defaultCollapsed(reporting);
+    }
     const teamCount = tree.departments.reduce((n, d) => n + d.teams.length, 0);
     const peopleCount = tree.departments.reduce((n, d) => n + d.memberCount, 0) + tree.unassigned.length;
 
@@ -245,12 +490,34 @@ Views.org = async function (el) {
 
       <div class="card" style="padding:12px">
         <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:0 4px 10px">
-          <span class="net-role-chip"><i style="background:${C_ROOT}"></i>${esc(T('Company', 'Şirket'))}</span>
-          <span class="net-role-chip"><i style="background:${C_DEPT}"></i>${esc(T('Department', 'Departman'))}</span>
-          <span class="net-role-chip"><i style="background:${C_TEAM}"></i>${esc(T('Team', 'Takım'))}</span>
-          <span class="cell-sub" style="margin-left:auto">${esc(T('Click a node to manage it', 'Yönetmek için bir düğüme tıklayın'))}</span>
+          ${view.mode === 'people' ? `
+            <span class="net-role-chip"><i style="background:${C_DEPT}"></i>${esc(T('Dept manager', 'Dept. yöneticisi'))}</span>
+            <span class="net-role-chip"><i style="background:${C_TEAM}"></i>${esc(T('Team lead', 'Takım lideri'))}</span>
+            <span class="net-role-chip"><i style="background:${C_PERSON}"></i>${esc(T('Employee', 'Çalışan'))}</span>
+          ` : `
+            <span class="net-role-chip"><i style="background:${C_ROOT}"></i>${esc(T('Company', 'Şirket'))}</span>
+            <span class="net-role-chip"><i style="background:${C_DEPT}"></i>${esc(T('Department', 'Departman'))}</span>
+            <span class="net-role-chip"><i style="background:${C_TEAM}"></i>${esc(T('Team', 'Takım'))}</span>
+          `}
+          <span class="org-mode-switch">
+            <button type="button" class="btn btn-sm ${view.mode === 'people' ? 'btn-primary' : 'btn-outline'}" data-org-mode="people">
+              <span class="ms">account_tree</span> ${esc(T('Reporting line', 'Raporlama hattı'))}</button>
+            <button type="button" class="btn btn-sm ${view.mode === 'struct' ? 'btn-primary' : 'btn-outline'}" data-org-mode="struct">
+              <span class="ms">corporate_fare</span> ${esc(T('Departments & teams', 'Departman & takım'))}</button>
+          </span>
+          <span class="cell-sub" style="margin-left:auto">${esc(view.mode === 'people'
+            ? T('Click a card to fold / unfold reports · drag to rearrange', 'Ekibi açıp kapatmak için karta tıklayın · taşımak için sürükleyin')
+            : T('Click a node to manage it · drag to rearrange', 'Yönetmek için tıklayın · taşımak için sürükleyin'))}</span>
+          <button type="button" class="btn btn-outline btn-sm net-topo-reset" id="org-topo-reset" ${hasOrgLayout() ? '' : 'disabled'}>
+            <span class="ms">restart_alt</span> ${esc(T('Reset layout', 'Düzeni sıfırla'))}</button>
         </div>
-        ${tree.departments.length ? topologySvg(tree) : `<div class="table-empty" style="padding:24px">${esc(T('No departments yet. Add one to start building the chart.', 'Henüz departman yok. Şemayı kurmak için bir departman ekleyin.'))}</div>`}
+        ${view.mode === 'people'
+          ? (reporting.length
+            ? peopleTopologySvg(reporting)
+            : `<div class="table-empty" style="padding:24px">${esc(T('No reporting lines yet — set a manager on employee records to build this chart.', 'Henüz raporlama hattı yok — çalışan kayıtlarında yönetici atayarak bu şemayı oluşturun.'))}</div>`)
+          : (tree.departments.length
+            ? topologySvg(tree)
+            : `<div class="table-empty" style="padding:24px">${esc(T('No departments yet. Add one to start building the chart.', 'Henüz departman yok. Şemayı kurmak için bir departman ekleyin.'))}</div>`)}
       </div>`;
 
     wire(tree);
@@ -274,6 +541,63 @@ Views.org = async function (el) {
       },
     }));
 
+    const resetBtn = $('#org-topo-reset', el);
+    if (resetBtn) resetBtn.addEventListener('click', () => { clearOrgLayout(); render(tree, null); });
+
+    el.querySelectorAll('[data-org-mode]').forEach((b) => b.addEventListener('click', () => {
+      if (view.mode === b.dataset.orgMode) return;
+      view.mode = b.dataset.orgMode;
+      render(tree, null);
+    }));
+
+    // People mode: the card itself folds / unfolds the branch, so a 97-person
+    // org stays readable; the employee record opens on double click.
+    const peopleById = new Map();
+    (function indexPeople(list) {
+      (list || []).forEach((p) => { peopleById.set(p.id, p); indexPeople(p.children); });
+    })(tree.reporting);
+
+    el.querySelectorAll('.org-person').forEach((g) => {
+      const id = g.dataset.id;
+      const toggle = () => {
+        const p = peopleById.get(id);
+        if (!p || !p.children.length) return;
+        if (view.collapsed.has(id)) view.collapsed.delete(id);
+        else view.collapsed.add(id);
+        render(tree, null);
+      };
+      g.addEventListener('click', () => {
+        if (g.dataset.justDragged) { delete g.dataset.justDragged; return; }
+        toggle();
+      });
+      g.addEventListener('dblclick', async () => {
+        try {
+          const full = await api(`/employees/${encodeURIComponent(id)}`);
+          if (typeof showEmployeeDetail === 'function') showEmployeeDetail(full);
+        } catch { /* no access to the record */ }
+      });
+      g.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toggle(); }
+      });
+    });
+
+    const svg = el.querySelector('.org-topo');
+    if (svg) {
+      bindOrgDrag(svg, () => { if (resetBtn) resetBtn.disabled = false; });
+      // A wide chart starts scrolled far left of its top node — centre on it.
+      const scroller = svg.closest('.net-topo-scroll');
+      let top = null;
+      svg.querySelectorAll('.net-topo-node').forEach((g) => {
+        const m = /translate\(\s*([-\d.]+)\s*,\s*([-\d.]+)\s*\)/.exec(g.getAttribute('transform') || '');
+        if (!m) return;
+        const p = { x: Number(m[1]), y: Number(m[2]) };
+        if (!top || p.y < top.y) top = p;
+      });
+      if (scroller && top) {
+        scroller.scrollLeft = Math.max(0, top.x + NW / 2 - scroller.clientWidth / 2);
+      }
+    }
+
     el.querySelectorAll('.net-topo-node').forEach((g) => {
       const open = () => {
         const kind = g.dataset.kind;
@@ -281,8 +605,10 @@ Views.org = async function (el) {
         else if (kind === 'team') { const e = teamById.get(g.dataset.id); if (e) openTeamModal(e.dept, e.tm); }
         else if (kind === 'root' && canManage && addDept) addDept.click();
       };
-      g.style.cursor = 'pointer';
-      g.addEventListener('click', open);
+      g.addEventListener('click', () => {
+        if (g.dataset.justDragged) { delete g.dataset.justDragged; return; }
+        open();
+      });
       g.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); open(); } });
     });
   }

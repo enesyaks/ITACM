@@ -1,5 +1,14 @@
 Views.dashboard = async function (el) {
   const d = await api('/dashboard/stats');
+  const hrOn = d.alerts.hrOnboardPending || 0;
+  const hrOff = d.alerts.hrOffboardPending || 0;
+  // Mirrors the server gate on POST /hr/requests/:id/acknowledge.
+  const canAckHr = typeof Auth.canIamOp === 'function' && Auth.canIamOp('hr_request', 'update');
+  let hrPending = [];
+  if ((hrOn || hrOff) && canAckHr) {
+    hrPending = await api('/hr/requests?status=pending').catch(() => []);
+    if (!Array.isArray(hrPending)) hrPending = [];
+  }
   const a = d.assets;
   const lowest = d.alerts.lowStockConsumables[0];
   const eolOverdue = d.alerts.eolOverdueCount || 0;
@@ -11,7 +20,8 @@ Views.dashboard = async function (el) {
     return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
   })();
   const attnItems = (d.alerts.expiredLicenseCount ? 1 : 0) + (d.alerts.expiringLicenseCount ? 1 : 0)
-    + (lowest ? 1 : 0) + (eolOverdue ? 1 : 0) + (onboardDueCount ? 1 : 0);
+    + (lowest ? 1 : 0) + (eolOverdue ? 1 : 0) + (onboardDueCount ? 1 : 0)
+    + (hrOn ? 1 : 0) + (hrOff ? 1 : 0);
 
   const donut = (() => {
     const dist = (d.locationDistribution || []).slice(0, 4);
@@ -106,6 +116,34 @@ Views.dashboard = async function (el) {
           </table></div>
         </div>` : ''}
 
+
+        ${(hrOn || hrOff) ? `
+        <div class="card" style="margin-bottom:20px" id="dash-hr-card">
+          <div class="card-head" style="align-items:flex-start">
+            <div>
+              <h3 style="font-size:16px;text-transform:none;letter-spacing:0;color:var(--on-surface)">HR Requests</h3>
+              <div class="cell-sub" style="margin-top:2px">${hrOn} onboard · ${hrOff} offboard pending</div>
+            </div>
+          </div>
+          <div class="table-wrap"><table class="data">
+            <thead><tr><th>Type</th><th>Employee</th><th>Date</th><th>Items</th><th></th></tr></thead>
+            <tbody>
+              ${hrPending.length === 0 ? '<tr><td colspan="5" class="table-empty">Pending requests exist but could not be loaded.</td></tr>' :
+                hrPending.slice(0, 8).map((r) => `
+                <tr class="row-click" data-hr-detail="${esc(r.id)}" style="cursor:pointer">
+                  <td><span class="pill ${r.type === 'offboard' ? 'pill-rose' : 'pill-indigo'}">${esc(r.type)}</span></td>
+                  <td><div class="cell-title">${esc(r.fullName || '')}</div>
+                    <div class="cell-sub">${esc(r.email || '')}</div></td>
+                  <td>${esc(String(r.eventDate || '').slice(0, 10))}</td>
+                  <td class="cell-sub">${esc((r.items || []).map((i) => i.category + '×' + i.qty).join(', ') || '—')}</td>
+                  <td style="text-align:right">
+                    <button class="btn btn-outline btn-sm" data-hr-detail="${esc(r.id)}">${esc(t('hr.review'))}</button>
+                  </td>
+                </tr>`).join('')}
+            </tbody>
+          </table></div>
+        </div>` : ''}
+
         <!-- Recent handover activity -->
         <div class="card" style="margin-bottom:20px">
           <div class="card-head" style="align-items:flex-start">
@@ -170,6 +208,14 @@ Views.dashboard = async function (el) {
             <span class="attn-count">${attnItems}</span>
           </div>
           ${attnItems === 0 ? '<div class="table-empty">All clear. 🎉</div>' : ''}
+          ${(hrOn || hrOff) ? `
+          <div class="attn-item indigo">
+            ${iconChip('group_add', 'indigo')}
+            <div style="flex:1"><strong>HR requests pending</strong>
+              <span class="cell-sub">${hrOn} onboard · ${hrOff} offboard awaiting IT.</span>
+              <div style="text-align:right"><button class="attn-link" data-scroll-to="dash-hr-card">Review <span class="ms ms-sm">arrow_forward</span></button></div>
+            </div>
+          </div>` : ''}
           ${onboardDueCount ? `
           <div class="attn-item indigo">
             ${iconChip('event_available', 'indigo')}
@@ -273,10 +319,114 @@ Views.dashboard = async function (el) {
       openOnboardingDueModal({ force: true, focusId: ob.dataset.openOnboard }).catch((err) => toast(err.message, 'error'));
       return;
     }
+    const hrRow = e.target.closest('[data-hr-detail]');
+    if (hrRow) {
+      openHrRequestModal(hrRow.dataset.hrDetail, el).catch((err) => toast(err.message, 'error'));
+      return;
+    }
+    const scrollTo = e.target.closest('[data-scroll-to]');
+    if (scrollTo) {
+      const target = document.getElementById(scrollTo.dataset.scrollTo);
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
     const b = e.target.closest('[data-go]');
     if (b) location.hash = b.dataset.go;
   });
 };
+
+/**
+ * HR request review dialog — the approval surface for IT.
+ *
+ * HR files a ticket on its own page; IT never opens that page. Everything
+ * needed to decide is shown here (who, when, what kit, who asked), and the
+ * decision is taken from this dialog: Approve provisions the employee +
+ * scheduled onboarding, Reject withdraws the ticket with a reason.
+ */
+async function openHrRequestModal(requestId, el) {
+  const r = await api('/hr/requests/' + encodeURIComponent(requestId));
+  const canAct = typeof Auth.canIamOp === 'function' && Auth.canIamOp('hr_request', 'update');
+  const isOffboard = r.type === 'offboard';
+  const row = (label, value) => (value
+    ? `<tr><td class="cell-sub" style="width:150px">${esc(label)}</td>
+         <td>${esc(value)}</td></tr>`
+    : '');
+  const itemsHtml = (r.items || []).length
+    ? `<div class="table-wrap" style="margin-top:14px"><table class="data">
+         <thead><tr><th>${esc(t('hr.equipment'))}</th><th style="width:80px">${esc(t('hr.items'))}</th></tr></thead>
+         <tbody>${r.items.map((i) => `<tr><td>${esc(i.category)}</td><td>${Number(i.qty) || 1}</td></tr>`).join('')}</tbody>
+       </table></div>`
+    : '';
+
+  openModal({
+    title: t(isOffboard ? 'hr.reviewOffboard' : 'hr.reviewOnboard') + ' — ' + (r.fullName || ''),
+    body: `
+      <div class="table-wrap"><table class="data"><tbody>
+        ${row(t('hr.employee'), r.fullName)}
+        ${row(t('hr.email'), r.email)}
+        ${row(t('hr.department'), r.department)}
+        ${row(t('hr.title'), r.title)}
+        ${row(t(isOffboard ? 'hr.endDate' : 'hr.startDate'), String(r.eventDate || '').slice(0, 10))}
+        ${row(t('hr.requestedBy'), r.createdByName)}
+        ${row(t('hr.status'), t(r.status === 'acknowledged' ? 'hr.statusAcknowledged'
+    : r.status === 'cancelled' ? 'hr.statusCancelled' : 'hr.statusPending'))}
+        ${row(t('hr.notes'), r.notes)}
+      </tbody></table></div>
+      ${itemsHtml}
+      <p class="cell-sub" style="margin:14px 0 0">${esc(t(isOffboard ? 'hr.offboardHint' : 'hr.onboardHint'))}</p>`,
+    foot: `
+      <button class="btn btn-outline" data-close>${esc(t('common.close'))}</button>
+      ${canAct && r.status === 'pending' ? `
+        <button class="btn btn-outline" id="hr-reject">${esc(t('hr.reject'))}</button>
+        <button class="btn btn-primary" id="hr-approve">${esc(t('hr.approve'))}</button>` : ''}`,
+    onMount(overlay) {
+      const approve = overlay.querySelector('#hr-approve');
+      const reject = overlay.querySelector('#hr-reject');
+      if (approve) {
+        approve.addEventListener('click', async () => {
+          approve.disabled = true;
+          try {
+            const res = await api('/hr/requests/' + encodeURIComponent(r.id) + '/acknowledge', { method: 'POST' });
+            closeModal();
+            toast(res && res.onboardingId
+              ? (t('hr.ackOnboardOk'))
+              : (t('hr.ackOk')), 'success');
+            // An approved offboard ticket is only half the job — hand IT straight
+            // to that employee's offboarding checklist instead of making them
+            // hunt for the person in the directory.
+            if (res && res.type === 'offboard' && res.employeeId) {
+              location.hash = '#/employees?offboard=' + encodeURIComponent(res.employeeId);
+              return;
+            }
+            Views.dashboard(el);
+          } catch (err) {
+            approve.disabled = false;
+            toast(err.message, 'error');
+          }
+        });
+      }
+      if (reject) {
+        reject.addEventListener('click', async () => {
+          const reason = prompt(t('hr.cancelReason'), '');
+          if (reason === null) return;
+          reject.disabled = true;
+          try {
+            await api('/hr/requests/' + encodeURIComponent(r.id) + '/cancel', {
+              method: 'POST',
+              body: { reason: reason },
+            });
+            closeModal();
+            toast(t('hr.cancelOk'), 'success');
+            Views.dashboard(el);
+          } catch (err) {
+            reject.disabled = false;
+            toast(err.message, 'error');
+          }
+        });
+      }
+    },
+  });
+}
 
 /* Detailed asset-distribution popup: per-location totals, status split,
    category mix and value share, with click-through to filtered inventory. */

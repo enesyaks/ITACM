@@ -230,6 +230,12 @@ function checkRoleFallback(user, resource, action) {
       if (['settings', 'user_management', 'integration', 'audit'].includes(resource)) return false;
       return true;
 
+    case 'HR':
+      // HR: request create/read + light dashboard. No inventory/IT surfaces.
+      if (resource === 'hr_request' && (action === 'create' || action === 'read')) return true;
+      if (resource === 'dashboard' && action === 'read') return true;
+      return false;
+
     default:
       return false;
   }
@@ -574,6 +580,16 @@ async function setUserPermissionGroup(userId, groupId, actor) {
 
   const target = users[0];
 
+  // Portal accounts are self-service employee logins, confined to /api/me by
+  // middleware and denied everything by checkRoleFallback. Handing one a
+  // permission group would silently switch the IAM layer on for an untrusted
+  // account and leave the path gate as the only thing standing.
+  if (target.role === 'Portal') {
+    throw HttpError.badRequest(
+      'Portal (self-service) accounts cannot be placed in a permission group'
+    );
+  }
+
   // Normalize so UUID case (e.g. an upper-cased Owner id) can't slip past the
   // string comparisons below — Postgres treats the uuid type case-insensitively.
   const gid = groupId ? String(groupId).toLowerCase() : groupId;
@@ -823,6 +839,9 @@ async function getConstraintScope(user, resource, action, constraintType = 'depa
 
 module.exports = {
   checkPermission,
+  // Exported so the role matrix — the fallback every user without a custom IAM
+  // group is judged by — can be unit-tested without a database.
+  checkRoleFallback,
   checkAllPermissions,
   checkAnyPermission,
   getConstraintScope,

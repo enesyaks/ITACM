@@ -5,6 +5,8 @@ const { HttpError } = require('../../utils/httpError');
 const authProvider = require('./authProvider');
 
 const STATUSES = ['Active', 'Inactive'];
+// Same shape importService uses — employees.email is an identity key, not free text.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /** Whitelisted Employee Directory sorts (never interpolate raw input). */
 const EMP_SORT_SQL = {
@@ -108,6 +110,8 @@ async function getEmployee(id) {
 async function createEmployee({ fullName, email, department, title, status = 'Active', startDate = null }) {
   if (!fullName || !email) throw HttpError.badRequest('fullName and email are required');
   if (!STATUSES.includes(status)) throw HttpError.badRequest('status must be Active or Inactive');
+  const normEmail = String(email).trim().toLowerCase();
+  if (!EMAIL_RE.test(normEmail)) throw HttpError.badRequest(`Invalid email "${email}"`);
   let start = null;
   if (startDate != null && startDate !== '') {
     start = String(startDate).slice(0, 10);
@@ -118,7 +122,7 @@ async function createEmployee({ fullName, email, department, title, status = 'Ac
     const { rows } = await query(
       `INSERT INTO employees (full_name, email, department, title, status, start_date)
        VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [fullName, email.toLowerCase(), department || null, title || null, status, start]
+      [fullName, normEmail, department || null, title || null, status, start]
     );
     return mapRow(rows[0]);
   } catch (err) {
@@ -165,6 +169,17 @@ async function updateEmployee(id, body) {
   const data = {};
   for (const [key, col] of Object.entries(colMap)) {
     if (body[key] !== undefined) data[col] = body[key];
+  }
+  // Email links an employees row to its login (users.email) and is what
+  // /api/me/zimmet resolves the caller by. The UNIQUE constraint is byte-exact,
+  // so an un-normalized "Ali@corp.com" slips past a stored "ali@corp.com" and
+  // creates a second row matching the same lower(email) — which would let a
+  // portal user resolve to the wrong employee. Normalize on write.
+  if (data.email !== undefined) {
+    data.email = String(data.email).trim().toLowerCase();
+    if (!EMAIL_RE.test(data.email)) {
+      throw HttpError.badRequest(`Invalid email "${data.email}"`);
+    }
   }
   if (data.start_date !== undefined) {
     if (data.start_date === null || data.start_date === '') data.start_date = null;

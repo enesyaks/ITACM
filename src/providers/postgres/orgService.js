@@ -164,7 +164,7 @@ async function getOrgTree() {
     query(`SELECT t.id, t.name, t.department_id, t.lead_employee_id, l.full_name AS lead_name
            FROM teams t LEFT JOIN employees l ON l.id = t.lead_employee_id
            ORDER BY t.name`),
-    query(`SELECT id, full_name, title, department, team_id, status
+    query(`SELECT id, full_name, title, department, team_id, manager_employee_id, status
            FROM employees WHERE status = 'Active' ORDER BY full_name`),
   ]);
 
@@ -207,7 +207,65 @@ async function getOrgTree() {
     d.memberCount = d.directMembers.length + d.teams.reduce((n, t) => n + t.members.length, 0);
   }
 
-  return { departments, unassigned };
+  return { departments, unassigned, reporting: buildReportingTree(empRes.rows, deptRes.rows, teamRes.rows) };
+}
+
+/**
+ * Who-reports-to-whom, built from employees.manager_employee_id: people without
+ * a manager are the roots (CEO / owners) and everyone else hangs under their
+ * manager. A cycle would otherwise hang the walk, so the first offender is
+ * promoted to a root instead.
+ */
+function buildReportingTree(employees, deptRows, teamRows) {
+  const deptManagerIds = new Set(deptRows.map((d) => d.manager_employee_id).filter(Boolean));
+  const leadIds = new Set(teamRows.map((t) => t.lead_employee_id).filter(Boolean));
+  const managerOf = new Map(employees.map((r) => [r.id, r.manager_employee_id || null]));
+
+  const byId = new Map();
+  for (const r of employees) {
+    byId.set(r.id, {
+      id: r.id,
+      fullName: r.full_name,
+      title: r.title || null,
+      department: r.department || null,
+      isDeptManager: deptManagerIds.has(r.id),
+      isTeamLead: leadIds.has(r.id),
+      children: [],
+    });
+  }
+
+  const roots = [];
+  for (const r of employees) {
+    const node = byId.get(r.id);
+    const parent = r.manager_employee_id ? byId.get(r.manager_employee_id) : null;
+    if (!parent || parent === node) { roots.push(node); continue; }
+    let cur = r.manager_employee_id;
+    const seen = new Set();
+    let cyclic = false;
+    while (cur) {
+      if (cur === r.id) { cyclic = true; break; }
+      if (seen.has(cur)) break;
+      seen.add(cur);
+      cur = managerOf.get(cur) || null;
+    }
+    if (cyclic) roots.push(node);
+    else parent.children.push(node);
+  }
+
+  // Biggest org branch first keeps the widest sub-tree on the left of the chart.
+  const sortRec = (list) => {
+    list.sort((a, b) => b.children.length - a.children.length
+      || String(a.fullName).localeCompare(String(b.fullName)));
+    list.forEach((n) => sortRec(n.children));
+  };
+  sortRec(roots);
+
+  const countRec = (n) => {
+    n.reportCount = n.children.reduce((sum, c) => sum + 1 + countRec(c), 0);
+    return n.reportCount;
+  };
+  roots.forEach(countRec);
+  return roots;
 }
 
 /* ===================== Approver resolution ==================== */

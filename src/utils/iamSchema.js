@@ -16,6 +16,7 @@ const RESOURCES = Object.freeze([
   'line', 'consumable', 'maintenance', 'stock_count', 'report',
   'audit', 'dashboard', 'settings', 'user_management',
   'integration', 'document', 'handover_document', 'catalog', 'handover', 'onboarding',
+  'hr_request',
 ]);
 
 /** Full union of actions (legacy rows + matrix). */
@@ -67,6 +68,9 @@ const ACTIONS_BY_RESOURCE = Object.freeze({
     'read', 'create', 'update', 'delete',
   ]),
   onboarding: Object.freeze([
+    'read', 'create', 'update',
+  ]),
+  hr_request: Object.freeze([
     'read', 'create', 'update',
   ]),
   report: Object.freeze(['read', 'export']),

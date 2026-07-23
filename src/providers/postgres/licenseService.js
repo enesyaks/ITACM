@@ -502,9 +502,15 @@ async function listAssignments({ licenseId, employeeId, includeRevoked } = {}) {
   }
   if (!(includeRevoked === 'true' || includeRevoked === true)) where.push('revoked_at IS NULL');
 
+  // Email and department live on the employee row rather than being copied onto
+  // the assignment, so the holders list and its CSV export can show who someone
+  // actually is. LEFT JOIN: a removed employee still lists its seat.
   const { rows } = await query(
-    `SELECT * FROM license_assignments ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
-     ORDER BY assigned_at DESC LIMIT 5000`,
+    `SELECT la.*, e.email AS employee_email, e.department
+       FROM license_assignments la
+       LEFT JOIN employees e ON e.id = la.employee_id
+      ${where.length ? 'WHERE ' + where.map((w) => 'la.' + w).join(' AND ') : ''}
+      ORDER BY la.assigned_at DESC LIMIT 5000`,
     params
   );
   return mapRows(rows);

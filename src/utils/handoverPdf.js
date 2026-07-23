@@ -22,7 +22,7 @@ const F = {
 
 const A4 = { w: 595.28, h: 841.89 };
 const M = 32; // side / top content margin
-const GAP = 10; // base section gap at scale 1
+const GAP = 8; // base section gap at scale 1 — keep forms dense, not page-filling
 const FOOTER_RESERVE = 30; // keep content clear of footer rule + text
 const SCALE_MIN = 0.72;
 const SCALE_MAX = 1;
@@ -74,12 +74,20 @@ function sizesAt(s, { empRows, assetCount, lineCount, showTerms, showReturn }) {
     : 0;
 
   const termsH = showTerms ? 70 * s : 0;
-  const sigH = 72 * s;
+  const sigH = 68 * s;
   const sigGap = 10;
   // Title + body + 3 full-width write lines (date / condition / missing).
-  const returnFieldsH = showReturn ? 90 * s : 0;
-  const retSigH = showReturn ? 66 * s : 0;
+  const returnFieldsH = showReturn ? 76 * s : 0;
+  const retSigH = showReturn ? 62 * s : 0;
   const afterHeaderGap = gap + 2 * s;
+
+  // How many inter-section gaps `total` contains (afterHeaderGap is separate).
+  const gapCount = 2
+    + (assetCount ? 1 : 0)
+    + (lineCount ? 1 : 0)
+    + (emptyFallbackRows ? 1 : 0)
+    + (showTerms ? 1 : 0)
+    + (showReturn ? 2 : 0);
 
   const total =
     afterHeaderGap
@@ -92,11 +100,40 @@ function sizesAt(s, { empRows, assetCount, lineCount, showTerms, showReturn }) {
     + (showReturn ? returnFieldsH + gap + retSigH + gap : 0);
 
   return {
-    s, gap, afterHeaderGap, assigneeTitleH, empRowH, assigneeH,
+    s, gap, gapCount, afterHeaderGap, assigneeTitleH, empRowH, assigneeH,
     headH, sectionTitleBand, rowHAssets, rowHLines,
     assetsTableH, linesTableH, emptyTableH, termsH, sigH, sigGap,
     returnFieldsH, retSigH, total,
   };
+}
+
+/**
+ * A short receipt (one device, few fields) fits with room to spare and used to
+ * print as a dense block in the top two thirds, leaving a dead band above the
+ * footer. Spend that slack where it helps: a little more air between sections,
+ * the rest as taller write-in areas (signature / return boxes). Tables and text
+ * keep their size — only breathing room grows.
+ */
+function fillPage(Sz, available) {
+  const slack = available - Sz.total;
+  if (slack < 8) return Sz;
+  const perGap = Math.min((slack * 0.45) / Sz.gapCount, GAP * 2);
+  const writeH = Sz.sigH + Sz.retSigH + Sz.returnFieldsH;
+  const rest = slack - perGap * Sz.gapCount;
+  const grow = writeH > 0 ? Math.max(0, Math.min(rest / writeH, 0.8)) : 0;
+  return {
+    ...Sz,
+    gap: Sz.gap + perGap,
+    sigH: Sz.sigH * (1 + grow),
+    retSigH: Sz.retSigH * (1 + grow),
+    returnFieldsH: Sz.returnFieldsH * (1 + grow),
+    total: Sz.total + perGap * Sz.gapCount + writeH * grow,
+  };
+}
+
+/** Employee fields read best as one tidy row — except 4, which pair up 2×2. */
+function empColumns(n) {
+  return n === 4 ? 2 : Math.max(1, Math.min(n, 3));
 }
 
 /** Binary-search largest s in [SCALE_MIN, SCALE_MAX] whose total fits available. */
@@ -244,17 +281,18 @@ function buildHandoverPdf(stream, { handover, employee, settings, deliveredBy, l
     }
     if (tpl.showDepartment) empFields.push([L.department, (employee && employee.department) || '—']);
     if (tpl.showTitle) empFields.push([L.position, (employee && employee.title) || '—']);
-    const empRows = Math.ceil(empFields.length / 2);
+    const empCols = empColumns(empFields.length);
+    const empRows = Math.ceil(empFields.length / empCols);
     const showReturn = !!tpl.showReturnSection;
     const showTerms = !!tpl.showTerms;
     const available = pageH - FOOTER_RESERVE - headerH;
-    const Sz = findScale(available, {
+    const Sz = fillPage(findScale(available, {
       empRows,
       assetCount: assets.length,
       lineCount: lineRows.length,
       showTerms,
       showReturn,
-    });
+    }), available);
 
     let y = headerH + Sz.afterHeaderGap;
     const { gap } = Sz;
@@ -265,11 +303,12 @@ function buildHandoverPdf(stream, { handover, employee, settings, deliveredBy, l
     doc.rect(M, y + Sz.assigneeTitleH * 0.55, contentW, Sz.assigneeTitleH * 0.45).fill(C.sectionBg);
     at(doc, 'b', 7.5, C.accent, L.assignee.toUpperCase(), M + 8, y + 5 * Sz.s, { width: contentW - 16 });
 
-    const half = (contentW - 20) / 2;
+    const colGap = 4;
+    const half = (contentW - 20 - colGap * (empCols - 1)) / empCols;
     empFields.forEach((f, i) => {
-      const col = i % 2;
-      const row = Math.floor(i / 2);
-      const fx = M + 10 + col * (half + 4);
+      const col = i % empCols;
+      const row = Math.floor(i / empCols);
+      const fx = M + 10 + col * (half + colGap);
       const fy = y + Sz.assigneeTitleH + 6 * Sz.s + row * Sz.empRowH;
       at(doc, 'r', 6.5, C.muted, f[0].toUpperCase(), fx, fy, { width: half });
       at(doc, 'b', 9.5, f[0] === L.employeeId ? C.accent : C.text, f[1] || '—', fx, fy + 11 * Sz.s, { width: half });
@@ -375,7 +414,11 @@ function buildHandoverPdf(stream, { handover, employee, settings, deliveredBy, l
       y += termsH + gap;
     }
 
-    /* ---------- SIGNATURES    /* ---------- SIGNATURES ---------- */
+    /* ---------- SIGNATURES ---------- */
+    // Whatever height is still unspent becomes one clean band above the signature
+    // block, so signatures sit at the foot of the form like a printed document
+    // instead of floating right under the tables.
+    y += Math.max(0, available - Sz.total);
     const sigH = Sz.sigH;
     const sigGap = Sz.sigGap;
     const sigW = (contentW - sigGap) / 2;
@@ -385,7 +428,9 @@ function buildHandoverPdf(stream, { handover, employee, settings, deliveredBy, l
       doc.roundedRect(x, y, sigW, h, 4).lineWidth(0.6).strokeColor(C.border).stroke();
       at(doc, 'b', 6.5, C.accent, top.toUpperCase(), x + 8, y + 7 * Sz.s, { width: sigW - 16 });
       if (role) at(doc, 'r', 6, C.muted, role, x + 8, y + 17 * Sz.s, { width: sigW - 16 });
-      const lineY = y + (opts.lineY != null ? opts.lineY : 42 * Sz.s);
+      // Anchor the signature rule to the bottom of the box so a taller box gives
+      // more room to sign instead of leaving a blank strip underneath.
+      const lineY = y + (opts.lineY != null ? opts.lineY : Math.max(38 * Sz.s, h - 30 * Sz.s));
       doc.moveTo(x + 8, lineY).lineTo(x + sigW - 8, lineY)
         .dash(2, { space: 2 }).lineWidth(0.6).strokeColor(C.border).stroke().undash();
       at(doc, 'b', 8.5, C.text, name || ' ', x + 8, lineY + 5 * Sz.s, { width: showDate ? sigW * 0.55 : sigW - 16 });
@@ -417,7 +462,8 @@ function buildHandoverPdf(stream, { handover, employee, settings, deliveredBy, l
       // One full-width write line each — condition & missing need room to handwrite.
       const fieldLabels = [L.returnDate, L.returnCondition, L.missingItems];
       const fieldTop = y + 28 * Sz.s;
-      const fieldStride = 18 * Sz.s;
+      // Spread the three write lines over whatever height the block ended up with.
+      const fieldStride = Math.max(15 * Sz.s, (fieldsH - 51 * Sz.s) / 2);
       const lineInset = M + 8;
       const lineW = contentW - 16;
       fieldLabels.forEach((lab, i) => {
@@ -431,11 +477,11 @@ function buildHandoverPdf(stream, { handover, employee, settings, deliveredBy, l
       const retSigH = Sz.retSigH;
       const savedY = y;
       drawSig(M, L.returnedBy, '', handover.employeeName, {
-        h: retSigH, lineY: 40 * Sz.s, sub: L.signature, showDate: false,
+        h: retSigH, lineY: Math.max(36 * Sz.s, retSigH - 26 * Sz.s), sub: L.signature, showDate: false,
       });
       y = savedY;
       drawSig(M + sigW + sigGap, L.receivedBackBy, '', ' ', {
-        h: retSigH, lineY: 40 * Sz.s, sub: L.nameAndSignature || L.signature, showDate: false,
+        h: retSigH, lineY: Math.max(36 * Sz.s, retSigH - 26 * Sz.s), sub: L.nameAndSignature || L.signature, showDate: false,
       });
       y = savedY + retSigH + gap;
     }

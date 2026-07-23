@@ -3,7 +3,21 @@
  * Missing keys fall back to DEFAULT_EMAIL_TEMPLATES.
  */
 
-const TEMPLATE_KEYS = ['onboarding_welcome', 'portal_access'];
+const TEMPLATE_KEYS = [
+  'onboarding_welcome', 'portal_access', 'hr_onboard_request', 'hr_offboard_request',
+  'handover_completed', 'alert_digest', 'owner_transfer',
+];
+
+/** Shown in the template picker so the list reads as flows, not as keys. */
+const TEMPLATE_LABELS = {
+  onboarding_welcome: 'Onboarding — welcome email to the new employee',
+  portal_access: 'Portal access — sign-in details for the employee',
+  hr_onboard_request: 'HR request — onboarding submitted to IT',
+  hr_offboard_request: 'HR request — offboarding submitted to IT',
+  handover_completed: 'Handover completed — notice to IT recipients',
+  alert_digest: 'Daily alert digest — licenses, stock, EOL, onboarding',
+  owner_transfer: 'Ownership transfer — notice to the new owner',
+};
 
 const PLACEHOLDERS = [
   'companyName', 'companyAddress', 'employeeName', 'employeeEmail',
@@ -14,6 +28,11 @@ const PLACEHOLDERS = [
 const TEMPLATE_PLACEHOLDERS = {
   onboarding_welcome: PLACEHOLDERS,
   portal_access: ['companyName', 'employeeName', 'employeeEmail', 'appUrl', 'tempPassword'],
+  hr_onboard_request: ['companyName', 'employeeName', 'employeeEmail', 'department', 'eventDate', 'itemList', 'notes', 'requestedBy', 'appUrl', 'requestType'],
+  hr_offboard_request: ['companyName', 'employeeName', 'employeeEmail', 'department', 'eventDate', 'notes', 'requestedBy', 'appUrl', 'requestType'],
+  handover_completed: ['companyName', 'employeeName', 'itemCount', 'handoverId', 'ackNote', 'appUrl'],
+  alert_digest: ['companyName', 'alertCount', 'alertSummary', 'appUrl'],
+  owner_transfer: ['companyName', 'employeeName', 'employeeEmail', 'credentials', 'appUrl'],
 };
 
 const DEFAULT_EMAIL_TEMPLATES = {
@@ -57,6 +76,92 @@ const DEFAULT_EMAIL_TEMPLATES = {
       + 'Please change your password right after your first sign-in.\n\n'
       + '{{companyName}} · ITACM\n',
   },
+  hr_onboard_request: {
+    subject: '[ITACM] HR onboard request — {{employeeName}} ({{eventDate}})',
+    bodyHtml:
+      '<p>A new <strong>onboarding</strong> request was submitted for IT.</p>'
+      + '<p><strong>Employee:</strong> {{employeeName}} &lt;{{employeeEmail}}&gt;<br>'
+      + '<strong>Department:</strong> {{department}}<br>'
+      + '<strong>Start date:</strong> {{eventDate}}<br>'
+      + '<strong>Requested by:</strong> {{requestedBy}}</p>'
+      + '<p><strong>Equipment checklist</strong></p>'
+      + '<pre style="font-family:inherit;white-space:pre-wrap;margin:0">{{itemList}}</pre>'
+      + '<p><strong>Notes</strong><br>{{notes}}</p>'
+      + '<p>Open the dashboard: <a href="{{appUrl}}">{{appUrl}}</a></p>',
+    bodyText:
+      'A new onboarding request was submitted for IT.\n\n'
+      + 'Employee: {{employeeName}} <{{employeeEmail}}>\n'
+      + 'Department: {{department}}\n'
+      + 'Start date: {{eventDate}}\n'
+      + 'Requested by: {{requestedBy}}\n\n'
+      + 'Equipment checklist:\n{{itemList}}\n\n'
+      + 'Notes:\n{{notes}}\n\n'
+      + 'Open: {{appUrl}}\n',
+  },
+  hr_offboard_request: {
+    subject: '[ITACM] HR offboard request — {{employeeName}} ({{eventDate}})',
+    bodyHtml:
+      '<p>A new <strong>offboarding</strong> request was submitted for IT.</p>'
+      + '<p><strong>Employee:</strong> {{employeeName}} &lt;{{employeeEmail}}&gt;<br>'
+      + '<strong>Department:</strong> {{department}}<br>'
+      + '<strong>Last day:</strong> {{eventDate}}<br>'
+      + '<strong>Requested by:</strong> {{requestedBy}}</p>'
+      + '<p><strong>Notes</strong><br>{{notes}}</p>'
+      + '<p>Run the real offboard flow in the app when ready. Dashboard: <a href="{{appUrl}}">{{appUrl}}</a></p>',
+    bodyText:
+      'A new offboarding request was submitted for IT.\n\n'
+      + 'Employee: {{employeeName}} <{{employeeEmail}}>\n'
+      + 'Department: {{department}}\n'
+      + 'Last day: {{eventDate}}\n'
+      + 'Requested by: {{requestedBy}}\n\n'
+      + 'Notes:\n{{notes}}\n\n'
+      + 'Run the real offboard flow in the app when ready.\n'
+      + 'Open: {{appUrl}}\n',
+  },
+  handover_completed: {
+    subject: '[ITACM] Handover completed — {{employeeName}}',
+    bodyHtml:
+      '<p>Equipment was handed over to <strong>{{employeeName}}</strong>.</p>'
+      + '<p><strong>Items:</strong> {{itemCount}}<br>'
+      + '<strong>Handover ID:</strong> {{handoverId}}<br>'
+      + '<strong>Company:</strong> {{companyName}}</p>'
+      + '<p>{{ackNote}}</p>'
+      + '<p>The receipt is available in Handover Ops: <a href="{{appUrl}}">{{appUrl}}</a></p>',
+    bodyText:
+      'Equipment was handed over to {{employeeName}}.\n\n'
+      + 'Items: {{itemCount}}\n'
+      + 'Handover ID: {{handoverId}}\n'
+      + 'Company: {{companyName}}\n\n'
+      + '{{ackNote}}\n\n'
+      + 'The receipt is available in Handover Ops: {{appUrl}}\n',
+  },
+  alert_digest: {
+    subject: '[ITACM] {{alertCount}} alert(s) — {{companyName}}',
+    bodyHtml:
+      '<p><strong>{{alertCount}}</strong> item(s) need attention in <strong>{{companyName}}</strong>.</p>'
+      + '<p>Expired licenses, low stock, end-of-life hardware and onboardings that are due:</p>'
+      + '<pre style="font-family:inherit;white-space:pre-wrap;margin:0">{{alertSummary}}</pre>'
+      + '<p>Open the app to act on these items: <a href="{{appUrl}}">{{appUrl}}</a></p>',
+    bodyText:
+      '{{alertCount}} item(s) need attention in {{companyName}}.\n\n'
+      + '{{alertSummary}}\n\n'
+      + 'Open the app to act on these items: {{appUrl}}\n',
+  },
+  owner_transfer: {
+    subject: 'You are now the owner of {{companyName}}',
+    bodyHtml:
+      '<p>Hello {{employeeName}},</p>'
+      + '<p>You are now the <strong>Owner</strong> of this IT Asset Control instance ({{companyName}}).</p>'
+      + '<p>{{credentials}}</p>'
+      + '<p>Set up two-factor authentication when prompted.</p>'
+      + '<p>Sign in: <a href="{{appUrl}}">{{appUrl}}</a></p>',
+    bodyText:
+      'Hello {{employeeName}},\n\n'
+      + 'You are now the Owner of this IT Asset Control instance ({{companyName}}).\n\n'
+      + '{{credentials}}\n\n'
+      + 'Set up two-factor authentication when prompted.\n\n'
+      + 'Sign in: {{appUrl}}\n',
+  },
 };
 
 const DEFAULT_ACCESS =
@@ -94,6 +199,10 @@ function mergeTemplates(stored) {
       bodyHtml: String((raw && raw.bodyHtml) || def.bodyHtml).slice(0, 50000),
       bodyText: String((raw && raw.bodyText) || def.bodyText).slice(0, 20000),
       isCustom: !!(raw && (raw.subject || raw.bodyHtml || raw.bodyText)),
+      // Shipped with the payload so the editor lists whatever the server
+      // supports instead of a copy of this list that drifts out of sync.
+      label: TEMPLATE_LABELS[key] || key,
+      placeholders: TEMPLATE_PLACEHOLDERS[key] || PLACEHOLDERS,
     };
   }
   return out;
@@ -134,6 +243,7 @@ function renderTemplate(tpl, vars) {
 
 module.exports = {
   TEMPLATE_KEYS,
+  TEMPLATE_LABELS,
   PLACEHOLDERS,
   TEMPLATE_PLACEHOLDERS,
   DEFAULT_EMAIL_TEMPLATES,

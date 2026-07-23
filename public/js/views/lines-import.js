@@ -56,8 +56,13 @@ Views.stockcount = async function (el, params = {}) {
           </div>` : ''}
         </div>
         ${canDo ? `
-        <div class="search-box sc-scan-box"><span class="ms">qr_code_scanner</span>
-          <input id="sc-input" placeholder="${esc(t('stock.scanPlaceholder'))}" autocomplete="off" inputmode="text" enterkeyhint="done">
+        <div class="sc-scan-wrap">
+          <div class="search-box sc-scan-box"><span class="ms">qr_code_scanner</span>
+            <input id="sc-input" placeholder="${esc(t('stock.scanPlaceholder'))}" autocomplete="off"
+              inputmode="text" enterkeyhint="done" role="combobox" aria-expanded="false"
+              aria-autocomplete="list" aria-controls="sc-suggest">
+          </div>
+          <div id="sc-suggest" class="sc-suggest hidden" role="listbox"></div>
         </div>
         <div class="cell-sub" style="margin-top:6px">${esc(t('stock.tipPhone'))}</div>` : ''}
         <div id="sc-recent" style="margin-top:10px">
@@ -91,8 +96,100 @@ Views.stockcount = async function (el, params = {}) {
     const inp = $('#sc-input', active);
     // Don't auto-focus on phones — it opens the keyboard and collapses the scan UI.
     if (inp && window.matchMedia('(pointer: fine)').matches) inp.focus();
+
+    // Partial tag / serial → live list of the devices it could be. A handheld
+    // scanner still just types + Enter; this only helps manual entry, where the
+    // operator can read half a worn label and pick the rest from the list.
+    const sugBox = $('#sc-suggest', active);
+    let sugItems = [];
+    let sugIdx = -1;
+    let sugTimer = null;
+    let sugSeq = 0;
+
+    const hideSug = () => {
+      sugSeq += 1; // invalidate any in-flight lookup
+      clearTimeout(sugTimer);
+      sugItems = []; sugIdx = -1;
+      sugBox.innerHTML = '';
+      sugBox.classList.add('hidden');
+      inp.setAttribute('aria-expanded', 'false');
+    };
+    /** Escape, then wrap the matched slice in <mark> (indices are pre-escape). */
+    const highlight = (text, term) => {
+      const s = String(text || '');
+      if (!s) return '—';
+      const i = s.toLowerCase().indexOf(term.toLowerCase());
+      if (i < 0 || !term) return esc(s);
+      return `${esc(s.slice(0, i))}<mark>${esc(s.slice(i, i + term.length))}</mark>${esc(s.slice(i + term.length))}`;
+    };
+    const renderSug = (term) => {
+      sugBox.classList.remove('hidden');
+      inp.setAttribute('aria-expanded', 'true');
+      if (!sugItems.length) {
+        sugBox.innerHTML = `<div class="sc-sug-empty cell-sub">${esc(t('stock.suggestNone'))}</div>`;
+        return;
+      }
+      sugBox.innerHTML = sugItems.map((a, i) => `
+        <button type="button" class="sc-sug${i === sugIdx ? ' on' : ''}" role="option"
+          aria-selected="${i === sugIdx}" data-sug="${i}">
+          <span class="mono sc-sug-tag">${highlight(a.assetTag, term)}</span>
+          <span class="sc-sug-main">
+            <strong>${esc([a.brand, a.model].filter(Boolean).join(' ') || a.category || '—')}</strong>
+            <span class="cell-sub">${highlight(a.serialNumber || '—', term)}${a.location ? ' • ' + esc(a.location) : ''}${a.currentEmployeeName ? ' • ' + esc(a.currentEmployeeName) : ''}</span>
+          </span>
+          ${a.scanned ? `<span class="pill pill-emerald">${esc(t('stock.counted'))}</span>` : ''}
+        </button>`).join('')
+        + `<div class="sc-sug-hint cell-sub">${esc(t('stock.suggestHint'))}</div>`;
+    };
+    const moveSug = (delta) => {
+      if (!sugItems.length) return;
+      sugIdx = (sugIdx + delta + sugItems.length + 1) % (sugItems.length + 1) - 1;
+      sugBox.querySelectorAll('[data-sug]').forEach((b, i) => {
+        b.classList.toggle('on', i === sugIdx);
+        b.setAttribute('aria-selected', String(i === sugIdx));
+      });
+      if (sugIdx >= 0) sugBox.querySelector(`[data-sug="${sugIdx}"]`)?.scrollIntoView({ block: 'nearest' });
+    };
+    const loadSug = async (term) => {
+      const seq = ++sugSeq;
+      try {
+        const items = await api(`/counts/${id}/suggest?q=${encodeURIComponent(term)}`);
+        if (seq !== sugSeq || !inp.isConnected) return; // stale response
+        sugItems = Array.isArray(items) ? items : [];
+        sugIdx = -1;
+        renderSug(term);
+      } catch { hideSug(); }
+    };
+
+    inp.addEventListener('input', () => {
+      clearTimeout(sugTimer);
+      const term = inp.value.trim();
+      if (term.length < 2) { hideSug(); return; }
+      sugTimer = setTimeout(() => loadSug(term), 220);
+    });
+    // mousedown fires before blur, so the click still lands on the option.
+    sugBox.addEventListener('mousedown', (e) => {
+      const b = e.target.closest('[data-sug]'); if (!b) return;
+      e.preventDefault();
+      const a = sugItems[Number(b.dataset.sug)];
+      if (!a) return;
+      hideSug();
+      inp.value = '';
+      submitScan(a.assetTag);
+    });
+    inp.addEventListener('blur', () => setTimeout(hideSug, 120));
     inp.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') { e.preventDefault(); submitScan(inp.value); inp.value = ''; }
+      if (e.key === 'ArrowDown') { e.preventDefault(); moveSug(1); return; }
+      if (e.key === 'ArrowUp') { e.preventDefault(); moveSug(-1); return; }
+      if (e.key === 'Escape') { hideSug(); return; }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const picked = sugIdx >= 0 ? sugItems[sugIdx] : null;
+        const value = picked ? picked.assetTag : inp.value;
+        hideSug();
+        inp.value = '';
+        submitScan(value);
+      }
     });
     $('#sc-camera', active).addEventListener('click', () => {
       scanWithCamera(submitScan).finally(() => {

@@ -8,6 +8,10 @@
 const ROUTES = {
   '#/dashboard': { title: 'Dashboard', view: 'dashboard', icon: 'dashboard' },
   '#/zimmetlerim': { title: 'My Assets', view: 'myZimmet', icon: 'inventory_2' },
+  // HR-only screen. IT never opens this page — they review and approve tickets
+  // from the Dashboard HR card, so the filing surface and the approving surface
+  // stay separate.
+  '#/hr': { title: 'HR Requests', view: 'hr', icon: 'group_add', hrOnly: true },
   '#/assets': { title: 'Hardware', view: 'assets', icon: 'devices' },
   '#/network': { title: 'Network & Server', view: 'network', icon: 'dns' },
   '#/catalog': { title: 'Product Catalog', view: 'catalog', icon: 'category' },
@@ -31,12 +35,18 @@ const ROUTES = {
 function isPortalUser() {
   return !!(Auth.profile && Auth.profile.role === 'Portal');
 }
+function isHrUser() {
+  return !!(Auth.profile && Auth.profile.role === 'HR');
+}
 const PORTAL_HASH = '#/zimmetlerim';
+const HR_HOME_HASH = '#/hr';
+const HR_ALLOWED_HASHES = new Set(['#/hr', '#/zimmetlerim']);
 
 function renderNav() {
   // Portal users get a bare topbar: search/scan/notifications/help/settings are
   // IT tools their role cannot use anyway (CSS hides them via .is-portal).
   document.body.classList.toggle('is-portal', isPortalUser());
+  document.body.classList.toggle('is-hr', isHrUser());
   // Nav labels come from the i18n dictionary. Prefer nav.<view>, then fall back
   // to a few aliases where the route view name ≠ the historical nav key.
   const NAV_KEY_ALIAS = { assets: 'hardware', licenses: 'software' };
@@ -52,7 +62,12 @@ function renderNav() {
     return r.title;
   };
   $('#nav').innerHTML = Object.entries(ROUTES)
-    .filter(([hash, r]) => (isPortalUser() ? hash === PORTAL_HASH : (!r.perm || Auth.can(r.perm))))
+    .filter(([hash, r]) => {
+      if (isPortalUser()) return hash === PORTAL_HASH;
+      if (isHrUser()) return HR_ALLOWED_HASHES.has(hash);
+      if (r.hrOnly) return false;
+      return !r.perm || Auth.can(r.perm);
+    })
     .map(([hash, r]) =>
       `<a href="${hash}" data-route="${hash}"><span class="ms">${r.icon}</span> ${esc(label(r))}</a>`)
     .join('');
@@ -67,12 +82,16 @@ async function navigate() {
   const gen = bumpNavGen();
   // Support query params in the hash, e.g. #/assets?lifecycle=overdue
   const [rawHash, rawQuery] = location.hash.split('?');
-  const homeHash = isPortalUser() ? PORTAL_HASH : '#/dashboard';
+  const homeHash = isPortalUser() ? PORTAL_HASH : (isHrUser() ? HR_HOME_HASH : '#/dashboard');
   const hash = ROUTES[rawHash] ? rawHash : homeHash;
   const route = ROUTES[hash];
   const params = Object.fromEntries(new URLSearchParams(rawQuery || ''));
   // Portal accounts are confined to their own zimmet page.
   if (isPortalUser() && hash !== PORTAL_HASH) { location.hash = PORTAL_HASH; return; }
+  if (isHrUser() && !HR_ALLOWED_HASHES.has(hash)) { location.hash = HR_HOME_HASH; return; }
+  // Typing #/hr by hand must not work for IT either — approving happens on the
+  // Dashboard, and this page is scoped to the people who file the tickets.
+  if (route.hrOnly && !isHrUser()) { location.hash = homeHash; return; }
   if (route.perm && !Auth.can(route.perm)) { location.hash = homeHash; return; }
 
   $$('#nav a').forEach((a) => a.classList.toggle('active', a.dataset.route === hash));

@@ -75,7 +75,14 @@ function mapOnboardingRow(r) {
 }
 
 async function getDashboardStats() {
-  const [statusCounts, lowStock, expiring, expired, recent, eol, locDist, onboardDue, onboardSched] = await Promise.all([
+  const hrCountsP = (async () => {
+    try {
+      return await require('./hrRequestService').pendingCounts();
+    } catch {
+      return { hrOnboardPending: 0, hrOffboardPending: 0 };
+    }
+  })();
+  const [statusCounts, lowStock, expiring, expired, recent, eol, locDist, onboardDue, onboardSched, hrCounts] = await Promise.all([
     query(`SELECT status, COUNT(*)::int AS n FROM assets GROUP BY status`),
     query(
       `SELECT * FROM consumables
@@ -121,6 +128,7 @@ async function getDashboardStats() {
        ORDER BY o.start_date ASC, e.full_name ASC
        LIMIT 50`
     ).catch(() => ({ rows: [] })),
+    hrCountsP,
   ]);
 
   const byStatus = Object.fromEntries(statusCounts.rows.map((r) => [r.status, r.n]));
@@ -169,6 +177,8 @@ async function getDashboardStats() {
       onboardingDueCount: onboardingDue.length,
       onboardingScheduled,
       onboardingScheduledCount: onboardingScheduled.length,
+      hrOnboardPending: (hrCounts && hrCounts.hrOnboardPending) || 0,
+      hrOffboardPending: (hrCounts && hrCounts.hrOffboardPending) || 0,
     },
     locationDistribution: locDist.rows.map((r) => ({ location: r.loc, count: r.n })),
     recentHandovers,
@@ -176,5 +186,29 @@ async function getDashboardStats() {
   };
 }
 
-module.exports = { getDashboardStats };
+/**
+ * HR panel counters. The headline numbers are scoped exactly like the ticket
+ * list: IT sees the whole queue, an HR officer sees only what they filed — so
+ * the card total can never disagree with the table underneath it.
+ */
+async function getHrDashboardStats(user) {
+  const hrRequestService = require('./hrRequestService');
+  const scope = hrRequestService.listScopeForUser(user);
+  const counts = await hrRequestService.pendingCounts(scope);
+  const mine = await hrRequestService.listRequests({
+    status: 'pending',
+    createdBy: scope.createdBy,
+    limit: 50,
+  });
+  return {
+    hrOnboardPending: counts.hrOnboardPending,
+    hrOffboardPending: counts.hrOffboardPending,
+    myPendingCount: mine.length,
+    myPending: mine.slice(0, 20),
+    scoped: !!scope.createdBy,
+  };
+}
+
+module.exports = { getDashboardStats, getHrDashboardStats };
+
 

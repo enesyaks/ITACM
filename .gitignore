@@ -12,8 +12,10 @@ data/.itacm-bootstrap-password
 # Database backups (may contain personal data — keep them out of git)
 backups/
 
-# Full-system migration packages (DB + documents)
-migrations/
+# Full-system migration packages (DB + documents) — repo root only.
+# Unanchored, this pattern also swallowed src/providers/postgres/migrations/,
+# so new schema migrations were invisible to git until added with -f.
+/migrations/
 
 # OS
 .DS_Store

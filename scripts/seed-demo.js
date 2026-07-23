@@ -21,6 +21,7 @@
  *   demo.admin@example.com     Admin
  *   demo.helpdesk@example.com  Helpdesk
  *   demo.viewer@example.com    Viewer
+ *   demo.hr@example.com        HR
  *   demo.user01@example.com    Portal (matches employee email)
  */
 require('dotenv').config();
@@ -137,7 +138,36 @@ const PLANS = ['Kurumsal 20GB', 'Kurumsal 30GB', 'Kurumsal Sınırsız', 'Data O
 const SERVICE = ['TeknoServis A.Ş.', 'Arena Bilgisayar Servis', 'Notebook Klinik', 'Vestel Yetkili Servis', 'Bimeks Teknik'];
 const ISSUES = ['Ekran arızası', 'Batarya şişmesi', 'Klavye tuş arızası', 'Anakart sorunu', 'Fan gürültüsü', 'Şarj soketi arızası', 'Yazılım kaynaklı açılmama', 'Menteşe kırığı', 'Aşırı ısınma'];
 const NOTES = ['Yeni, kutulu teslim edildi', 'İkinci el, temiz durumda', 'Şarj adaptörü ile birlikte', 'Çanta ve mouse dahil', 'Ekran koruyucu takılı', ''];
-const DEMO_PDF = Buffer.from('%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Count 0>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF');
+/**
+ * Placeholder attachment for demo scans. It must be a real ONE-PAGE PDF — the
+ * old stub declared /Count 0, so every viewer (the in-app preview included)
+ * opened it happily and had nothing to draw.
+ */
+function buildDemoPdf() {
+  const body = 'BT Varlik Yonetimi - ornek belge / demo document';
+  const stream = `BT /F1 14 Tf 60 760 Td (${body}) Tj ET`;
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] '
+      + '/Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>',
+    `<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}\nendstream`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+  ];
+
+  let pdf = '%PDF-1.4\n';
+  const offsets = [];
+  objects.forEach((obj, i) => {
+    offsets.push(Buffer.byteLength(pdf));
+    pdf += `${i + 1} 0 obj\n${obj}\nendobj\n`;
+  });
+  const xrefAt = Buffer.byteLength(pdf);
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  offsets.forEach((off) => { pdf += `${String(off).padStart(10, '0')} 00000 n \n`; });
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefAt}\n%%EOF\n`;
+  return Buffer.from(pdf, 'latin1');
+}
+const DEMO_PDF = buildDemoPdf();
 
 
 async function main() {
@@ -307,6 +337,7 @@ async function main() {
       { email: 'demo.admin@example.com', username: 'Demo Admin', role: 'Admin' },
       { email: 'demo.helpdesk@example.com', username: 'Demo Helpdesk', role: 'Helpdesk' },
       { email: 'demo.viewer@example.com', username: 'Demo Viewer', role: 'Viewer' },
+      { email: 'demo.hr@example.com', username: 'Demo HR', role: 'HR' },
     ]) {
       await t.query(
         `INSERT INTO users (username, email, password_hash, role, status, must_change_password)
@@ -328,7 +359,7 @@ async function main() {
         [emp.full_name, emp.email, pwdHash]
       );
     }
-    console.log(`[seed] IT users: Admin/Helpdesk/Viewer + ${portalEmps.length} Portal (password ${DEMO_PASSWORD})`);
+    console.log(`[seed] IT users: Admin/Helpdesk/Viewer/HR + ${portalEmps.length} Portal (password ${DEMO_PASSWORD})`);
 
     let tagNo = 1000;
     let snSeq = 1;
@@ -695,7 +726,7 @@ async function main() {
     (SELECT COUNT(*) FROM maintenance_logs) AS repairs`);
   console.log('[seed] done:', stats.rows[0]);
   console.log('[seed] next: npm run seed:infra && npm run seed:providers  (or npm run seed:all)');
-  console.log(`[seed] demo logins → demo.admin|helpdesk|viewer|user01@example.com / ${DEMO_PASSWORD}`);
+  console.log(`[seed] demo logins → demo.admin|helpdesk|viewer|hr|user01@example.com / ${DEMO_PASSWORD}`);
   await pool.end();
 }
 

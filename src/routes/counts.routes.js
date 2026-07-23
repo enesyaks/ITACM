@@ -20,6 +20,12 @@ router.get('/:id', requirePermission('stock_count', 'read'), asyncHandler(async 
   res.json({ success: true, data: await countService.getCount(req.params.id) });
 }));
 
+/** GET /api/counts/:id/suggest?q= — devices matching a partial tag/serial. İzin: stock_count:read */
+router.get('/:id/suggest', requirePermission('stock_count', 'read'), asyncHandler(async (req, res) => {
+  const { q, limit } = req.query || {};
+  res.json({ success: true, data: await countService.suggestAssets(req.params.id, q, { limit }) });
+}));
+
 /** POST /api/counts/:id/scan — record one scan. İzin: stock_count:update */
 router.post('/:id/scan', requirePermission('stock_count', 'update'), asyncHandler(async (req, res) => {
   res.status(201).json({ success: true, data: await countService.scanTag(req.params.id, (req.body || {}).raw, req.user) });

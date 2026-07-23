@@ -15,6 +15,19 @@ const {
   DEFAULT_ACCESS,
 } = require('../../utils/emailTemplates');
 
+/** Where links in templated mail point. */
+function appBaseUrl() {
+  return process.env.APP_URL || process.env.PUBLIC_URL || 'http://localhost:8000';
+}
+
+/** Minimal document shell around a rendered template body. */
+function wrapHtmlBody(bodyHtml) {
+  return '<!DOCTYPE html><html><head><meta charset="utf-8"></head>'
+    + '<body style="font-family:system-ui,-apple-system,sans-serif;line-height:1.5;color:#1a1a1a;'
+    + 'max-width:640px;margin:0 auto;padding:24px">'
+    + `${bodyHtml}</body></html>`;
+}
+
 const DEFAULT_NOTIFY = {
   enabled: false,
   to: [],
@@ -316,24 +329,24 @@ async function runAlertDigest() {
 
   if (!count) return { skipped: true, reason: 'no alerts', recipients: notify.to };
 
-  const mail = renderEmail({
+  // Flatten the sections into one editable placeholder — the digest body is a
+  // template now (Integrations → Email templates), so what you edit is what ships.
+  const alertSummary = sections
+    .map((s) => [s.heading, ...s.rows.map((r) => `  - ${r}`)].join('\n'))
+    .join('\n\n') || '(no details)';
+  const templates = await getEmailTemplates();
+  const rendered = renderTemplate(templates.alert_digest, {
     companyName,
-    eyebrow: 'Daily alert digest',
-    title: `${count} item${count === 1 ? '' : 's'} need attention`,
-    intro: 'Summary of expired licenses, low stock, EOL, and onboarding due in your workspace.',
-    meta: [
-      { label: 'Workspace', value: companyName },
-      { label: 'Alert total', value: String(count) },
-    ],
-    sections,
-    footerNote: `${companyName} · ITACM digest · open the app to act on these items`,
+    alertCount: String(count),
+    alertSummary,
+    appUrl: appBaseUrl(),
   });
 
   await sendMail({
     to: notify.to,
-    subject: `[ITACM] ${count} alert(s) — ${companyName}`,
-    text: mail.text,
-    html: mail.html,
+    subject: rendered.subject,
+    text: rendered.bodyText,
+    html: wrapHtmlBody(rendered.bodyHtml),
   });
   return { sent: true, alertItems: count, recipients: notify.to };
 }
@@ -343,30 +356,48 @@ async function notifyHandoverCompleted(receipt) {
     const { smtp, notify, companyName } = await getMailConfig();
     if (!notify.enabled || !notify.handoverCompleted || !notify.to.length || !smtp.host) return;
     const emp = receipt.employee?.fullName || receipt.employee?.email || 'employee';
-    const ackUrl = receipt.ackToken
-      ? `(ack token issued — share /ack.html?token=… with employee)`
-      : null;
-    const mail = renderEmail({
+    const templates = await getEmailTemplates();
+    const rendered = renderTemplate(templates.handover_completed, {
       companyName,
-      eyebrow: 'Handover / zimmet',
-      title: 'Handover completed',
-      intro: `Equipment was assigned to ${emp}. A receipt is available in Handover Ops.`,
-      meta: [
-        { label: 'Employee', value: emp },
-        { label: 'Items', value: String(receipt.itemCount || 0) },
-        { label: 'Handover ID', value: String(receipt.handoverId || '—') },
-      ].concat(ackUrl ? [{ label: 'Acknowledgement', value: 'Ack link generated for employee confirmation' }] : []),
-      footerNote: `${companyName} · ITACM handover notification`,
+      employeeName: emp,
+      itemCount: String(receipt.itemCount || 0),
+      handoverId: String(receipt.handoverId || '—'),
+      ackNote: receipt.ackToken
+        ? 'An acknowledgement link was generated for the employee to confirm receipt.'
+        : '',
+      appUrl: appBaseUrl(),
     });
     await sendMail({
       to: notify.to,
-      subject: `[ITACM] Handover completed — ${emp}`,
-      text: mail.text,
-      html: mail.html,
+      subject: rendered.subject,
+      text: rendered.bodyText,
+      html: wrapHtmlBody(rendered.bodyHtml),
     });
   } catch (err) {
     console.warn('[notify] handover email failed:', err.message);
   }
+}
+
+/**
+ * Tell the new Owner that the instance was transferred. `credentials` is the
+ * one bit the caller varies: existing accounts keep their password, freshly
+ * created ones get a temporary one.
+ */
+async function sendOwnerTransferEmail({ to, username, credentials }) {
+  const [{ companyName }, templates] = await Promise.all([getMailConfig(), getEmailTemplates()]);
+  const rendered = renderTemplate(templates.owner_transfer, {
+    companyName,
+    employeeName: username || to,
+    employeeEmail: to,
+    credentials: credentials || '',
+    appUrl: appBaseUrl(),
+  });
+  return sendMail({
+    to,
+    subject: rendered.subject,
+    text: rendered.bodyText,
+    html: wrapHtmlBody(rendered.bodyHtml),
+  });
 }
 
 async function getEmailTemplates() {
@@ -494,8 +525,60 @@ async function sendPortalAccessEmail({ to, username, tempPassword }) {
   });
 }
 
+
+async function sendHrRequestNotice(request) {
+  try {
+    const { smtp, notify, companyName } = await getMailConfig();
+    if (!smtp.host) return { skipped: true, reason: 'smtp not configured' };
+
+    let recipients = [];
+    if (notify.enabled && Array.isArray(notify.to) && notify.to.length) {
+      recipients = notify.to.slice();
+    } else {
+      const { rows } = await query(
+        "SELECT email FROM users WHERE role IN ('Owner', 'Admin') AND status = 'Active' AND email IS NOT NULL"
+      );
+      recipients = rows.map((r) => String(r.email).trim().toLowerCase()).filter(Boolean);
+    }
+    if (!recipients.length) return { skipped: true, reason: 'no recipients' };
+
+    const templates = await getEmailTemplates();
+    const isOff = request && request.type === 'offboard';
+    const tpl = isOff ? templates.hr_offboard_request : templates.hr_onboard_request;
+    const appUrl = process.env.APP_URL || process.env.PUBLIC_URL || 'http://localhost:8000';
+    const items = (request.items || []).map((it) => `- ${it.category} x${it.qty || 1}`).join('\n')
+      || '(none)';
+    const rendered = renderTemplate(tpl, {
+      companyName,
+      employeeName: request.fullName || '',
+      employeeEmail: request.email || '',
+      department: request.department || '—',
+      eventDate: String(request.eventDate || '').slice(0, 10),
+      itemList: items,
+      notes: request.notes || '—',
+      requestedBy: request.createdByName || 'HR',
+      appUrl,
+      requestType: isOff ? 'offboard' : 'onboard',
+    });
+    const html = '<!DOCTYPE html><html><head><meta charset="utf-8"></head>'
+      + '<body style="font-family:system-ui,-apple-system,sans-serif;line-height:1.5;color:#1a1a1a;max-width:640px;margin:0 auto;padding:24px">'
+      + `${rendered.bodyHtml}</body></html>`;
+    await sendMail({
+      to: recipients,
+      subject: rendered.subject,
+      text: rendered.bodyText,
+      html,
+    });
+    return { sent: true, recipients };
+  } catch (err) {
+    console.warn('[notify] HR request email failed:', err.message);
+    return { skipped: true, reason: err.message };
+  }
+}
+
 module.exports = {
   getMailConfig, saveMailConfig, clearMailConfig, sendTestEmail, runAlertDigest, notifyHandoverCompleted, sendMail,
-  getEmailTemplates, saveEmailTemplates, sendOnboardingWelcomeEmail, sendPortalAccessEmail,
+  getEmailTemplates, saveEmailTemplates, sendOnboardingWelcomeEmail, sendPortalAccessEmail, sendHrRequestNotice,
+  sendOwnerTransferEmail,
   DEFAULT_NOTIFY, TEMPLATE_KEYS, PLACEHOLDERS,
 };

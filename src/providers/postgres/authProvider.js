@@ -10,6 +10,7 @@ const jwt = require('jsonwebtoken');
 const { authenticator } = require('otplib');
 const QRCode = require('qrcode');
 const { query, withTransaction } = require('./pool');
+const { isUuid } = require('./rowMapper');
 const config = require('../../config');
 const { HttpError } = require('../../utils/httpError');
 const { ROLES, buildPermissions } = require('../../utils/permissions');
@@ -153,10 +154,13 @@ async function assertPortalEmployeeActive(user) {
     throw HttpError.forbidden('Portal access is no longer available — contact IT');
   }
   const { rows } = await query(
-    `SELECT status FROM employees WHERE lower(email) = $1 LIMIT 1`,
+    `SELECT status FROM employees WHERE lower(email) = $1`,
     [email]
   );
-  if (!rows[0] || rows[0].status !== 'Active') {
+  // Case-variant duplicates (possible on databases predating migration 037)
+  // make "which employee is this?" ambiguous — an Inactive person could sign in
+  // on the strength of a twin row. Fail closed rather than pick one.
+  if (rows.length !== 1 || rows[0].status !== 'Active') {
     throw HttpError.forbidden('Portal access is no longer available — contact IT');
   }
 }
@@ -388,11 +392,51 @@ async function getLoginLogs(uid, limit = 25) {
   return rows;
 }
 
-async function createItUser({ username, email, password, role }, actor) {
-  if (!username || !email || !password) {
-    throw HttpError.badRequest('username, email and password are required');
+/**
+ * Active employees who do not yet hold a login — the pick-list for "promote an
+ * existing person to an IT user" so nobody has to retype a name and email that
+ * the directory already knows.
+ */
+async function listEmployeeCandidates(q, limit) {
+  const term = String(q || '').trim();
+  const like = '%' + term.replace(/[\\%_]/g, '\\$&') + '%';
+  const params = [Math.min(Math.max(Number(limit) || 25, 1), 100)];
+  let filter = '';
+  if (term.length >= 2) {
+    params.push(like);
+    filter = `AND (e.full_name ILIKE $2 ESCAPE '\\' OR e.email ILIKE $2 ESCAPE '\\'
+                   OR COALESCE(e.department, '') ILIKE $2 ESCAPE '\\')`;
   }
-  assertPasswordPolicy(password);
+  const { rows } = await query(
+    `SELECT e.id, e.full_name, e.email, e.department, e.title
+       FROM employees e
+      WHERE e.status = 'Active'
+        AND e.email IS NOT NULL AND e.email <> ''
+        AND NOT EXISTS (SELECT 1 FROM users u WHERE lower(u.email) = lower(e.email))
+        ${filter}
+      ORDER BY e.full_name ASC
+      LIMIT $1`,
+    params
+  );
+  return rows.map((r) => ({
+    id: r.id, fullName: r.full_name, email: r.email,
+    department: r.department, title: r.title,
+  }));
+}
+
+/**
+ * Create a staff (non-Portal) login.
+ *
+ * Two entry points, one path:
+ *   - employeeId → promote somebody the Employees directory already knows; the
+ *     name and email come from that record, so no duplicate person is invented.
+ *   - username + email → create the person from scratch (employee twin follows).
+ *
+ * password is OPTIONAL. Omitted, a temporary one is generated and the account is
+ * flagged must_change_password — the caller decides whether to email it or show
+ * it on screen, exactly like the employee grant-access flow.
+ */
+async function createItUser({ username, email, password, role, employeeId }, actor) {
   assertValidRole(role);
   if (role === 'Portal') {
     throw HttpError.badRequest('createItUser cannot create Portal accounts');
@@ -401,28 +445,78 @@ async function createItUser({ username, email, password, role }, actor) {
     throw HttpError.forbidden('Only an Owner can assign the Owner or Admin role');
   }
 
-  const hash = await bcrypt.hash(password, 12);
+  let name = String(username || '').trim();
+  let mail = String(email || '').trim().toLowerCase();
+  let twinEmployee = null;
+
+  if (employeeId) {
+    if (!isUuid(employeeId)) throw HttpError.badRequest('Invalid employeeId');
+    const { rows } = await query(
+      'SELECT id, full_name, email, status FROM employees WHERE id = $1',
+      [employeeId]
+    );
+    const emp = rows[0];
+    if (!emp) throw HttpError.notFound('Employee not found');
+    if (emp.status !== 'Active') {
+      throw HttpError.conflict(`${emp.full_name} is inactive — reactivate the employee first`);
+    }
+    if (!emp.email) {
+      throw HttpError.badRequest(`${emp.full_name} has no email — add one before granting a login`);
+    }
+    name = emp.full_name;
+    mail = String(emp.email).trim().toLowerCase();
+    twinEmployee = emp;
+  }
+
+  if (!name || !mail) {
+    throw HttpError.badRequest('Pick an employee, or supply username and email');
+  }
+
+  // An existing login must be edited in place — silently overwriting one here
+  // would let this endpoint reset any account's password.
+  const { rows: clash } = await query('SELECT id, role FROM users WHERE lower(email) = $1', [mail]);
+  if (clash[0]) {
+    throw HttpError.conflict(
+      `${mail} already has a ${clash[0].role} account. Change its role from the user list instead.`
+    );
+  }
+
+  const generated = !password;
+  const secret = password || crypto.randomBytes(12).toString('base64url');
+  if (!generated) assertPasswordPolicy(secret);
+
+  const hash = await bcrypt.hash(secret, 12);
   try {
     const { rows } = await query(
-      `INSERT INTO users (username, email, password_hash, role)
-       VALUES ($1, $2, $3, $4) RETURNING id, username, email, role`,
-      [username, email.toLowerCase(), hash, role]
+      `INSERT INTO users (username, email, password_hash, role, must_change_password)
+       VALUES ($1, $2, $3, $4, $5) RETURNING id, username, email, role`,
+      [name, mail, hash, role, generated]
     );
     const u = rows[0];
-    try {
-      const { ensureEmployeeForEmail } = require('./employeeService');
-      await ensureEmployeeForEmail({
-        fullName: username,
-        email: u.email,
-        department: 'IT',
-        title: role,
-      });
-    } catch (twinErr) {
-      console.warn('[createItUser] employee twin failed:', twinErr.message);
+    if (!twinEmployee) {
+      try {
+        const { ensureEmployeeForEmail } = require('./employeeService');
+        await ensureEmployeeForEmail({
+          fullName: name,
+          email: u.email,
+          department: 'IT',
+          title: role,
+        });
+      } catch (twinErr) {
+        console.warn('[createItUser] employee twin failed:', twinErr.message);
+      }
     }
-    return { uid: u.id, username: u.username, email: u.email, role: u.role };
+    return {
+      uid: u.id,
+      username: u.username,
+      email: u.email,
+      role: u.role,
+      tempPassword: secret,
+      generated,
+      fromEmployeeId: twinEmployee ? twinEmployee.id : null,
+    };
   } catch (err) {
-    if (err.code === '23505') throw HttpError.conflict(`A user with email ${email} already exists`);
+    if (err.code === '23505') throw HttpError.conflict(`A user with email ${mail} already exists`);
     throw err;
   }
 }
@@ -783,8 +877,14 @@ async function grantPortalAccess({ employee }, actor) {
   let created;
   if (existing[0]) {
     if (existing[0].role !== 'Portal') {
+      // Refusing here is what stops an operator holding only
+      // user_management:create from resetting an Owner's password through the
+      // employee directory. Staff already reach their own zimmet via /api/me,
+      // so there is nothing to grant — say so instead of just blocking.
       throw HttpError.conflict(
-        'A staff account already uses this email — it cannot be turned into a portal login'
+        `${name} already signs in as a ${existing[0].role} account, so a portal login `
+        + 'cannot be created for this email. Staff accounts already see their own zimmet '
+        + 'under "Zimmetlerim". To reset this password, use IT Users instead.'
       );
     }
     // Re-provision: reset the temp password, force change on next login, revoke old sessions.
@@ -889,7 +989,8 @@ async function getAdminLogs(email, limit = 25) {
 module.exports = {
   login, verifyMfaLogin, verifyToken, logout, recordLogin, getLoginLogs,
   changePassword, mfaSetupStart, mfaSetupConfirm, mfaDisable, mfaStatus,
-  createItUser, upsertAdmin, upsertAdminTx, setUserRole, getVerifiedProfile, listUsers,
+  createItUser, listEmployeeCandidates,
+  upsertAdmin, upsertAdminTx, setUserRole, getVerifiedProfile, listUsers,
   setUserStatus, deleteUser, getAdminLogs,
   transferOwnership, ownerTransferPreflight,
   grantPortalAccess, revokePortalAccess,

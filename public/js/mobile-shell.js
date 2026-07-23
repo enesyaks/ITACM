@@ -224,6 +224,15 @@ function openMobileMore() {
   document.body.classList.add('mobile-more-open');
 }
 
+
+function mobileNavAllowed(hash, route) {
+  if (typeof isPortalUser === 'function' && isPortalUser()) return hash === '#/zimmetlerim';
+  if (typeof isHrUser === 'function' && isHrUser()) {
+    return hash === '#/hr' || hash === '#/zimmetlerim';
+  }
+  return !route.perm || Auth.can(route.perm);
+}
+
 function renderMobileNav() {
   const nav = $('#mobile-nav');
   if (!nav) return;
@@ -235,9 +244,15 @@ function renderMobileNav() {
       <span class="mnav-label">${esc(t(item.labelKey))}</span>
     </a>`;
   };
+  const primaryItems = (typeof isPortalUser === "function" && isPortalUser()) ? [{ hash: "#/zimmetlerim", view: "myZimmet", icon: "inventory_2", labelKey: "nav.myZimmet" }] : (typeof isHrUser === 'function' && isHrUser())
+    ? [
+      { hash: '#/hr', view: 'hr', icon: 'group_add', labelKey: 'nav.hr' },
+      { hash: '#/zimmetlerim', view: 'myZimmet', icon: 'inventory_2', labelKey: 'nav.myZimmet' },
+    ]
+    : MOBILE_PRIMARY;
   // True center FAB: equal-width left/right clusters, FAB in the middle column.
-  const left = MOBILE_PRIMARY.slice(0, 2).map(itemHtml).join('');
-  const right = MOBILE_PRIMARY.slice(2).map(itemHtml).join('') + `
+  const left = primaryItems.slice(0, 2).map(itemHtml).join('');
+  const right = primaryItems.slice(2).map(itemHtml).join('') + `
     <button type="button" class="mnav-item" id="mobile-more-btn">
       <span class="ms">apps</span>
       <span class="mnav-label">${esc(t('nav.m.more'))}</span>
@@ -262,7 +277,13 @@ function renderMobileMoreSheet() {
   const hash = (location.hash.split('?')[0]) || '#/dashboard';
   const primary = new Set(MOBILE_PRIMARY.map((p) => p.hash));
   const extras = Object.entries(ROUTES)
-    .filter(([h, r]) => !primary.has(h) && (!r.perm || Auth.can(r.perm)));
+    .filter(([h, r]) => {
+      if (typeof isHrUser === 'function' && isHrUser()) {
+        return (typeof HR_ALLOWED_HASHES !== 'undefined' ? HR_ALLOWED_HASHES.has(h) : (h === '#/hr' || h === '#/zimmetlerim')) && !primary.has(h);
+      }
+      if (typeof isPortalUser === 'function' && isPortalUser()) return false;
+      return !primary.has(h) && (!r.perm || Auth.can(r.perm));
+    });
 
   const NAV_KEY_ALIAS = { assets: 'hardware', licenses: 'software' };
   const label = (r) => {

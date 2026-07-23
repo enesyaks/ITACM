@@ -289,6 +289,70 @@ async function openOnboardWizard(existingEmp) {
   });
 }
 
+/**
+ * "What HR asked for" panel — the preparation checklist for this onboarding.
+ *
+ * HR files a ticket in equipment categories; IT reserves concrete assets. This
+ * matches the two so the person packing the kit sees, per category, how many are
+ * still missing instead of having to remember the closed ticket.
+ *
+ * HR's checklist labels do not all equal the asset category names, so the few
+ * that differ are aliased here.
+ */
+const HR_CATEGORY_ALIASES = { dock: ['docking station', 'dock'] };
+
+function hrRequestPanel(hrRequest, reservedItems) {
+  if (!hrRequest || !(hrRequest.items || []).length) return '';
+
+  // How many reserved assets sit in each category (lower-cased for matching).
+  const reservedByCategory = new Map();
+  (reservedItems || []).forEach((it) => {
+    if (it.kind !== 'asset' || !it.category) return;
+    const key = String(it.category).toLowerCase();
+    reservedByCategory.set(key, (reservedByCategory.get(key) || 0) + 1);
+  });
+
+  const rows = hrRequest.items.map((req) => {
+    const wanted = Number(req.qty) || 1;
+    const key = String(req.category || '').toLowerCase();
+    const keys = HR_CATEGORY_ALIASES[key] || [key];
+    const ready = keys.reduce((sum, k) => sum + (reservedByCategory.get(k) || 0), 0);
+    const done = ready >= wanted;
+    return `
+      <tr>
+        <td>
+          <span class="ms ms-sm" style="color:${done ? 'var(--success, #12a150)' : 'var(--warning, #b8860b)'}">
+            ${done ? 'check_circle' : 'radio_button_unchecked'}</span>
+          ${esc(req.category)}
+        </td>
+        <td class="cell-sub">${ready} / ${wanted}</td>
+        <td>${done
+    ? `<span class="pill pill-indigo">${esc(t('onb.hrReady'))}</span>`
+    : `<span class="pill pill-amber">${esc(t('onb.hrMissing'))}</span>`}</td>
+      </tr>`;
+  }).join('');
+
+  const total = hrRequest.items.reduce((s, i) => s + (Number(i.qty) || 1), 0);
+  const covered = hrRequest.items.reduce((s, i) => {
+    const key = String(i.category || '').toLowerCase();
+    const keys = HR_CATEGORY_ALIASES[key] || [key];
+    const ready = keys.reduce((sum, k) => sum + (reservedByCategory.get(k) || 0), 0);
+    return s + Math.min(ready, Number(i.qty) || 1);
+  }, 0);
+
+  return `
+    <h3 style="font-size:11px;text-transform:uppercase;color:var(--on-surface-variant);margin:0 0 6px">
+      ${esc(t('onb.hrRequested'))} (${covered}/${total})</h3>
+    <div class="table-wrap" style="margin-bottom:12px"><table class="data">
+      <tbody>${rows}</tbody></table></div>
+    ${hrRequest.notes
+    ? `<p class="cell-sub" style="margin:-4px 0 12px"><strong>${esc(t('hr.notes'))}:</strong> ${esc(hrRequest.notes)}</p>`
+    : ''}
+    ${hrRequest.requestedBy
+    ? `<p class="cell-sub" style="margin:-4px 0 12px">${esc(t('hr.requestedBy'))}: ${esc(hrRequest.requestedBy)}</p>`
+    : ''}`;
+}
+
 async function openOnboardingDueModal({ force = false, focusId = null } = {}) {
   if (!Auth.canIamOp('onboarding', 'read') && !Auth.canIam('handover', 'create')) return;
   const key = onboardModalStorageKey();
@@ -356,6 +420,7 @@ async function openOnboardingDueModal({ force = false, focusId = null } = {}) {
           <div class="cell-title">${esc(String(detail.startDate || current.startDate || '').slice(0, 10))}</div>
           <div>${badge(detail.status || 'scheduled')}</div></div>
       </div>
+      ${hrRequestPanel(detail.hrRequest, items)}
       <h3 style="font-size:11px;text-transform:uppercase;color:var(--on-surface-variant);margin:0 0 6px">
         Reserved items (${items.length})</h3>
       ${items.length === 0

@@ -19,17 +19,16 @@ Views.integrations = async function (el) {
     api('/integrations/custom-fields/contract'),
     api('/integrations/email-templates').catch(() => ({})),
   ]);
-  const tplKeys = ['onboarding_welcome', 'portal_access'];
-  // Placeholders per template — must mirror TEMPLATE_PLACEHOLDERS in src/utils/emailTemplates.js.
-  const tplPh = {
-    onboarding_welcome: ['companyName', 'companyAddress', 'employeeName', 'employeeEmail', 'startDate', 'itemList', 'appUrl', 'accessInstructions'],
-    portal_access: ['companyName', 'employeeName', 'employeeEmail', 'appUrl', 'tempPassword'],
-  };
+  // The server ships every template it knows about, with its label and
+  // placeholders — no local copy of the list to drift out of sync.
   const tpls = emailTemplates || {};
+  const tplKeys = Object.keys(tpls);
+  const tplLabel = (k) => (tpls[k] && tpls[k].label) || k;
+  const tplPhOf = (k) => (tpls[k] && tpls[k].placeholders) || [];
   const emptyTpl = { subject: '', bodyHtml: '', bodyText: '', isCustom: false };
-  const tplKey = tplKeys[0];
+  const tplKey = tplKeys[0] || '';
   const tpl = tpls[tplKey] || emptyTpl;
-  const phList = tplPh[tplKey];
+  const phList = tplPhOf(tplKey);
 
   const smtp = mail.smtp || {};
   const notify = mail.notify || {};
@@ -106,7 +105,7 @@ Views.integrations = async function (el) {
         <div class="form-grid">
           <div class="form-field"><label>Template</label>
             <select id="int-tpl-key" ${inputDis}>
-              ${tplKeys.map((k) => `<option value="${k}" ${k === tplKey ? 'selected' : ''}>${k}</option>`).join('')}
+              ${tplKeys.map((k) => `<option value="${esc(k)}" ${k === tplKey ? 'selected' : ''}>${esc(tplLabel(k))}</option>`).join('')}
             </select>
           </div>
           <div class="form-field full"><label>Subject</label>
@@ -373,7 +372,7 @@ GET /api/integrations/licenses/:id/sam
     $('#int-tpl-html', el).value = cur.bodyHtml || '';
     $('#int-tpl-text', el).value = cur.bodyText || '';
     const ph = $('#int-tpl-ph', el);
-    if (ph) ph.innerHTML = 'Placeholders: ' + (tplPh[k] || []).map((p) => '<code>{{' + p + '}}</code>').join(' ');
+    if (ph) ph.innerHTML = 'Placeholders: ' + tplPhOf(k).map((p) => '<code>{{' + esc(p) + '}}</code>').join(' ');
     const ch = $('#int-tpl-custom', el);
     if (ch) ch.textContent = cur.isCustom ? 'Custom override saved' : 'Using built-in default';
   });
@@ -390,6 +389,18 @@ GET /api/integrations/licenses/:id/sam
       appUrl: (typeof location !== 'undefined' && location.origin) || 'http://localhost:8000',
       accessInstructions: 'Sign in with your company email. Contact IT Helpdesk if you need help getting access.',
       tempPassword: 'Xy7-sample-pass',
+      // HR request / handover / digest / ownership placeholders
+      department: 'Sales',
+      eventDate: new Date().toISOString().slice(0, 10),
+      notes: 'Needs a docking station on day one.',
+      requestedBy: 'HR Team',
+      requestType: 'onboard',
+      itemCount: '3',
+      handoverId: 'HF-9F91888D',
+      ackNote: 'An acknowledgement link was generated for the employee to confirm receipt.',
+      alertCount: '4',
+      alertSummary: 'Expired licenses (2)\n  - Adobe CC · 2026-06-30\n\nLow stock (2)\n  - Toner 26X: 1/5',
+      credentials: 'Sign in with your existing credentials and MFA.',
     };
     const subject = applyEmailTplPreviewVars($('#int-tpl-subject', el)?.value || '', vars, { html: false });
     const bodyHtml = applyEmailTplPreviewVars($('#int-tpl-html', el)?.value || '', vars, { html: true });

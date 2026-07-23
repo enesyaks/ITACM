@@ -385,11 +385,17 @@ Views.assets = async function (el, params = {}) {
         `Scrap ${targets.length} asset(s)?${skipped ? ` (${skipped} assigned/scrapped skipped)` : ''} This marks them as end-of-life.`,
         async () => {
           let ok = 0;
+          let pending = 0;
           for (const x of targets) {
-            try { await api(`/assets/${x.id}`, { method: 'PUT', body: { status: 'Scrap' } }); ok++; }
-            catch (err) { toast(`${x.assetTag}: ${err.message}`, 'error'); }
+            try {
+              const res = await api(`/assets/${x.id}`, { method: 'PUT', body: { status: 'Scrap' } });
+              // The server answers 202 with pendingApproval when the disposal
+              // policy needs sign-off — the asset is NOT scrapped yet.
+              if (res && res.pendingApproval) pending++; else ok++;
+            } catch (err) { toast(`${x.assetTag}: ${err.message}`, 'error'); }
           }
-          toast(`${ok}/${targets.length} asset(s) scrapped`, 'success');
+          if (ok) toast(`${ok}/${targets.length} asset(s) scrapped`, 'success');
+          if (pending) toast(`${pending} × ${t('asset.sentForApproval')}`, 'info');
           rerender({});
         }
       );
@@ -1389,7 +1395,15 @@ async function assetForm(asset, done) {
           }
           let created;
           if (asset && asset.id) {
-            await api(`/assets/${asset.id}`, { method: 'PUT', body });
+            const res = await api(`/assets/${asset.id}`, { method: 'PUT', body });
+            // Sell/scrap can come back as 202 pendingApproval: nothing was saved,
+            // so don't write custom fields or claim success for it.
+            if (res && res.pendingApproval) {
+              toast(t('asset.sentForApproval'), 'info');
+              closeModal();
+              done();
+              return;
+            }
             if (cfDefs.length) {
               await saveCustomFieldValues('asset', asset.id, collectCustomFieldValues(overlay, cfDefs));
             }

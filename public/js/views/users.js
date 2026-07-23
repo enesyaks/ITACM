@@ -16,12 +16,12 @@ Views.users = async function (el) {
     return String(a.name || '').localeCompare(String(b.name || ''));
   });
   // Only an Owner may assign Owner or Admin; Admin may manage Helpdesk & Viewer.
-  const roleOptions = Auth.can('canManageOwner') ? ['Owner', 'Admin', 'Helpdesk', 'Viewer'] : ['Helpdesk', 'Viewer'];
+  const roleOptions = Auth.can('canManageOwner') ? ['Owner', 'Admin', 'Helpdesk', 'Viewer', 'HR'] : ['Helpdesk', 'Viewer', 'HR'];
   // Keep current Admin rows selectable when an Admin edits peers' lower roles only;
   // existing Admin targets stay visible but cannot be assigned by non-Owners.
   const roleOptionsFor = (u) => {
     if (Auth.can('canManageOwner')) return roleOptions;
-    if (u.role === 'Admin' || u.role === 'Owner') return [u.role, 'Helpdesk', 'Viewer'];
+    if (u.role === 'Admin' || u.role === 'Owner') return [u.role, 'Helpdesk', 'Viewer', 'HR'];
     return roleOptions;
   };
 
@@ -938,42 +938,118 @@ Views.users = async function (el) {
     });
   });
 
-  $('#user-new', el).addEventListener('click', () => formModal({
-    title: 'New IT User',
-    fields: [
-      {
-        type: 'html',
-        full: true,
-        html: `<p class="onb-hint" style="margin:0">${esc('An Employees directory entry is created with the same email so this person can receive zimmet.')}</p>`,
-      },
-      { name: 'username', label: 'Display name *', required: true },
-      { name: 'email', label: 'Email *', type: 'email', required: true },
-      { name: 'password', label: 'Password *', type: 'password', required: true },
-      { name: 'role', label: 'Role *', type: 'select', value: 'Helpdesk', options: roleOptions },
-      {
-        name: 'permissionGroupId',
-        label: 'Permission group',
-        type: 'select',
-        value: groupList.find((g) => g.name === 'Helpdesk')?.id || '',
-        options: [
-          { value: '', label: '— No group —' },
-          ...groupList.map((g) => ({ value: g.id, label: g.name + (g.is_system ? ' (system)' : '') })),
-        ],
-      },
-    ],
-    submitLabel: 'Create user',
-    async onSubmit(d) {
-      const created = await api('/auth/users', { method: 'POST', body: d });
-      if (d.permissionGroupId && created?.uid) {
-        await api(`/auth/users/${created.uid}/permission-group`, {
-          method: 'PUT',
-          body: { groupId: d.permissionGroupId || null },
-        }).catch(() => {});
+  /**
+   * Report the outcome of creating an IT user. Never claims the credentials
+   * were emailed unless emailStatus === 'sent'; when they were not, the
+   * generated password is surfaced once so the admin can hand it over.
+   */
+  function reportItUserCreated(r, role) {
+    if (!r) return;
+    if (r.emailStatus === 'sent') {
+      toast(`${role} user created — sign-in details emailed to ${r.email}`, 'success');
+      return;
+    }
+    if (r.tempPassword) {
+      const why = r.emailError
+        || (r.emailStatus === 'failed' ? 'Email could not be sent.' : 'SMTP is not configured.');
+      // Reuse the same one-time credentials modal the employee grant-access flow uses.
+      if (typeof showPortalCredentials === 'function') {
+        const tr = (typeof window.i18nLang === 'function' && window.i18nLang() === 'tr');
+        showPortalCredentials({
+          why,
+          email: r.email,
+          password: r.tempPassword,
+          title: tr ? `BT kullanıcısı oluşturuldu (${role})` : `IT user created (${role})`,
+        });
+      } else {
+        openModal({
+          title: 'IT user created',
+          body: `<p>${esc(why)}</p><p><strong>${esc(r.email)}</strong></p>`
+            + `<p>Temporary password: <code>${esc(r.tempPassword)}</code></p>`
+            + '<p class="cell-sub">They must change it at first sign-in.</p>',
+        });
       }
-      toast(`${d.role} user created`, 'success');
-      Views.users(el);
-    },
-  }));
+      toast(`${role} user created — password not emailed`, 'warning');
+      return;
+    }
+    toast(`${role} user created`, 'success');
+  }
+
+  $('#user-new', el).addEventListener('click', () => {
+    // Credentials are shown from onClose, not from onSubmit: formModal closes
+    // itself the moment onSubmit resolves, which would race with — and tear
+    // down — a dialog opened from inside the submit handler.
+    let pendingCreds = null;
+
+    formModal({
+      title: 'New IT User',
+      onClose() {
+        if (!pendingCreds) return;
+        const { result, role } = pendingCreds;
+        pendingCreds = null;
+        // Refresh the list FIRST, then show the credentials: the dialog is
+        // stacked into #modal-root (outside `el`), so a re-render after it is
+        // open cannot remove it — the reverse order races and loses it.
+        Promise.resolve(Views.users(el))
+          .catch(() => {})
+          .then(() => reportItUserCreated(result, role));
+      },
+      fields: [
+        {
+          type: 'html',
+          full: true,
+          html: `<p class="onb-hint" style="margin:0">${esc(
+            'Search for an existing employee to give them a login, or leave it empty and fill in the name and email to add someone new. Leave the password blank to generate one — it is emailed when SMTP works, otherwise shown here once.'
+          )}</p>`,
+        },
+        {
+          // Server-side search over people who do NOT already hold a login, so
+          // the list stays usable at any headcount and can never offer someone
+          // the backend would reject as a duplicate.
+          name: 'employeeId',
+          label: 'Existing employee',
+          type: 'employeeSearch',
+          full: true,
+          searchUrl: '/auth/users/employee-candidates',
+          placeholder: 'Search employees without a login — name, email or department…',
+        },
+        { name: 'username', label: 'Display name (new person only)' },
+        { name: 'email', label: 'Email (new person only)', type: 'email' },
+        { name: 'password', label: 'Password (blank = auto-generate)', type: 'password' },
+        { name: 'role', label: 'Role *', type: 'select', value: 'Helpdesk', options: roleOptions },
+        {
+          name: 'permissionGroupId',
+          label: 'Permission group',
+          type: 'select',
+          value: groupList.find((g) => g.name === 'Helpdesk')?.id || '',
+          options: [
+            { value: '', label: '— No group —' },
+            ...groupList.map((g) => ({ value: g.id, label: g.name + (g.is_system ? ' (system)' : '') })),
+          ],
+        },
+      ],
+      submitLabel: 'Create user',
+      async onSubmit(d) {
+        const body = d.employeeId
+          ? { employeeId: d.employeeId, role: d.role }
+          : { username: (d.username || '').trim(), email: (d.email || '').trim(), role: d.role };
+        if (!d.employeeId && (!body.username || !body.email)) {
+          throw new Error('Pick an employee, or fill in both display name and email');
+        }
+        if (d.password) body.password = d.password;
+
+        const created = await api('/auth/users', { method: 'POST', body });
+        if (d.permissionGroupId && created?.uid) {
+          await api(`/auth/users/${created.uid}/permission-group`, {
+            method: 'PUT',
+            body: { groupId: d.permissionGroupId || null },
+          }).catch(() => {});
+        }
+        // Hand the result to onClose (see above); it owns the refresh + dialog.
+        pendingCreds = { result: created, role: d.role };
+      },
+    });
+  });
 
   $('#owner-transfer', el)?.addEventListener('click', async () => {
     let pre;

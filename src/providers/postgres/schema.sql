@@ -230,7 +230,7 @@ ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS spec_options JSONB;
 -- can only see their own zimmet): relax the users.role CHECK constraint.
 ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
 ALTER TABLE users ADD CONSTRAINT users_role_check
-  CHECK (role IN ('Owner', 'Admin', 'Helpdesk', 'Viewer', 'Portal'));
+  CHECK (role IN ('Owner', 'Admin', 'Helpdesk', 'Viewer', 'Portal', 'HR'));
 
 -- Document storage provider config (Owner-managed): local | sharepoint | gdrive
 ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS document_storage JSONB;
@@ -787,3 +787,56 @@ CREATE INDEX IF NOT EXISTS idx_approvals_approver_status ON approval_requests (a
 CREATE INDEX IF NOT EXISTS idx_approvals_requester ON approval_requests (requester_employee_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_approvals_status ON approval_requests (status, created_at DESC);
 ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS approvals JSONB;
+
+
+-- HR onboarding/offboarding requests (also migration 038_hr_role_and_requests.sql)
+CREATE TABLE IF NOT EXISTS hr_requests (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  type            TEXT NOT NULL CHECK (type IN ('onboard', 'offboard')),
+  status          TEXT NOT NULL DEFAULT 'pending'
+                  CHECK (status IN ('pending', 'acknowledged', 'cancelled')),
+  employee_id     UUID REFERENCES employees(id) ON DELETE SET NULL,
+  full_name       TEXT NOT NULL DEFAULT '',
+  email           TEXT NOT NULL DEFAULT '',
+  department      TEXT NOT NULL DEFAULT '',
+  title           TEXT NOT NULL DEFAULT '',
+  event_date      DATE NOT NULL,
+  notes           TEXT NOT NULL DEFAULT '',
+  created_by      UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_by_name TEXT NOT NULL DEFAULT '',
+  onboarding_id   UUID REFERENCES employee_onboardings(id) ON DELETE SET NULL,
+  notified_at     TIMESTAMPTZ,
+  notify_error    TEXT,
+  acknowledged_at TIMESTAMPTZ,
+  acknowledged_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  cancelled_at    TIMESTAMPTZ,
+  cancelled_by    UUID REFERENCES users(id) ON DELETE SET NULL,
+  cancel_reason   TEXT NOT NULL DEFAULT '',
+  -- Set when the scheduled onboarding completes and the kit is handed over
+  -- (also migration 039_hr_request_fulfilled.sql).
+  fulfilled_at    TIMESTAMPTZ,
+  fulfilled_handover_id UUID REFERENCES handovers(id) ON DELETE SET NULL,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- NOTE: no standalone index on fulfilled_at here. schema.sql runs BEFORE the
+-- migrations, and on an existing database CREATE TABLE IF NOT EXISTS skips the
+-- table entirely — so the column above does not exist yet at this point and an
+-- index referencing it would abort startup. Migration 039 adds both.
+CREATE INDEX IF NOT EXISTS idx_hr_requests_status ON hr_requests (status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_hr_requests_type ON hr_requests (type, status);
+CREATE INDEX IF NOT EXISTS idx_hr_requests_created_by ON hr_requests (created_by, created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_hr_requests_pending_onboard_email
+  ON hr_requests (lower(email)) WHERE type = 'onboard' AND status = 'pending';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_hr_requests_pending_offboard_emp
+  ON hr_requests (employee_id) WHERE type = 'offboard' AND status = 'pending' AND employee_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS hr_request_items (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  request_id  UUID NOT NULL REFERENCES hr_requests(id) ON DELETE CASCADE,
+  category    TEXT NOT NULL,
+  qty         INT NOT NULL DEFAULT 1 CHECK (qty >= 1 AND qty <= 99),
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_hr_request_items_req ON hr_request_items (request_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_hr_request_items_unique
+  ON hr_request_items (request_id, category);
