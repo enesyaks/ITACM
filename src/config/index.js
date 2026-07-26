@@ -54,6 +54,14 @@ const config = {
 
   // Uploaded documents (scans, repair paperwork) — persisted outside BYTEA.
   dataDir: trimmedEnv('DATA_DIR') || path.join(process.cwd(), 'data'),
+
+  // Opt-in upstream update check. When on, the server asks GitHub once a day
+  // whether a newer release exists and surfaces it to the Owner. OFF by default
+  // so air-gapped / offline installs never reach out. GITHUB_TOKEN is optional
+  // (only needed for a private repo or to lift the 60-req/hr anon rate limit).
+  updateCheck: flagEnv('UPDATE_CHECK'),
+  updateRepo: trimmedEnv('UPDATE_CHECK_REPO') || 'enesyaks/ITACM',
+  updateToken: firstEnv(['UPDATE_CHECK_TOKEN', 'GITHUB_TOKEN']),
 };
 
 function assertBackendConfig() {

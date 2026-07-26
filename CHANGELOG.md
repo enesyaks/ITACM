@@ -15,10 +15,17 @@ project adheres to [Semantic Versioning](https://semver.org/).
   browser stores the last-seen version in `localStorage` (`itacm_seen_version`)
   and never fires on a fresh install or a rollback.
 - App version is shown in **Help → About**.
+- **Opt-in upstream update check.** With `UPDATE_CHECK=1`, the server asks the
+  GitHub Releases API — at most once a day — whether a release newer than the
+  running version exists, and shows the Owner an "update available" popup with a
+  link to the release. Off by default; offline / air-gapped installs never reach
+  out. Configurable via `UPDATE_CHECK_REPO` and `UPDATE_CHECK_TOKEN`
+  (`GITHUB_TOKEN` also accepted).
 - `CHANGELOG.md` and a documented update path (see README "Updating").
 
 ### Changed
-- `/api/health` and `/api/config` responses now include a `version` field.
+- `/api/health` and `/api/config` responses now include a `version` field;
+  `/api/config` also carries `updateAvailable` when the upstream check is on.
 
 ## [1.0.0] — Initial release
 

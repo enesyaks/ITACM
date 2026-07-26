@@ -161,11 +161,17 @@ function createApp() {
     const { roleRequiresMfa } = require('./utils/mfaPolicy');
     // UI uses this to skip the mandatory Owner MFA enrollment modal when off.
     const ownerMfaRequired = roleRequiresMfa('Owner');
+    // Opt-in upstream update check (null unless UPDATE_CHECK is on AND a newer
+    // release than the running version has been seen).
+    let updateAvailable = null;
+    try { updateAvailable = require('./utils/updateCheck').getUpdateInfo().updateAvailable; }
+    catch { /* never block config on the update check */ }
     res.json({
       success: true,
       data: {
         backend: config.backend,
         version: config.appVersion,
+        updateAvailable,
         configError,
         onboardingVideoUrl,
         ownerMfaRequired,

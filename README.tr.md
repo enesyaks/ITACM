@@ -249,6 +249,8 @@ docker compose up -d --build
 
 Önce bir yedek alın (`npm run backup`) — tek satır, geri dönüşü kolaylaştırır. Yeni sürüm açıldıktan sonra çalışan sürüm `GET /api/health` (`version` alanı) üzerinden görülür ve **Yardım → Hakkında** ekranında gösterilir. **Owner** yeni bir sürümde ilk kez giriş yaptığında, güncellemeyi duyuran bir popup çıkar; böylece en azından sistemi kullananların haberi olur.
 
+**İsteğe bağlı — yeni sürüm çıkınca haber al.** `UPDATE_CHECK=1` ayarlarsan sunucu günde bir kez GitHub'a yeni bir release var mı diye bakar; varsa Owner'a "güncelleme mevcut" popup'ı (release linkiyle) gösterir. **Varsayılan kapalıdır** — internete kapalı/air-gapped kurulumlar hiçbir dış istek atmaz. Depoyu `UPDATE_CHECK_REPO` ile, özel depo veya daha yüksek limit için `UPDATE_CHECK_TOKEN` (`GITHUB_TOKEN` de olur) ile ayarlayabilirsin.
+
 ---
 
 ## 💾 Yedekleme & kurtarma

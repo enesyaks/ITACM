@@ -413,7 +413,12 @@ function showApp() {
       checkOnboardingDueOnLogin().catch(() => {});
     }
     if (typeof maybeShowUpdateNotice === 'function') {
-      setTimeout(() => { try { maybeShowUpdateNotice(); } catch { /* ignore */ } }, 800);
+      setTimeout(() => {
+        try {
+          const shown = maybeShowUpdateNotice();
+          if (!shown && typeof maybeShowUpstreamNotice === 'function') maybeShowUpstreamNotice();
+        } catch { /* ignore */ }
+      }, 800);
     }
   });
 }
@@ -2208,18 +2213,61 @@ function compareVersions(a, b) {
  */
 function maybeShowUpdateNotice() {
   const cur = AppConfig && AppConfig.version;
-  if (!cur) return;
+  if (!cur) return false;
   const isOwner = !!(Auth.profile && Auth.profile.role === 'Owner');
   let seen = null;
-  try { seen = localStorage.getItem(SEEN_VERSION_KEY); } catch { return; }
+  try { seen = localStorage.getItem(SEEN_VERSION_KEY); } catch { return false; }
   // First run on this browser, or a downgrade/rollback: just record it silently.
   if (!seen || compareVersions(cur, seen) <= 0) {
     try { localStorage.setItem(SEEN_VERSION_KEY, cur); } catch { /* private mode */ }
-    return;
+    return false;
   }
   // Newer version is live. Record it now (single-shot) and, for the Owner, announce.
   try { localStorage.setItem(SEEN_VERSION_KEY, cur); } catch { /* private mode */ }
-  if (isOwner) showUpdateModal(seen, cur);
+  if (isOwner) { showUpdateModal(seen, cur); return true; }
+  return false;
+}
+
+const UPSTREAM_SEEN_KEY = 'itacm_upstream_seen';
+
+/**
+ * Opt-in upstream notice: when the server (UPDATE_CHECK on) reports a release
+ * newer than the running version, tell the Owner once per upstream version so
+ * they know to upgrade — even though this instance hasn't changed yet. Shown
+ * only if the "system updated" popup didn't fire this load.
+ */
+function maybeShowUpstreamNotice() {
+  if (!(Auth.profile && Auth.profile.role === 'Owner')) return;
+  const cur = AppConfig && AppConfig.version;
+  const avail = AppConfig && AppConfig.updateAvailable;
+  if (!avail || !cur || compareVersions(avail, cur) <= 0) return;
+  let seen = null;
+  try { seen = localStorage.getItem(UPSTREAM_SEEN_KEY); } catch { return; }
+  if (seen === avail) return; // already told about this upstream version
+  try { localStorage.setItem(UPSTREAM_SEEN_KEY, avail); } catch { /* private mode */ }
+  showUpstreamModal(cur, avail);
+}
+
+function showUpstreamModal(current, avail) {
+  const fill = (key) => (t(key) || '')
+    .replace('{version}', avail)
+    .replace('{current}', current);
+  const repo = 'https://github.com/enesyaks/ITACM';
+  openModal({
+    title: `<span class="ms">system_update_alt</span> ${esc(t('update.availTitle') || 'Update available')}`,
+    body: `
+      <p class="ob-slide-desc">${esc(fill('update.availBody'))}</p>
+      <div style="margin-top:14px">
+        <a class="btn btn-outline" href="${repo}/releases/tag/v${esc(avail)}" target="_blank" rel="noopener noreferrer">
+          <span class="ms">description</span> ${esc(t('update.notes') || 'Release notes')}
+        </a>
+      </div>`,
+    foot: `
+      <button class="btn btn-outline" data-close>${esc(t('update.later') || 'Later')}</button>
+      <a class="btn btn-primary" href="${repo}/releases/latest" target="_blank" rel="noopener noreferrer">
+        <span class="ms">upgrade</span> ${esc(t('update.availHow') || 'How to update')}
+      </a>`,
+  });
 }
 
 function showUpdateModal(prev, cur) {
