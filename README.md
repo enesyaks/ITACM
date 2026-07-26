@@ -238,6 +238,19 @@ For managed platforms (Railway, Render, Fly.io, Cloud Run…), deploy the `Docke
 
 ---
 
+## ⬆️ Updating
+
+Releases are tagged (`v1.1.0`, …) and listed under [Releases](https://github.com/enesyaks/ITACM/releases); see [`CHANGELOG.md`](CHANGELOG.md) for what changed. Schema migrations run automatically on startup, so updating is just pull-and-restart:
+
+```bash
+git pull                       # or: docker compose pull  (if you use a published image)
+docker compose up -d --build
+```
+
+Take a backup first (`npm run backup`) — it's a one-liner and makes rollback trivial. After the new version boots, the running version is exposed at `GET /api/health` (`version` field) and shown in **Help → About**. The first time the **Owner** signs in on a newer version, a popup announces the update so at least the people running the instance know it changed.
+
+---
+
 ## 💾 Backup & recovery
 
 PostgreSQL holds assets, employees, receipts, contracts, settings (SMTP, company, zimmet templates) and audit history. **Uploaded document files** live under the `app-data` volume (`DATA_DIR/documents`), not only in the database.

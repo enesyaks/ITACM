@@ -24,8 +24,16 @@ function flagEnv(name) {
 
 const databaseUrl = firstEnv(['DATABASE_URL', 'POSTGRES_URL']);
 
+// App version — single source of truth is package.json. Surfaced to the UI via
+// /api/config and /api/health so the frontend can announce updates to the Owner.
+const appVersion = (() => {
+  try { return require('../../package.json').version || '0.0.0'; }
+  catch { return '0.0.0'; }
+})();
+
 const config = {
   backend: 'postgres',
+  appVersion,
   port: Number(trimmedEnv('PORT')) || 8000,
   corsOrigins: trimmedEnv('CORS_ORIGINS').split(',').map((s) => s.trim()).filter(Boolean),
 

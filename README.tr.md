@@ -238,6 +238,19 @@ Yönetilen platformlarda (Railway, Render, Fly.io, Cloud Run…) `Dockerfile`'ı
 
 ---
 
+## ⬆️ Güncelleme
+
+Sürümler etiketlenir (`v1.1.0`, …) ve [Releases](https://github.com/enesyaks/ITACM/releases) altında listelenir; nelerin değiştiği için [`CHANGELOG.md`](CHANGELOG.md) dosyasına bakın. Şema migration'ları açılışta otomatik çalıştığından güncelleme sadece çek-ve-yeniden başlat kadar basittir:
+
+```bash
+git pull                       # ya da yayınlanmış imaj kullanıyorsanız: docker compose pull
+docker compose up -d --build
+```
+
+Önce bir yedek alın (`npm run backup`) — tek satır, geri dönüşü kolaylaştırır. Yeni sürüm açıldıktan sonra çalışan sürüm `GET /api/health` (`version` alanı) üzerinden görülür ve **Yardım → Hakkında** ekranında gösterilir. **Owner** yeni bir sürümde ilk kez giriş yaptığında, güncellemeyi duyuran bir popup çıkar; böylece en azından sistemi kullananların haberi olur.
+
+---
+
 ## 💾 Yedekleme & kurtarma
 
 PostgreSQL cihazlar, personel, tutanaklar, sözleşmeler, ayarlar (SMTP, şirket, zimmet şablonları) ve denetim geçmişini tutar. **Yüklenen belgeler** `app-data` volume'ünde (`DATA_DIR/documents`) durur — yalnızca veritabanında değil.

@@ -139,6 +139,7 @@ function createApp() {
       success: connected,
       service: 'itacm-backend',
       backend: config.backend,
+      version: config.appVersion,
       db: { connected },
       dataDir,
     });
@@ -164,6 +165,7 @@ function createApp() {
       success: true,
       data: {
         backend: config.backend,
+        version: config.appVersion,
         configError,
         onboardingVideoUrl,
         ownerMfaRequired,

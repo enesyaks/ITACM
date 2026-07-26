@@ -412,6 +412,9 @@ function showApp() {
     if (typeof checkOnboardingDueOnLogin === 'function') {
       checkOnboardingDueOnLogin().catch(() => {});
     }
+    if (typeof maybeShowUpdateNotice === 'function') {
+      setTimeout(() => { try { maybeShowUpdateNotice(); } catch { /* ignore */ } }, 800);
+    }
   });
 }
 
@@ -2179,6 +2182,63 @@ async function globalSearch(qText) {
   });
 }
 
+/* ---- update notice: tell the Owner when the running version changed ---- */
+const SEEN_VERSION_KEY = 'itacm_seen_version';
+
+// Compare dotted numeric versions (e.g. "1.10.0" vs "1.2.0"). Returns
+// >0 when a is newer, <0 when older, 0 when equal. Non-numeric suffixes are
+// ignored so "1.1.0-beta" still compares by its numeric core.
+function compareVersions(a, b) {
+  const parts = (v) => String(v || '0').split('.').map((n) => parseInt(n, 10) || 0);
+  const pa = parts(a);
+  const pb = parts(b);
+  const len = Math.max(pa.length, pb.length);
+  for (let i = 0; i < len; i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0);
+    if (d !== 0) return d > 0 ? 1 : -1;
+  }
+  return 0;
+}
+
+/**
+ * On login/app-load, if the server is running a NEWER version than the one this
+ * browser last acknowledged, show the Owner a one-time popup. Fresh installs (no
+ * stored version) and non-Owner users see nothing. The seen version is recorded
+ * even on downgrade/rollback so the popup never fires spuriously.
+ */
+function maybeShowUpdateNotice() {
+  const cur = AppConfig && AppConfig.version;
+  if (!cur) return;
+  const isOwner = !!(Auth.profile && Auth.profile.role === 'Owner');
+  let seen = null;
+  try { seen = localStorage.getItem(SEEN_VERSION_KEY); } catch { return; }
+  // First run on this browser, or a downgrade/rollback: just record it silently.
+  if (!seen || compareVersions(cur, seen) <= 0) {
+    try { localStorage.setItem(SEEN_VERSION_KEY, cur); } catch { /* private mode */ }
+    return;
+  }
+  // Newer version is live. Record it now (single-shot) and, for the Owner, announce.
+  try { localStorage.setItem(SEEN_VERSION_KEY, cur); } catch { /* private mode */ }
+  if (isOwner) showUpdateModal(seen, cur);
+}
+
+function showUpdateModal(prev, cur) {
+  const fill = (key, version) => (t(key) || '').replace('{version}', version);
+  const repo = 'https://github.com/enesyaks/ITACM';
+  openModal({
+    title: `<span class="ms">rocket_launch</span> ${esc(t('update.title') || 'System updated')}`,
+    body: `
+      <p class="ob-slide-desc">${esc(fill('update.body', cur))}</p>
+      <div class="cell-sub" style="margin-top:6px">${esc(fill('update.prev', prev))}</div>
+      <div style="margin-top:14px">
+        <a class="btn btn-outline" href="${repo}/releases/tag/v${esc(cur)}" target="_blank" rel="noopener noreferrer">
+          <span class="ms">description</span> ${esc(t('update.notes') || 'Release notes')}
+        </a>
+      </div>`,
+    foot: `<button class="btn btn-primary" data-close><span class="ms">check</span> ${esc(t('update.ok') || 'Got it')}</button>`,
+  });
+}
+
 /* ---- topbar buttons: notifications / help / settings / profile ---- */
 function notifDismissKey() {
   const uid = (Auth.profile && (Auth.profile.uid || Auth.profile.id)) || 'anon';
@@ -2321,7 +2381,7 @@ function showHelp() {
       <div class="gs-item">${badge('Helpdesk')}<div style="flex:1">Assets, handovers, repairs, software zimmet</div></div>
       <div class="gs-item">${badge('Viewer')}<div style="flex:1">Read-only inventory and dashboards</div></div>
       <div class="gs-section">About</div>
-      <div class="cell-sub">ITACM — IT Asset Control Pro. Backend: ${esc(AppConfig.backend)}.
+      <div class="cell-sub">ITACM — IT Asset Control Pro${AppConfig.version ? ` v${esc(AppConfig.version)}` : ''}. Backend: ${esc(AppConfig.backend)}.
         Handovers and seat moves are transactional with a full audit trail.</div>`,
     foot: '<button class="btn btn-outline" data-close>Close</button>',
     onMount(overlay) {
