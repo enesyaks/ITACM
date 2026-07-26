@@ -62,11 +62,11 @@ async function fetchLatestRelease() {
 }
 
 /**
- * Kick off a refresh if the check is enabled and the cache is stale. Non-blocking:
- * returns immediately; the cache is updated when the fetch resolves.
+ * Kick off a refresh if the cache is stale. Non-blocking: returns immediately;
+ * the cache is updated when the fetch resolves. The caller decides whether the
+ * check is enabled, so this doesn't re-check the flag.
  */
 function maybeRefresh() {
-  if (!config.updateCheck) return;
   if (cache.inFlight) return;
   if (cache.checkedAt && Date.now() - cache.checkedAt < DAY_MS) return;
   cache.inFlight = true;
@@ -82,9 +82,14 @@ function maybeRefresh() {
 /**
  * Current update status for the UI. Triggers a lazy refresh and returns the
  * cached verdict. `updateAvailable` is the newer version string, or null.
+ *
+ * @param {boolean} [enabled] Effective on/off (from the Owner setting, which
+ *   itself falls back to the UPDATE_CHECK env default). When omitted, the env
+ *   default is used directly.
  */
-function getUpdateInfo() {
-  if (!config.updateCheck) return { enabled: false, updateAvailable: null };
+function getUpdateInfo(enabled) {
+  const on = enabled === undefined ? !!config.updateCheck : !!enabled;
+  if (!on) return { enabled: false, updateAvailable: null };
   maybeRefresh();
   const current = config.appVersion;
   const latest = cache.latest;

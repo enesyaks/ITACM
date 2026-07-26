@@ -164,7 +164,7 @@ function createApp() {
     // Opt-in upstream update check (null unless UPDATE_CHECK is on AND a newer
     // release than the running version has been seen).
     let updateAvailable = null;
-    try { updateAvailable = require('./utils/updateCheck').getUpdateInfo().updateAvailable; }
+    try { updateAvailable = require('./utils/updateCheck').getUpdateInfo(settings.updateCheck).updateAvailable; }
     catch { /* never block config on the update check */ }
     res.json({
       success: true,

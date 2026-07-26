@@ -788,6 +788,10 @@ CREATE INDEX IF NOT EXISTS idx_approvals_requester ON approval_requests (request
 CREATE INDEX IF NOT EXISTS idx_approvals_status ON approval_requests (status, created_at DESC);
 ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS approvals JSONB;
 
+-- Owner-toggleable opt-in upstream update check (see src/utils/updateCheck.js).
+-- NULL = inherit the UPDATE_CHECK env default; TRUE/FALSE = explicit Owner choice.
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS update_check BOOLEAN;
+
 
 -- HR onboarding/offboarding requests (also migration 038_hr_role_and_requests.sql)
 CREATE TABLE IF NOT EXISTS hr_requests (

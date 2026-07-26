@@ -215,6 +215,20 @@ Views.integrations = async function (el) {
         </button>
       </section>` : ''}
 
+      ${canExport ? `<section class="card card-pad" style="margin-bottom:16px">
+        <h3 style="margin:0 0 8px">${esc(t('integration.updatesTitle') || 'Software updates')}</h3>
+        <p class="cell-sub" style="margin:0 0 12px">${esc(t('integration.updatesHint') || 'Check GitHub once a day for a newer release and show the Owner an “update available” notice. Off keeps this instance fully offline — no outbound request.')}</p>
+        <label class="ob-check" style="margin-bottom:12px">
+          <input type="checkbox" id="int-update-check" ${AppConfig.updateCheck ? 'checked' : ''}>
+          <span>${esc(t('integration.updatesToggle') || 'Check for new releases and notify the Owner')}</span>
+        </label>
+        <div>
+          <button type="button" class="btn btn-primary" id="int-update-save">
+            <span class="ms">save</span> ${esc(t('common.save') || 'Save')}
+          </button>
+        </div>
+      </section>` : ''}
+
       <section class="card card-pad">
         <h3 style="margin:0 0 8px">Sync connectors (API)</h3>
         <pre class="mono" style="white-space:pre-wrap;font-size:12px;background:#f6f5fa;padding:12px;border-radius:10px;overflow:auto">POST /api/integrations/sync/employees
@@ -348,6 +362,20 @@ GET /api/integrations/licenses/:id/sam
       a.href = url; a.download = name; a.click();
       URL.revokeObjectURL(url);
       toast(t('integration.migrationExportDone') || 'Migration package downloaded — keep JWT_SECRET with it', 'success');
+    } catch (err) { toast(err.message, 'error'); }
+    finally { if (btn) btn.disabled = false; }
+  });
+
+  $('#int-update-save', el)?.addEventListener('click', async () => {
+    const btn = $('#int-update-save', el);
+    const on = !!$('#int-update-check', el)?.checked;
+    if (btn) btn.disabled = true;
+    try {
+      const saved = await api('/settings', { method: 'PUT', body: { updateCheck: on } });
+      // Keep the in-memory bootstrap config in sync so the toggle survives a
+      // client-side re-render without a full reload.
+      if (typeof AppConfig === 'object' && AppConfig) AppConfig.updateCheck = saved ? !!saved.updateCheck : on;
+      toast(t('integration.updatesSaved') || 'Update settings saved', 'success');
     } catch (err) { toast(err.message, 'error'); }
     finally { if (btn) btn.disabled = false; }
   });

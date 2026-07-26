@@ -249,7 +249,7 @@ docker compose up -d --build
 
 Take a backup first (`npm run backup`) — it's a one-liner and makes rollback trivial. After the new version boots, the running version is exposed at `GET /api/health` (`version` field) and shown in **Help → About**. The first time the **Owner** signs in on a newer version, a popup announces the update so at least the people running the instance know it changed.
 
-**Optional — get told when a new release is out.** Set `UPDATE_CHECK=1` and the server asks GitHub once a day whether a newer release exists; if so, the Owner sees an "update available" popup (with a link to the release). It's **off by default** so offline / air-gapped installs never reach out. Configure the repo with `UPDATE_CHECK_REPO` and, for a private repo or higher rate limits, `UPDATE_CHECK_TOKEN` (`GITHUB_TOKEN` also works).
+**Optional — get told when a new release is out.** The Owner can turn this on under **Integrations → Software updates** (or set `UPDATE_CHECK=1` as the default). The server then asks GitHub once a day whether a newer release exists; if so, the Owner sees an "update available" popup (with a link to the release). It's **off by default** so offline / air-gapped installs never reach out. Configure the repo with `UPDATE_CHECK_REPO` and, for a private repo or higher rate limits, `UPDATE_CHECK_TOKEN` (`GITHUB_TOKEN` also works).
 
 ---
 

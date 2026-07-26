@@ -4,6 +4,19 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.1.1] — 2026-07-27
+
+### Added
+- **Owner toggle for the upstream update check** under **Integrations →
+  Software updates**. The preference is persisted in `app_settings.update_check`
+  (nullable — `NULL` inherits the `UPDATE_CHECK` env default, `TRUE`/`FALSE` is
+  an explicit Owner choice), so the check can be turned on/off from the UI
+  without editing `.env`.
+
+### Changed
+- `/api/config` now reflects the effective (DB-or-env) update-check state when
+  computing `updateAvailable`.
+
 ## [1.1.0] — 2026-07-26
 
 ### Added
@@ -15,12 +28,12 @@ project adheres to [Semantic Versioning](https://semver.org/).
   browser stores the last-seen version in `localStorage` (`itacm_seen_version`)
   and never fires on a fresh install or a rollback.
 - App version is shown in **Help → About**.
-- **Opt-in upstream update check.** With `UPDATE_CHECK=1`, the server asks the
-  GitHub Releases API — at most once a day — whether a release newer than the
+- **Opt-in upstream update check** (`UPDATE_CHECK=1`). When on, the server asks
+  the GitHub Releases API — at most once a day — whether a release newer than the
   running version exists, and shows the Owner an "update available" popup with a
   link to the release. Off by default; offline / air-gapped installs never reach
   out. Configurable via `UPDATE_CHECK_REPO` and `UPDATE_CHECK_TOKEN`
-  (`GITHUB_TOKEN` also accepted).
+  (`GITHUB_TOKEN` also accepted). _(Made toggleable from the UI in 1.1.1.)_
 - `CHANGELOG.md` and a documented update path (see README "Updating").
 
 ### Changed
@@ -36,5 +49,6 @@ project adheres to [Semantic Versioning](https://semver.org/).
   requests, document archive, audit trail, IAM roles (Owner/Admin/Helpdesk/
   Viewer/Portal/HR), MFA, and a 12-language UI.
 
+[1.1.1]: https://github.com/enesyaks/ITACM/releases/tag/v1.1.1
 [1.1.0]: https://github.com/enesyaks/ITACM/releases/tag/v1.1.0
 [1.0.0]: https://github.com/enesyaks/ITACM/releases/tag/v1.0.0
