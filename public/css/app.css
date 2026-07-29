@@ -2669,6 +2669,40 @@ tr.net-row:hover td { background: var(--surface-low); }
   }
 }
 
+/* Multi-page report print (Reports → Print). Unlike a one-page handover receipt,
+   a report table must flow across as many A4 pages as it needs. These override
+   the single-page clamps above (higher specificity + later source order) so the
+   full row set prints instead of being clipped at one page. */
+@media print {
+  .print-root .receipt-v2.receipt-report {
+    max-height: none !important;
+    height: auto !important;
+    overflow: visible !important;
+    page-break-after: auto !important;
+    break-after: auto !important;
+    page-break-inside: auto !important;
+    break-inside: auto !important;
+  }
+  .print-root .receipt-report .r-body,
+  .print-root .receipt-report .r-card,
+  .print-root .receipt-report section.r-card {
+    overflow: visible !important;
+    max-height: none !important;
+  }
+  /* Table flows across pages; header repeats on each page; rows never split. */
+  .print-root .receipt-report table.r-items {
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+  }
+  .print-root .receipt-report table.r-items thead {
+    display: table-header-group !important;
+  }
+  .print-root .receipt-report table.r-items tr {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+}
+
 .basket-asset-note {
   display: flex; align-items: flex-start; gap: 6px;
   margin-top: 10px; padding: 8px 10px;

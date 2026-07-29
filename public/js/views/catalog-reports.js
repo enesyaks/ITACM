@@ -1020,7 +1020,7 @@ function showReportResult(slot, title, rep) {
   });
   $('#rep-print', slot).addEventListener('click', () => {
     $('#print-root').innerHTML = `
-      <div class="receipt receipt-v2">
+      <div class="receipt receipt-v2 receipt-report">
         <header class="r-banner">
           <div class="r-banner-left">
             <div class="r-logo">${AppConfig.companyLogo

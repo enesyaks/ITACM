@@ -4,6 +4,16 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.2.3] — 2026-07-29
+
+### Fixed
+- **Report print stopped after one page.** Printing a preset report (e.g. Full
+  Inventory, 300+ rows) reused the one-page handover-receipt print styles, which
+  clamp the sheet to a single A4 page (`max-height` + `overflow: hidden`), so
+  every row past the first page was clipped. Report prints now carry a
+  `receipt-report` modifier that lets the table flow across as many pages as
+  needed, repeats the column header on each page, and avoids splitting a row.
+
 ## [1.2.2] — 2026-07-29
 
 ### Fixed
