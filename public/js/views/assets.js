@@ -1496,11 +1496,11 @@ async function showAssetDetail(id, onChange) {
       fetchCustomFields('asset', id),
     ]);
   } catch (err) {
-    toast((err && err.message) || 'Could not load asset', 'error');
+    toast((err && err.message) || t('hw.d.loadFail'), 'error');
     return;
   }
   if (!x) {
-    toast('Asset not found', 'error');
+    toast(t('hw.d.notFound'), 'error');
     return;
   }
   const docsByLog = {};
@@ -1546,62 +1546,62 @@ async function showAssetDetail(id, onChange) {
 
   const lifeHtml = (() => {
     if (life.excluded) {
-      return `<div class="ad-life muted"><span class="ms">timelapse</span> EOL tracking off for this category</div>`;
+      return `<div class="ad-life muted"><span class="ms">timelapse</span> ${esc(t('hw.d.eolOff'))}</div>`;
     }
     if (!life.eol) {
-      return `<div class="ad-life muted"><span class="ms">timelapse</span> ${esc(String(life.months))} months · no purchase date</div>`;
+      return `<div class="ad-life muted"><span class="ms">timelapse</span> ${esc((t('hw.d.monthsNoPurchase') || '{n} months · no purchase date').replace('{n}', String(life.months)))}</div>`;
     }
     const pct = Math.min(Math.max(life.pct || 0, 0), 100);
     const tone = life.overdue ? 'overdue' : (pct >= 80 ? 'warn' : 'ok');
     return `<div class="ad-life ${tone}">
       <div class="ad-life-top">
-        <span><span class="ms">timelapse</span> Lifecycle · ${esc(String(life.months))} mo</span>
-        <span>${life.overdue ? 'Replace due' : `EOL ${esc(fmtDate(life.eol))}`} · ${pct}%</span>
+        <span><span class="ms">timelapse</span> ${esc((t('hw.d.lifecycle') || 'Lifecycle · {n} mo').replace('{n}', String(life.months)))}</span>
+        <span>${life.overdue ? esc(t('hw.d.replaceDue')) : `EOL ${esc(fmtDate(life.eol))}`} · ${pct}%</span>
       </div>
       <div class="ad-life-bar"><i style="width:${pct}%"></i></div>
     </div>`;
   })();
 
   const overviewHtml = [
-    kvText('Serial', x.serialNumber, { mono: true }),
-    kvText('Category', x.category),
-    kvText('Location', x.location),
-    kv('Purchase date', x.purchaseDate ? esc(fmtDate(x.purchaseDate)) : ''),
-    kv('Purchase cost', Number(x.cost) > 0 ? esc(fmtMoney(x.cost)) : ''),
-    kv('Book value', x.bookValue != null
-      ? `${esc(fmtMoney(x.bookValue))} <span class="ad-empty">(${x.depreciationPct}% depreciated)</span>`
+    kvText(t('hw.d.serial'), x.serialNumber, { mono: true }),
+    kvText(t('asset.f.category'), x.category),
+    kvText(t('asset.f.location'), x.location),
+    kv(t('asset.f.purchaseDate'), x.purchaseDate ? esc(fmtDate(x.purchaseDate)) : ''),
+    kv(t('asset.f.purchaseCost'), Number(x.cost) > 0 ? esc(fmtMoney(x.cost)) : ''),
+    kv(t('hw.d.bookValue'), x.bookValue != null
+      ? `${esc(fmtMoney(x.bookValue))} <span class="ad-empty">${esc((t('hw.d.deprSuffix') || '({pct}% depreciated)').replace('{pct}', x.depreciationPct))}</span>`
       : ''),
-    kv('Warranty ends', x.warrantyEndDate ? esc(fmtDate(x.warrantyEndDate)) : ''),
+    kv(t('asset.f.warrantyEnds'), x.warrantyEndDate ? esc(fmtDate(x.warrantyEndDate)) : ''),
     isInfra
       ? ''
-      : kv('Assigned to', x.currentEmployee
+      : kv(t('hw.d.assignedTo'), x.currentEmployee
         ? esc(x.currentEmployee.fullName)
-        : '<span class="ad-empty">Unassigned</span>', { skipEmpty: false }),
+        : `<span class="ad-empty">${esc(t('dash.unassigned'))}</span>`, { skipEmpty: false }),
     isInfra
-      ? kv('Responsible', x.responsibleEmployee
+      ? kv(t('hw.d.responsible'), x.responsibleEmployee
         ? esc(x.responsibleEmployee.fullName)
-        : '<span class="ad-empty">Not set</span>', { skipEmpty: false })
-      : kvText('Responsible', x.responsibleEmployee && x.responsibleEmployee.fullName),
+        : `<span class="ad-empty">${esc(t('hw.d.notSet'))}</span>`, { skipEmpty: false })
+      : kvText(t('hw.d.responsible'), x.responsibleEmployee && x.responsibleEmployee.fullName),
   ].join('');
 
   const specsHtml = [
     specBits.length
-      ? kv('Hardware', `<div class="ad-chips">${specBits.map((b) => `<span class="ad-chip">${esc(b)}</span>`).join('')}</div>`, { full: true, skipEmpty: false })
+      ? kv(t('hw.d.hardware'), `<div class="ad-chips">${specBits.map((b) => `<span class="ad-chip">${esc(b)}</span>`).join('')}</div>`, { full: true, skipEmpty: false })
       : '',
     kvText('MAC Ethernet', x.macEthernet, { mono: true }),
     kvText('MAC Wi-Fi', x.macWifi, { mono: true }),
-    kvText('Hostname', s.hostname, { mono: true }),
-    kvText('IP address', s.ipAddress, { mono: true }),
+    kvText(t('asset.f.hostname'), s.hostname, { mono: true }),
+    kvText(t('asset.f.ipAddress'), s.ipAddress, { mono: true }),
   ].join('');
 
   const infraHtml = !isInfra && !hasInfraMeta ? '' : [
-    kvText('Role', x.infraRole),
-    kvText('Rack / U', rackLine),
-    kvText('Mgmt IP', x.mgmtIp, { mono: true }),
-    kv('Firmware', x.firmwareVersion
+    kvText(t('hw.d.role'), x.infraRole),
+    kvText(t('hw.d.rackU'), rackLine),
+    kvText(t('hw.d.mgmtIp'), x.mgmtIp, { mono: true }),
+    kv(t('hw.d.firmware'), x.firmwareVersion
       ? `${esc(x.firmwareVersion)}${x.firmwareUpdatedAt ? ` <span class="cell-sub">· ${esc(fmtDate(x.firmwareUpdatedAt))}</span>` : ''}`
       : ''),
-    kv('Parent devices', (() => {
+    kv(t('asset.f.parents'), (() => {
       const parents = (x.parentAssets && x.parentAssets.length)
         ? x.parentAssets
         : (x.parentAsset ? [x.parentAsset] : []);
@@ -1616,7 +1616,7 @@ async function showAssetDetail(id, onChange) {
   const licenseHtml = licenses.length
     ? licenses.map((l) =>
       `<div class="ad-lic"><strong>${esc(l.softwareName)}</strong>
-        <span class="cell-sub">expires ${esc(fmtDate(l.expirationDate))}</span></div>`).join('')
+        <span class="cell-sub">${esc((t('hw.d.expires') || 'expires {date}').replace('{date}', fmtDate(l.expirationDate)))}</span></div>`).join('')
     : '';
 
   const cfHtml = (cfBundle.defs || []).map((d) => {
@@ -1626,14 +1626,14 @@ async function showAssetDetail(id, onChange) {
   }).join('');
 
   const historyHtml = !(x.history || []).length
-    ? '<div class="ad-empty-block">No history yet.</div>'
+    ? `<div class="ad-empty-block">${esc(t('hw.d.noHistory'))}</div>`
     : x.history.map((h) => {
       const who = h.employeeName
-        ? (h.actionType === 'returned' ? `from <strong>${esc(h.employeeName)}</strong>`
-          : h.actionType === 'assigned' ? `to <strong>${esc(h.employeeName)}</strong>`
+        ? (h.actionType === 'returned' ? `${esc(t('hw.d.from'))} <strong>${esc(h.employeeName)}</strong>`
+          : h.actionType === 'assigned' ? `${esc(t('hw.d.to'))} <strong>${esc(h.employeeName)}</strong>`
           : (h.actionType === 'placed' || h.actionType === 'responsible_changed' || h.actionType === 'created')
-            ? `owner <strong>${esc(h.employeeName)}</strong>`
-          : `while at <strong>${esc(h.employeeName)}</strong>`)
+            ? `${esc(t('hw.d.owner'))} <strong>${esc(h.employeeName)}</strong>`
+          : `${esc(t('hw.d.whileAt'))} <strong>${esc(h.employeeName)}</strong>`)
         : '';
       return `
         <div class="ad-timeline-item">
@@ -1641,26 +1641,26 @@ async function showAssetDetail(id, onChange) {
           <div class="ad-timeline-body">
             ${badge(h.actionType)}
             <span>${who}</span>
-            <span class="cell-sub">by ${esc(h.changedByName || h.changedBy || '—')}</span>
+            <span class="cell-sub">${esc(t('common.by'))} ${esc(h.changedByName || h.changedBy || '—')}</span>
             ${h.notes ? `<div class="cell-sub ad-timeline-note">${esc(h.notes)}</div>` : ''}
           </div>
         </div>`;
     }).join('');
 
   const repairHtml = !repairs.length
-    ? '<div class="ad-empty-block">No repair records for this device.</div>'
+    ? `<div class="ad-empty-block">${esc(t('hw.d.noRepairs'))}</div>`
     : repairs.map((m) => {
       const notes = (m.progressNotes || []).map((n) => (typeof n === 'string' ? n : n.note)).filter(Boolean);
       return `
         <div class="ad-timeline-item">
           <div class="ad-timeline-when">${esc(fmtDate(m.sentDate))}${m.returnDate ? ' → ' + esc(fmtDate(m.returnDate)) : ''}</div>
           <div class="ad-timeline-body">
-            <span class="pill ${m.returnDate ? 'pill-emerald' : 'pill-amber'}">${m.returnDate ? 'Repaired' : 'In Repair'}</span>
+            <span class="pill ${m.returnDate ? 'pill-emerald' : 'pill-amber'}">${m.returnDate ? esc(t('hw.d.repaired')) : esc(t('hw.d.inRepair'))}</span>
             <strong>${esc(m.serviceCompany)}</strong>
             <span class="cell-sub">${esc(m.issueDescription)}</span>
-            <span class="cell-sub" style="margin-left:auto">Cost: <strong>${fmtMoney(m.cost || 0)}</strong></span>
-            ${m.resolutionNote ? `<div class="cell-sub ad-timeline-note">Resolution: ${esc(m.resolutionNote)}</div>` : ''}
-            ${notes.length ? `<div class="cell-sub ad-timeline-note">Notes: ${notes.map((n) => esc(n)).join(' · ')}</div>` : ''}
+            <span class="cell-sub" style="margin-left:auto">${esc(t('hw.d.cost'))}: <strong>${fmtMoney(m.cost || 0)}</strong></span>
+            ${m.resolutionNote ? `<div class="cell-sub ad-timeline-note">${esc(t('hw.d.resolution'))}: ${esc(m.resolutionNote)}</div>` : ''}
+            ${notes.length ? `<div class="cell-sub ad-timeline-note">${esc(t('hw.d.notesLbl'))}: ${notes.map((n) => esc(n)).join(' · ')}</div>` : ''}
             ${(docsByLog[m.id] || []).length ? `<div class="cell-sub ad-timeline-note">
               <span class="ms ms-sm">attach_file</span> ${docInlineLinks(docsByLog[m.id], { canDownload: canDownloadDocs, viewAttr: 'data-mdoc-dl' })}</div>` : ''}
           </div>
@@ -1686,35 +1686,35 @@ async function showAssetDetail(id, onChange) {
           <div class="ad-hero-status">${badge(x.status)}</div>
         </header>
         ${lifeHtml}
-        ${sec('Overview', null, overviewHtml)}
-        ${sec('Specs & network', null, specsHtml)}
-        ${sec('Infrastructure', null, infraHtml)}
-        ${licenseHtml ? `<section class="ad-sec"><div class="ad-sec-head"><strong>Licenses</strong></div><div class="ad-lic-list">${licenseHtml}</div></section>` : ''}
-        ${String(x.notes || '').trim() ? `<section class="ad-sec"><div class="ad-sec-head"><strong>Note</strong></div>
+        ${sec(t('hw.d.secOverview'), null, overviewHtml)}
+        ${sec(t('hw.d.secSpecs'), null, specsHtml)}
+        ${sec(t('asset.f.secInfra'), null, infraHtml)}
+        ${licenseHtml ? `<section class="ad-sec"><div class="ad-sec-head"><strong>${esc(t('hw.d.secLicenses'))}</strong></div><div class="ad-lic-list">${licenseHtml}</div></section>` : ''}
+        ${String(x.notes || '').trim() ? `<section class="ad-sec"><div class="ad-sec-head"><strong>${esc(t('hw.d.secNote'))}</strong></div>
           <div class="ad-note"><span class="ms">sticky_note_2</span> ${esc(String(x.notes).trim())}</div></section>` : ''}
-        ${cfHtml ? sec('Custom fields', null, cfHtml) : ''}
+        ${cfHtml ? sec(t('hw.d.secCustom'), null, cfHtml) : ''}
         <section class="ad-sec">
-          <div class="ad-sec-head"><strong>History</strong><span>who / when / by whom</span></div>
+          <div class="ad-sec-head"><strong>${esc(t('common.history'))}</strong><span>${esc(t('hw.d.historySub'))}</span></div>
           <div class="ad-timeline">${historyHtml}</div>
         </section>
         <section class="ad-sec">
-          <div class="ad-sec-head"><strong>Repair &amp; maintenance</strong><span>${repairs.length}</span></div>
+          <div class="ad-sec-head"><strong>${esc(t('hw.d.secRepair'))}</strong><span>${repairs.length}</span></div>
           <div class="ad-timeline">${repairHtml}</div>
         </section>
       </div>`,
     foot: `
-      <button class="btn btn-outline" data-close>Close</button>
+      <button class="btn btn-outline" data-close>${esc(t('common.close'))}</button>
       <button class="btn btn-outline" id="ad-qr"><span class="ms">qr_code_2</span> QR</button>
-      <button class="btn btn-outline" id="ad-label"><span class="ms">barcode</span> Label</button>
-      ${canUpdate ? `<button class="btn btn-outline" id="ad-edit"><span class="ms">edit</span> Edit</button>` : ''}
+      <button class="btn btn-outline" id="ad-label"><span class="ms">barcode</span> ${esc(t('hw.d.label'))}</button>
+      ${canUpdate ? `<button class="btn btn-outline" id="ad-edit"><span class="ms">edit</span> ${esc(t('common.edit'))}</button>` : ''}
       ${canCreate ? `<button class="btn btn-outline" id="ad-duplicate"><span class="ms">content_copy</span> ${esc(t('common.duplicate'))}</button>` : ''}
-      ${canUnassign && !isInfra && x.status === 'Assigned' ? '<button class="btn btn-outline" id="ad-return"><span class="ms">undo</span> Return</button>' : ''}
-      ${canRepair && (x.status === 'In Stock' || x.status === 'Assigned') ? '<button class="btn btn-primary" id="ad-repair"><span class="ms">build</span> Repair</button>' : ''}
+      ${canUnassign && !isInfra && x.status === 'Assigned' ? `<button class="btn btn-outline" id="ad-return"><span class="ms">undo</span> ${esc(t('common.return'))}</button>` : ''}
+      ${canRepair && (x.status === 'In Stock' || x.status === 'Assigned') ? `<button class="btn btn-primary" id="ad-repair"><span class="ms">build</span> ${esc(t('common.repair'))}</button>` : ''}
       ${canUpdate && isInfra
         ? `<button class="btn btn-primary" id="ad-responsible"><span class="ms">person_search</span> ${esc(t('network.setResponsible') || 'Set responsible')}</button>`
         : ''}
       ${Auth.canIam('handover', 'create') && !isInfra && x.status === 'In Stock'
-        ? '<button class="btn btn-primary" id="ad-handover"><span class="ms">assignment_turned_in</span> Handover</button>'
+        ? `<button class="btn btn-primary" id="ad-handover"><span class="ms">assignment_turned_in</span> ${esc(t('hw.d.handover'))}</button>`
         : ''}`,
     onMount(overlay) {
       $('#ad-qr', overlay).addEventListener('click', () => showQrModal(x));
@@ -1758,12 +1758,12 @@ async function showAssetDetail(id, onChange) {
       if (adDup) adDup.addEventListener('click', () => assetForm(duplicateAssetSeed(x), () => refresh()));
       const adReturn = $('#ad-return', overlay);
       if (adReturn) adReturn.addEventListener('click', () => formModal({
-        title: `Return ${x.assetTag} to stock`,
-        fields: [{ name: 'conditionNote', label: 'Condition note', type: 'textarea', full: true }],
-        submitLabel: 'Return to stock',
+        title: (t('hw.d.returnTitle') || 'Return {tag} to stock').replace('{tag}', x.assetTag),
+        fields: [{ name: 'conditionNote', label: t('hw.d.conditionNote'), type: 'textarea', full: true }],
+        submitLabel: t('hw.d.returnToStock'),
         async onSubmit(d) {
           await api(`/assets/${x.id}/return`, { method: 'POST', body: d });
-          toast(`${x.assetTag} returned to stock`, 'success');
+          toast((t('hw.d.returnedToast') || '{tag} returned to stock').replace('{tag}', x.assetTag), 'success');
           refresh();
           showAssetDetail(id, onChange);
         },

@@ -4,6 +4,14 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.2.11] — 2026-07-29
+
+### Changed
+- **Hardware (asset) detail modal localized in all 12 languages.** Its overview/
+  specs/infrastructure labels, lifecycle bar, licenses/note/custom-field/history/
+  repair sections, footer actions and the return dialog were hardcoded English
+  and now go through the i18n layer (new `hw.d.*` keys, all 12 languages).
+
 ## [1.2.10] — 2026-07-29
 
 ### Changed
