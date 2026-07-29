@@ -10,20 +10,20 @@ Views.stockcount = async function (el, params = {}) {
     <div id="sc-active"></div>
     <div class="gs-section" style="margin:20px 0 8px">${esc(t('stock.sessions'))}</div>
     <div class="card"><div class="table-wrap"><table class="data">
-      <thead><tr><th>Session</th><th>Location</th><th>Status</th><th>Scans</th><th>Started</th><th style="text-align:right"></th></tr></thead>
+      <thead><tr><th>${esc(t('stock.colSession'))}</th><th>${esc(t('network.colLocation'))}</th><th>${esc(t('common.status'))}</th><th>${esc(t('stock.colScans'))}</th><th>${esc(t('stock.colStarted'))}</th><th style="text-align:right"></th></tr></thead>
       <tbody>
-        ${counts.length === 0 ? '<tr><td colspan="6" class="table-empty">No counts yet — start one to begin scanning.</td></tr>' :
+        ${counts.length === 0 ? `<tr><td colspan="6" class="table-empty">${esc(t('stock.noCounts'))}</td></tr>` :
           counts.map((c) => `
           <tr>
             <td class="cell-title">${esc(c.name)}</td>
-            <td>${esc(c.location || 'All locations')}</td>
-            <td>${c.status === 'open' ? '<span class="pill pill-emerald">Open</span>' : '<span class="pill pill-indigo">Closed</span>'}</td>
+            <td>${esc(c.location || t('stock.allLocations'))}</td>
+            <td>${c.status === 'open' ? `<span class="pill pill-emerald">${esc(t('stock.stOpen'))}</span>` : `<span class="pill pill-indigo">${esc(t('stock.stClosed'))}</span>`}</td>
             <td>${c.scanCount ?? ''}</td>
             <td class="cell-sub">${fmtDateTime(c.createdAt)}${c.createdByName ? ' • ' + esc(c.createdByName) : ''}</td>
             <td class="actions">
               ${c.status === 'open'
-                ? `<button class="btn btn-primary btn-sm" data-sc-open="${esc(c.id)}"><span class="ms">qr_code_scanner</span> Continue</button>`
-                : `<button class="btn btn-outline btn-sm" data-sc-result="${esc(c.id)}"><span class="ms">summarize</span> Result</button>`}
+                ? `<button class="btn btn-primary btn-sm" data-sc-open="${esc(c.id)}"><span class="ms">qr_code_scanner</span> ${esc(t('stock.continue'))}</button>`
+                : `<button class="btn btn-outline btn-sm" data-sc-result="${esc(c.id)}"><span class="ms">summarize</span> ${esc(t('stock.result'))}</button>`}
             </td>
           </tr>`).join('')}
       </tbody>

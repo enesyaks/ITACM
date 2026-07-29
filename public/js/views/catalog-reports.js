@@ -367,36 +367,36 @@ async function showMaintNotes(log, onDone) {
     ? await api(`/maintenance/${log.id}/documents`).catch(() => [])
     : [];
   openModal({
-    title: `Repair notes & documents — ${log.assetTag}`,
+    title: (t('mnt.nTitle') || 'Repair notes & documents — {tag}').replace('{tag}', log.assetTag),
     wide: true,
     body: `
       <div class="cell-sub" style="margin-bottom:12px">${esc(log.serviceCompany)} • ${esc(log.issueDescription)}
-        • sent ${fmtDate(log.sentDate)}${log.returnDate ? ' • closed ' + fmtDate(log.returnDate) : ''}</div>
+        • ${esc((t('mnt.sentOn') || 'sent {date}').replace('{date}', fmtDate(log.sentDate)))}${log.returnDate ? ' • closed ' + fmtDate(log.returnDate) : ''}</div>
 
-      <h3 style="font-size:11px;text-transform:uppercase;color:var(--on-surface-variant);margin:0 0 6px">Progress Notes (${notes.length})</h3>
-      ${notes.length === 0 ? '<div class="cell-sub" style="margin-bottom:8px">No progress notes yet.</div>' :
+      <h3 style="font-size:11px;text-transform:uppercase;color:var(--on-surface-variant);margin:0 0 6px">${esc((t('mnt.progressNotes') || 'Progress notes ({n})').replace('{n}', notes.length))}</h3>
+      ${notes.length === 0 ? `<div class="cell-sub" style="margin-bottom:8px">${esc(t('mnt.noProgressNotes'))}</div>` :
         notes.map((n) => `
         <div class="history-item" style="flex-wrap:wrap">
           <span class="when">${fmtDateTime(n.at)}</span>
-          <span class="cell-sub">by ${esc(n.by || '—')}</span>
+          <span class="cell-sub">${esc(t('common.by'))} ${esc(n.by || '—')}</span>
           <span style="flex-basis:100%;padding-left:2px">${esc(n.note)}</span>
         </div>`).join('')}
       ${canNote ? `<div class="form-field" style="margin-top:14px">
-        <label>Add progress note <span class="ob-hint">(also recorded in the device history)</span></label>
-        <textarea id="mn-new-note" placeholder="e.g. Parça bekleniyor — ekran paneli siparişi verildi"></textarea>
+        <label>${esc(t('mnt.addProgressNote'))} <span class="ob-hint">${esc(t('mnt.alsoInHistory'))}</span></label>
+        <textarea id="mn-new-note" placeholder="${esc(t('mnt.notePh'))}"></textarea>
       </div>` : ''}
 
       <div style="display:flex;align-items:center;justify-content:space-between;margin:18px 0 8px">
-        <h3 style="font-size:11px;text-transform:uppercase;color:var(--on-surface-variant);margin:0">Documents (${canReadDocs ? docs.length : '—'})</h3>
-        ${canUploadDocs ? '<button class="btn btn-outline btn-sm" id="mn-upload-btn"><span class="ms">upload_file</span> Upload document</button>' : ''}
+        <h3 style="font-size:11px;text-transform:uppercase;color:var(--on-surface-variant);margin:0">${esc((t('mnt.documents') || 'Documents ({n})').replace('{n}', canReadDocs ? docs.length : '—'))}</h3>
+        ${canUploadDocs ? `<button class="btn btn-outline btn-sm" id="mn-upload-btn"><span class="ms">upload_file</span> ${esc(t('mnt.uploadDocument'))}</button>` : ''}
       </div>
-      <div class="cell-sub" style="margin-bottom:8px">Service invoice, repair report or photos — kept with the device (PDF / PNG / JPEG / WebP, max 8MB).</div>
+      <div class="cell-sub" style="margin-bottom:8px">${esc(t('mnt.docsHint'))}</div>
       <input type="file" id="mn-doc-file" accept="application/pdf,image/png,image/jpeg,image/webp,.pdf,.png,.jpg,.jpeg,.webp" class="hidden">
       ${!canReadDocs
-        ? '<div class="table-empty">No permission to view documents (needs <strong>document:read</strong>).</div>'
-        : docs.length === 0 ? '<div class="table-empty">No documents yet.</div>' : `
+        ? `<div class="table-empty">${esc(t('emp.docsNoPerm'))}</div>`
+        : docs.length === 0 ? `<div class="table-empty">${esc(t('mnt.noDocuments'))}</div>` : `
       <div class="table-wrap" style="border:1px solid var(--outline-variant);border-radius:var(--radius-lg)"><table class="data">
-        <thead><tr><th>Document</th><th>Size</th><th>Added</th><th style="text-align:right"></th></tr></thead>
+        <thead><tr><th>${esc(t('emp.docColName'))}</th><th>${esc(t('emp.docColSize'))}</th><th>${esc(t('emp.docColAdded'))}</th><th style="text-align:right"></th></tr></thead>
         <tbody>
           ${docs.map((d) => `
           <tr>
@@ -409,8 +409,8 @@ async function showMaintNotes(log, onDone) {
           </tr>`).join('')}
         </tbody>
       </table></div>`}`,
-    foot: `<button class="btn btn-outline" data-close>Close</button>
-           ${canNote ? '<button class="btn btn-primary" id="mn-add-note"><span class="ms">add_comment</span> Add Note</button>' : ''}`,
+    foot: `<button class="btn btn-outline" data-close>${esc(t('common.close'))}</button>
+           ${canNote ? `<button class="btn btn-primary" id="mn-add-note"><span class="ms">add_comment</span> ${esc(t('mnt.addNote'))}</button>` : ''}`,
     onMount(overlay) {
       $('#mn-add-note', overlay)?.addEventListener('click', async () => {
         const note = $('#mn-new-note', overlay).value.trim();

@@ -4,6 +4,14 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.2.15] — 2026-07-29
+
+### Changed
+- **Maintenance & Repair and Stock Count localized in all 12 languages.** Wired
+  the maintenance list (filters, columns, In-Repair pill, Notes/Close), the
+  close-repair dialog, the repair notes & documents modal, and the stock-count
+  session table (columns, Open/Closed pills, Continue/Result) through t().
+
 ## [1.2.14] — 2026-07-29
 
 ### Changed
