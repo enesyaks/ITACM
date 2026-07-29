@@ -4,6 +4,14 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.2.9] — 2026-07-29
+
+### Changed
+- **Asset form and License module now ship real translations for all 12
+  languages** (previously EN/TR only). Every `asset.f.*` and `lic.*` key is
+  filled for DE, FR, ES, IT, PT, NL, PL, RU, AR, JA. Continues the 12-language
+  coverage started with the dashboard; RU/AR/JA are machine-assisted.
+
 ## [1.2.8] — 2026-07-29
 
 ### Changed
