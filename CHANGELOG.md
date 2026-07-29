@@ -4,6 +4,20 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.2.22] — 2026-07-30
+
+### Fixed
+- **CRITICAL: `src/utils/setupAccess.js` was corrupted** with non-code text
+  prepended by an external edit tool, which committed into 1.2.21 and crash-
+  looped the API (`Unexpected identifier`). Restored the file and rebuilt it.
+
+### Changed
+- **Rate-limit / brute-force IP now resolves the real client behind a trusted
+  proxy.** When `TRUST_PROXY` is set (e.g. behind Cloudflare + nginx/Traefik),
+  `rateLimitIp` uses `CF-Connecting-IP` (then `req.ip`) so limits are per-visitor
+  instead of bucketing every user under the proxy IP. With no proxy declared it
+  still uses the unspoofable TCP peer, so headers cannot be forged to dodge limits.
+
 ## [1.2.21] — 2026-07-30
 
 ### Changed

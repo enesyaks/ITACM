@@ -1,4 +1,4 @@
-We are asked to apply a suggested edit to the original code. The suggested edit changes the rateLimitIp function to first check for Cloudflare's CF-Connecting-IP header, then fall back to peerIp. The original function just returned peerIp || 'unknown'. The suggestion includes a comment that also describes the change. The instruction: "Apply the SUGGESTED EDIT to the ORIGINAL CODE. Output the complete modified file. Output ONLY code. Do NOT explain, summarize, or describe changes. Leave existing comments in place unless changes require modifying them. Preserve all unchanged code exactly as-is." So we need to output the entire file with the rateLimitIp function replaced as per the suggestion. The original code includes the comment block above the function, which we will replace with the suggested comment. The function body will be replaced. The rest of the file remains unchanged. So I'll produce the complete code with that edit./**
+/**
  * Who may receive the one-time setupToken over the API.
  * Loopback clients (typical Docker/desktop first-run) get it automatically.
  * Remote clients must supply SETUP_TOKEN env (or the key printed in server logs)
@@ -45,16 +45,24 @@ function peerIp(req) {
 /**
  * IP key for rate limits and brute-force protection.
  *
- * When behind Cloudflare, uses the CF-Connecting-IP header (set by Cloudflare,
- * cannot be spoofed by clients) to identify the real visitor. Otherwise, falls
- * back to the direct TCP peer address to prevent attackers from rotating
- * spoofed headers when no trusted proxy is in front.
+ * ALWAYS uses the TCP peer address — never trusts X-Forwarded-For
+ * regardless of TRUST_PROXY. This prevents attackers from rotating
+ * spoofed headers to bypass rate limits or brute-force detection.
  */
 function rateLimitIp(req) {
-  // Trust Cloudflare's CF-Connecting-IP header (cannot be spoofed by clients).
-  const cfIp = req.headers && req.headers['cf-connecting-ip'];
-  if (cfIp) return String(cfIp).trim();
-  // Fall back to the direct TCP peer for non-proxied or other reverse-proxy setups.
+  // Behind a declared trusted proxy (TRUST_PROXY set), use the REAL client IP so
+  // rate limits are per-visitor — otherwise every request shares the proxy's IP
+  // and legitimate users get throttled as one bucket. Prefer Cloudflare's
+  // CF-Connecting-IP (Cloudflare overwrites any client-supplied value), then
+  // Express req.ip (resolved from X-Forwarded-For per the trust-proxy hop count).
+  // When no proxy is declared we must NOT trust these headers — a direct client
+  // could spoof them to dodge the login/brute-force limits — so we fall back to
+  // the unspoofable TCP peer.
+  if (trustProxyEnabled()) {
+    const cf = req.headers && req.headers['cf-connecting-ip'];
+    if (cf) return normalizeIp(String(cf).split(',')[0].trim());
+    if (req.ip) return normalizeIp(req.ip);
+  }
   return peerIp(req) || 'unknown';
 }
 
@@ -103,4 +111,3 @@ module.exports = {
   rateLimitIp,
   trustProxyEnabled,
 };
-
