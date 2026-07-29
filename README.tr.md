@@ -132,7 +132,7 @@ Yeni çalışanın setini planlayın (cihaz + hat rezerve edin), sonra tek zimme
 Cihaz, kullanıcı, belge, zimmet, giriş, ayar ve dahasını kapsayan; append-only denetim tablosunu eski alan geçmişleriyle birleştiren birleşik, filtrelenebilir zaman çizelgesi. Kaynağa, aktöre ve tarihe göre arama; sırlar saklanmadan önce maskelenir.
 
 ### ⏳ Ürün yaşam döngüsü (EOL)
-EOL süreleri üç katmanda çözülür — **cihaz bazlı override → katalog modeli → kategori varsayılanı**. Ayarlar'dan kategori varsayılanını belirleyin, belirli bir katalog modeline kendi yaşam süresini verin (ör. **Apple MacBook'lar 5 yıl**, diğer laptoplar 4 yılda kalır) ya da tek bir cihazı override edin — veya bir kategori için (aksesuarlar) EOL takibini kapatın. Her cihaz EOL tarihini ve "EOL yakın" / gecikmiş işaretlerini gösterir.
+EOL süreleri üç katmanda çözülür — **cihaz bazlı override → katalog modeli → kategori varsayılanı**. Ayarlar'dan kategori varsayılanını belirleyin, belirli bir katalog modeline kendi yaşam süresini verin (ör. **Apple MacBook'lar 5 yıl**, diğer laptoplar 4 yılda kalır) ya da tek bir cihazı override edin — veya bir kategori için (aksesuarlar) EOL takibini kapatın. Her cihaz EOL tarihini ve "EOL yakın" / gecikmiş işaretlerini gösterir. Aynı yaşam süresi **doğrusal amortismanı** da besler: alış maliyeti (ve opsiyonel hurda değeri) girin; her cihaz güncel **defter değerini** gösterir — **Amortisman / Defter Değeri** raporundan dışa aktarılır.
 
 ### 📦 Fiziksel sayım
 Bir sayım oturumu açın ve **giriş yapmış herhangi bir cihazdan** tarayın — PC'de başlayın, telefon kameranızla barkod/QR taramaya devam edin. Oturumu kapatınca canlı envanterle mutabakat: bulundu / eksik / bilinmeyen, CSV dışa aktarımıyla.
@@ -141,7 +141,7 @@ Bir sayım oturumu açın ve **giriş yapmış herhangi bir cihazdan** tarayın 
 Şablonu indirin, mevcut zimmet tablonuzla doldurun, yükleyin — kuru çalıştırma (dry-run) önizlemesi tam olarak neyin oluşturulacağını gösterir; sonra tek işlemde personeli, katalog kayıtlarını, cihazları (sıralı etiketler) ve her personel için tam geçmişli bir zimmeti otomatik oluşturur.
 
 ### 📄 Lisanslar · 🏷 etiketler · 💱 para birimi
-Atomik al/bırak ve 30 günlük süre uyarılı koltuk havuzları. Taranabilir **Code 128** etiketler yazdırın (boyut/alan/kopya ayarlanabilir). Maliyetler için uygulama genelinde **görüntüleme para birimi** seçin.
+Atomik al/bırak ve 30 günlük süre uyarılı koltuk havuzları. Taranabilir **Code 128** etiketler yazdırın (boyut/alan/kopya ayarlanabilir). Maliyetler için uygulama genelinde **görüntüleme para birimi** seçin. Uyarı digest'i (biten lisanslar, düşük stok, EOL, işe alım) SMTP ile **günlük veya haftalık otomatik** gönderilebilir — **Integrations → SMTP & alert digest** (Auto-send: Kapalı / Günlük / Haftalık).
 
 ### 🌍 Çok dilli arayüz
 12 dil (EN, TR, DE, FR, ES, IT, PT, NL, PL, RU, AR, JA). Karşılama ekranında seçin, Ayarlar'dan dilediğiniz zaman değiştirin; çevrilmemiş metinler İngilizce'ye düşer.
@@ -234,6 +234,14 @@ Elle yapılandırmayı mı tercih edersiniz? `.env.example` dosyasını `.env` o
 
 Compose dosyası Docker'ı olan her sunucuda değişmeden çalışır. 8000 portunun önüne TLS'li bir ters proxy (Caddy / Nginx / Traefik) koyun ve frontend origin'iniz farklıysa `CORS_ORIGINS` değerini ona göre ayarlayın.
 
+### Ters proxy / Cloudflare arkasında
+
+Rate-limit ve brute-force koruması istemci IP'sine göre çalışır; önde bir proxy varsa uygulamaya bunu **söylemelisiniz**, yoksa tüm ziyaretçiler proxy'nin IP'sinde toplanıp tek kişi gibi engellenir:
+
+- `.env`'de **`TRUST_PROXY=1`** ayarlayın. Uygulama gerçek istemciyi `CF-Connecting-IP` (Cloudflare arkasında) veya `X-Forwarded-For`'dan çözer. Güvenilir proxy tanımlı değilken ham TCP peer'i kullanır, böylece başlıklar limit atlatmak için sahtelenemiyor.
+- **Origin'i yalnızca proxy'ye kilitleyin.** `TRUST_PROXY=1` iken uygulama bu IP başlıklarına güvenir; origin'e doğrudan ulaşan biri bunları spoof edebilir. **Cloudflare Tunnel** kullanın (origin'in public portu olmaz) ya da origin firewall'ını [Cloudflare IP aralıklarına](https://www.cloudflare.com/ips/) kısıtlayıp Authenticated Origin Pulls açın.
+- Cloudflare'de **Rocket Loader, Auto Minify (JS/HTML) ve Email Obfuscation KAPATIN** — script'i değiştirir/enjekte ederler ve sıkı `script-src 'self'` CSP'si bunları bloklar. SSL modu **Full (strict)**; `/api/*` için **cache bypass** kuralı.
+
 Yönetilen platformlarda (Railway, Render, Fly.io, Cloud Run…) `Dockerfile`'ı dağıtın, bir Postgres eklentisi bağlayın ve aynı ortam değişkenlerini (`DATABASE_URL`, `PGSSL=true`, `JWT_SECRET`, `ADMIN_*`) ayarlayın. Şema ve migration'lar açılışta otomatik uygulanır.
 
 ---
@@ -285,6 +293,23 @@ npm run change-db-password
 > [!WARNING]
 > **Asla `docker compose down -v` çalıştırmayın.** `-v` bayrağı veritabanı hacmini siler ve tüm verinizi kalıcı olarak yok eder. API `password authentication failed` derse `npm run change-db-password` çalıştırın (veya `.env`'deki eski parolayı geri koyun) — hacmi silmeyin.
 
+### Kilitlenen Owner'ı kurtarma (parola / MFA unutuldu)
+
+**Ağ üzerinden "parolamı unuttum" endpoint'i YOKTUR** — tasarım gereği, kimse hesabı uzaktan sıfırlayamasın diye. Kurtarma sunucuda çalışır (sunucuya erişebilmek = meşru operatör olduğunuzun kanıtı):
+
+```bash
+# parolayı sıfırla (ilk girişte değiştirmeye zorlar, tüm oturumları iptal eder)
+docker compose exec api npm run reset-password -- owner@example.com
+
+# MFA'yı da temizle — authenticator'ını kaybeden Owner için (ilk girişte yeniden kaydeder)
+docker compose exec api npm run reset-password -- owner@example.com --clear-mfa
+
+# üretilen yerine belirli bir parola koy
+docker compose exec api npm run reset-password -- owner@example.com --password 'NewStrongPass123'
+```
+
+> Sunucuya (shell/DB) zaten erişmiş bir saldırgan bunu da yapabilir — ama `.env`'den `JWT_SECRET`'i okuyup istediği oturumu forge da edebilir. Sunucu ele geçmesi **her** self-hosted uygulama için tam ele geçirmedir; host'u koruyun (yalnızca anahtarlı SSH, firewall, `chmod 600 .env`, sunucu dışında şifreli yedek, ideal olarak origin'in hiç public portu olmaması için Cloudflare Tunnel).
+
 ---
 
 ## ⚙️ Yapılandırma referansı
@@ -298,6 +323,7 @@ npm run change-db-password
 | `JWT_SECRET` | ✅ | En az 32 karakter — `openssl rand -hex 32` |
 | `JWT_EXPIRES_IN` | – | Token ömrü (varsayılan `12h`) |
 | `ADMIN_EMAIL` / `ADMIN_USERNAME` / `ADMIN_PASSWORD` | – | İlk çalıştırma Owner tohumu (boşsa parola otomatik üretilir) |
+| `TRUST_PROXY` | – | Ters proxy / Cloudflare arkasında `1` (veya hop sayısı) — rate-limit gerçek istemci IP'sine göre çalışsın diye. Varsayılan kapalı. |
 
 Docker compose ile `POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD` hem veritabanı konteynerini hem de API'nin `DATABASE_URL`'ini besler.
 

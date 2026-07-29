@@ -131,8 +131,8 @@ Departments (with a **manager**), teams (with a **lead**) and their members draw
 ### 🧾 System-wide audit log
 A unified, filterable timeline of **all** instance activity — assets, users, documents, handovers, logins, settings and more — merging the append-only audit table with legacy domain history. Search by source, actor and date; secrets are redacted before storage.
 
-### ⏳ Product lifecycle (EOL)
-EOL windows resolve in three tiers — **per-asset override → per-catalog-model → per-category default**. Set a category default in Settings, give a specific catalog model its own lifecycle (e.g. **Apple MacBooks at 5 years** while other laptops keep 4), or override a single device — or untick EOL for a category (accessories) to exclude it entirely. Every asset shows its EOL date and "EOL soon" / overdue flags.
+### ⏳ Product lifecycle (EOL) & depreciation
+EOL windows resolve in three tiers — **per-asset override → per-catalog-model → per-category default**. Set a category default in Settings, give a specific catalog model its own lifecycle (e.g. **Apple MacBooks at 5 years** while other laptops keep 4), or override a single device — or untick EOL for a category (accessories) to exclude it entirely. Every asset shows its EOL date and "EOL soon" / overdue flags. The same lifecycle window drives **straight-line depreciation**: enter a purchase cost (and optional salvage value) and each asset shows its current **book value** — exportable via the **Asset Depreciation / Book Value** report.
 
 ### 📦 Physical stock counts
 Open a count session and scan from **any signed-in device** — start on the PC, keep scanning barcodes/QRs from your phone camera. Closing the session reconciles against live inventory: found / missing / unknown, with CSV export.
@@ -141,7 +141,7 @@ Open a count session and scan from **any signed-in device** — start on the PC,
 Download the template, fill it with your existing zimmet spreadsheet, upload — a dry-run preview shows exactly what will be created, then one transaction auto-creates employees, catalog entries, assets (sequential tags) and one handover per employee with full history.
 
 ### 📄 Licenses · 🏷 labels · 💱 currency
-Seat pools with atomic claim/release and 30-day expiry alerts. Print scannable **Code 128** labels (size/fields/copies configurable). Pick your **display currency** for costs across the app.
+Seat pools with atomic claim/release and 30-day expiry alerts. Print scannable **Code 128** labels (size/fields/copies configurable). Pick your **display currency** for costs across the app. The alert digest (expiring licenses, low stock, EOL, onboarding due) can be **auto-sent daily or weekly** over SMTP — **Integrations → SMTP & alert digest** (Auto-send: Off / Daily / Weekly).
 
 ### 🌍 Multi-language UI
 12 languages (EN, TR, DE, FR, ES, IT, PT, NL, PL, RU, AR, JA). Pick one on the onboarding screen, change it any time in Settings; untranslated strings fall back to English.
@@ -234,7 +234,15 @@ Prefer to configure by hand? Copy `.env.example` to `.env`, set at least `JWT_SE
 
 The compose file works unchanged on any host with Docker. Put a reverse proxy (Caddy / Nginx / Traefik) with TLS in front of port 8000 and set `CORS_ORIGINS` to your frontend's origin if it differs.
 
-For managed platforms (Railway, Render, Fly.io, Cloud Run…), deploy the `Dockerfile`, attach a Postgres add-on, and set the same environment variables (`DATABASE_URL`, `PGSSL=true`, `JWT_SECRET`, `ADMIN_*`). The schema and migrations are applied automatically on startup.
+### Behind a reverse proxy / Cloudflare
+
+Rate-limiting and brute-force protection key on the client IP, so when a proxy sits in front you **must** tell the app to trust it — otherwise every visitor is bucketed under the proxy's IP and legitimate users get throttled as one:
+
+- Set **`TRUST_PROXY=1`** in `.env`. The app then resolves the real client from `CF-Connecting-IP` (behind Cloudflare) or `X-Forwarded-For`. With no trusted proxy declared it uses the raw TCP peer, so headers can't be forged to dodge limits.
+- **Lock the origin to the proxy.** With `TRUST_PROXY=1` the app trusts those IP headers, so a client reaching the origin directly could spoof them. Use a **Cloudflare Tunnel** (origin has no public port), or firewall the origin to [Cloudflare's IP ranges](https://www.cloudflare.com/ips/) + enable Authenticated Origin Pulls.
+- In Cloudflare, **turn OFF Rocket Loader, Auto Minify (JS/HTML) and Email Obfuscation** — they rewrite/inject scripts and the strict `script-src 'self'` CSP will block them. Use SSL mode **Full (strict)** and a cache rule that **bypasses `/api/*`**.
+
+For managed platforms (Railway, Render, Fly.io, Cloud Run…), deploy the `Dockerfile`, attach a Postgres add-on, and set the same environment variables (`DATABASE_URL`, `PGSSL=true`, `JWT_SECRET`, `ADMIN_*`, and `TRUST_PROXY=1` since these run behind a load balancer). The schema and migrations are applied automatically on startup.
 
 ---
 
@@ -285,6 +293,23 @@ npm run change-db-password
 > [!WARNING]
 > **Never run `docker compose down -v`.** The `-v` flag deletes the database volume and permanently destroys all your data. If the API ever reports `password authentication failed`, run `npm run change-db-password` (or restore the previous password in `.env`) — do not wipe the volume.
 
+### Recovering a locked-out Owner (forgot password / lost MFA)
+
+There is **no network "forgot password" endpoint** — by design, so no one can reset an account remotely. Recovery runs on the server (shell access to the box = proof you are the legitimate operator):
+
+```bash
+# reset the password (forces a change on next login, revokes all sessions)
+docker compose exec api npm run reset-password -- owner@example.com
+
+# also clear MFA — for an Owner who lost their authenticator (they re-enrol on next login)
+docker compose exec api npm run reset-password -- owner@example.com --clear-mfa
+
+# set a specific password instead of a generated one
+docker compose exec api npm run reset-password -- owner@example.com --password 'NewStrongPass123'
+```
+
+> A server-side attacker who already has shell/DB access can of course do this too — but they could also read `JWT_SECRET` from `.env` and forge any session. Server compromise is total for **any** self-hosted app; protect the host (key-only SSH, firewall, `chmod 600 .env`, off-site encrypted backups, ideally a Cloudflare Tunnel so the origin has no public ports).
+
 ---
 
 ## ⚙️ Configuration reference
@@ -298,6 +323,7 @@ npm run change-db-password
 | `JWT_SECRET` | ✅ | Min 32 chars — `openssl rand -hex 32` |
 | `JWT_EXPIRES_IN` | – | Token lifetime (default `12h`) |
 | `ADMIN_EMAIL` / `ADMIN_USERNAME` / `ADMIN_PASSWORD` | – | First-run Owner seed (password auto-generated if empty) |
+| `TRUST_PROXY` | – | `1` (or a hop count) when behind a reverse proxy / Cloudflare, so rate limits key on the real client IP. Off by default. |
 
 With docker compose, `POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD` feed both the database container and the API's `DATABASE_URL`.
 
