@@ -2405,46 +2405,46 @@ function showHelp() {
   const tipsOn = tipsEnabled();
   const routeTip = tipForCurrentRoute();
   openModal({
-    title: 'Help & tips',
+    title: t('hlp.title'),
     wide: true,
     body: `
-      <div class="gs-section">UI tips</div>
+      <div class="gs-section">${esc(t('hlp.uiTips'))}</div>
       <label class="ob-check" style="margin-bottom:12px">
         <input type="checkbox" id="help-tips-toggle" ${tipsOn ? 'checked' : ''}>
-        <span>Show page tips under the top bar (lightbulb banners)</span>
+        <span>${esc(t('hlp.showPageTips'))}</span>
       </label>
       ${routeTip ? `<div class="ob-tip-callout" style="margin-bottom:14px">
         <span class="ms">lightbulb</span>
-        <div><strong>This page:</strong> ${esc(routeTip.tip || routeTip.desc)}</div>
+        <div><strong>${esc(t('hlp.thisPage'))}</strong> ${esc(routeTip.tip || routeTip.desc)}</div>
       </div>` : ''}
       <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px">
-        <button type="button" class="btn btn-outline" id="help-page-tip"><span class="ms">push_pin</span> Show tip for this page</button>
-        <button type="button" class="btn btn-outline" id="help-ui-tour"><span class="ms">tour</span> Guided sidebar tour</button>
-        <button type="button" class="btn btn-outline" id="help-product-tour"><span class="ms">auto_awesome</span> Replay product intro</button>
+        <button type="button" class="btn btn-outline" id="help-page-tip"><span class="ms">push_pin</span> ${esc(t('hlp.showTipPage'))}</button>
+        <button type="button" class="btn btn-outline" id="help-ui-tour"><span class="ms">tour</span> ${esc(t('hlp.guidedTour'))}</button>
+        <button type="button" class="btn btn-outline" id="help-product-tour"><span class="ms">auto_awesome</span> ${esc(t('hlp.replayIntro'))}</button>
       </div>
-      <div class="gs-section">Keyboard</div>
-      <div class="gs-item"><span class="ms">keyboard_command_key</span><div style="flex:1">Focus global search</div><code>Cmd/Ctrl + K</code></div>
-      <div class="gs-item"><span class="ms">search</span><div style="flex:1">Focus global search</div><code>/</code></div>
-      <div class="gs-section">Roles</div>
-      <div class="gs-item">${badge('Owner')}<div style="flex:1">Branding, zimmet designs, IT users</div></div>
-      <div class="gs-item">${badge('Admin')}<div style="flex:1">Day-to-day ops + user management</div></div>
-      <div class="gs-item">${badge('Helpdesk')}<div style="flex:1">Assets, handovers, repairs, software zimmet</div></div>
-      <div class="gs-item">${badge('Viewer')}<div style="flex:1">Read-only inventory and dashboards</div></div>
-      <div class="gs-section">About</div>
+      <div class="gs-section">${esc(t('hlp.keyboard'))}</div>
+      <div class="gs-item"><span class="ms">keyboard_command_key</span><div style="flex:1">${esc(t('hlp.focusSearch'))}</div><code>Cmd/Ctrl + K</code></div>
+      <div class="gs-item"><span class="ms">search</span><div style="flex:1">${esc(t('hlp.focusSearch'))}</div><code>/</code></div>
+      <div class="gs-section">${esc(t('hlp.roles'))}</div>
+      <div class="gs-item">${badge('Owner')}<div style="flex:1">${esc(t('hlp.roleOwner'))}</div></div>
+      <div class="gs-item">${badge('Admin')}<div style="flex:1">${esc(t('hlp.roleAdmin'))}</div></div>
+      <div class="gs-item">${badge('Helpdesk')}<div style="flex:1">${esc(t('hlp.roleHelpdesk'))}</div></div>
+      <div class="gs-item">${badge('Viewer')}<div style="flex:1">${esc(t('hlp.roleViewer'))}</div></div>
+      <div class="gs-section">${esc(t('hlp.about'))}</div>
       <div class="cell-sub">ITACM — IT Asset Control Pro${AppConfig.version ? ` v${esc(AppConfig.version)}` : ''}. Backend: ${esc(AppConfig.backend)}.
-        Handovers and seat moves are transactional with a full audit trail.</div>`,
-    foot: '<button class="btn btn-outline" data-close>Close</button>',
+        ${esc(t('hlp.aboutText'))}</div>`,
+    foot: `<button class="btn btn-outline" data-close>${esc(t('common.close'))}</button>`,
     onMount(overlay) {
       $('#help-tips-toggle', overlay).addEventListener('change', (e) => {
         setTipsEnabled(e.target.checked);
         renderPageTip();
-        toast(e.target.checked ? 'Page tips enabled' : 'Page tips hidden', 'success');
+        toast(e.target.checked ? t('hlp.tipsEnabled') : t('hlp.tipsHidden'), 'success');
       });
       $('#help-page-tip', overlay).addEventListener('click', () => {
         closeModal();
         setTipsEnabled(true);
         renderPageTip({ force: true });
-        toast('Tip pinned under the top bar', 'success');
+        toast(t('hlp.tipPinned'), 'success');
       });
       $('#help-ui-tour', overlay).addEventListener('click', () => {
         closeModal();

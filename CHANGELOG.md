@@ -4,6 +4,13 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.2.17] — 2026-07-29
+
+### Changed
+- **Help & tips modal localized in all 12 languages.** UI-tips toggle, page-tip
+  callout, guided-tour / replay-intro buttons, keyboard shortcuts, role
+  descriptions and the About text now go through the i18n layer.
+
 ## [1.2.16] — 2026-07-29
 
 ### Changed
