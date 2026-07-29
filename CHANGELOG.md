@@ -4,6 +4,16 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.2.2] — 2026-07-29
+
+### Fixed
+- **Update popups showed a raw `<span class="ms">…</span>` tag in the title.**
+  `openModal` escapes its title (by design), but the "Update available" and
+  "System updated" dialogs embedded an icon as HTML in the title string, so the
+  markup rendered as literal text. `openModal` now takes an optional `icon`
+  parameter and both dialogs pass a plain-text title — the rocket / update icon
+  renders correctly again.
+
 ## [1.2.1] — 2026-07-29
 
 ### Fixed

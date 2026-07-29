@@ -2254,7 +2254,8 @@ function showUpstreamModal(current, avail) {
     .replace('{current}', current);
   const repo = 'https://github.com/enesyaks/ITACM';
   openModal({
-    title: `<span class="ms">system_update_alt</span> ${esc(t('update.availTitle') || 'Update available')}`,
+    icon: 'system_update_alt',
+    title: t('update.availTitle') || 'Update available',
     body: `
       <p class="ob-slide-desc">${esc(fill('update.availBody'))}</p>
       <div style="margin-top:14px">
@@ -2274,7 +2275,8 @@ function showUpdateModal(prev, cur) {
   const fill = (key, version) => (t(key) || '').replace('{version}', version);
   const repo = 'https://github.com/enesyaks/ITACM';
   openModal({
-    title: `<span class="ms">rocket_launch</span> ${esc(t('update.title') || 'System updated')}`,
+    icon: 'rocket_launch',
+    title: t('update.title') || 'System updated',
     body: `
       <p class="ob-slide-desc">${esc(fill('update.body', cur))}</p>
       <div class="cell-sub" style="margin-top:6px">${esc(fill('update.prev', prev))}</div>

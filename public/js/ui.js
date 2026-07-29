@@ -189,7 +189,7 @@ function toast(message, type = 'info') {
 }
 
 /* ---- modals ---- */
-function openModal({ title, body, foot, wide, xwide, onMount, onClose, dismissible = true, stack = false }) {
+function openModal({ title, body, foot, wide, xwide, onMount, onClose, dismissible = true, stack = false, icon }) {
   if (!stack) closeModal(true);
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay' + (stack ? ' modal-stacked' : '');
@@ -200,7 +200,7 @@ function openModal({ title, body, foot, wide, xwide, onMount, onClose, dismissib
   overlay.innerHTML = `
     <div class="modal${sizeClass}" role="dialog" aria-modal="true">
       <div class="modal-head">
-        <h3>${esc(title)}</h3>
+        <h3>${icon ? `<span class="ms">${esc(icon)}</span> ` : ''}${esc(title)}</h3>
         ${dismissible ? '<button type="button" class="modal-close" data-close aria-label="Close">×</button>' : ''}
       </div>
       <div class="modal-body">${body == null ? '' : body}</div>
