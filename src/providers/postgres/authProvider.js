@@ -691,12 +691,17 @@ function uiPermissionsFromIam(iamPermissions, role) {
 
 async function listUsers() {
   const { rows } = await query(
+    // IT Users / operators only. Portal is a self-service *employee* login
+    // (confined to /api/me) provisioned from the employee's "web access" — it is
+    // not an IT operator and must never surface in the operators table, where an
+    // unmatched role would also make the role <select> default-display "Owner".
     `SELECT u.id AS uid, u.username, u.email, u.role, u.status, u.mfa_enabled AS "mfaEnabled",
             u.created_at AS "createdAt", u.last_login_at AS "lastLoginAt",
             u.permission_group_id AS "permissionGroupId",
             pg.name AS "permissionGroupName"
      FROM users u
      LEFT JOIN permission_groups pg ON u.permission_group_id = pg.id
+     WHERE u.role IS DISTINCT FROM 'Portal'
      ORDER BY u.created_at DESC`
   );
   return rows;

@@ -4,6 +4,17 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.2.20] — 2026-07-29
+
+### Fixed
+- **Portal (self-service) users appeared in the IT Users operators list and the
+  role dropdown mis-displayed them as 'Owner'.** Granting an employee web access
+  creates a `Portal` login (confined to `/api/me`); it is not an IT operator.
+  `listUsers()` now excludes `Portal` accounts, so they no longer surface in the
+  operators table. Defensive frontend guard added: a user whose role is not in
+  the dropdown options now shows that role (disabled) instead of defaulting the
+  browser to the first option ('Owner').
+
 ## [1.2.19] — 2026-07-29
 
 ### Changed

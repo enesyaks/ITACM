@@ -110,6 +110,7 @@ Views.users = async function (el) {
           <td>
             <select class="ops-select" data-role="${esc(u.uid)}"
               ${roleLocked ? 'disabled title="Only an Owner can change Owner/Admin roles"' : ''}>
+              ${roleOptionsFor(u).includes(u.role) ? '' : `<option selected disabled>${esc(u.role || '—')}</option>`}
               ${roleOptionsFor(u).map((r) => `<option ${u.role === r ? 'selected' : ''}>${r}</option>`).join('')}
             </select>
           </td>
