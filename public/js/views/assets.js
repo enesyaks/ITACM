@@ -73,14 +73,14 @@ Views.assets = async function (el, params = {}) {
     ? 'In Stock — Unassign scope'
     : (assignScopeOnly
       ? 'Assigned — Assign scope'
-      : (assignUnassignScopeOnly ? 'Stock & Assigned — Assign/Unassign scope' : 'Hardware Inventory'));
+      : (assignUnassignScopeOnly ? 'Stock & Assigned — Assign/Unassign scope' : t('hw.title')));
   const scopeSubtitle = unassignScopeOnly
     ? 'Unassign scope: only In Stock devices are listed. Other statuses stay hidden.'
     : (assignScopeOnly
       ? 'Assign scope: only Assigned devices are listed. Other statuses stay hidden.'
       : (assignUnassignScopeOnly
         ? 'Assign/Unassign scope: only In Stock and Assigned devices are listed.'
-        : 'Endpoint devices for personal zimmet — laptops, phones, monitors and accessories.'));
+        : t('hw.sub')));
   const scopeNote = unassignScopeOnly
     ? 'Other statuses (Assigned, Repair, Scrap…) are hidden for this permission.'
     : (assignScopeOnly
@@ -153,9 +153,9 @@ Views.assets = async function (el, params = {}) {
 
     <p class="cell-sub" style="margin:-8px 0 16px">
       ${scopeNote
-        || `Network &amp; Server gear is managed separately —
+        || `${esc(t('hw.networkNotePre'))}
       <a href="#/network">${esc(t('nav.network') || 'Network & Server')}</a>
-      (manual asset tags, site placement, cabinets).`}
+      ${esc(t('hw.networkNotePost'))}`}
     </p>
 
     ${scopedView ? '' : `

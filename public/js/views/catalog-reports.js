@@ -23,7 +23,7 @@ Views.catalog = async function (el) {
       <div class="card" style="margin-bottom:16px">
         <div class="card-head"><h3>${esc(cat)} (${items.filter((c) => c.category === cat).length})</h3></div>
         <div class="table-wrap"><table class="data">
-          <thead><tr><th>Brand</th><th>Model</th><th style="width:180px">Lifecycle (EOL)</th><th style="text-align:right"></th></tr></thead>
+          <thead><tr><th>${esc(t('cat.colBrand'))}</th><th>${esc(t('cat.colModel'))}</th><th style="width:180px">${esc(t('cat.colLifecycle'))}</th><th style="text-align:right"></th></tr></thead>
           <tbody>
             ${items.filter((c) => c.category === cat).map((c) => `
             <tr>
@@ -34,9 +34,9 @@ Views.catalog = async function (el) {
                      value="${c.lifecycleMonths != null ? esc(String(c.lifecycleMonths)) : ''}"
                      placeholder="${catDef != null ? esc(String(catDef)) : ''}"
                      title="Months until EOL. Leave blank to inherit the ${esc(cat)} category default (${catHint})."
-                     style="width:82px;padding:6px 8px"> <span class="cell-sub">mo</span>`
-                : (c.lifecycleMonths != null ? `${esc(String(c.lifecycleMonths))} mo` : `<span class="cell-sub">category default (${catHint})</span>`)}</td>
-              <td class="actions">${canDelete ? `<button class="btn btn-outline btn-sm" data-del="${esc(c.id)}">Delete</button>` : ''}</td>
+                     style="width:82px;padding:6px 8px"> <span class="cell-sub">${esc(t('cat.mo'))}</span>`
+                : (c.lifecycleMonths != null ? `${esc(String(c.lifecycleMonths))} ${esc(t('cat.mo'))}` : `<span class="cell-sub">category default (${catHint})</span>`)}</td>
+              <td class="actions">${canDelete ? `<button class="btn btn-outline btn-sm" data-del="${esc(c.id)}">${esc(t('cat.delete'))}</button>` : ''}</td>
             </tr>`).join('')}
           </tbody>
         </table></div>
@@ -157,7 +157,7 @@ Views.catalog = async function (el) {
               <div class="lc-months">
                 <input type="number" min="1" max="240" data-lc-cat="${esc(cat)}"
                   value="${on ? m : 48}" ${(canEdit && on) ? '' : 'disabled'}>
-                <span class="cell-sub">mo</span>
+                <span class="cell-sub">${esc(t('cat.mo'))}</span>
               </div>
             </div>`;
           }).join('')}

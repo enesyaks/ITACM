@@ -4,6 +4,14 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.2.14] — 2026-07-29
+
+### Changed
+- **Hardware list header and Product Catalog EOL tables localized in all 12
+  languages.** The hardware page subtitle + "managed separately" note and the
+  per-model / per-category lifecycle (EOL) tables (Brand/Model/Lifecycle columns,
+  "mo" unit, Delete) now go through t().
+
 ## [1.2.13] — 2026-07-29
 
 ### Changed
