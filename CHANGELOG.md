@@ -4,6 +4,14 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.2.12] — 2026-07-29
+
+### Changed
+- **Consumables and Mobile Lines localized in all 12 languages.** Wired their
+  list views (columns, status pills, empty states, action buttons), the
+  new/adjust consumable dialogs and the new/edit mobile-line form (labels,
+  placeholders, status options) + toasts through the i18n layer.
+
 ## [1.2.11] — 2026-07-29
 
 ### Changed

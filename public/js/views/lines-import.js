@@ -436,28 +436,28 @@ Views.lines = async function (el, params = {}) {
 
   el.innerHTML = `
     ${pageHead('Mobile Lines', 'Company SIM cards & phone numbers — who holds which line.', canEdit
-      ? '<button class="btn btn-primary" id="line-new"><span class="ms">sim_card</span> New Line</button>' : '')}
+      ? `<button class="btn btn-primary" id="line-new"><span class="ms">sim_card</span> ${esc(t('lines.newLine'))}</button>` : '')}
     <div class="grid grid-4" style="margin-bottom:20px">
-      <div class="card card-pad metric"><div class="metric-top"><h3 class="card-title">Total Lines</h3>${iconChip('sim_card', 'indigo')}</div>
+      <div class="card card-pad metric"><div class="metric-top"><h3 class="card-title">${esc(t('lines.totalLines'))}</h3>${iconChip('sim_card', 'indigo')}</div>
         <div class="metric-value">${items.length}</div></div>
-      <div class="card card-pad metric"><div class="metric-top"><h3 class="card-title">Assigned</h3>${iconChip('person', 'blue')}</div>
+      <div class="card card-pad metric"><div class="metric-top"><h3 class="card-title">${esc(t('lines.assignedMetric'))}</h3>${iconChip('person', 'blue')}</div>
         <div class="metric-value">${assigned}</div></div>
-      <div class="card card-pad metric"><div class="metric-top"><h3 class="card-title">Free</h3>${iconChip('sim_card_download', 'emerald')}</div>
+      <div class="card card-pad metric"><div class="metric-top"><h3 class="card-title">${esc(t('lines.free'))}</h3>${iconChip('sim_card_download', 'emerald')}</div>
         <div class="metric-value">${items.filter((l) => !l.currentEmployeeId && l.status === 'Active').length}</div></div>
-      <div class="card card-pad metric"><div class="metric-top"><h3 class="card-title">Monthly Cost</h3>${iconChip('payments', 'amber')}</div>
+      <div class="card card-pad metric"><div class="metric-top"><h3 class="card-title">${esc(t('lines.monthlyCost'))}</h3>${iconChip('payments', 'amber')}</div>
         <div class="metric-value">${canViewCosts ? fmtMoney(monthly) : '—'}</div></div>
     </div>
     <div class="card">
       <div class="card-pad" style="padding-bottom:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
         <div class="search-box" style="width:280px"><span class="ms">search</span>
-          <input type="search" id="line-search" placeholder="Search number, operator, SIM, holder…" value="${esc(params.search || '')}"></div>
+          <input type="search" id="line-search" placeholder="${esc(t('lines.searchPh'))}" value="${esc(params.search || '')}"></div>
         <select id="line-status" style="width:auto">
-          <option value="">All statuses</option>
-          ${['Active', 'Suspended', 'Cancelled'].map((st) => `<option ${params.status === st ? 'selected' : ''}>${st}</option>`).join('')}
+          <option value="">${esc(t('lines.allStatuses'))}</option>
+          ${[['Active', t('lines.stActive')], ['Suspended', t('lines.stSuspended')], ['Cancelled', t('lines.stCancelled')]].map(([st, lbl]) => `<option value="${st}" ${params.status === st ? 'selected' : ''}>${esc(lbl)}</option>`).join('')}
         </select>
       </div>
       <div class="table-wrap"><table class="data">
-        <thead><tr><th>Number</th><th>Operator / Plan</th><th>SIM Serial</th><th>Monthly</th><th>Status</th><th>Assigned To</th><th style="text-align:right"></th></tr></thead>
+        <thead><tr><th>${esc(t('lines.colNumber'))}</th><th>${esc(t('lines.colOperatorPlan'))}</th><th>${esc(t('lines.colSim'))}</th><th>${esc(t('lines.colMonthly'))}</th><th>${esc(t('common.status'))}</th><th>${esc(t('lines.colAssignedTo'))}</th><th style="text-align:right"></th></tr></thead>
         <tbody>
           ${items.length === 0 ? `<tr><td colspan="7" class="table-empty">${esc(t('lines.noLinesYet'))}</td></tr>` :
             items.map((l) => `
@@ -466,20 +466,20 @@ Views.lines = async function (el, params = {}) {
               <td>${esc(l.operator || '—')}<div class="cell-sub">${esc(l.plan || '')}</div></td>
               <td class="mono cell-sub">${esc(l.simSerial || '—')}</td>
               <td>${canViewCosts && l.monthlyCost != null ? fmtMoney(l.monthlyCost) : '—'}</td>
-              <td>${l.status === 'Active' ? '<span class="pill pill-emerald">Active</span>'
-                : l.status === 'Suspended' ? '<span class="pill pill-amber">Suspended</span>'
-                : '<span class="pill pill-rose">Cancelled</span>'}</td>
+              <td>${l.status === 'Active' ? `<span class="pill pill-emerald">${esc(t('lines.stActive'))}</span>`
+                : l.status === 'Suspended' ? `<span class="pill pill-amber">${esc(t('lines.stSuspended'))}</span>`
+                : `<span class="pill pill-rose">${esc(t('lines.stCancelled'))}</span>`}</td>
               <td>${l.currentEmployeeName ? esc(l.currentEmployeeName) : '<span class="cell-sub">—</span>'}</td>
               <td class="actions">
                 ${l.currentEmployeeId
-                  ? (canUnassign ? `<button class="btn btn-outline btn-sm" data-line-unassign="${esc(l.id)}"><span class="ms">undo</span> Take back</button>` : '')
-                  : (canAssign && l.status === 'Active' ? `<button class="btn btn-primary btn-sm" data-line-assign="${esc(l.id)}" data-num="${esc(l.phoneNumber)}"><span class="ms">person_add</span> Assign</button>` : '')}
-                ${canEdit ? `<button class="btn btn-outline btn-sm" data-line-edit="${esc(l.id)}">Edit</button>` : ''}
+                  ? (canUnassign ? `<button class="btn btn-outline btn-sm" data-line-unassign="${esc(l.id)}"><span class="ms">undo</span> ${esc(t('lines.takeBack'))}</button>` : '')
+                  : (canAssign && l.status === 'Active' ? `<button class="btn btn-primary btn-sm" data-line-assign="${esc(l.id)}" data-num="${esc(l.phoneNumber)}"><span class="ms">person_add</span> ${esc(t('lines.assignBtn'))}</button>` : '')}
+                ${canEdit ? `<button class="btn btn-outline btn-sm" data-line-edit="${esc(l.id)}">${esc(t('common.edit'))}</button>` : ''}
               </td>
             </tr>`).join('')}
         </tbody>
       </table></div>
-      <div class="table-foot">${items.length} line(s)</div>
+      <div class="table-foot">${(t('lines.nLines') || '{n} line(s)').replace('{n}', items.length)}</div>
     </div>`;
 
   const rerender = (p) => Views.lines(el, { ...params, ...p });
@@ -487,22 +487,22 @@ Views.lines = async function (el, params = {}) {
   $('#line-status', el).addEventListener('change', (e) => rerender({ status: e.target.value }));
 
   const lineForm = (line) => formModal({
-    title: line ? `Edit ${line.phoneNumber}` : 'New Mobile Line',
+    title: line ? (t('lines.editTitle') || 'Edit {num}').replace('{num}', line.phoneNumber) : t('lines.newTitle'),
     fields: [
-      { name: 'phoneNumber', label: 'Phone number *', required: true, value: line?.phoneNumber, placeholder: '+90 5xx xxx xx xx' },
-      { name: 'operator', label: 'Operator', value: line?.operator, placeholder: 'Turkcell / Vodafone / Türk Telekom' },
-      { name: 'plan', label: 'Plan / tariff', value: line?.plan, placeholder: 'e.g. Kurumsal 20GB' },
-      { name: 'simSerial', label: 'SIM serial (ICCID)', value: line?.simSerial },
+      { name: 'phoneNumber', label: `${t('lines.fPhone')} *`, required: true, value: line?.phoneNumber, placeholder: t('lines.phonePh') },
+      { name: 'operator', label: t('lines.operator'), value: line?.operator, placeholder: 'Turkcell / Vodafone / Türk Telekom' },
+      { name: 'plan', label: t('lines.fPlan'), value: line?.plan, placeholder: t('lines.planPh') },
+      { name: 'simSerial', label: t('lines.fSim'), value: line?.simSerial },
       ...((Auth.canIam('line', 'view_confidential') || Auth.can('canViewLineCosts'))
-        ? [{ name: 'monthlyCost', label: `Monthly cost (${appCurrency()})`, type: 'number', step: '0.01', value: line?.monthlyCost }]
+        ? [{ name: 'monthlyCost', label: (t('lines.fMonthlyCost') || 'Monthly cost ({cur})').replace('{cur}', appCurrency()), type: 'number', step: '0.01', value: line?.monthlyCost }]
         : []),
-      { name: 'status', label: 'Status', type: 'select', value: line?.status || 'Active', options: ['Active', 'Suspended', 'Cancelled'] },
-      { name: 'notes', label: 'Notes', type: 'textarea', full: true, value: line?.notes },
+      { name: 'status', label: t('common.status'), type: 'select', value: line?.status || 'Active', options: [{ value: 'Active', label: t('lines.stActive') }, { value: 'Suspended', label: t('lines.stSuspended') }, { value: 'Cancelled', label: t('lines.stCancelled') }] },
+      { name: 'notes', label: t('lines.fNotes'), type: 'textarea', full: true, value: line?.notes },
     ],
     async onSubmit(d) {
       if (line) await api(`/lines/${line.id}`, { method: 'PUT', body: d });
       else await api('/lines', { method: 'POST', body: d });
-      toast(line ? 'Line updated' : 'Line registered', 'success');
+      toast(line ? t('lines.updated') : t('lines.registered'), 'success');
       rerender({});
     },
   });
@@ -513,10 +513,10 @@ Views.lines = async function (el, params = {}) {
     const b = e.target.closest('button'); if (!b || !canEdit) return;
     if (b.dataset.lineEdit) return lineForm(items.find((l) => l.id === b.dataset.lineEdit));
     if (b.dataset.lineAssign) {
-      return pickEmployee(`Assign ${b.dataset.num} to…`, async (emp) => {
+      return pickEmployee((t('lines.assignToTitle') || 'Assign {num} to…').replace('{num}', b.dataset.num), async (emp) => {
         try {
           const r = await api(`/lines/${b.dataset.lineAssign}/assign`, { method: 'POST', body: { employeeId: emp.id } });
-          toast(`${r.phoneNumber} assigned to ${r.currentEmployeeName}`, 'success');
+          toast((t('lines.assignedToast') || '{num} assigned to {emp}').replace('{num}', r.phoneNumber).replace('{emp}', r.currentEmployeeName), 'success');
           rerender({});
         } catch (err) { toast(err.message, 'error'); }
       });
@@ -524,7 +524,7 @@ Views.lines = async function (el, params = {}) {
     if (b.dataset.lineUnassign) {
       try {
         const r = await api(`/lines/${b.dataset.lineUnassign}/unassign`, { method: 'POST' });
-        toast(`${r.phoneNumber} taken back`, 'success');
+        toast((t('lines.takenBack') || '{num} taken back').replace('{num}', r.phoneNumber), 'success');
         rerender({});
       } catch (err) { toast(err.message, 'error'); }
     }
