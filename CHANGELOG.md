@@ -4,6 +4,15 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.2.24] — 2026-07-30
+
+### Added
+- **Server-side account recovery: `npm run reset-password`.** Resets an Owner/IT
+  user password (forces a change on next login, revokes sessions) and, with
+  `--clear-mfa`, removes their TOTP so a locked-out Owner who lost their
+  authenticator can regain access. Runs only on the box/container (no network
+  endpoint), so it adds no attack surface. Docs: README recovery section.
+
 ## [1.2.23] — 2026-07-30
 
 ### Added

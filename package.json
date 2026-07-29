@@ -1,6 +1,6 @@
 {
   "name": "itacm",
-  "version": "1.2.23",
+  "version": "1.2.24",
   "description": "IT Asset Control Pro \u2014 self-hosted IT asset management (PostgreSQL + Docker Compose) with a built-in web UI",
   "main": "server.js",
   "engines": {
@@ -20,6 +20,7 @@
     "migrate:export": "bash scripts/migrate-export.sh",
     "migrate:import": "bash scripts/migrate-import.sh",
     "change-db-password": "bash scripts/change-db-password.sh",
+    "reset-password": "node scripts/reset-password.js",
     "lint": "node --check server.js && find src scripts -name '*.js' -exec node --check {} +",
     "seed:all": "node scripts/seed-all.js"
   },
