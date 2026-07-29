@@ -26,7 +26,7 @@ Views.users = async function (el) {
   };
 
   const groupOptionsHtml = (selectedId) => `
-    <option value="">— ${esc('No group')} —</option>
+    <option value="">— ${esc(t('usr.noGroupOpt'))} —</option>
     ${groupList.map((g) => `
       <option value="${esc(g.id)}" ${g.id === selectedId ? 'selected' : ''}>
         ${esc(g.name)}${g.is_system ? ' (system)' : ''}
@@ -35,13 +35,13 @@ Views.users = async function (el) {
   el.innerHTML = `
     ${pageHead(
       'IT Users',
-      'Manage operators, roles and IAM permission groups.',
-      `${Auth.profile?.role === 'Owner' ? `<button class="btn btn-outline" id="owner-transfer"><span class="ms">swap_horiz</span> ${esc('Transfer ownership')}</button>` : ''}
-       <button class="btn btn-outline" id="iam-new-group"><span class="ms">shield_person</span> ${esc('New permission group')}</button>
-       <button class="btn btn-primary" id="user-new"><span class="ms">person_add</span> ${esc('New IT User')}</button>`
+      'usr.sub',
+      `${Auth.profile?.role === 'Owner' ? `<button class="btn btn-outline" id="owner-transfer"><span class="ms">swap_horiz</span> ${esc(t('usr.transferOwnership'))}</button>` : ''}
+       <button class="btn btn-outline" id="iam-new-group"><span class="ms">shield_person</span> ${esc(t('usr.newGroup'))}</button>
+       <button class="btn btn-primary" id="user-new"><span class="ms">person_add</span> ${esc(t('usr.newUser'))}</button>`
     )}
 
-    <h3 class="section-title" style="margin:4px 0 10px">${esc('Permission groups')}</h3>
+    <h3 class="section-title" style="margin:4px 0 10px">${esc(t('usr.permGroups'))}</h3>
     <div class="iam-groups">
       ${groupList.length ? sortedGroups.map((g) => {
         const nUsers = Number(g.user_count || 0);
@@ -54,40 +54,40 @@ Views.users = async function (el) {
               <div class="iam-group-title-wrap">
                 <div class="iam-group-title-row">
                   <h4 class="iam-group-name">${esc(g.name)}</h4>
-                  ${g.is_system ? `<span class="pill pill-blue">${esc('System')}</span>` : `<span class="pill">${esc('Custom')}</span>`}
+                  ${g.is_system ? `<span class="pill pill-blue">${esc(t('usr.system'))}</span>` : `<span class="pill">${esc(t('crb.custom'))}</span>`}
                 </div>
-                ${desc ? `<p class="iam-group-desc">${esc(desc)}</p>` : `<p class="iam-group-desc is-empty">${esc('No description')}</p>`}
+                ${(g.is_system && t('usr.desc.' + g.name)) || desc ? `<p class="iam-group-desc">${esc((g.is_system && t('usr.desc.' + g.name)) || desc)}</p>` : `<p class="iam-group-desc is-empty">${esc(t('usr.noDescription'))}</p>`}
               </div>
             </div>
             <div class="iam-group-actions">
-              <button type="button" class="btn btn-outline btn-sm" data-iam-view="${esc(g.id)}" title="${esc('View & manage entries')}">
+              <button type="button" class="btn btn-outline btn-sm" data-iam-view="${esc(g.id)}" title="${esc(t('usr.viewManage'))}">
                 <span class="ms">visibility</span>
               </button>
               ${!g.is_system ? `
-              <button type="button" class="btn btn-outline btn-sm" data-iam-edit="${esc(g.id)}" data-gname="${esc(g.name)}" data-gdesc="${esc(g.description || '')}" title="${esc('Rename / edit description')}">
+              <button type="button" class="btn btn-outline btn-sm" data-iam-edit="${esc(g.id)}" data-gname="${esc(g.name)}" data-gdesc="${esc(g.description || '')}" title="${esc(t('usr.renameEdit'))}">
                 <span class="ms">edit</span>
               </button>
-              <button type="button" class="btn btn-outline btn-sm" data-iam-del="${esc(g.id)}" data-gname="${esc(g.name)}" title="${esc('Delete')}">
+              <button type="button" class="btn btn-outline btn-sm" data-iam-del="${esc(g.id)}" data-gname="${esc(g.name)}" title="${esc(t('cat.delete'))}">
                 <span class="ms">delete</span>
               </button>` : ''}
             </div>
           </div>
           <div class="iam-group-foot">
-            <span class="iam-group-users">${nUsers} ${esc(nUsers === 1 ? 'user' : 'users')}</span>
-            ${g.is_system ? `<span class="iam-group-hint">${esc('Built-in')}</span>` : ''}
+            <span class="iam-group-users">${(t('iam.nUsers') || '{n} users').replace('{n}', nUsers)}</span>
+            ${g.is_system ? `<span class="iam-group-hint">${esc(t('usr.builtin'))}</span>` : ''}
           </div>
         </article>`;
-      }).join('') : `<div class="iam-groups-empty cell-sub">${esc('No permission groups yet. Run migration 022 or create a custom group.')}</div>`}
+      }).join('') : `<div class="iam-groups-empty cell-sub">${esc(t('usr.noGroups'))}</div>`}
     </div>
 
-    <h3 class="section-title" style="margin:4px 0 10px">${esc('Operators')}</h3>
+    <h3 class="section-title" style="margin:4px 0 10px">${esc(t('usr.operators'))}</h3>
     <div class="card ops-card"><div class="table-wrap"><table class="data ops-table">
       <thead><tr>
-        <th>${esc('User')}</th>
-        <th>${esc('Role')}</th>
-        <th>${esc('Permission group')}</th>
-        <th>${esc('Status')}</th>
-        <th>${esc('Last login')}</th>
+        <th>${esc(t('usr.colUser'))}</th>
+        <th>${esc(t('usr.colRole'))}</th>
+        <th>${esc(t('usr.colPermGroup'))}</th>
+        <th>${esc(t('common.status'))}</th>
+        <th>${esc(t('usr.colLastLogin'))}</th>
         <th class="ops-col-actions"></th>
       </tr></thead>
       <tbody>
@@ -102,7 +102,7 @@ Views.users = async function (el) {
             <div class="ops-user">
               <span class="avatar">${esc(initials(u.username))}</span>
               <div class="ops-user-text">
-                <div class="ops-user-name">${esc(u.username)}${isSelf ? ` <span class="ops-you">${esc('you')}</span>` : ''}</div>
+                <div class="ops-user-name">${esc(u.username)}${isSelf ? ` <span class="ops-you">${esc(t('usr.you'))}</span>` : ''}</div>
                 <div class="ops-user-email">${esc(u.email)}</div>
               </div>
             </div>
@@ -121,14 +121,14 @@ Views.users = async function (el) {
             ${u.permissionGroupName && !u.permissionGroupId ? `<div class="cell-sub">${esc(u.permissionGroupName)}</div>` : ''}
           </td>
           <td>${u.status === 'Disabled'
-            ? '<span class="pill pill-rose">Disabled</span>'
-            : '<span class="pill pill-emerald">Active</span>'}</td>
+            ? `<span class="pill pill-rose">${esc(t('usr.stDisabled'))}</span>`
+            : `<span class="pill pill-emerald">${esc(t('usr.stActive'))}</span>`}</td>
           <td class="ops-login">${u.lastLoginAt
             ? `<span title="${esc(fmtDateTime(u.lastLoginAt))}">${esc(fmtDateTime(u.lastLoginAt))}</span>`
-            : '<span class="cell-sub">Never</span>'}</td>
+            : `<span class="cell-sub">${esc(t('usr.never'))}</span>`}</td>
           <td class="actions">
             <div class="ops-actions">
-              <button type="button" class="ops-icon-btn" data-logins="${esc(u.uid)}" data-uname="${esc(u.username)}" data-uemail="${esc(u.email)}" title="${esc('Login history')}">
+              <button type="button" class="ops-icon-btn" data-logins="${esc(u.uid)}" data-uname="${esc(u.username)}" data-uemail="${esc(u.email)}" title="${esc(t('usr.loginHistory'))}">
                 <span class="ms">history</span>
               </button>
               ${canAdminRow ? `
@@ -604,44 +604,40 @@ Views.users = async function (el) {
       const constrainedEntries = (detail.entries || []).filter((e) => e.constraint_type);
 
       openModal({
-        title: `${detail.name}${detail.is_system ? ' (system)' : ''}`,
+        title: `${detail.name}${detail.is_system ? ` (${t('iam.system')})` : ''}`,
         wide: true,
         body: `
           <div style="display:flex;justify-content:space-between;align-items:start;gap:12px;margin-bottom:12px">
             <div>
-              <p class="cell-sub" style="margin:0 0 6px">${esc(detail.description || '')}</p>
-              <div class="cell-sub">${(detail.users || []).length} users
+              <p class="cell-sub" style="margin:0 0 6px">${esc((detail.is_system && t('usr.desc.' + detail.name)) || detail.description || '')}</p>
+              <div class="cell-sub">${(t('iam.nUsers') || '{n} users').replace('{n}', (detail.users || []).length)}
                 ${(detail.users || []).length ? ` · ${detail.users.map((u) => esc(u.username)).join(', ')}` : ''}</div>
               ${detail.is_system && canEditSystem
-                ? '<div class="cell-sub" style="margin-top:6px;color:var(--amber-700,#b45309)">Built-in group — Owner can edit entries. Group name stays fixed.<br><strong>Important:</strong> Your current login is still Owner (full access). To verify these permissions, log in as a user assigned to this group — then refresh the session.</div>'
+                ? `<div class="cell-sub" style="margin-top:6px;color:var(--amber-700,#b45309)">${esc(t('iam.builtinWarn'))}<br><strong>${esc(t('iam.important'))}</strong> ${esc(t('iam.ownerVerify'))}</div>`
                 : ''}
               ${!detail.is_system
-                ? '<div class="cell-sub" style="margin-top:6px">Changes apply immediately to users in this group after they refresh (re-open the app / verify session).</div>'
+                ? `<div class="cell-sub" style="margin-top:6px">${esc(t('iam.changesApply'))}</div>`
                 : ''}
               ${!editable
-                ? '<div class="cell-sub" style="margin-top:6px;color:var(--rose-700,#be123c)">Only an Owner can edit system group permissions.</div>'
+                ? `<div class="cell-sub" style="margin-top:6px;color:var(--rose-700,#be123c)">${esc(t('iam.onlyOwnerEdit'))}</div>`
                 : ''}
             </div>
             ${!detail.is_system || canEditSystem ? `
             <button type="button" class="btn btn-outline btn-sm" id="iam-edit-desc-btn">
-              <span class="ms">edit</span> Description
+              <span class="ms">edit</span> ${esc(t('iam.description'))}
             </button>` : ''}
           </div>
 
           <div class="iam-matrix-head">
-            <h4 class="iam-section-label">Permissions matrix</h4>
+            <h4 class="iam-section-label">${esc(t('iam.matrixTitle'))}</h4>
             <button type="button" class="iam-help-btn" id="iam-open-guide">
-              <span class="ms">help</span> What do these toggles control?
+              <span class="ms">help</span> ${esc(t('iam.whatToggles'))}
             </button>
           </div>
-          <p class="cell-sub" style="margin:-2px 0 12px">
-            Only meaningful actions per module. <strong>Owner always has full access</strong> —
-            test with a user in this group, then re-login.
-            Click <strong>?</strong> next to a resource (or the help button) for a screen preview.
-          </p>
+          <p class="cell-sub" style="margin:-2px 0 12px">${esc(t('iam.matrixHint'))}</p>
           <div class="table-wrap iam-matrix-wrap" style="margin-bottom:18px">
             <table class="data iam-matrix">
-              <thead><tr><th style="width:140px">Resource</th><th>Actions</th></tr></thead>
+              <thead><tr><th style="width:140px">${esc(t('iam.colResource'))}</th><th>${esc(t('iam.colActions'))}</th></tr></thead>
               <tbody>${rowsHtml}</tbody>
             </table>
           </div>
@@ -692,7 +688,7 @@ Views.users = async function (el) {
             </tbody>
           </table></div>` : ''}
         `,
-        foot: '<button class="btn btn-outline" data-close>Close</button>',
+        foot: `<button class="btn btn-outline" data-close>${esc(t('common.close'))}</button>`,
       });
 
       const showErr = (id, msg) => {
@@ -1023,7 +1019,7 @@ Views.users = async function (el) {
           type: 'select',
           value: groupList.find((g) => g.name === 'Helpdesk')?.id || '',
           options: [
-            { value: '', label: '— No group —' },
+            { value: '', label: '— ' + t('usr.noGroupOpt') + ' —' },
             ...groupList.map((g) => ({ value: g.id, label: g.name + (g.is_system ? ' (system)' : '') })),
           ],
         },
@@ -1164,7 +1160,7 @@ Views.users = async function (el) {
             </tr>`).join('')}
           </tbody>
         </table></div>`}`,
-      foot: '<button class="btn btn-outline" data-close>Close</button>',
+      foot: `<button class="btn btn-outline" data-close>${esc(t('common.close'))}</button>`,
     });
   }));
 

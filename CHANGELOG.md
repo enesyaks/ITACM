@@ -4,6 +4,16 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.2.19] — 2026-07-29
+
+### Changed
+- **IT Users / IAM screens localized in all 12 languages.** The IT Users list
+  (subtitle, buttons, permission-group cards incl. built-in descriptions, the
+  operators table + status/role columns) and the IAM permissions-matrix modal
+  chrome (warnings, matrix header, resource/actions columns, buttons) now go
+  through the i18n layer. The technical permission tokens (read/create/asset/…)
+  stay as-is since they mirror the API identifiers.
+
 ## [1.2.18] — 2026-07-29
 
 ### Added
