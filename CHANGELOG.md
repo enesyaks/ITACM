@@ -4,6 +4,14 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.2.16] — 2026-07-29
+
+### Changed
+- **Reports module localized in all 12 languages.** The page subtitle, KPI stat
+  tiles, range selector, Ready/Build-your-own tabs, search, group filter pills,
+  and all 20 preset report titles + descriptions + the Open action now go
+  through the i18n layer.
+
 ## [1.2.15] — 2026-07-29
 
 ### Changed

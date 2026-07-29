@@ -55,12 +55,12 @@ Views.reports = async function (el) {
   const groups = [...new Set(presetReports.map((r) => r.group))];
 
   el.innerHTML = `
-    ${pageHead('Reports', 'Ready-made lists for common questions — or build your own.', `
+    ${pageHead('Reports', 'rep.sub', `
       <select id="rep-range" class="rep-range" title="KPI window">
-        <option value="30">Last 30 days</option>
-        <option value="90">Last 90 days</option>
-        <option value="365">Last 12 months</option>
-        <option value="0">All time</option>
+        <option value="30">${esc(t('rep.last30'))}</option>
+        <option value="90">${esc(t('rep.last90'))}</option>
+        <option value="365">${esc(t('rep.last12mo'))}</option>
+        <option value="0">${esc(t('rep.allTime'))}</option>
       </select>
     `)}
 
@@ -68,11 +68,11 @@ Views.reports = async function (el) {
 
     <div class="rep-tabs" role="tablist">
       <button type="button" class="rep-tab on" data-rep-tab="ready" role="tab">
-        <span class="ms">folder_open</span> Ready reports
+        <span class="ms">folder_open</span> ${esc(t('rep.readyReports'))}
         <em>${presetReports.length}</em>
       </button>
       <button type="button" class="rep-tab" data-rep-tab="custom" role="tab">
-        <span class="ms">tune</span> Build your own
+        <span class="ms">tune</span> ${esc(t('rep.buildYourOwn'))}
       </button>
     </div>
 
@@ -80,12 +80,12 @@ Views.reports = async function (el) {
       <div class="rep-ready-toolbar">
         <div class="search-box rep-ready-search">
           <span class="ms">search</span>
-          <input type="search" id="rep-q" placeholder="Search reports…" autocomplete="off">
+          <input type="search" id="rep-q" placeholder="${esc(t('rep.searchPh'))}" autocomplete="off">
         </div>
         <div class="rep-group-pills" id="rep-groups">
-          <button type="button" class="rep-pill on" data-group="all">All</button>
-          <button type="button" class="rep-pill" data-group="featured">Recommended</button>
-          ${groups.map((g) => `<button type="button" class="rep-pill" data-group="${esc(g)}">${esc(g)}</button>`).join('')}
+          <button type="button" class="rep-pill on" data-group="all">${esc(t('rep.filterAll'))}</button>
+          <button type="button" class="rep-pill" data-group="featured">${esc(t('rep.filterRecommended'))}</button>
+          ${groups.map((g) => `<button type="button" class="rep-pill" data-group="${esc(g)}">${esc(t('rep.group.' + g.replace(/[^A-Za-z]/g, '')))}</button>`).join('')}
         </div>
       </div>
       <div id="rep-preset-grid" class="rep-preset-grid"></div>
@@ -133,27 +133,27 @@ Views.reports = async function (el) {
 
   function renderKpis() {
     const a = computeKpis();
-    const rangeLabel = state.range === 0 ? 'all time' : `last ${state.range}d`;
+    const rangeLabel = state.range === 0 ? t('rep.allTime').toLowerCase() : (t('rep.kpiLast30d') || 'last {n}d').replace('30', state.range).replace('{n}', state.range);
     $('#rep-kpis', el).innerHTML = `
       <div class="card rep-kpi">
-        <div class="rep-kpi-head"><span class="rep-kpi-label">Active inventory</span>${iconChip('devices', 'indigo')}</div>
+        <div class="rep-kpi-head"><span class="rep-kpi-label">${esc(t('rep.kpiActiveInv'))}</span>${iconChip('devices', 'indigo')}</div>
         <div class="rep-kpi-value">${a.totalActive.toLocaleString()}
-          <span class="trend-chip flat">${a.assigned} assigned · ${a.inStock} in stock</span></div>
+          <span class="trend-chip flat">${a.assigned} ${esc(t('dash.assigned'))} · ${a.inStock} ${esc(t('dash.inStockText').toLowerCase())}</span></div>
       </div>
       <div class="card rep-kpi">
-        <div class="rep-kpi-head"><span class="rep-kpi-label">New assets</span>${iconChip('shopping_cart', 'emerald')}</div>
+        <div class="rep-kpi-head"><span class="rep-kpi-label">${esc(t('rep.kpiNewAssets'))}</span>${iconChip('shopping_cart', 'emerald')}</div>
         <div class="rep-kpi-value">${a.purchased}
           <span class="trend-chip flat">${esc(rangeLabel)}</span></div>
       </div>
       <div class="card rep-kpi">
-        <div class="rep-kpi-head"><span class="rep-kpi-label">Lifecycle</span>${iconChip('timelapse', 'amber')}</div>
-        <div class="rep-kpi-value">${a.avgAge}<small>mo avg age</small>
-          <span class="trend-chip ${a.eolSoon ? 'down' : 'flat'}">${a.eolSoon} near EOL</span></div>
+        <div class="rep-kpi-head"><span class="rep-kpi-label">${esc(t('rep.kpiLifecycle'))}</span>${iconChip('timelapse', 'amber')}</div>
+        <div class="rep-kpi-value">${a.avgAge}<small>${esc(t('rep.kpiMoAvgAge'))}</small>
+          <span class="trend-chip ${a.eolSoon ? 'down' : 'flat'}">${a.eolSoon} ${esc(t('rep.kpiNearEol'))}</span></div>
       </div>
       <div class="card rep-kpi">
-        <div class="rep-kpi-head"><span class="rep-kpi-label">Repairs</span>${iconChip('build', 'rose')}</div>
+        <div class="rep-kpi-head"><span class="rep-kpi-label">${esc(t('rep.kpiRepairs'))}</span>${iconChip('build', 'rose')}</div>
         <div class="rep-kpi-value">${canMaintList ? a.openRepairs : '—'}
-          <span class="trend-chip flat">${canMaintList ? `${fmtMoney(a.spend)} · ${esc(rangeLabel)}` : 'no access'}</span></div>
+          <span class="trend-chip flat">${canMaintList ? `${fmtMoney(a.spend)} · ${esc(rangeLabel)}` : esc(t('common.forbidden'))}</span></div>
       </div>`;
   }
 
@@ -183,11 +183,11 @@ Views.reports = async function (el) {
       <button type="button" class="rep-preset-card${FEATURED.has(r.id) ? ' is-featured' : ''}" data-report="${esc(r.id)}">
         <div class="rep-preset-top">
           ${iconChip(r.icon, r.tone)}
-          ${FEATURED.has(r.id) ? '<span class="rep-badge">Recommended</span>' : `<span class="rep-badge muted">${esc(r.group)}</span>`}
+          ${FEATURED.has(r.id) ? `<span class="rep-badge">${esc(t('rep.filterRecommended'))}</span>` : `<span class="rep-badge muted">${esc(t('rep.group.' + r.group.replace(/[^A-Za-z]/g, '')))}</span>`}
         </div>
-        <div class="rep-preset-title">${esc(r.title)}</div>
-        <div class="rep-preset-desc">${esc(r.desc)}</div>
-        <div class="rep-preset-go"><span>Open</span><span class="ms">arrow_forward</span></div>
+        <div class="rep-preset-title">${esc(t('rep.' + r.id + '.t') || r.title)}</div>
+        <div class="rep-preset-desc">${esc(t('rep.' + r.id + '.d') || r.desc)}</div>
+        <div class="rep-preset-go"><span>${esc(t('rep.open'))}</span><span class="ms">arrow_forward</span></div>
       </button>`).join('');
   }
 
