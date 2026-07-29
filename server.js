@@ -45,7 +45,26 @@ function printPasswordGuidance() {
   console.error('='.repeat(72));
 }
 
+/**
+ * Refuse to start on a missing or weak JWT signing key. A short secret makes
+ * session tokens brute-forceable / forgeable, which would defeat auth entirely.
+ * setup.js and `openssl rand -hex 32` both produce a strong (>= 32 char) value.
+ */
+function assertStrongJwtSecret() {
+  const secret = config.jwtSecret || '';
+  if (secret.length >= 32) return;
+  console.error('='.repeat(72));
+  console.error('[itacm] FATAL: JWT_SECRET is missing or too short (need at least 32 characters).');
+  console.error('[itacm] A weak signing key lets attackers forge session tokens.');
+  console.error('[itacm] Generate a strong one:   openssl rand -hex 32');
+  console.error('[itacm] Put it in .env as JWT_SECRET and restart.');
+  console.error('[itacm] (Changing JWT_SECRET invalidates existing sessions — everyone re-logs in.)');
+  console.error('='.repeat(72));
+  process.exit(1);
+}
+
 async function main() {
+  assertStrongJwtSecret();
   const providers = require('./src/providers');
   if (providers.ensureDatabase) {
     await ensureDatabaseWithRetry(providers);
