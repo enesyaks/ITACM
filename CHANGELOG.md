@@ -4,6 +4,15 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.2.5] — 2026-07-29
+
+### Fixed
+- **License add/edit form was always in English.** Wired its labels, section
+  headings, hints, placeholders, dropdown options, buttons and the renew/cancel/
+  assign dialog titles through the i18n layer (new `lic.f.*` keys with Turkish;
+  other languages fall back to English). Continues the form-i18n pass started
+  with the asset form in 1.2.4.
+
 ## [1.2.4] — 2026-07-29
 
 ### Fixed

@@ -200,7 +200,7 @@ Views.licenses = async function (el) {
         return d.toISOString().slice(0, 10);
       })();
       formModal({
-        title: `Renew ${l.softwareName}`,
+        title: (t('lic.f.renewTitle') || 'Renew {name}').replace('{name}', l.softwareName),
         fields: [
           { name: 'expirationDate', label: 'New expiration date *', type: 'date', required: true, value: defDate },
           { name: 'licenseKey', label: 'New license key (optional)', value: '', full: true },
@@ -220,7 +220,7 @@ Views.licenses = async function (el) {
     if (b.dataset.cancelLic && canEdit) {
       const l = lic(b.dataset.cancelLic);
       formModal({
-        title: `Cancel ${l.softwareName}`,
+        title: (t('lic.f.cancelTitle') || 'Cancel {name}').replace('{name}', l.softwareName),
         fields: [
           { name: 'note', label: 'Reason (optional)', full: true,
             placeholder: 'e.g. Not renewing — migrated to another vendor' },
@@ -237,7 +237,7 @@ Views.licenses = async function (el) {
     if (b.dataset.assign && canAssign) {
       const l = lic(b.dataset.assign);
       formModal({
-        title: `Assign ${l.softwareName} to employee`,
+        title: (t('lic.f.assignTitle') || 'Assign {name} to employee').replace('{name}', l.softwareName),
         // Server-side search instead of pre-loading every employee into a
         // <select>: the old list was capped at 500 and silently dropped anyone
         // past it, and picking a name meant scrolling the whole company.
@@ -360,67 +360,67 @@ function openLicenseForm({ license = null, seed = null, providers = [], contract
                 `<option value="${esc(p.id)}" ${selectedId === p.id ? 'selected' : ''}>${esc(p.name)}${p.category ? ' · ' + esc(p.category) : ''}</option>`
               ).join('')}
               ${canCreateProvider
-                ? `<option value="${OTHER_PROVIDER}">Other (create new provider)…</option>`
+                ? `<option value="${OTHER_PROVIDER}">${esc(t('lic.f.otherProvider'))}</option>`
                 : ''}`;
 
   openModal({
     title: license
-      ? `Edit ${license.softwareName}`
-      : (seed?.duplicateOf ? `${t('common.duplicate')} — ${seed.duplicateOf}` : 'New License'),
+      ? (t('lic.f.editTitle') || 'Edit {name}').replace('{name}', license.softwareName)
+      : (seed?.duplicateOf ? `${t('common.duplicate')} — ${seed.duplicateOf}` : t('lic.f.newTitle')),
     wide: true,
     body: `
       <form id="lic-form" class="af-form" novalidate>
         <section class="af-sec">
-          <div class="af-sec-head"><strong>License</strong><span>Product, seats &amp; expiry</span></div>
-          <div class="form-field full"><label>Software *</label>
-            <input name="softwareName" required autocomplete="off" placeholder="e.g. Microsoft 365 E3"
+          <div class="af-sec-head"><strong>${esc(t('lic.f.secLicense'))}</strong><span>${esc(t('lic.f.secLicenseSub'))}</span></div>
+          <div class="form-field full"><label>${esc(t('lic.f.software'))} *</label>
+            <input name="softwareName" required autocomplete="off" placeholder="${esc(t('lic.f.softwarePh'))}"
               value="${esc(src?.softwareName || '')}"></div>
-          <div class="form-field full"><label>License key <span class="ob-hint">optional</span></label>
+          <div class="form-field full"><label>${esc(t('lic.f.licenseKey'))} <span class="ob-hint">${esc(t('lic.f.optional'))}</span></label>
             <input name="licenseKey" class="mono" autocomplete="off" spellcheck="false"
-              placeholder="Leave blank if managed by vendor portal"
+              placeholder="${esc(t('lic.f.keyPh'))}"
               value="${esc(src?.licenseKey || '')}">
-            <div class="cell-sub" style="margin-top:4px">Not required for subscription or portal-managed seats.</div>
+            <div class="cell-sub" style="margin-top:4px">${esc(t('lic.f.keyHint'))}</div>
           </div>
-          <div class="form-field"><label>Total seats *</label>
+          <div class="form-field"><label>${esc(t('lic.f.totalSeats'))} *</label>
             <input name="totalSeats" type="number" min="1" required value="${esc(src?.totalSeats ?? 1)}"></div>
-          <div class="form-field"><label>Expiration *</label>
+          <div class="form-field"><label>${esc(t('lic.f.expiration'))} *</label>
             <input name="expirationDate" type="date" required value="${esc(toDate(src?.expirationDate))}"></div>
         </section>
 
         <section class="af-sec">
-          <div class="af-sec-head"><strong>Purchase / supplier</strong><span>Link a contract, or record a one-off invoice</span></div>
-          <div class="form-field full"><label>Provider</label>
+          <div class="af-sec-head"><strong>${esc(t('lic.f.secPurchase'))}</strong><span>${esc(t('lic.f.secPurchaseSub'))}</span></div>
+          <div class="form-field full"><label>${esc(t('lic.f.provider'))}</label>
             <select name="providerId" id="lic-provider">
               ${providerOptionsHtml(src?.providerId || '')}
             </select>
             <div class="cell-sub" style="margin-top:4px">${canCreateProvider
-              ? 'Choose Other to create a provider without leaving this form. Vendor name fills from provider.'
-              : 'Create providers under Providers if missing. Vendor name fills from provider.'}</div>
+              ? esc(t('lic.f.providerHintCreate'))
+              : esc(t('lic.f.providerHint'))}</div>
           </div>
-          <div class="form-field full"><label>How was this purchased?</label>
+          <div class="form-field full"><label>${esc(t('lic.f.howPurchased'))}</label>
             <select name="purchaseType" id="lic-ptype">
-              <option value="" ${!src?.purchaseType ? 'selected' : ''}>— Not set —</option>
-              <option value="contract" ${src?.purchaseType === 'contract' ? 'selected' : ''}>Under a contract / agreement</option>
-              <option value="invoice" ${src?.purchaseType === 'invoice' ? 'selected' : ''}>One-off invoice (no contract)</option>
+              <option value="" ${!src?.purchaseType ? 'selected' : ''}>${esc(t('lic.f.notSet'))}</option>
+              <option value="contract" ${src?.purchaseType === 'contract' ? 'selected' : ''}>${esc(t('lic.f.underContract'))}</option>
+              <option value="invoice" ${src?.purchaseType === 'invoice' ? 'selected' : ''}>${esc(t('lic.f.oneOffInvoice'))}</option>
             </select>
-            <div class="cell-sub" style="margin-top:4px">If a master agreement exists, pick Contract and link it. Otherwise use Invoice.</div>
+            <div class="cell-sub" style="margin-top:4px">${esc(t('lic.f.purchaseTypeHint'))}</div>
           </div>
-          <div class="form-field full hidden" id="lic-contract-wrap"><label>Linked contract</label>
+          <div class="form-field full hidden" id="lic-contract-wrap"><label>${esc(t('lic.f.linkedContract'))}</label>
             <select name="contractId" id="lic-contract">
-              <option value="">— Select contract —</option>
+              <option value="">${esc(t('lic.f.selectContract'))}</option>
             </select>
-            <div class="cell-sub" style="margin-top:4px">Only contracts for the selected provider. Upload the signed PDF under Documents after save.</div>
+            <div class="cell-sub" style="margin-top:4px">${esc(t('lic.f.contractHint'))}</div>
           </div>
-          <div class="form-field full hidden" id="lic-invoice-wrap"><label>Invoice number</label>
-            <input name="invoiceNumber" value="${esc(src?.invoiceNumber || '')}" placeholder="e.g. INV-2026-0142">
-            <div class="cell-sub" style="margin-top:4px">Upload the invoice PDF under Documents after save.</div>
+          <div class="form-field full hidden" id="lic-invoice-wrap"><label>${esc(t('lic.f.invoiceNumber'))}</label>
+            <input name="invoiceNumber" value="${esc(src?.invoiceNumber || '')}" placeholder="${esc(t('lic.f.invoicePh'))}">
+            <div class="cell-sub" style="margin-top:4px">${esc(t('lic.f.invoiceHint'))}</div>
           </div>
-          <div class="form-field" id="lic-purchase-date-wrap"><label>Purchase date</label>
+          <div class="form-field" id="lic-purchase-date-wrap"><label>${esc(t('lic.f.purchaseDate'))}</label>
             <input name="purchaseDate" type="date" value="${esc(toDate(src?.purchaseDate))}"></div>
           ${canCosts ? `
-          <div class="form-field" id="lic-amount-wrap"><label>Amount</label>
+          <div class="form-field" id="lic-amount-wrap"><label>${esc(t('lic.f.amount'))}</label>
             <input name="purchaseAmount" type="number" step="0.01" min="0" value="${esc(src?.purchaseAmount ?? '')}"></div>
-          <div class="form-field" id="lic-currency-wrap"><label>Currency</label>
+          <div class="form-field" id="lic-currency-wrap"><label>${esc(t('common.currency'))}</label>
             <select name="purchaseCurrency">
               ${currencyOptionsForSelect(src?.purchaseCurrency || appCurrency()).map((o) =>
                 `<option value="${esc(o.value)}" ${(src?.purchaseCurrency || appCurrency()) === o.value ? 'selected' : ''}>${esc(o.label)}</option>`
@@ -431,10 +431,10 @@ function openLicenseForm({ license = null, seed = null, providers = [], contract
         </section>
       </form>`,
     foot: `
-      <button class="btn btn-outline" data-close>Cancel</button>
+      <button class="btn btn-outline" data-close>${esc(t('common.cancel'))}</button>
       <button class="btn btn-primary" id="lic-save">
         <span class="ms">${license ? 'save' : 'add'}</span>
-        ${license ? 'Save changes' : 'Create license'}
+        ${license ? esc(t('lic.f.saveChanges')) : esc(t('lic.f.createLicense'))}
       </button>`,
     onMount(overlay) {
       const providerSel = $('#lic-provider', overlay);
