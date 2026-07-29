@@ -4,6 +4,15 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.2.7] — 2026-07-29
+
+### Fixed
+- **Dashboard was largely in English regardless of language.** Localized the
+  whole dashboard: KPI cards, fleet-value strip, scheduled-onboarding and HR
+  panels, recent-handover and EOL tables, the "Attention Required" cards, asset
+  distribution and license-expiry panels, and the location breakdown popup
+  (new `dash.*` keys with Turkish; other languages fall back to English).
+
 ## [1.2.6] — 2026-07-29
 
 ### Fixed

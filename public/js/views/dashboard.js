@@ -42,10 +42,10 @@ Views.dashboard = async function (el) {
   const locColors = ['#3525cd', '#2f80ed', '#00b8a9', '#94a3b8'];
 
   el.innerHTML = `
-    ${pageHead('Dashboard Overview', 'System status, hardware distribution, and operational metrics.', `
-      <span class="cell-sub" style="display:flex;align-items:center;gap:6px"><span class="ms ms-sm">sync</span> Last updated: Just now</span>
+    ${pageHead(t('dash.title'), t('dash.sub'), `
+      <span class="cell-sub" style="display:flex;align-items:center;gap:6px"><span class="ms ms-sm">sync</span> ${esc(t('dash.lastUpdated'))}</span>
       ${Auth.canIam('report', 'read') || Auth.canIam('report', 'export')
-        ? '<button class="btn btn-outline" data-go="#/reports"><span class="ms">download</span> Export Report</button>'
+        ? `<button class="btn btn-outline" data-go="#/reports"><span class="ms">download</span> ${esc(t('dash.exportReport'))}</button>`
         : ''}`)}
 
     <div class="dash-grid">
@@ -54,28 +54,28 @@ Views.dashboard = async function (el) {
         <div class="grid-metrics" style="margin-bottom:20px">
           <div class="card metric2 tint-indigo">
             <div class="metric2-head">${iconChip('monitor', 'indigo')}
-              <span class="trend-chip up"><span class="ms">trending_up</span> ${a.inStock} in stock</span></div>
-            <div class="metric2-label">Total Assets</div>
+              <span class="trend-chip up"><span class="ms">trending_up</span> ${esc((t('dash.inStock') || '{n} in stock').replace('{n}', a.inStock))}</span></div>
+            <div class="metric2-label">${esc(t('dash.totalAssets'))}</div>
             <div class="metric2-value">${a.total.toLocaleString()}</div>
           </div>
           <div class="card metric2 tint-blue">
             <div class="metric2-head">${iconChip('handshake', 'blue')}
-              <span class="trend-chip up"><span class="ms">trending_up</span> assigned</span></div>
-            <div class="metric2-label">Active Handovers</div>
+              <span class="trend-chip up"><span class="ms">trending_up</span> ${esc(t('dash.assigned'))}</span></div>
+            <div class="metric2-label">${esc(t('dash.activeHandovers'))}</div>
             <div class="metric2-value">${a.assigned.toLocaleString()}</div>
           </div>
           <div class="card metric2 tint-amber">
             <div class="metric2-head">${iconChip('build', 'amber')}
-              <span class="trend-chip flat"><span class="ms">remove</span> ${a.inRepair ? 'In service' : 'None open'}</span></div>
-            <div class="metric2-label">Items in Repair</div>
+              <span class="trend-chip flat"><span class="ms">remove</span> ${a.inRepair ? esc(t('dash.inService')) : esc(t('dash.noneOpen'))}</span></div>
+            <div class="metric2-label">${esc(t('dash.itemsInRepair'))}</div>
             <div class="metric2-value">${a.inRepair.toLocaleString()}</div>
           </div>
           <div class="card metric2 tint-rose">
             <div class="metric2-head">${iconChip('inventory_2', 'rose')}
               <span class="trend-chip ${d.alerts.lowStockCount ? 'down' : 'flat'}">
                 <span class="ms">${d.alerts.lowStockCount ? 'trending_down' : 'remove'}</span>
-                ${d.alerts.lowStockCount ? 'Needs attention' : 'All healthy'}</span></div>
-            <div class="metric2-label">Low Stock Items</div>
+                ${d.alerts.lowStockCount ? esc(t('dash.needsAttention')) : esc(t('dash.allHealthy'))}</span></div>
+            <div class="metric2-label">${esc(t('dash.lowStockItems'))}</div>
             <div class="metric2-value">${d.alerts.lowStockCount}</div>
           </div>
         </div>
@@ -83,35 +83,35 @@ Views.dashboard = async function (el) {
         ${d.fleetValue && d.fleetValue.purchaseValue > 0 ? `
         <div class="card" style="margin-bottom:20px;padding:16px 20px;display:flex;gap:28px;flex-wrap:wrap;align-items:center">
           <div>
-            <div class="metric2-label">Fleet Purchase Value</div>
+            <div class="metric2-label">${esc(t('dash.fleetPurchase'))}</div>
             <div class="metric2-value" style="font-size:22px">${fmtMoney(d.fleetValue.purchaseValue)}</div>
           </div>
           <div>
-            <div class="metric2-label">Current Book Value</div>
+            <div class="metric2-label">${esc(t('dash.currentBook'))}</div>
             <div class="metric2-value" style="font-size:22px">${fmtMoney(d.fleetValue.bookValue)}</div>
           </div>
           <div>
-            <div class="metric2-label">Depreciated</div>
+            <div class="metric2-label">${esc(t('dash.depreciated'))}</div>
             <div class="metric2-value" style="font-size:22px">${fmtMoney(d.fleetValue.depreciated)}</div>
           </div>
-          <span class="cell-sub" style="margin-left:auto">Straight-line · active inventory</span>
+          <span class="cell-sub" style="margin-left:auto">${esc(t('dash.straightLine'))}</span>
         </div>` : ''}
 
         ${onboardSched.length ? `
         <div class="card" style="margin-bottom:20px" id="dash-onboard-card">
           <div class="card-head" style="align-items:flex-start">
             <div>
-              <h3 style="font-size:16px;text-transform:none;letter-spacing:0;color:var(--on-surface)">Scheduled Onboarding</h3>
+              <h3 style="font-size:16px;text-transform:none;letter-spacing:0;color:var(--on-surface)">${esc(t('dash.schedOnboard'))}</h3>
               <div class="cell-sub" style="margin-top:2px">${onboardDueCount
-                ? `${onboardDueCount} due for zimmet · ${onboardSched.length} total scheduled`
-                : `${onboardSched.length} upcoming — reminder appears on the start day`}</div>
+                ? esc((t('dash.dueForZimmet') || '{n} due · {total}').replace('{n}', onboardDueCount).replace('{total}', onboardSched.length))
+                : esc((t('dash.upcomingReminder') || '{n} upcoming').replace('{n}', onboardSched.length))}</div>
             </div>
             ${onboardDueCount
-              ? '<button class="btn btn-primary btn-sm" data-open-onboard-due>Open due</button>'
-              : '<span class="pill pill-indigo">Scheduled</span>'}
+              ? `<button class="btn btn-primary btn-sm" data-open-onboard-due>${esc(t('dash.openDue'))}</button>`
+              : `<span class="pill pill-indigo">${esc(t('dash.scheduled'))}</span>`}
           </div>
           <div class="table-wrap"><table class="data">
-            <thead><tr><th>Employee</th><th>Start date</th><th>Reserved</th><th>Status</th><th></th></tr></thead>
+            <thead><tr><th>${esc(t('hr.employee'))}</th><th>${esc(t('dash.startDate'))}</th><th>${esc(t('dash.reserved'))}</th><th>${esc(t('common.status'))}</th><th></th></tr></thead>
             <tbody>
               ${onboardSched.map((o) => {
                 const sd = String(o.startDate || '').slice(0, 10);
@@ -120,12 +120,12 @@ Views.dashboard = async function (el) {
                   <td><div class="cell-title">${esc(o.employeeName)}</div>
                     <div class="cell-sub">${esc(o.department || o.email || '')}</div></td>
                   <td>${fmtDate(o.startDate)}</td>
-                  <td>${o.itemCount || 0} item(s)</td>
+                  <td>${esc((t('dash.nItems') || '{n} item(s)').replace('{n}', o.itemCount || 0))}</td>
                   <td>${due
-                    ? '<span class="pill pill-rose">Due</span>'
-                    : '<span class="pill pill-indigo">Upcoming</span>'}</td>
+                    ? `<span class="pill pill-rose">${esc(t('dash.due'))}</span>`
+                    : `<span class="pill pill-indigo">${esc(t('dash.upcoming'))}</span>`}</td>
                   <td style="text-align:right">
-                    <button class="btn btn-outline btn-sm" data-open-onboard="${esc(o.id)}">Open</button>
+                    <button class="btn btn-outline btn-sm" data-open-onboard="${esc(o.id)}">${esc(t('common.open'))}</button>
                   </td>
                 </tr>`;
               }).join('')}
@@ -138,14 +138,14 @@ Views.dashboard = async function (el) {
         <div class="card" style="margin-bottom:20px" id="dash-hr-card">
           <div class="card-head" style="align-items:flex-start">
             <div>
-              <h3 style="font-size:16px;text-transform:none;letter-spacing:0;color:var(--on-surface)">HR Requests</h3>
-              <div class="cell-sub" style="margin-top:2px">${hrOn} onboard · ${hrOff} offboard pending</div>
+              <h3 style="font-size:16px;text-transform:none;letter-spacing:0;color:var(--on-surface)">${esc(t('nav.hr'))}</h3>
+              <div class="cell-sub" style="margin-top:2px">${esc((t('dash.hrPendingSub') || '{on} onboard · {off} offboard pending').replace('{on}', hrOn).replace('{off}', hrOff))}</div>
             </div>
           </div>
           <div class="table-wrap"><table class="data">
-            <thead><tr><th>Type</th><th>Employee</th><th>Date</th><th>Items</th><th></th></tr></thead>
+            <thead><tr><th>${esc(t('dash.colType'))}</th><th>${esc(t('hr.employee'))}</th><th>${esc(t('dash.colDate'))}</th><th>${esc(t('dash.colItems'))}</th><th></th></tr></thead>
             <tbody>
-              ${hrPending.length === 0 ? '<tr><td colspan="5" class="table-empty">Pending requests exist but could not be loaded.</td></tr>' :
+              ${hrPending.length === 0 ? `<tr><td colspan="5" class="table-empty">${esc(t('dash.hrLoadFail'))}</td></tr>` :
                 hrPending.slice(0, 8).map((r) => `
                 <tr class="row-click" data-hr-detail="${esc(r.id)}" style="cursor:pointer">
                   <td><span class="pill ${r.type === 'offboard' ? 'pill-rose' : 'pill-indigo'}">${esc(r.type)}</span></td>
@@ -165,15 +165,15 @@ Views.dashboard = async function (el) {
         <div class="card" style="margin-bottom:20px">
           <div class="card-head" style="align-items:flex-start">
             <div>
-              <h3 style="font-size:16px;text-transform:none;letter-spacing:0;color:var(--on-surface)">Recent Handover Activity</h3>
-              <div class="cell-sub" style="margin-top:2px">Latest asset assignments and returns.</div>
+              <h3 style="font-size:16px;text-transform:none;letter-spacing:0;color:var(--on-surface)">${esc(t('dash.recentHandover'))}</h3>
+              <div class="cell-sub" style="margin-top:2px">${esc(t('dash.recentHandoverSub'))}</div>
             </div>
-            <button class="btn btn-outline btn-sm" data-go="#/handover">View All</button>
+            <button class="btn btn-outline btn-sm" data-go="#/handover">${esc(t('dash.viewAll'))}</button>
           </div>
           <div class="table-wrap"><table class="data">
-            <thead><tr><th>Asset</th><th>Employee</th><th>Date</th><th>Status</th></tr></thead>
+            <thead><tr><th>${esc(t('dash.colAsset'))}</th><th>${esc(t('hr.employee'))}</th><th>${esc(t('dash.colDate'))}</th><th>${esc(t('common.status'))}</th></tr></thead>
             <tbody>
-              ${d.recentHandovers.length === 0 ? '<tr><td colspan="4" class="table-empty">No handovers yet.</td></tr>' :
+              ${d.recentHandovers.length === 0 ? `<tr><td colspan="4" class="table-empty">${esc(t('dash.noHandovers'))}</td></tr>` :
                 d.recentHandovers.map((h) => `
                 <tr>
                   <td><div style="display:flex;align-items:center;gap:12px">
@@ -184,7 +184,7 @@ Views.dashboard = async function (el) {
                     <span class="avatar" style="width:28px;height:28px;font-size:10px">${esc(initials(h.employee))}</span>
                     ${esc(h.employee)}</div></td>
                   <td>${fmtDate(h.date)}</td>
-                  <td>${badge('Completed')}</td>
+                  <td>${badge(t('dash.completed'))}</td>
                 </tr>`).join('')}
             </tbody>
           </table></div>
@@ -194,20 +194,20 @@ Views.dashboard = async function (el) {
         <div class="card">
           <div class="card-head" style="align-items:flex-start">
             <div>
-              <h3 style="font-size:16px;text-transform:none;letter-spacing:0;color:var(--on-surface)">Lifecycle EOL Devices</h3>
-              <div class="cell-sub" style="margin-top:2px">${eolOverdue} overdue • ${eolSoon} approaching end of lifecycle.</div>
+              <h3 style="font-size:16px;text-transform:none;letter-spacing:0;color:var(--on-surface)">${esc(t('dash.eolTitle'))}</h3>
+              <div class="cell-sub" style="margin-top:2px">${esc((t('dash.eolSub') || '{overdue} overdue • {soon} approaching').replace('{overdue}', eolOverdue).replace('{soon}', eolSoon))}</div>
             </div>
-            <button class="btn btn-outline btn-sm" data-go="#/assets?lifecycle=overdue">Review</button>
+            <button class="btn btn-outline btn-sm" data-go="#/assets?lifecycle=overdue">${esc(t('dash.review'))}</button>
           </div>
           <div class="table-wrap"><table class="data">
-            <thead><tr><th>Asset</th><th>Location</th><th>Holder</th><th>Purchased</th><th>EOL Date</th></tr></thead>
+            <thead><tr><th>${esc(t('dash.colAsset'))}</th><th>${esc(t('asset.f.location'))}</th><th>${esc(t('dash.holder'))}</th><th>${esc(t('dash.purchased'))}</th><th>${esc(t('dash.eolDate'))}</th></tr></thead>
             <tbody>
-              ${(d.alerts.eolOverdue || []).length === 0 ? '<tr><td colspan="5" class="table-empty">No devices past their lifecycle. 🎉</td></tr>' :
+              ${(d.alerts.eolOverdue || []).length === 0 ? `<tr><td colspan="5" class="table-empty">${esc(t('dash.noEol'))}</td></tr>` :
                 d.alerts.eolOverdue.map((x) => `
                 <tr class="asset-row" data-open-asset="${esc(x.id)}" style="cursor:pointer">
                   <td><div class="cell-title">${esc(x.brand)} ${esc(x.model)}</div><div class="cell-sub mono">${esc(x.assetTag)}</div></td>
                   <td class="cell-sub">${esc(x.location || '—')}</td>
-                  <td>${x.currentEmployee ? esc(x.currentEmployee.fullName) : '<span class="cell-sub">In stock</span>'}</td>
+                  <td>${x.currentEmployee ? esc(x.currentEmployee.fullName) : `<span class="cell-sub">${esc(t('dash.inStockText'))}</span>`}</td>
                   <td>${fmtDate(x.purchaseDate)}</td>
                   <td><span class="pill pill-rose">${fmtDate(x.eolDate)}</span></td>
                 </tr>`).join('')}
@@ -220,66 +220,66 @@ Views.dashboard = async function (el) {
         <!-- Attention Required -->
         <div class="card attn-card" style="margin-bottom:20px">
           <div class="attn-head">
-            <div><h3>Attention Required</h3>
-              <div class="cell-sub">${attnItems} item${attnItems === 1 ? '' : 's'} need your review.</div></div>
+            <div><h3>${esc(t('dash.attention'))}</h3>
+              <div class="cell-sub">${esc((t('dash.needReview') || '{n} item(s) need your review.').replace('{n}', attnItems))}</div></div>
             <span class="attn-count">${attnItems}</span>
           </div>
-          ${attnItems === 0 ? '<div class="table-empty">All clear. 🎉</div>' : ''}
+          ${attnItems === 0 ? `<div class="table-empty">${esc(t('dash.allClear'))}</div>` : ''}
           ${(hrOn || hrOff) ? `
           <div class="attn-item indigo">
             ${iconChip('group_add', 'indigo')}
-            <div style="flex:1"><strong>HR requests pending</strong>
-              <span class="cell-sub">${hrOn} onboard · ${hrOff} offboard awaiting IT.</span>
-              <div style="text-align:right"><button class="attn-link" data-scroll-to="dash-hr-card">Review <span class="ms ms-sm">arrow_forward</span></button></div>
+            <div style="flex:1"><strong>${esc(t('dash.hrPendingTitle'))}</strong>
+              <span class="cell-sub">${esc((t('dash.hrPendingDesc') || '{on} onboard · {off} offboard awaiting IT.').replace('{on}', hrOn).replace('{off}', hrOff))}</span>
+              <div style="text-align:right"><button class="attn-link" data-scroll-to="dash-hr-card">${esc(t('dash.review'))} <span class="ms ms-sm">arrow_forward</span></button></div>
             </div>
           </div>` : ''}
           ${onboardDueCount ? `
           <div class="attn-item indigo">
             ${iconChip('event_available', 'indigo')}
-            <div style="flex:1"><strong>Onboarding due</strong>
-              <span class="cell-sub">${onboardDueCount} new hire${onboardDueCount > 1 ? 's' : ''} need zimmet today.</span>
-              <div style="text-align:right"><button class="attn-link" data-open-onboard-due>Open <span class="ms ms-sm">arrow_forward</span></button></div>
+            <div style="flex:1"><strong>${esc(t('dash.onboardingDue'))}</strong>
+              <span class="cell-sub">${esc((t('dash.onboardingDueDesc') || '{n} new hire(s) need zimmet today.').replace('{n}', onboardDueCount))}</span>
+              <div style="text-align:right"><button class="attn-link" data-open-onboard-due>${esc(t('common.open'))} <span class="ms ms-sm">arrow_forward</span></button></div>
             </div>
           </div>` : ''}
           ${d.alerts.expiredLicenseCount ? `
           <div class="attn-item rose">
             ${iconChip('vpn_key_off', 'rose')}
-            <div style="flex:1"><strong>Expired Licenses</strong>
-              <span class="cell-sub">${d.alerts.expiredLicenseCount} software license${d.alerts.expiredLicenseCount > 1 ? 's' : ''} past expiration — renew or cancel.</span>
-              <div style="text-align:right"><button class="attn-link" data-go="#/licenses">Review <span class="ms ms-sm">arrow_forward</span></button></div>
+            <div style="flex:1"><strong>${esc(t('dash.expiredLic'))}</strong>
+              <span class="cell-sub">${esc((t('dash.expiredLicDesc') || '{n} license(s) past expiration.').replace('{n}', d.alerts.expiredLicenseCount))}</span>
+              <div style="text-align:right"><button class="attn-link" data-go="#/licenses">${esc(t('dash.review'))} <span class="ms ms-sm">arrow_forward</span></button></div>
             </div>
           </div>` : ''}
           ${d.alerts.expiringLicenseCount ? `
           <div class="attn-item amber">
             ${iconChip('vpn_key', 'amber')}
-            <div style="flex:1"><strong>License Expirations</strong>
-              <span class="cell-sub">${d.alerts.expiringLicenseCount} software license${d.alerts.expiringLicenseCount > 1 ? 's' : ''} expiring in 30 days.</span>
-              <div style="text-align:right"><button class="attn-link" data-go="#/licenses">Review <span class="ms ms-sm">arrow_forward</span></button></div>
+            <div style="flex:1"><strong>${esc(t('dash.licExpirations'))}</strong>
+              <span class="cell-sub">${esc((t('dash.licExpirationsDesc') || '{n} license(s) expiring in 30 days.').replace('{n}', d.alerts.expiringLicenseCount))}</span>
+              <div style="text-align:right"><button class="attn-link" data-go="#/licenses">${esc(t('dash.review'))} <span class="ms ms-sm">arrow_forward</span></button></div>
             </div>
           </div>` : ''}
           ${lowest ? `
           <div class="attn-item rose">
             ${iconChip('inventory_2', 'rose')}
-            <div style="flex:1"><strong>Low Hardware Stock</strong>
-              <span class="cell-sub">${esc(lowest.itemName)} stock is critically low (${lowest.totalStock} remaining).</span>
-              <div style="text-align:right"><button class="attn-link" data-go="#/consumables">Reorder <span class="ms ms-sm">arrow_forward</span></button></div>
+            <div style="flex:1"><strong>${esc(t('dash.lowHwStock'))}</strong>
+              <span class="cell-sub">${esc((t('dash.lowHwStockDesc') || '{name} stock is critically low ({n} remaining).').replace('{name}', lowest.itemName).replace('{n}', lowest.totalStock))}</span>
+              <div style="text-align:right"><button class="attn-link" data-go="#/consumables">${esc(t('dash.reorder'))} <span class="ms ms-sm">arrow_forward</span></button></div>
             </div>
           </div>` : ''}
           ${eolOverdue ? `
           <div class="attn-item rose">
             ${iconChip('history_toggle_off', 'rose')}
-            <div style="flex:1"><strong>Lifecycle EOL</strong>
-              <span class="cell-sub">${eolOverdue} device${eolOverdue > 1 ? 's' : ''} past their lifecycle — replacement due.</span>
-              <div style="text-align:right"><button class="attn-link" data-go="#/assets?lifecycle=overdue">Review <span class="ms ms-sm">arrow_forward</span></button></div>
+            <div style="flex:1"><strong>${esc(t('dash.eolShort'))}</strong>
+              <span class="cell-sub">${esc((t('dash.eolShortDesc') || '{n} device(s) past their lifecycle — replacement due.').replace('{n}', eolOverdue))}</span>
+              <div style="text-align:right"><button class="attn-link" data-go="#/assets?lifecycle=overdue">${esc(t('dash.review'))} <span class="ms ms-sm">arrow_forward</span></button></div>
             </div>
           </div>` : ''}
         </div>
 
         <!-- Asset distribution by location (click for detail popup) -->
-        <div class="card" id="dist-card" style="margin-bottom:20px;cursor:pointer" title="Click for detailed breakdown">
+        <div class="card" id="dist-card" style="margin-bottom:20px;cursor:pointer" title="${esc(t('dash.clickDetail'))}">
           <div class="card-head" style="border-bottom:none;padding-bottom:0;align-items:flex-start">
-            <div><h3 style="font-size:16px;text-transform:none;letter-spacing:0;color:var(--on-surface)">Asset Distribution</h3>
-              <div class="cell-sub" style="margin-top:2px">By primary location — click for details</div></div>
+            <div><h3 style="font-size:16px;text-transform:none;letter-spacing:0;color:var(--on-surface)">${esc(t('dash.assetDist'))}</h3>
+              <div class="cell-sub" style="margin-top:2px">${esc(t('dash.assetDistSub'))}</div></div>
             <span class="ms" style="color:var(--outline)">open_in_full</span>
           </div>
           <div class="donut-wrap">${donut}</div>
@@ -295,17 +295,17 @@ Views.dashboard = async function (el) {
 
         <!-- Expiring / expired licenses -->
         <div class="card">
-          <div class="card-head"><h3>License Expiry</h3></div>
+          <div class="card-head"><h3>${esc(t('dash.licExpiry'))}</h3></div>
           ${!(d.alerts.expiredLicenses || []).length && !d.alerts.expiringLicenses.length
-            ? '<div class="table-empty">No expired or soon-expiring licenses.</div>'
+            ? `<div class="table-empty">${esc(t('dash.noExpLic'))}</div>`
             : ''}
           ${(d.alerts.expiredLicenses || []).slice(0, 4).map((l) => `
             <div class="exp-item">
               ${iconChip('vpn_key_off', 'rose')}
               <div>
                 <strong>${esc(l.softwareName)}</strong>
-                <span class="cell-sub">${l.totalSeats} Seats${l.vendor ? ' • ' + esc(l.vendor) : ''}</span>
-                <div class="exp-days urgent">Expired ${Math.abs(l.daysLeft)} day${Math.abs(l.daysLeft) === 1 ? '' : 's'} ago</div>
+                <span class="cell-sub">${esc((t('dash.nSeats') || '{n} Seats').replace('{n}', l.totalSeats))}${l.vendor ? ' • ' + esc(l.vendor) : ''}</span>
+                <div class="exp-days urgent">${esc((t('dash.expiredAgo') || 'Expired {n} day(s) ago').replace('{n}', Math.abs(l.daysLeft)))}</div>
               </div>
             </div>`).join('')}
           ${d.alerts.expiringLicenses.slice(0, 4).map((l) => `
@@ -313,8 +313,8 @@ Views.dashboard = async function (el) {
               ${iconChip('vpn_key', l.daysLeft <= 14 ? 'amber' : 'indigo')}
               <div>
                 <strong>${esc(l.softwareName)}</strong>
-                <span class="cell-sub">${l.totalSeats} Seats${l.vendor ? ' • ' + esc(l.vendor) : ''}</span>
-                <div class="exp-days ${l.daysLeft <= 7 ? 'urgent' : ''}">Exp. in ${l.daysLeft} Days</div>
+                <span class="cell-sub">${esc((t('dash.nSeats') || '{n} Seats').replace('{n}', l.totalSeats))}${l.vendor ? ' • ' + esc(l.vendor) : ''}</span>
+                <div class="exp-days ${l.daysLeft <= 7 ? 'urgent' : ''}">${esc((t('dash.expInDays') || 'Exp. in {n} Days').replace('{n}', l.daysLeft))}</div>
               </div>
             </div>`).join('')}
         </div>
@@ -463,7 +463,7 @@ async function showLocationBreakdown() {
   const SC = { 'Assigned': '#3525cd', 'In Stock': '#c3c0ff', 'In Repair': '#f59e0b', 'Scrap': '#ffb4ab' };
 
   openModal({
-    title: `Asset Distribution by Location (${items.length} assets)`,
+    title: (t('dash.distByLoc') || 'Asset Distribution by Location ({n} assets)').replace('{n}', items.length),
     wide: true,
     body: rows.map(([name, L]) => {
       const topCats = Object.entries(L.categories).sort((a, b) => b[1] - a[1]).slice(0, 3)
@@ -472,11 +472,11 @@ async function showLocationBreakdown() {
       <div style="border:1px solid var(--outline-variant);border-radius:var(--radius-lg);padding:14px 16px;margin-bottom:12px">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
           <span class="ms" style="color:var(--on-surface-variant)">location_on</span>
-          <strong style="font-size:14.5px">${esc(name)}</strong>
-          <span class="cell-sub">${Math.round((L.total / grand) * 100)}% of fleet</span>
+          <strong style="font-size:14.5px">${name === 'Unassigned' ? esc(t('dash.unassigned')) : esc(name)}</strong>
+          <span class="cell-sub">${esc((t('dash.pctOfFleet') || '{n}% of fleet').replace('{n}', Math.round((L.total / grand) * 100)))}</span>
           <span style="margin-left:auto;display:flex;align-items:center;gap:8px">
             <span class="badge-count">${L.total}</span>
-            <button class="btn btn-outline btn-sm" data-loc-view="${esc(name === 'Unassigned' ? '' : name)}">View assets</button>
+            <button class="btn btn-outline btn-sm" data-loc-view="${esc(name === 'Unassigned' ? '' : name)}">${esc(t('dash.viewAssets'))}</button>
           </span>
         </div>
         <div style="display:flex;height:10px;border-radius:999px;overflow:hidden;background:var(--surface-container);margin-bottom:8px">
