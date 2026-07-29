@@ -4,6 +4,15 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.2.6] — 2026-07-29
+
+### Fixed
+- **License list view + renew/cancel/assign dialogs were still English.**
+  Continued the localization pass: page header, table headings, status pills,
+  row hints, action-button titles, empty state, and the renew/cancel/assign
+  dialog fields / toasts now use the i18n layer (Turkish; others fall back to
+  English). Part of the ongoing full-app localization.
+
 ## [1.2.5] — 2026-07-29
 
 ### Fixed

@@ -17,10 +17,10 @@ Views.licenses = async function (el) {
 
   function lifecyclePill(l) {
     const life = l.lifecycle || 'active';
-    if (life === 'cancelled') return '<span class="pill pill-slate">Cancelled</span>';
-    if (life === 'expired') return `<span class="pill pill-rose">Expired${l.daysLeft != null ? ` · ${Math.abs(l.daysLeft)}d` : ''}</span>`;
-    if (life === 'expiring') return `<span class="pill pill-amber">${l.daysLeft}d left</span>`;
-    return '<span class="pill pill-emerald">Active</span>';
+    if (life === 'cancelled') return `<span class="pill pill-slate">${esc(t('lic.stCancelled'))}</span>`;
+    if (life === 'expired') return `<span class="pill pill-rose">${esc(t('lic.stExpired'))}${l.daysLeft != null ? ` · ${Math.abs(l.daysLeft)}d` : ''}</span>`;
+    if (life === 'expiring') return `<span class="pill pill-amber">${esc((t('lic.daysLeft') || '{n}d left').replace('{n}', l.daysLeft))}</span>`;
+    return `<span class="pill pill-emerald">${esc(t('lic.stActive'))}</span>`;
   }
 
   function chipTone(l) {
@@ -34,33 +34,33 @@ Views.licenses = async function (el) {
     const bits = [];
     if (l.providerName) bits.push(l.providerName);
     if (l.purchaseType === 'contract' && l.contractTitle) bits.push(l.contractTitle);
-    if (l.purchaseType === 'invoice' && l.invoiceNumber) bits.push(`Invoice ${l.invoiceNumber}`);
-    if (l.documentCount) bits.push(`${l.documentCount} file${l.documentCount === 1 ? '' : 's'}`);
+    if (l.purchaseType === 'invoice' && l.invoiceNumber) bits.push(`${t('lic.invoice')} ${l.invoiceNumber}`);
+    if (l.documentCount) bits.push((t('lic.nFiles') || '{n} file(s)').replace('{n}', l.documentCount));
     return bits.length ? `<div class="cell-sub">${esc(bits.join(' · '))}</div>` : '';
   }
 
   el.innerHTML = `
-    ${pageHead('Software & Licenses', 'Pools, seats, provider purchase link, contracts / invoices, renewals.', canEdit ?
-      `<button class="btn btn-primary" id="lic-new"><span class="ms">add</span> New License</button>` : '')}
+    ${pageHead(t('lic.pageTitle'), t('lic.pageSub'), canEdit ?
+      `<button class="btn btn-primary" id="lic-new"><span class="ms">add</span> ${esc(t('lic.f.newTitle'))}</button>` : '')}
     <div class="card"><div class="table-wrap"><table class="data">
       <thead><tr>
-        <th>Software</th><th>Provider</th><th>Purchase</th><th>Seats</th><th>Status</th><th>Expires</th>
+        <th>${esc(t('lic.f.software'))}</th><th>${esc(t('lic.f.provider'))}</th><th>${esc(t('lic.colPurchase'))}</th><th>${esc(t('lic.colSeats'))}</th><th>${esc(t('common.status'))}</th><th>${esc(t('lic.colExpires'))}</th>
         <th style="text-align:right"></th>
       </tr></thead>
       <tbody>
-        ${items.length === 0 ? '<tr><td colspan="7" class="table-empty">No licenses.</td></tr>' :
+        ${items.length === 0 ? `<tr><td colspan="7" class="table-empty">${esc(t('lic.noLicenses'))}</td></tr>` :
           items.map((l) => {
             const used = l.usedSeats || 0;
             const pct = Math.min(100, Math.round((used / l.totalSeats) * 100));
             const parts = [];
-            if (l.assignedUsers) parts.push(`${l.assignedUsers} user${l.assignedUsers === 1 ? '' : 's'}`);
-            if (l.linkedAssets) parts.push(`${l.linkedAssets} device${l.linkedAssets === 1 ? '' : 's'}`);
+            if (l.assignedUsers) parts.push((t('lic.nUsers') || '{n} user(s)').replace('{n}', l.assignedUsers));
+            if (l.linkedAssets) parts.push((t('lic.nDevices') || '{n} device(s)').replace('{n}', l.linkedAssets));
             const seatHint = parts.length ? `<div class="cell-sub">${esc(parts.join(' · '))}</div>` : '';
             const cancelled = l.lifecycle === 'cancelled';
             const purchaseLabel = l.purchaseType === 'contract'
-              ? (l.contractTitle || 'Contract')
+              ? (l.contractTitle || t('lic.contract'))
               : l.purchaseType === 'invoice'
-                ? (l.invoiceNumber ? `Invoice ${l.invoiceNumber}` : 'Invoice')
+                ? (l.invoiceNumber ? `${t('lic.invoice')} ${l.invoiceNumber}` : t('lic.invoice'))
                 : '—';
             return `
             <tr style="${cancelled ? 'opacity:.72' : ''}">
@@ -69,9 +69,9 @@ Views.licenses = async function (el) {
                   <span class="cell-title">${esc(l.softwareName)}</span>
                   ${l.licenseKey
                     ? `<div class="cell-sub mono">${esc(l.licenseKey)}</div>`
-                    : '<div class="cell-sub">No license key</div>'}
-                  ${l.renewedAt ? `<div class="cell-sub">Renewed ${fmtDate(l.renewedAt)}</div>` : ''}
-                  ${cancelled && l.cancelledAt ? `<div class="cell-sub">Cancelled ${fmtDate(l.cancelledAt)}</div>` : ''}
+                    : `<div class="cell-sub">${esc(t('lic.noKey'))}</div>`}
+                  ${l.renewedAt ? `<div class="cell-sub">${esc((t('lic.renewedOn') || 'Renewed {date}').replace('{date}', fmtDate(l.renewedAt)))}</div>` : ''}
+                  ${cancelled && l.cancelledAt ? `<div class="cell-sub">${esc((t('lic.cancelledOn') || 'Cancelled {date}').replace('{date}', fmtDate(l.cancelledAt)))}</div>` : ''}
                 </div></div></td>
               <td>${esc(l.providerName || l.vendor || '—')}${purchaseHint(l)}</td>
               <td>
@@ -89,25 +89,25 @@ Views.licenses = async function (el) {
               <td>${lifecyclePill(l)}</td>
               <td>${fmtDate(l.expirationDate)}</td>
               <td class="actions">
-                <button class="btn btn-outline btn-sm" data-holders="${esc(l.id)}" title="Assigned"><span class="ms">group</span></button>
+                <button class="btn btn-outline btn-sm" data-holders="${esc(l.id)}" title="${esc(t('lic.tHolders'))}"><span class="ms">group</span></button>
                 ${Number(l.discoveredInstalls) > 0
                   ? `<button class="btn btn-outline btn-sm" data-sam="${esc(l.id)}" title="SAM — discovered installs (${Number(l.discoveredInstalls)})"><span class="ms">analytics</span></button>`
                   : ''}
                 ${(canReadDocs || canUploadDocs) ? `
-                <button class="btn btn-outline btn-sm" data-docs="${esc(l.id)}" title="Documents">
+                <button class="btn btn-outline btn-sm" data-docs="${esc(l.id)}" title="${esc(t('common.documents'))}">
                   <span class="ms">attach_file</span>${canReadDocs && l.documentCount ? ` ${l.documentCount}` : ''}
                 </button>` : ''}
                 ${canEdit ? `
-                <button class="btn btn-outline btn-sm" data-edit="${esc(l.id)}" title="Edit"><span class="ms">edit</span></button>
+                <button class="btn btn-outline btn-sm" data-edit="${esc(l.id)}" title="${esc(t('common.edit'))}"><span class="ms">edit</span></button>
                 ${canCreateLic ? `
                 <button class="btn btn-outline btn-sm" data-duplicate="${esc(l.id)}" title="${esc(t('common.duplicate'))}"><span class="ms">content_copy</span></button>` : ''}
                 ${!cancelled ? `
-                <button class="btn btn-outline btn-sm" data-renew="${esc(l.id)}" title="Renew"><span class="ms">autorenew</span></button>
-                <button class="btn btn-outline btn-sm" data-cancel-lic="${esc(l.id)}" title="Cancel"><span class="ms">cancel</span></button>` : `
-                <button class="btn btn-primary btn-sm" data-renew="${esc(l.id)}"><span class="ms">autorenew</span> Renew</button>`}
+                <button class="btn btn-outline btn-sm" data-renew="${esc(l.id)}" title="${esc(t('lic.tRenew'))}"><span class="ms">autorenew</span></button>
+                <button class="btn btn-outline btn-sm" data-cancel-lic="${esc(l.id)}" title="${esc(t('common.cancel'))}"><span class="ms">cancel</span></button>` : `
+                <button class="btn btn-primary btn-sm" data-renew="${esc(l.id)}"><span class="ms">autorenew</span> ${esc(t('lic.tRenew'))}</button>`}
                 ` : ''}
                 ${canAssign && !cancelled ? `
-                <button class="btn btn-primary btn-sm" data-assign="${esc(l.id)}" title="Assign"><span class="ms">person_add</span></button>` : ''}
+                <button class="btn btn-primary btn-sm" data-assign="${esc(l.id)}" title="${esc(t('lic.tAssign'))}"><span class="ms">person_add</span></button>` : ''}
               </td>
             </tr>`;
           }).join('')}
@@ -202,16 +202,16 @@ Views.licenses = async function (el) {
       formModal({
         title: (t('lic.f.renewTitle') || 'Renew {name}').replace('{name}', l.softwareName),
         fields: [
-          { name: 'expirationDate', label: 'New expiration date *', type: 'date', required: true, value: defDate },
-          { name: 'licenseKey', label: 'New license key (optional)', value: '', full: true },
+          { name: 'expirationDate', label: `${t('lic.renewExpLabel')} *`, type: 'date', required: true, value: defDate },
+          { name: 'licenseKey', label: t('lic.renewKeyLabel'), value: '', full: true },
         ],
-        submitLabel: 'Mark renewed',
+        submitLabel: t('lic.markRenewed'),
         async onSubmit(d) {
           if (!d.expirationDate) throw new Error('Expiration date is required');
           const body = { expirationDate: d.expirationDate };
           if (d.licenseKey && String(d.licenseKey).trim()) body.licenseKey = String(d.licenseKey).trim();
           await api(`/licenses/${l.id}/renew`, { method: 'POST', body });
-          toast(`${l.softwareName} renewed`, 'success');
+          toast((t('lic.renewedToast') || '{name} renewed').replace('{name}', l.softwareName), 'success');
           Views.licenses(el);
         },
       });
@@ -222,13 +222,13 @@ Views.licenses = async function (el) {
       formModal({
         title: (t('lic.f.cancelTitle') || 'Cancel {name}').replace('{name}', l.softwareName),
         fields: [
-          { name: 'note', label: 'Reason (optional)', full: true,
-            placeholder: 'e.g. Not renewing — migrated to another vendor' },
+          { name: 'note', label: t('lic.cancelReason'), full: true,
+            placeholder: t('lic.cancelReasonPh') },
         ],
-        submitLabel: 'Mark cancelled',
+        submitLabel: t('lic.markCancelled'),
         async onSubmit(d) {
           await api(`/licenses/${l.id}/cancel`, { method: 'POST', body: { note: d.note || '' } });
-          toast(`${l.softwareName} cancelled`, 'success');
+          toast((t('lic.cancelledToast') || '{name} cancelled').replace('{name}', l.softwareName), 'success');
           Views.licenses(el);
         },
       });
@@ -249,11 +249,11 @@ Views.licenses = async function (el) {
           placeholder: t('hr.searchEmp'),
           full: true,
         }],
-        submitLabel: 'Assign software',
+        submitLabel: t('lic.assignSoftware'),
         async onSubmit(d) {
           if (!d.employeeId) throw new Error('Select an employee');
           const r = await api(`/licenses/${l.id}/assign`, { method: 'POST', body: { employeeId: d.employeeId } });
-          toast(`${r.softwareName} assigned to ${r.employeeName}`, 'success');
+          toast((t('lic.assignedToast') || '{name} assigned to {emp}').replace('{name}', r.softwareName).replace('{emp}', r.employeeName), 'success');
           Views.licenses(el);
         },
       });

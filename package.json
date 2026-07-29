@@ -1,6 +1,6 @@
 {
   "name": "itacm",
-  "version": "1.2.5",
+  "version": "1.2.6",
   "description": "IT Asset Control Pro \u2014 self-hosted IT asset management (PostgreSQL + Docker Compose) with a built-in web UI",
   "main": "server.js",
   "engines": {
