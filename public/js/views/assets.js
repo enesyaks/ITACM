@@ -181,7 +181,7 @@ Views.assets = async function (el, params = {}) {
 
     <div class="toolbar" id="asset-filters">
       <div class="search-box"><span class="ms">search</span>
-        <input type="search" id="asset-search" placeholder="Search tag, serial, brand, MAC…" value="${esc(params.search || '')}"></div>
+        <input type="search" id="asset-search" placeholder="${esc(t('asset.f.searchPh'))}" value="${esc(params.search || '')}"></div>
       ${statusPill
         || multiSelectHtml({
           id: 'status',
@@ -603,19 +603,19 @@ async function assetForm(asset, done) {
   const modelsFor = (cat, brand) => catalog.filter((c) => c.category === cat && c.brand === brand).map((c) => c.model).sort();
 
   const title = isEdit
-    ? `Edit ${asset.assetTag}`
+    ? (t('asset.f.editTitle') || 'Edit {tag}').replace('{tag}', asset.assetTag)
     : (asset && asset.duplicateOf
       ? `${t('common.duplicate')} — ${asset.duplicateOf.assetTag}`
-      : (infraMode ? 'Add Network / Server device' : 'Add New Asset'));
+      : (infraMode ? t('asset.f.addInfra') : t('common.addNewAsset')));
 
   const tagField = isEdit
-    ? `<div class="form-field"><label>Asset tag</label>
+    ? `<div class="form-field"><label>${esc(t('asset.f.assetTag'))}</label>
         <input id="af-tag-preview" class="af-tag-preview" value="${esc(asset.assetTag)}" disabled></div>`
     : infraMode
-      ? `<div class="form-field"><label>Asset tag *</label>
+      ? `<div class="form-field"><label>${esc(t('asset.f.assetTag'))} *</label>
           <input name="assetTag" required maxlength="64" placeholder="e.g. FW-HQ-01 / RACK-A01-U38"
             value="${esc((asset && asset.assetTag) || '')}" pattern="\\S+"></div>`
-      : `<div class="form-field"><label>Asset tag <span class="ob-hint">auto · ${(AppConfig.assetTagPrefix || 'IT')}-####</span></label>
+      : `<div class="form-field"><label>${esc(t('asset.f.assetTag'))} <span class="ob-hint">${esc(t('asset.f.auto'))} · ${(AppConfig.assetTagPrefix || 'IT')}-####</span></label>
           <input id="af-tag-preview" class="af-tag-preview" value="…" disabled></div>`;
 
   openModal({
@@ -624,78 +624,78 @@ async function assetForm(asset, done) {
     body: `
       <form id="af" class="af-form" novalidate>
         <section class="af-sec">
-          <div class="af-sec-head"><strong>Identity</strong><span>Tag, serial &amp; placement</span></div>
+          <div class="af-sec-head"><strong>${esc(t('asset.f.secIdentity'))}</strong><span>${esc(t('asset.f.secIdentitySub'))}</span></div>
           ${tagField}
-          <div class="form-field"><label>Serial number *</label>
+          <div class="form-field"><label>${esc(t('asset.f.serial'))} *</label>
             <input name="serialNumber" required autocomplete="off" value="${esc((asset && asset.serialNumber) || '')}"></div>
-          <div class="form-field"><label>Category *</label>
+          <div class="form-field"><label>${esc(t('asset.f.category'))} *</label>
             <select id="af-cat">${CATS.map((c) => `<option ${state.category === c ? 'selected' : ''}>${c}</option>`).join('')}</select>
             ${infraMode ? '' : `<input id="af-cat-other" class="${state.category === 'Other' ? '' : 'hidden'}" style="margin-top:6px"
-              maxlength="60" placeholder="Custom category — e.g. Projector, UPS"
+              maxlength="60" placeholder="${esc(t('asset.f.customCatPh'))}"
               value="${esc(state.customCategory || '')}">`}
           </div>
-          <div class="form-field"><label>Purchase date</label>
+          <div class="form-field"><label>${esc(t('asset.f.purchaseDate'))}</label>
             <input type="date" name="purchaseDate" value="${asset && asset.purchaseDate ? String(asset.purchaseDate).slice(0, 10) : ''}"></div>
-          <div class="form-field"><label>Purchase cost <span class="ob-hint">${esc(appCurrency())}</span></label>
+          <div class="form-field"><label>${esc(t('asset.f.purchaseCost'))} <span class="ob-hint">${esc(appCurrency())}</span></label>
             <input type="number" name="cost" min="0" step="0.01" placeholder="0.00"
               value="${asset && Number(asset.cost) > 0 ? esc(asset.cost) : ''}"></div>
-          <div class="form-field"><label>Salvage value <span class="ob-hint">optional — residual at end of life</span></label>
+          <div class="form-field"><label>${esc(t('asset.f.salvage'))} <span class="ob-hint">${esc(t('asset.f.salvageHint'))}</span></label>
             <input type="number" name="salvageValue" min="0" step="0.01" placeholder="0.00"
               value="${asset && asset.salvageValue != null ? esc(asset.salvageValue) : ''}"></div>
-          <div class="form-field" id="af-location-wrap"><label id="af-location-label">Location</label>
+          <div class="form-field" id="af-location-wrap"><label id="af-location-label">${esc(t('asset.f.location'))}</label>
             <select name="location" id="af-location">
-              <option value="">— No location —</option>
+              <option value="">${esc(t('asset.f.noLocation'))}</option>
               ${(AppConfig.locations || []).map((l) => {
                 const sel = asset ? asset.location === l : AppConfig.defaultLocation === l;
                 return `<option ${sel ? 'selected' : ''}>${esc(l)}</option>`;
               }).join('')}
             </select></div>
           <div class="form-field full" data-f="responsible">
-            <label>Responsible person * <span class="ob-hint">site owner, not personal zimmet</span></label>
+            <label>${esc(t('asset.f.responsible'))} * <span class="ob-hint">${esc(t('asset.f.responsibleHint'))}</span></label>
             <div id="af-responsible-host" class="emp-search-host"></div>
           </div>
         </section>
 
         <section class="af-sec" data-af-infra>
-          <div class="af-sec-head" data-f="infraRole"><strong>Infrastructure</strong><span>Role, rack &amp; management</span></div>
-          <div class="form-field" data-f="infraRole"><label>Role / subtype</label>
+          <div class="af-sec-head" data-f="infraRole"><strong>${esc(t('asset.f.secInfra'))}</strong><span>${esc(t('asset.f.secInfraSub'))}</span></div>
+          <div class="form-field" data-f="infraRole"><label>${esc(t('asset.f.role'))}</label>
             <select name="infraRole">
-              <option value="">— Select role —</option>
+              <option value="">${esc(t('asset.f.selectRole'))}</option>
               ${['Switch', 'Firewall', 'Access Point', 'Router', 'Load Balancer', 'Hypervisor', 'Physical Server', 'Storage', 'Appliance', 'Other'].map((r) =>
                 `<option ${asset && asset.infraRole === r ? 'selected' : ''}>${r}</option>`).join('')}
             </select></div>
-          <div class="form-field" data-f="rack"><label>Rack / cabinet</label>
+          <div class="form-field" data-f="rack"><label>${esc(t('asset.f.rack'))}</label>
             <div id="af-rack-slot"></div></div>
-          <div class="form-field" data-f="rackUStart"><label>U position <span class="ob-hint">from bottom</span></label>
+          <div class="form-field" data-f="rackUStart"><label>${esc(t('asset.f.uPos'))} <span class="ob-hint">${esc(t('asset.f.fromBottom'))}</span></label>
             <div id="af-u-slot"></div></div>
-          <div class="form-field" data-f="rackUSize"><label>Height (U)</label>
+          <div class="form-field" data-f="rackUSize"><label>${esc(t('asset.f.uHeight'))}</label>
             <input type="number" name="rackUSize" id="af-u-size" min="1" max="20" placeholder="1"
               value="${asset && asset.rackUSize != null ? asset.rackUSize : (asset && asset.rackUStart != null ? 1 : '')}"></div>
-          <div class="form-field" data-f="mgmtIp"><label>Management IP</label>
+          <div class="form-field" data-f="mgmtIp"><label>${esc(t('asset.f.mgmtIp'))}</label>
             <input name="mgmtIp" placeholder="e.g. 10.255.0.10" value="${esc((asset && asset.mgmtIp) || '')}"></div>
-          <div class="form-field" data-f="firmwareVersion"><label>Firmware / OS version</label>
+          <div class="form-field" data-f="firmwareVersion"><label>${esc(t('asset.f.firmware'))}</label>
             <input name="firmwareVersion" placeholder="e.g. 17.3.4" value="${esc((asset && asset.firmwareVersion) || '')}"></div>
-          <div class="form-field" data-f="firmwareUpdatedAt"><label>Firmware last updated</label>
+          <div class="form-field" data-f="firmwareUpdatedAt"><label>${esc(t('asset.f.firmwareUpdated'))}</label>
             <input type="date" name="firmwareUpdatedAt" value="${asset && asset.firmwareUpdatedAt ? String(asset.firmwareUpdatedAt).slice(0, 10) : ''}"></div>
-          <div class="form-field" data-f="warrantyEnd"><label>Warranty / support ends</label>
+          <div class="form-field" data-f="warrantyEnd"><label>${esc(t('asset.f.warrantyEnds'))}</label>
             <input type="date" name="warrantyEndDate" value="${asset && asset.warrantyEndDate ? String(asset.warrantyEndDate).slice(0, 10) : ''}"></div>
           <div class="form-field full" data-f="parentDevice">
-            <label>Parent devices <span class="ob-hint">optional — pick one or more (HA / dual uplink)</span></label>
+            <label>${esc(t('asset.f.parents'))} <span class="ob-hint">${esc(t('asset.f.parentsHint'))}</span></label>
             <div id="af-parents" class="af-parent-list"></div>
-            <div class="cell-sub" style="margin-top:6px">A switch can sit under both firewalls in an HA pair.</div>
+            <div class="cell-sub" style="margin-top:6px">${esc(t('asset.f.haHint'))}</div>
           </div>
         </section>
 
         <section class="af-sec">
-          <div class="af-sec-head"><strong>Product</strong><span>From Product Catalog</span></div>
-          <div class="form-field"><label>Brand *</label>
+          <div class="af-sec-head"><strong>${esc(t('asset.f.secProduct'))}</strong><span>${esc(t('asset.f.secProductSub'))}</span></div>
+          <div class="form-field"><label>${esc(t('asset.f.brand'))} *</label>
             <div id="af-brand-slot"></div></div>
-          <div class="form-field"><label>Model *</label>
+          <div class="form-field"><label>${esc(t('asset.f.model'))} *</label>
             <div id="af-model-slot"></div></div>
         </section>
 
         <section class="af-sec">
-          <div class="af-sec-head" data-af-specs-head><strong>Specs</strong><span>Depends on category</span></div>
+          <div class="af-sec-head" data-af-specs-head><strong>${esc(t('asset.f.secSpecs'))}</strong><span>${esc(t('asset.f.secSpecsSub'))}</span></div>
           <div class="form-field" data-f="macEthernet"><label>MAC (Ethernet)</label>
             <input name="macEthernet" placeholder="AA:BB:CC:DD:EE:FF" value="${esc((asset && asset.macEthernet) || '')}"></div>
           <div class="form-field" data-f="macWifi"><label>MAC (Wi-Fi)</label>
@@ -706,37 +706,37 @@ async function assetForm(asset, done) {
             const known = !cur || opts.includes(cur);
             return `<div class="form-field" data-f="${k}"><label>${k.toUpperCase()} *</label>
               <select name="${k}">
-                <option value="">Select ${k.toUpperCase()}…</option>
+                <option value="">${esc((t('asset.f.selectPh') || 'Select {x}…').replace('{x}', k.toUpperCase()))}</option>
                 ${known ? '' : `<option selected>${esc(cur)}</option>`}
                 ${opts.map((o) => `<option ${cur === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}
               </select></div>`;
           }).join('')}
           <div class="form-field" data-f="os"><label>OS</label><input name="os" value="${esc(s.os || '')}"></div>
-          <div class="form-field" data-f="hostname"><label>Hostname</label>
+          <div class="form-field" data-f="hostname"><label>${esc(t('asset.f.hostname'))}</label>
             <input name="hostname" placeholder="e.g. sw-core-01" value="${esc(s.hostname || '')}"></div>
-          <div class="form-field" data-f="ipAddress"><label>IP address</label>
+          <div class="form-field" data-f="ipAddress"><label>${esc(t('asset.f.ipAddress'))}</label>
             <input name="ipAddress" placeholder="e.g. 10.0.0.1" value="${esc(s.ipAddress || '')}"></div>
           <div class="form-field full" data-f="relatedLicense">
-            <label>Linked licenses <span class="ob-hint">optional</span>
+            <label>${esc(t('asset.f.linkedLicenses'))} <span class="ob-hint">${esc(t('asset.f.optional'))}</span>
               <span class="af-lic-count cell-sub" id="af-lic-count"></span></label>
             <div class="af-license-wrap">
               <div class="search-box af-license-search"><span class="ms">search</span>
-                <input type="search" id="af-lic-q" placeholder="Filter licenses…" autocomplete="off"></div>
+                <input type="search" id="af-lic-q" placeholder="${esc(t('asset.f.filterLicenses'))}" autocomplete="off"></div>
               <div id="af-licenses" class="af-license-list"></div>
             </div>
           </div>
         </section>
 
         <section class="af-sec">
-          <div class="af-sec-head"><strong>Notes</strong><span>Visible in handover basket</span></div>
-          <div class="form-field full"><label>Asset note</label>
-            <textarea name="notes" rows="3" maxlength="2000" placeholder="e.g. Screen scratch on bottom left / Şarj aleti eksik">${esc((asset && asset.notes) || '')}</textarea></div>
+          <div class="af-sec-head"><strong>${esc(t('asset.f.secNotes'))}</strong><span>${esc(t('asset.f.secNotesSub'))}</span></div>
+          <div class="form-field full"><label>${esc(t('asset.f.note'))}</label>
+            <textarea name="notes" rows="3" maxlength="2000" placeholder="${esc(t('asset.f.notePh'))}">${esc((asset && asset.notes) || '')}</textarea></div>
           ${renderCustomFieldsHtml(cfDefs, cfValues)}
         </section>
         <div id="af-error"></div>
       </form>`,
-    foot: `<button class="btn btn-outline" data-close>Cancel</button>
-           <button class="btn btn-primary" type="submit" form="af">Save</button>`,
+    foot: `<button class="btn btn-outline" data-close>${esc(t('common.cancel'))}</button>
+           <button class="btn btn-primary" type="submit" form="af">${esc(t('common.save'))}</button>`,
     onMount(overlay) {
       // Category-dependent fields: only show what makes sense for the device type.
       const FIELD_RULES = {
@@ -982,7 +982,7 @@ async function assetForm(asset, done) {
             <option value="${OTHER}" ${cur && !inList ? 'selected' : ''}>Other (new cabinet)…</option>
           </select>
           <input id="af-rack-text" class="${cur && !inList ? '' : 'hidden'}" style="margin-top:6px"
-            placeholder="New cabinet name, e.g. RACK-B03" value="${inList ? '' : esc(cur)}">
+            placeholder="${esc(t('asset.f.newCabinetPh'))}" value="${inList ? '' : esc(cur)}">
           ${known.length
             ? `<div class="cell-sub" style="margin-top:6px">${known.length} cabinet${known.length === 1 ? '' : 's'} at ${esc(loc)}</div>`
             : `<div class="cell-sub" style="margin-top:6px">No cabinets at this location yet — choose Other to create one.</div>`}`;
@@ -1023,7 +1023,7 @@ async function assetForm(asset, done) {
         const models = modelsFor(state.category, state.brand);
         const mSlot = $('#af-model-slot', overlay);
         if (models.length === 0) {
-          mSlot.innerHTML = `<input id="af-model-text" placeholder="Model" value="${esc(state.model)}">`;
+          mSlot.innerHTML = `<input id="af-model-text" placeholder="${esc(t('asset.f.model'))}" value="${esc(state.model)}">`;
         } else {
           const known = models.includes(state.model);
           mSlot.innerHTML = `
@@ -1032,7 +1032,7 @@ async function assetForm(asset, done) {
               ${models.map((m) => `<option ${state.model === m ? 'selected' : ''}>${esc(m)}</option>`).join('')}
               <option value="${OTHER}" ${state.model && !known ? 'selected' : ''}>Other (type manually)…</option>
             </select>
-            <input id="af-model-text" class="${state.model && !known ? '' : 'hidden'}" style="margin-top:6px" placeholder="Model" value="${known ? '' : esc(state.model)}">`;
+            <input id="af-model-text" class="${state.model && !known ? '' : 'hidden'}" style="margin-top:6px" placeholder="${esc(t('asset.f.model'))}" value="${known ? '' : esc(state.model)}">`;
           $('#af-model', overlay).addEventListener('change', (e) => {
             const v = e.target.value;
             state.model = v === OTHER ? '' : v;
@@ -1047,7 +1047,7 @@ async function assetForm(asset, done) {
         const brands = brandsFor(state.category);
         const bSlot = $('#af-brand-slot', overlay);
         if (brands.length === 0) {
-          bSlot.innerHTML = `<input id="af-brand-text" placeholder="Brand" value="${esc(state.brand)}">`;
+          bSlot.innerHTML = `<input id="af-brand-text" placeholder="${esc(t('asset.f.brand'))}" value="${esc(state.brand)}">`;
         } else {
           const known = brands.includes(state.brand);
           bSlot.innerHTML = `
@@ -1056,7 +1056,7 @@ async function assetForm(asset, done) {
               ${brands.map((b) => `<option ${state.brand === b ? 'selected' : ''}>${esc(b)}</option>`).join('')}
               <option value="${OTHER}" ${state.brand && !known ? 'selected' : ''}>Other (type manually)…</option>
             </select>
-            <input id="af-brand-text" class="${state.brand && !known ? '' : 'hidden'}" style="margin-top:6px" placeholder="Brand" value="${known ? '' : esc(state.brand)}">`;
+            <input id="af-brand-text" class="${state.brand && !known ? '' : 'hidden'}" style="margin-top:6px" placeholder="${esc(t('asset.f.brand'))}" value="${known ? '' : esc(state.brand)}">`;
           $('#af-brand', overlay).addEventListener('change', (e) => {
             const v = e.target.value;
             state.brand = v === OTHER ? '' : v;
