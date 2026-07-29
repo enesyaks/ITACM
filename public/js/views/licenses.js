@@ -267,16 +267,16 @@ Views.licenses = async function (el) {
       ]);
       const total = assignments.length + devices.length;
       const usersBlock = assignments.length === 0 ? '' : `
-        <div class="cell-sub" style="margin:4px 0 8px;font-weight:600">Users (${assignments.length})</div>
+        <div class="cell-sub" style="margin:4px 0 8px;font-weight:600">${esc((t('lic.holdersUsers') || 'Users ({n})').replace('{n}', assignments.length))}</div>
         ${assignments.map((a) => `
           <div class="history-item" style="justify-content:space-between">
             <span><span class="avatar" style="width:26px;height:26px;font-size:10px;margin-right:8px">${esc(initials(a.employeeName))}</span>
               <strong>${esc(a.employeeName)}</strong></span>
-            <span class="cell-sub">${fmtDate(a.assignedAt)} • by ${esc(a.assignedByName || '—')}</span>
-            ${canRevoke ? `<button class="btn btn-outline btn-sm" data-revoke-lic="${esc(a.id)}">Revoke</button>` : ''}
+            <span class="cell-sub">${fmtDate(a.assignedAt)} • ${esc(t('common.by'))} ${esc(a.assignedByName || '—')}</span>
+            ${canRevoke ? `<button class="btn btn-outline btn-sm" data-revoke-lic="${esc(a.id)}">${esc(t('common.revoke'))}</button>` : ''}
           </div>`).join('')}`;
       const devicesBlock = devices.length === 0 ? '' : `
-        <div class="cell-sub" style="margin:${assignments.length ? '16px' : '4px'} 0 8px;font-weight:600">Devices (${devices.length})</div>
+        <div class="cell-sub" style="margin:${assignments.length ? '16px' : '4px'} 0 8px;font-weight:600">${esc((t('lic.holdersDevices') || 'Devices ({n})').replace('{n}', devices.length))}</div>
         ${devices.map((a) => `
           <div class="history-item" style="justify-content:space-between">
             <span>
@@ -287,11 +287,11 @@ Views.licenses = async function (el) {
             <span class="cell-sub">${esc(a.status || '')}${a.location ? ' · ' + esc(a.location) : ''}</span>
           </div>`).join('')}`;
       openModal({
-        title: `${l.softwareName} — Assigned (${total})`,
+        title: (t('lic.holdersTitle') || '{name} — Assigned ({n})').replace('{name}', l.softwareName).replace('{n}', total),
         body: total === 0
-          ? '<div class="cell-sub">No users or devices linked to this license yet.</div>'
+          ? `<div class="cell-sub">${esc(t('lic.holdersEmpty'))}</div>`
           : `${usersBlock}${devicesBlock}`,
-        foot: `<button class="btn btn-outline" data-close>Close</button>
+        foot: `<button class="btn btn-outline" data-close>${esc(t('common.close'))}</button>
           ${total ? `<button class="btn btn-primary" id="lic-export"><span class="ms">download</span> ${esc(t('licenses.exportAssigned'))}</button>` : ''}`,
         onMount(overlay) {
           const exp = $('#lic-export', overlay);

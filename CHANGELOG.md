@@ -4,6 +4,16 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.2.13] — 2026-07-29
+
+### Changed
+- **Provider / contract forms and the license "Assigned" modal localized in all
+  12 languages.** Wired the provider and contract form fields (website, company
+  / support contact fields, billing, dates, cost, owner, etc.) and the license
+  holders modal (Users/Devices headers, Revoke/Close, empty state) through t().
+  Also fixed the EN/TR-only `hr.status` key that was poisoning the reverse-index
+  lookup for the word "Status" in other languages.
+
 ## [1.2.12] — 2026-07-29
 
 ### Changed
