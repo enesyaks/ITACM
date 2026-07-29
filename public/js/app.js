@@ -2563,7 +2563,7 @@ function startUiTour() {
       let left = 280;
       if (navLink) {
         const r = navLink.getBoundingClientRect();
-        top = Math.min(window.innerHeight - 180, Math.max(72, r.top));
+        top = Math.max(72, r.top);
         left = Math.min(window.innerWidth - 340, r.right + 12);
       }
       coach.classList.remove('hidden');
@@ -2588,6 +2588,11 @@ function startUiTour() {
             </button>
           </div>
         </div>`;
+      // Now that the card is rendered we know its real height — clamp the top so
+      // the whole card (including the Skip / Next buttons) stays on-screen even
+      // for tall steps near the bottom of the sidebar.
+      const ch = coach.offsetHeight;
+      coach.style.top = `${Math.max(12, Math.min(top, window.innerHeight - ch - 16))}px`;
       $('#coach-skip', coach).addEventListener('click', clear);
       $('#coach-next', coach).addEventListener('click', () => { i++; show(); });
       renderPageTip();

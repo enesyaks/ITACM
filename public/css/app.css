@@ -592,6 +592,7 @@ code, .mono { font-family: var(--mono); font-size: 12px; }
 .tip-coach.hidden { display: none; }
 .tip-coach-card {
   background: #fff; border-radius: 14px; padding: 14px; border: 1px solid var(--outline-variant);
+  max-height: calc(100vh - 24px); overflow-y: auto;
 }
 .tip-coach-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .tip-coach-head .ms { color: var(--primary-container); }

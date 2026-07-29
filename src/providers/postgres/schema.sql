@@ -217,8 +217,9 @@ ALTER TABLE assets ADD COLUMN IF NOT EXISTS location TEXT;
 --   asset.lifecycle_months -> catalog_models.lifecycle_months -> app_settings.lifecycles[category] -> app default
 ALTER TABLE assets ADD COLUMN IF NOT EXISTS lifecycle_months INTEGER;
 
--- Optional per-asset salvage (residual) value for straight-line depreciation.
--- NULL/0 -> the asset depreciates all the way down to zero over its lifecycle.
+-- Purchase cost + optional salvage (residual) value for straight-line depreciation.
+-- cost 0 -> no book value is shown; salvage NULL/0 -> depreciates down to zero.
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS cost NUMERIC(12, 2) NOT NULL DEFAULT 0;
 ALTER TABLE assets ADD COLUMN IF NOT EXISTS salvage_value NUMERIC(12, 2);
 
 -- Optional per-model lifecycle (months) on the catalog, so e.g. Apple MacBooks

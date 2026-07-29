@@ -4,6 +4,19 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.2.1] — 2026-07-29
+
+### Fixed
+- **Dashboard & asset create/update returned "Internal server error" on 1.2.0.**
+  The depreciation feature referenced an `assets.cost` column that was never
+  created — the `NUMERIC cost` column lives on `maintenance_logs`, not `assets`.
+  Added migration `041_asset_cost.sql` (and the matching `schema.sql` column) so
+  the dashboard EOL/fleet-value query and asset writes work. Existing 1.2.0
+  installs pick up the column automatically on next start.
+- **Guided sidebar tour (coach-marks) was cut off at the bottom.** Taller steps
+  now measure their real height and clamp their position so the whole card —
+  including the Skip / Next buttons — always stays on-screen.
+
 ## [1.2.0] — 2026-07-29
 
 ### Added
