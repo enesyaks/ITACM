@@ -636,6 +636,12 @@ async function assetForm(asset, done) {
           </div>
           <div class="form-field"><label>Purchase date</label>
             <input type="date" name="purchaseDate" value="${asset && asset.purchaseDate ? String(asset.purchaseDate).slice(0, 10) : ''}"></div>
+          <div class="form-field"><label>Purchase cost <span class="ob-hint">${esc(appCurrency())}</span></label>
+            <input type="number" name="cost" min="0" step="0.01" placeholder="0.00"
+              value="${asset && Number(asset.cost) > 0 ? esc(asset.cost) : ''}"></div>
+          <div class="form-field"><label>Salvage value <span class="ob-hint">optional — residual at end of life</span></label>
+            <input type="number" name="salvageValue" min="0" step="0.01" placeholder="0.00"
+              value="${asset && asset.salvageValue != null ? esc(asset.salvageValue) : ''}"></div>
           <div class="form-field" id="af-location-wrap"><label id="af-location-label">Location</label>
             <select name="location" id="af-location">
               <option value="">— No location —</option>
@@ -1296,6 +1302,8 @@ async function assetForm(asset, done) {
             ? f.assetTag.value.trim()
             : undefined,
           purchaseDate: f.purchaseDate.value || null,
+          cost: f.cost && f.cost.value !== '' ? Number(f.cost.value) : 0,
+          salvageValue: f.salvageValue && f.salvageValue.value !== '' ? Number(f.salvageValue.value) : null,
           location: f.location.value || null,
           macEthernet: take('macEthernet'),
           macWifi: take('macWifi'),
@@ -1559,6 +1567,10 @@ async function showAssetDetail(id, onChange) {
     kvText('Category', x.category),
     kvText('Location', x.location),
     kv('Purchase date', x.purchaseDate ? esc(fmtDate(x.purchaseDate)) : ''),
+    kv('Purchase cost', Number(x.cost) > 0 ? esc(fmtMoney(x.cost)) : ''),
+    kv('Book value', x.bookValue != null
+      ? `${esc(fmtMoney(x.bookValue))} <span class="ad-empty">(${x.depreciationPct}% depreciated)</span>`
+      : ''),
     kv('Warranty ends', x.warrantyEndDate ? esc(fmtDate(x.warrantyEndDate)) : ''),
     isInfra
       ? ''

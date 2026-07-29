@@ -89,6 +89,27 @@ Views.integrations = async function (el) {
             <label title="Only for servers that require implicit TLS on 465. Leave off for iCloud (587)."><input type="checkbox" id="int-smtp-secure" ${smtp.secure ? 'checked' : ''}${chkDis}> TLS (port 465)</label>
             <label><input type="checkbox" id="int-notify-ho" ${notify.handoverCompleted ? 'checked' : ''}${chkDis}> Email on handover</label>
           </div>
+          <div class="form-field full" style="display:flex;flex-wrap:wrap;gap:12px;align-items:center">
+            <label style="display:flex;align-items:center;gap:6px">Auto-send
+              <select id="int-notify-schedule"${inputDis}>
+                <option value="off" ${notify.schedule !== 'daily' && notify.schedule !== 'weekly' ? 'selected' : ''}>Off (manual)</option>
+                <option value="daily" ${notify.schedule === 'daily' ? 'selected' : ''}>Daily</option>
+                <option value="weekly" ${notify.schedule === 'weekly' ? 'selected' : ''}>Weekly</option>
+              </select>
+            </label>
+            <label style="display:flex;align-items:center;gap:6px" id="int-notify-weekday-wrap">Day
+              <select id="int-notify-weekday"${inputDis}>
+                ${['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+                  .map((d, i) => `<option value="${i}" ${Number(notify.weekday) === i ? 'selected' : ''}>${d}</option>`).join('')}
+              </select>
+            </label>
+            <label style="display:flex;align-items:center;gap:6px">at
+              <select id="int-notify-hour"${inputDis}>
+                ${Array.from({ length: 24 }, (_, h) => `<option value="${h}" ${Number(notify.hour) === h || (notify.hour == null && h === 8) ? 'selected' : ''}>${String(h).padStart(2, '0')}:00</option>`).join('')}
+              </select>
+            </label>
+            <span class="cell-sub" style="margin:0">server time</span>
+          </div>
         </div>
         <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
           ${canManage ? `<button class="btn btn-primary" id="int-smtp-save">Save SMTP</button>
@@ -245,6 +266,14 @@ GET /api/integrations/licenses/:id/sam
       </section>
     </div>`;
 
+  // Weekday picker is only meaningful for the weekly cadence.
+  const syncWeekdayVisibility = () => {
+    const wrap = $('#int-notify-weekday-wrap', el);
+    if (wrap) wrap.style.display = $('#int-notify-schedule', el)?.value === 'weekly' ? '' : 'none';
+  };
+  $('#int-notify-schedule', el)?.addEventListener('change', syncWeekdayVisibility);
+  syncWeekdayVisibility();
+
   $('#int-smtp-save', el)?.addEventListener('click', async () => {
     try {
       const to = $('#int-notify-to', el).value.split(/[,;\s]+/).map((s) => s.trim()).filter(Boolean);
@@ -273,6 +302,9 @@ GET /api/integrations/licenses/:id/sam
             enabled: $('#int-notify-on', el).checked,
             to,
             handoverCompleted: $('#int-notify-ho', el).checked,
+            schedule: $('#int-notify-schedule', el).value,
+            hour: Number($('#int-notify-hour', el).value),
+            weekday: Number($('#int-notify-weekday', el).value),
           },
         },
       });
@@ -311,6 +343,9 @@ GET /api/integrations/licenses/:id/sam
             enabled: $('#int-notify-on', el).checked,
             to: toList,
             handoverCompleted: $('#int-notify-ho', el).checked,
+            schedule: $('#int-notify-schedule', el).value,
+            hour: Number($('#int-notify-hour', el).value),
+            weekday: Number($('#int-notify-weekday', el).value),
           },
         },
       });

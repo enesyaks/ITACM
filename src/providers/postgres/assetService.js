@@ -5,6 +5,13 @@ const { parseParentIdsFromBody, syncAssetParents } = require('./assetParentLinks
 const { normalizeSerial, assertSerialAvailable, conflictFromUniqueViolation } = require('./assetSerial');
 const { HttpError } = require('../../utils/httpError');
 const { normalizeSale, formatSaleSummary, appendSaleToNotes } = require('../../utils/saleNote');
+const { resolveLifecycles, depreciationFor } = require('../../utils/depreciation');
+
+/** Merged category-lifecycle map (defaults + instance overrides), loaded once per read. */
+async function loadLifecycles() {
+  const { rows } = await query('SELECT lifecycles FROM app_settings WHERE id = 1');
+  return resolveLifecycles(rows[0]?.lifecycles);
+}
 
 const STATUSES = ['In Stock', 'Assigned', 'In Repair', 'Scrap', 'Sold', 'Reserved'];
 const INFRA_CATEGORIES = new Set(['Network', 'Server']);
@@ -164,9 +171,23 @@ function applyRackCoordinates(data) {
 }
 
 /** Attach related licenses + parent summaries. */
-function mapAssetRow(row) {
+function mapAssetRow(row, lifecycles) {
   const a = mapAsset(row);
   if (!a) return null;
+
+  // Straight-line depreciation snapshot — computed from cost + purchase date +
+  // the resolved EOL lifecycle window (per-asset → model → category default).
+  const dep = depreciationFor({
+    cost: a.cost,
+    purchaseDate: a.purchaseDate,
+    assetMonths: a.lifecycleMonths,
+    modelMonths: a.modelLifecycleMonths,
+    category: a.category,
+    salvage: a.salvageValue,
+  }, lifecycles);
+  a.bookValue = dep.bookValue;
+  a.depreciated = dep.depreciated;
+  a.depreciationPct = dep.depreciationPct;
 
   let licenses = [];
   const rawLic = row.related_licenses_json;
@@ -289,6 +310,24 @@ function sanitize(body, { partial = false } = {}) {
       throw HttpError.badRequest('lifecycleMonths must be an integer between 1 and 240');
     }
     data.lifecycle_months = m;
+  }
+  if (body.cost !== undefined) {
+    if (body.cost === '' || body.cost == null) {
+      data.cost = 0;
+    } else {
+      const c = Number(body.cost);
+      if (!Number.isFinite(c) || c < 0) throw HttpError.badRequest('cost must be a non-negative number');
+      data.cost = Math.round(c * 100) / 100;
+    }
+  }
+  if (body.salvageValue !== undefined) {
+    if (body.salvageValue === '' || body.salvageValue == null) {
+      data.salvage_value = null;
+    } else {
+      const s = Number(body.salvageValue);
+      if (!Number.isFinite(s) || s < 0) throw HttpError.badRequest('salvageValue must be a non-negative number');
+      data.salvage_value = Math.round(s * 100) / 100;
+    }
   }
   if (specs !== undefined) {
     data.specs = JSON.stringify({
@@ -437,9 +476,10 @@ async function createAsset(body, itUser) {
                                location, lifecycle_months, notes, license_id,
                                responsible_employee_id, responsible_employee_name,
                                infra_role, rack, rack_unit, rack_u_start, rack_u_size,
-                               firmware_version, firmware_updated_at, mgmt_ip, parent_asset_id)
+                               firmware_version, firmware_updated_at, mgmt_ip, parent_asset_id,
+                               cost, salvage_value)
            VALUES ($1,$2,$3,$4,$5,$6,$7,COALESCE($8,'{}'::jsonb),COALESCE($9,'In Stock'),$10,$11,$12,$13,$14,COALESCE($15,''),$16,$17,$18,
-                   $19,$20,$21,$22,$23,$24,$25,$26,$27)
+                   $19,$20,$21,$22,$23,$24,$25,$26,$27,COALESCE($28,0),$29)
            RETURNING id, asset_tag`,
           [
             data.asset_tag, data.serial_number, data.brand, data.model, data.category,
@@ -452,6 +492,7 @@ async function createAsset(body, itUser) {
             data.rack_u_start ?? null, data.rack_u_size ?? null,
             data.firmware_version || null, data.firmware_updated_at || null,
             data.mgmt_ip || null, data.parent_asset_id || null,
+            data.cost ?? null, data.salvage_value ?? null,
           ]
         );
         const id = rows[0].id;
@@ -621,7 +662,10 @@ async function updateAsset(assetId, body, itUser) {
     await writeUpdateHistory(t, current, updatedRow, data, licenseIds, itUser, saleMeta);
 
     const { rows: full } = await t.query(`${ASSET_SELECT} WHERE a.id = $1`, [assetId]);
-    return mapAssetRow(full[0] || updatedRow);
+    const lifecycles = resolveLifecycles(
+      (await t.query('SELECT lifecycles FROM app_settings WHERE id = 1')).rows[0]?.lifecycles
+    );
+    return mapAssetRow(full[0] || updatedRow, lifecycles);
   });
 }
 
@@ -850,12 +894,15 @@ async function listAssets({
 
   params.push(Math.min(Number(limit) || 100, 2000), Number(offset) || 0);
   const orderSql = assetOrderBySql(sort, order);
-  const { rows } = await query(
-    `${ASSET_SELECT} ${whereSql}
-     ORDER BY ${orderSql} LIMIT $${params.length - 1} OFFSET $${params.length}`,
-    params
-  );
-  return { items: rows.map(mapAssetRow), total: totalRes.rows[0].n, nextCursor: null };
+  const [{ rows }, lifecycles] = await Promise.all([
+    query(
+      `${ASSET_SELECT} ${whereSql}
+       ORDER BY ${orderSql} LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params
+    ),
+    loadLifecycles(),
+  ]);
+  return { items: rows.map((r) => mapAssetRow(r, lifecycles)), total: totalRes.rows[0].n, nextCursor: null };
 }
 
 async function getAsset(assetId) {
@@ -863,11 +910,14 @@ async function getAsset(assetId) {
   const { rows } = await query(`${ASSET_SELECT} WHERE a.id = $1`, [assetId]);
   if (!rows[0]) throw HttpError.notFound(`Asset ${assetId} not found`);
 
-  const history = await query(
-    'SELECT * FROM asset_history WHERE asset_id = $1 ORDER BY "timestamp" DESC LIMIT 25',
-    [assetId]
-  );
-  return { ...mapAssetRow(rows[0]), history: mapRows(history.rows) };
+  const [history, lifecycles] = await Promise.all([
+    query(
+      'SELECT * FROM asset_history WHERE asset_id = $1 ORDER BY "timestamp" DESC LIMIT 25',
+      [assetId]
+    ),
+    loadLifecycles(),
+  ]);
+  return { ...mapAssetRow(rows[0], lifecycles), history: mapRows(history.rows) };
 }
 
 async function returnAsset(assetId, { conditionNote } = {}, itUser) {

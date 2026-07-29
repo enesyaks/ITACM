@@ -80,6 +80,23 @@ Views.dashboard = async function (el) {
           </div>
         </div>
 
+        ${d.fleetValue && d.fleetValue.purchaseValue > 0 ? `
+        <div class="card" style="margin-bottom:20px;padding:16px 20px;display:flex;gap:28px;flex-wrap:wrap;align-items:center">
+          <div>
+            <div class="metric2-label">Fleet Purchase Value</div>
+            <div class="metric2-value" style="font-size:22px">${fmtMoney(d.fleetValue.purchaseValue)}</div>
+          </div>
+          <div>
+            <div class="metric2-label">Current Book Value</div>
+            <div class="metric2-value" style="font-size:22px">${fmtMoney(d.fleetValue.bookValue)}</div>
+          </div>
+          <div>
+            <div class="metric2-label">Depreciated</div>
+            <div class="metric2-value" style="font-size:22px">${fmtMoney(d.fleetValue.depreciated)}</div>
+          </div>
+          <span class="cell-sub" style="margin-left:auto">Straight-line · active inventory</span>
+        </div>` : ''}
+
         ${onboardSched.length ? `
         <div class="card" style="margin-bottom:20px" id="dash-onboard-card">
           <div class="card-head" style="align-items:flex-start">

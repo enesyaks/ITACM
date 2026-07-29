@@ -485,6 +485,7 @@ const REPORT_IAM = {
   'in-stock': 'asset',
   eol: 'asset',
   aging: 'asset',
+  depreciation: 'asset',
   scrap: 'asset',
   assignments: 'asset',
   employees: 'employee',
@@ -545,6 +546,8 @@ const REPORT_DEFS = [
     desc: 'Assets past or nearing their lifecycle end — plan replacements.' },
   { id: 'aging', group: 'Hardware', icon: 'schedule', tone: 'blue', title: 'Asset Aging Report',
     desc: 'Every asset ranked by age in months (oldest first).' },
+  { id: 'depreciation', group: 'Hardware', icon: 'trending_down', tone: 'amber', title: 'Asset Depreciation / Book Value',
+    desc: 'Purchase cost, current book value and depreciation per asset — for finance & insurance.' },
   { id: 'scrap', group: 'Hardware', icon: 'delete', tone: 'rose', title: 'Scrapped / Retired Assets',
     desc: 'Devices marked as scrap / retired.' },
   // ---- Assignments & People ----
@@ -661,6 +664,38 @@ const REPORT_BUILDERS = {
       .map(({ x, age }) => [x.assetTag, x.category, `${x.brand} ${x.model}`, fmtDate(x.purchaseDate), age, x.status, asgName(x)]);
     return { cols: ['Asset Tag', 'Category', 'Brand / Model', 'Purchase Date', 'Age (months)', 'Status', 'Assigned To'], rows,
       summary: `${rows.length} assets with a purchase date` };
+  },
+  depreciation: async () => {
+    const { items } = await api('/assets?limit=2000');
+    // Only priced assets carry a book value; skip the rest so totals are meaningful.
+    const priced = items.filter((x) => Number(x.cost) > 0);
+    let totalCost = 0;
+    let totalBook = 0;
+    const rows = priced
+      .sort((a, b) => (b.depreciated || 0) - (a.depreciated || 0))
+      .map((x) => {
+        const cost = Number(x.cost) || 0;
+        const book = x.bookValue != null ? x.bookValue : cost;
+        totalCost += cost;
+        totalBook += book;
+        return [
+          x.assetTag, x.category, `${x.brand} ${x.model}`,
+          x.purchaseDate ? fmtDate(x.purchaseDate) : '—',
+          fmtMoney(cost),
+          x.salvageValue != null ? fmtMoney(x.salvageValue) : '—',
+          x.bookValue != null ? fmtMoney(x.bookValue) : '—',
+          x.depreciated != null ? fmtMoney(x.depreciated) : '—',
+          x.depreciationPct != null ? `${x.depreciationPct}%` : '—',
+          x.status, asgName(x),
+        ];
+      });
+    return {
+      cols: ['Asset Tag', 'Category', 'Brand / Model', 'Purchase Date', 'Purchase Cost',
+        'Salvage', 'Book Value', 'Depreciated', 'Depreciated %', 'Status', 'Assigned To'],
+      rows,
+      summary: `${rows.length} priced assets • purchase ${fmtMoney(totalCost)} • `
+        + `book ${fmtMoney(totalBook)} • depreciated ${fmtMoney(totalCost - totalBook)}`,
+    };
   },
 
   scrap: async () => {

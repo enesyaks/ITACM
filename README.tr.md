@@ -175,7 +175,7 @@ Kenar menü, özellik setiyle bire bir eşleşir:
 | **Zimmet İşlemleri** | Atomik zimmet sepeti + yazdırılabilir/PDF tutanaklar |
 | **Bakım & Onarım** | Servise gönder / iade / hurda, belge ekleriyle |
 | **Sayım** | Kamera taramalı fiziksel sayım oturumları ve mutabakat |
-| **Raporlar** | 19 hazır rapor + oluşturucu (kaynak × sütun × filtre), CSV / antetli yazdırma |
+| **Raporlar** | 20 hazır rapor + oluşturucu (kaynak × sütun × filtre), CSV / antetli yazdırma |
 | **Denetim Kaydı** | Birleşik, filtrelenebilir hareket zaman çizelgesi (Owner/Admin) |
 | **BT Kullanıcıları** | RBAC kullanıcı yönetimi — oluştur, rol, pasifleştir/aktifleştir, sil (kayıtlı) |
 

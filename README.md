@@ -175,7 +175,7 @@ The sidebar maps 1:1 to the feature set:
 | **Handover Ops** | Atomic handover basket + printable/PDF receipts |
 | **Maintenance & Repair** | Send to repair / return / scrap, with document attachments |
 | **Stock Count** | Physical count sessions with camera scanning and reconciliation |
-| **Reports** | 19 preset reports + a builder (data sources × columns × filters), CSV / letterhead print |
+| **Reports** | 20 preset reports + a builder (data sources × columns × filters), CSV / letterhead print |
 | **Audit Log** | Unified, filterable activity timeline (Owner/Admin) |
 | **IT Users** | RBAC user management — create, role, disable/enable, delete (audited) |
 

@@ -4,6 +4,38 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.2.0] — 2026-07-29
+
+### Added
+- **Straight-line asset depreciation / book value.** Every asset now carries a
+  **purchase cost** and an optional **salvage value**; the current **book value**
+  is computed straight-line over the *same* lifecycle window the EOL engine
+  already resolves (per-asset → catalog model → category default). Shown on the
+  asset detail ("Book value · N% depreciated") and rolled up on the dashboard as
+  **Fleet Purchase Value / Current Book Value / Depreciated** (active inventory),
+  and exportable as a new **Asset Depreciation / Book Value** preset report
+  (Reports → Hardware) with per-asset cost, salvage, book value and totals.
+  - The lifecycle-resolution rule was extracted into a pure, unit-tested
+    `src/utils/depreciation.js` shared by the asset service and the dashboard EOL
+    engine, so EOL dates and book values can never drift apart.
+  - Schema: one nullable `assets.salvage_value` column (migration
+    `040_asset_salvage_value.sql`); the existing `assets.cost` column is now
+    editable from the asset form. A category with a 0 lifecycle is excluded from
+    depreciation (keeps full value), matching its EOL behaviour.
+- **Scheduled automatic alert digests.** The alert digest (expired/expiring
+  licenses, low stock, EOL overdue, onboarding due) can now be sent
+  automatically on a **daily** or **weekly** cadence, configured under
+  **Integrations → SMTP & alert digest** (Auto-send: Off / Daily / Weekly, with
+  a time-of-day and — for weekly — a weekday, in server local time). Previously
+  the digest only fired when an admin clicked **Run digest now**.
+  - A lightweight in-process scheduler (1-minute tick, no new dependency) runs
+    `runScheduledDigest()`; all "is it due / already ran today" logic lives in
+    the pure, unit-tested `src/utils/digestSchedule.js`.
+  - The cadence is stored inside the existing `app_settings.notify_json`
+    (`schedule`, `hour`, `weekday`, plus a server-managed `lastRunDate` guard) —
+    **no schema migration required**. Default is `off`, so existing instances
+    are unchanged until an Owner/Admin opts in.
+
 ## [1.1.1] — 2026-07-27
 
 ### Added

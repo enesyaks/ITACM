@@ -1,7 +1,7 @@
 /** Dashboard Aggregate Engine (postgres) — pure SQL aggregation. */
 const { query } = require('./pool');
 const { mapRows } = require('./rowMapper');
-const { DEFAULT_LIFECYCLES } = require('../../utils/defaults');
+const { resolveLifecycles, resolveLifeMonths, bookValue } = require('../../utils/depreciation');
 
 const LICENSE_EXPIRY_WINDOW_DAYS = 30;
 
@@ -10,31 +10,49 @@ async function getEolAssets() {
     query('SELECT lifecycles FROM app_settings WHERE id = 1'),
     query(`SELECT a.id, a.asset_tag, a.brand, a.model, a.category, a.location,
                   a.current_employee_id, a.current_employee_name, a.purchase_date, a.lifecycle_months,
+                  a.cost, a.salvage_value,
                   cm.lifecycle_months AS model_lifecycle_months
            FROM assets a
            LEFT JOIN catalog_models cm ON cm.category = a.category AND cm.brand = a.brand AND cm.model = a.model
            WHERE a.status IN ('In Stock', 'Assigned', 'In Repair')`)
   ]);
 
-  const lc = {
-    ...DEFAULT_LIFECYCLES,
-    ...(lcRes.rows[0]?.lifecycles || {})
-  };
+  const lc = resolveLifecycles(lcRes.rows[0]?.lifecycles);
 
   const now = Date.now();
   const overdue = [];
   const soon = [];
+  // Fleet value totals accumulated in the same pass (straight-line depreciation).
+  let purchaseTotal = 0;
+  let bookTotal = 0;
 
   assetsRes.rows.forEach((row) => {
+    // Resolution: per-asset override -> catalog model default -> category
+    // default. A category set to 0 in the Product Catalog is excluded from EOL.
+    const months = resolveLifeMonths({
+      assetMonths: row.lifecycle_months,
+      modelMonths: row.model_lifecycle_months,
+      category: row.category,
+    }, lc);
+
+    // Fleet value: count every priced asset, even those without a purchase date
+    // or lifecycle (they simply hold their full cost — nothing to depreciate).
+    const bv = bookValue({
+      cost: row.cost,
+      purchaseDate: row.purchase_date,
+      lifeMonths: months,
+      salvage: row.salvage_value,
+    }, now);
+    const costNum = Number(row.cost) || 0;
+    if (costNum > 0) {
+      purchaseTotal += costNum;
+      bookTotal += bv != null ? bv : costNum;
+    }
+
     const pd = row.purchase_date;
     if (!pd) return;
     const purchaseMs = new Date(pd).getTime();
     if (!purchaseMs) return;
-
-    // Resolution: per-asset override -> catalog model default -> category
-    // default. A category set to 0 in the Product Catalog is excluded from EOL.
-    const catMonths = lc[row.category] != null ? lc[row.category] : (lc.Other || 48);
-    const months = row.lifecycle_months || row.model_lifecycle_months || catMonths;
     if (!months) return;
     const eolMs = purchaseMs + months * 30.4375 * 24 * 3600 * 1000;
     const pct = ((now - purchaseMs) / (eolMs - purchaseMs)) * 100;
@@ -59,7 +77,13 @@ async function getEolAssets() {
   overdue.sort((a, b) => a.eolDate.localeCompare(b.eolDate));
   soon.sort((a, b) => b.pct - a.pct);
 
-  return { overdue, soon };
+  const fleet = {
+    purchaseValue: Math.round(purchaseTotal * 100) / 100,
+    bookValue: Math.round(bookTotal * 100) / 100,
+    depreciated: Math.round((purchaseTotal - bookTotal) * 100) / 100,
+  };
+
+  return { overdue, soon, fleet };
 }
 
 function mapOnboardingRow(r) {
@@ -163,6 +187,7 @@ async function getDashboardStats() {
       reserved: byStatus.Reserved || 0,
       sold: byStatus.Sold || 0,
     },
+    fleetValue: eol.fleet,
     alerts: {
       lowStockConsumables,
       lowStockCount: lowStockConsumables.length,

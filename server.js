@@ -63,6 +63,11 @@ async function main() {
     console.log('[itacm] health check: GET /api/health');
   });
 
+  // Fire the automatic alert digest on the user-configured daily/weekly schedule.
+  if (config.backend === 'postgres') {
+    require('./src/utils/scheduler').start();
+  }
+
 }
 
 main().catch((err) => {

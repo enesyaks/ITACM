@@ -14,6 +14,7 @@ const {
   renderTemplate,
   DEFAULT_ACCESS,
 } = require('../../utils/emailTemplates');
+const { shouldRunDigest, ymd } = require('../../utils/digestSchedule');
 
 /** Where links in templated mail point. */
 function appBaseUrl() {
@@ -37,7 +38,22 @@ const DEFAULT_NOTIFY = {
   eol: true,
   onboarding: true,
   handoverCompleted: false,
+  // Automatic digest schedule: 'off' | 'daily' | 'weekly'. `hour` is server
+  // local time (0-23); `weekday` (0=Sun) applies only to the weekly cadence.
+  // `lastRunDate` is server-managed (YYYY-MM-DD) and guards once-per-day sends.
+  schedule: 'off',
+  hour: 8,
+  weekday: 1,
+  lastRunDate: null,
 };
+
+const SCHEDULE_MODES = ['off', 'daily', 'weekly'];
+
+function clampInt(value, min, max, fallback) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, Math.trunc(n)));
+}
 
 function materializeSmtp(smtp) {
   if (!smtp || typeof smtp !== 'object') return {};
@@ -140,6 +156,10 @@ async function saveMailConfig({ smtp, notify }) {
     const to = Array.isArray(notify.to)
       ? notify.to.map((e) => String(e).trim().toLowerCase()).filter(Boolean).slice(0, 20)
       : [];
+    const schedule = SCHEDULE_MODES.includes(notify.schedule) ? notify.schedule : 'off';
+    // `lastRunDate` is never set from the client — preserve whatever the
+    // scheduler last stamped so saving settings can't re-trigger a same-day send.
+    const prevNotify = (await getMailConfig()).notify;
     params.push(JSON.stringify({
       enabled: !!notify.enabled,
       to,
@@ -149,6 +169,10 @@ async function saveMailConfig({ smtp, notify }) {
       eol: notify.eol !== false,
       onboarding: notify.onboarding !== false,
       handoverCompleted: !!notify.handoverCompleted,
+      schedule,
+      hour: clampInt(notify.hour, 0, 23, 8),
+      weekday: clampInt(notify.weekday, 0, 6, 1),
+      lastRunDate: prevNotify.lastRunDate || null,
     }));
     sets.push(`notify_json = $${params.length}::jsonb`);
   }
@@ -349,6 +373,28 @@ async function runAlertDigest() {
     html: wrapHtmlBody(rendered.bodyHtml),
   });
   return { sent: true, alertItems: count, recipients: notify.to };
+}
+
+/** Stamp today's date into notify_json without disturbing the other toggles. */
+async function recordDigestRun(dateStr) {
+  await query(
+    `UPDATE app_settings
+        SET notify_json = jsonb_set(COALESCE(notify_json, '{}'::jsonb), '{lastRunDate}', to_jsonb($1::text), true)
+      WHERE id = 1`,
+    [dateStr]
+  );
+}
+
+/**
+ * Scheduler entry point — called on a fixed interval. Runs the digest only when
+ * the configured daily/weekly cadence lands on this tick, then records the run
+ * date first so a slow send or restart cannot double-fire the same day.
+ */
+async function runScheduledDigest(now = new Date()) {
+  const { notify } = await getMailConfig();
+  if (!shouldRunDigest(notify, now)) return { skipped: true, reason: 'not scheduled' };
+  await recordDigestRun(ymd(now));
+  return runAlertDigest();
 }
 
 async function notifyHandoverCompleted(receipt) {
@@ -577,7 +623,7 @@ async function sendHrRequestNotice(request) {
 }
 
 module.exports = {
-  getMailConfig, saveMailConfig, clearMailConfig, sendTestEmail, runAlertDigest, notifyHandoverCompleted, sendMail,
+  getMailConfig, saveMailConfig, clearMailConfig, sendTestEmail, runAlertDigest, runScheduledDigest, notifyHandoverCompleted, sendMail,
   getEmailTemplates, saveEmailTemplates, sendOnboardingWelcomeEmail, sendPortalAccessEmail, sendHrRequestNotice,
   sendOwnerTransferEmail,
   DEFAULT_NOTIFY, TEMPLATE_KEYS, PLACEHOLDERS,
