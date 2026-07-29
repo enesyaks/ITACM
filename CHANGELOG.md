@@ -4,6 +4,13 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.2.21] — 2026-07-30
+
+### Changed
+- **Removed the fleet-value strip from the dashboard** (Fleet Purchase Value /
+  Current Book Value / Depreciated). Per-asset book value on the asset detail and
+  the Asset Depreciation / Book Value report are unchanged.
+
 ## [1.2.20] — 2026-07-29
 
 ### Fixed

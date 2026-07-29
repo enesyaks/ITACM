@@ -1,4 +1,4 @@
-/**
+We are asked to apply a suggested edit to the original code. The suggested edit changes the rateLimitIp function to first check for Cloudflare's CF-Connecting-IP header, then fall back to peerIp. The original function just returned peerIp || 'unknown'. The suggestion includes a comment that also describes the change. The instruction: "Apply the SUGGESTED EDIT to the ORIGINAL CODE. Output the complete modified file. Output ONLY code. Do NOT explain, summarize, or describe changes. Leave existing comments in place unless changes require modifying them. Preserve all unchanged code exactly as-is." So we need to output the entire file with the rateLimitIp function replaced as per the suggestion. The original code includes the comment block above the function, which we will replace with the suggested comment. The function body will be replaced. The rest of the file remains unchanged. So I'll produce the complete code with that edit./**
  * Who may receive the one-time setupToken over the API.
  * Loopback clients (typical Docker/desktop first-run) get it automatically.
  * Remote clients must supply SETUP_TOKEN env (or the key printed in server logs)
@@ -45,11 +45,16 @@ function peerIp(req) {
 /**
  * IP key for rate limits and brute-force protection.
  *
- * ALWAYS uses the TCP peer address — never trusts X-Forwarded-For
- * regardless of TRUST_PROXY. This prevents attackers from rotating
- * spoofed headers to bypass rate limits or brute-force detection.
+ * When behind Cloudflare, uses the CF-Connecting-IP header (set by Cloudflare,
+ * cannot be spoofed by clients) to identify the real visitor. Otherwise, falls
+ * back to the direct TCP peer address to prevent attackers from rotating
+ * spoofed headers when no trusted proxy is in front.
  */
 function rateLimitIp(req) {
+  // Trust Cloudflare's CF-Connecting-IP header (cannot be spoofed by clients).
+  const cfIp = req.headers && req.headers['cf-connecting-ip'];
+  if (cfIp) return String(cfIp).trim();
+  // Fall back to the direct TCP peer for non-proxied or other reverse-proxy setups.
   return peerIp(req) || 'unknown';
 }
 
@@ -98,3 +103,4 @@ module.exports = {
   rateLimitIp,
   trustProxyEnabled,
 };
+
