@@ -4,6 +4,15 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.2.10] — 2026-07-29
+
+### Changed
+- **Employees module localized in all 12 languages.** Wired the directory list
+  (header, search, columns, filter chips, empty states, action titles), the
+  person-detail modal (assigned assets/software/lines/contracts, handover
+  receipts, documents tab) and the portal-credentials dialog through the i18n
+  layer, filling DE, FR, ES, IT, PT, NL, PL, RU, AR, JA.
+
 ## [1.2.9] — 2026-07-29
 
 ### Changed

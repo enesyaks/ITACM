@@ -35,9 +35,9 @@ Views.employees = async function (el, params = {}) {
   const activeCount = summary ? summary.active : (total - inactive);
 
   const chips = [];
-  selectedStatus.forEach((s) => chips.push({ key: 'status', value: s, label: `Status: ${s}` }));
-  selectedDepts.forEach((d) => chips.push({ key: 'department', value: d, label: `Department: ${d}` }));
-  if (params.search) chips.push({ key: 'search', label: `Search: ${params.search}` });
+  selectedStatus.forEach((s) => chips.push({ key: 'status', value: s, label: `${t('common.status')}: ${s}` }));
+  selectedDepts.forEach((d) => chips.push({ key: 'department', value: d, label: `${t('emp.colDepartment')}: ${d}` }));
+  if (params.search) chips.push({ key: 'search', label: `${t('common.search')}: ${params.search}` });
 
   const setHash = (next) => {
     const p = new URLSearchParams();
@@ -56,7 +56,7 @@ Views.employees = async function (el, params = {}) {
   const empTh = (key, label) => tableSortTh(key, label, { sort: sortKey, order: sortOrder });
 
   el.innerHTML = `
-    ${pageHead('Employee Directory', 'Manage personnel and their assigned IT assets.', `
+    ${pageHead(t('emp.directory'), t('emp.directorySub'), `
       ${canOnboard ? `<button class="btn btn-outline" id="emp-onboard"><span class="ms">person_add</span> ${esc(t('emp.onboard'))}</button>` : ''}
       ${canCreate ? `<button class="btn btn-primary" id="emp-new"><span class="ms">person_add</span> ${esc(t('common.addNewEmployee'))}</button>` : ''}
     `)}
@@ -84,7 +84,7 @@ Views.employees = async function (el, params = {}) {
 
     <div class="toolbar" id="emp-filters">
       <div class="search-box"><span class="ms">search</span>
-        <input type="search" id="emp-search" placeholder="Search by name, ID, or email…" value="${esc(params.search || '')}"></div>
+        <input type="search" id="emp-search" placeholder="${esc(t('emp.searchPh'))}" value="${esc(params.search || '')}"></div>
       ${multiSelectHtml({
         id: 'status',
         allLabel: t('network.allStatuses'),
@@ -98,21 +98,21 @@ Views.employees = async function (el, params = {}) {
         options: deptCatalog.map((d) => ({ value: d, label: d })),
       })}
     </div>
-    ${chips.length ? `<div class="filter-chips"><strong>Active Filters:</strong>
+    ${chips.length ? `<div class="filter-chips"><strong>${esc(t('emp.activeFilters'))}</strong>
       ${chips.map((c) => `<span class="chip">${esc(c.label)}
         <button type="button" data-clear="${esc(c.key)}" ${c.value != null ? `data-clear-val="${esc(c.value)}"` : ''}><span class="ms">close</span></button></span>`).join('')}
-      <a href="#/employees">Clear All</a></div>` : ''}
+      <a href="#/employees">${esc(t('emp.clearAll'))}</a></div>` : ''}
 
     <div class="card">
       <div class="m-emp-list" id="emp-mlist"></div>
       <div class="table-wrap"><table class="data">
         <thead><tr>
           ${empTh('name', t('emp.colEmployee') || 'Employee')}
-          <th>ID / Sicil No</th>
+          <th>${esc(t('emp.colId'))}</th>
           ${empTh('department', t('emp.colDepartment') || 'Department')}
           ${empTh('assets', t('emp.assignedAssets') || 'Assigned Assets')}
           ${empTh('status', t('common.status') || 'Status')}
-          <th style="text-align:right">Actions</th>
+          <th style="text-align:right">${esc(t('common.actions'))}</th>
         </tr></thead>
         <tbody id="emp-tbody"></tbody>
       </table></div>
@@ -124,9 +124,9 @@ Views.employees = async function (el, params = {}) {
   function renderPage() {
     const slice = items;
     const empty = total === 0
-      ? '<tr><td colspan="6" class="table-empty">No employees found.</td></tr>'
+      ? `<tr><td colspan="6" class="table-empty">${esc(t('emp.noneFound'))}</td></tr>`
       : slice.map((x) => `
-        <tr class="emp-row" data-open="${esc(x.id)}" style="cursor:pointer" title="View assigned assets">
+        <tr class="emp-row" data-open="${esc(x.id)}" style="cursor:pointer" title="${esc(t('emp.viewAssignedTitle'))}">
           <td><div style="display:flex;align-items:center;gap:12px">
             <span class="avatar">${esc(initials(x.fullName))}</span>
             <div><div class="cell-title">${esc(x.fullName)}</div><div class="cell-sub">${esc(x.email)}</div></div>
@@ -145,7 +145,7 @@ Views.employees = async function (el, params = {}) {
     const mlist = $('#emp-mlist', el);
     if (mlist) {
       mlist.innerHTML = total === 0
-        ? `<div class="table-empty" style="padding:24px">No employees found.</div>`
+        ? `<div class="table-empty" style="padding:24px">${esc(t('emp.noneFound'))}</div>`
         : slice.map((x) => `
           <div class="m-emp-card" data-open="${esc(x.id)}">
             <div class="m-emp-top">
@@ -292,10 +292,10 @@ function reportPortalGrantResult(r) {
         ? (t('emp.grantEmailFailed') || 'Email could not be sent.')
         : (t('emp.grantSmtpOff') || 'SMTP is not configured.'));
     showPortalCredentials({ why, email, password: r.tempPassword });
-    toast(t('emp.grantEmailFailed') || 'Portal access created — email not sent', 'warning');
+    toast(t('emp.portalNoEmail'), 'warning');
     return true;
   }
-  toast(r.emailError || t('emp.grantEmailFailed') || 'Portal access created — email not sent', 'warning');
+  toast(r.emailError || t('emp.portalNoEmail'), 'warning');
 }
 
 /**
@@ -304,31 +304,29 @@ function reportPortalGrantResult(r) {
  * dialog but is not creating a Portal login. Omitted, the portal wording stands.
  */
 function showPortalCredentials({ why, email, password, title }) {
-  const tr = (typeof window.i18nLang === 'function' && window.i18nLang() === 'tr');
-  const L = (en, trText) => (tr ? trText : en);
   openModal({
-    title: title || L('Portal access created', 'Portal erişimi oluşturuldu'),
+    title: title || t('emp.portalCreated'),
     stack: true,
     body: `
       ${why ? `<div class="banner banner-amber" style="margin-bottom:14px"><span class="ms">warning</span> ${esc(why)}</div>` : ''}
-      <p class="cell-sub" style="margin:0 0 10px">${esc(t('emp.grantTemp') || L('Share these credentials securely — they are shown only once:', 'Bu bilgileri güvenli şekilde paylaşın — yalnızca bir kez gösterilir:'))}</p>
+      <p class="cell-sub" style="margin:0 0 10px">${esc(t('emp.credShareOnce'))}</p>
       <div class="table-wrap" style="border:1px solid var(--outline-variant);border-radius:var(--radius-lg)">
         <table class="data"><tbody>
-          <tr><td class="cell-sub" style="width:120px">${esc(L('Email', 'E-posta'))}</td>
+          <tr><td class="cell-sub" style="width:120px">${esc(t('emp.emailLabel'))}</td>
               <td class="mono" style="user-select:all">${esc(email)}</td></tr>
-          <tr><td class="cell-sub">${esc(L('Temporary password', 'Geçici şifre'))}</td>
+          <tr><td class="cell-sub">${esc(t('emp.tempPassword'))}</td>
               <td class="mono" style="user-select:all">${esc(password)}</td></tr>
         </tbody></table>
       </div>`,
     foot: `
-      <button class="btn btn-outline" id="pc-copy"><span class="ms">content_copy</span> ${esc(L('Copy password', 'Şifreyi kopyala'))}</button>
-      <button class="btn btn-primary" data-close>${esc(L('OK', 'Tamam'))}</button>`,
+      <button class="btn btn-outline" id="pc-copy"><span class="ms">content_copy</span> ${esc(t('emp.copyPassword'))}</button>
+      <button class="btn btn-primary" data-close>${esc(t('common.ok'))}</button>`,
     onMount(overlay) {
       const btn = $('#pc-copy', overlay);
       if (btn) btn.addEventListener('click', async () => {
         try {
           await navigator.clipboard.writeText(password);
-          toast(L('Password copied', 'Şifre kopyalandı'), 'success');
+          toast(t('emp.passwordCopied'), 'success');
         } catch { /* clipboard blocked — user can select the value manually */ }
       });
     },
@@ -457,7 +455,7 @@ async function showEmployeeDetail(emp) {
               <td class="cell-sub">${esc(a.category)}</td>
               ${canReturnAsset ? `<td class="actions">
                 <button class="btn btn-outline btn-sm" data-return-asset="${esc(a.id)}">
-                  <span class="ms">undo</span> Return</button></td>` : ''}
+                  <span class="ms">undo</span> ${esc(t('common.return'))}</button></td>` : ''}
             </tr>`).join('')}
           </tbody>
         </table>
@@ -532,7 +530,7 @@ async function showEmployeeDetail(emp) {
       </div>
       <div id="tab-overview">
       ${!canViewInventory ? `
-        <div class="cell-sub" style="margin-bottom:12px">Inventory is hidden — grant <strong>employee:view_inventory</strong> to see devices, software and lines.</div>
+        <div class="cell-sub" style="margin-bottom:12px">${esc(t("emp.inventoryHidden"))}</div>
       ` : `
       <h3 style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--on-surface-variant);margin:0 0 8px">
         ${esc(t('emp.assignedAssets'))} (${assets.length})</h3>
@@ -555,8 +553,8 @@ async function showEmployeeDetail(emp) {
         <div class="history-item" style="justify-content:space-between">
           <span><span class="ms" style="color:var(--on-surface-variant);margin-right:8px">vpn_key</span>
             <strong>${esc(s.softwareName)}</strong></span>
-          <span class="cell-sub">${fmtDate(s.assignedAt)} • by ${esc(s.assignedByName || '—')}</span>
-          ${canAssignSoftware ? `<button class="btn btn-outline btn-sm" data-revoke-sw="${esc(s.id)}">Revoke</button>` : ''}
+          <span class="cell-sub">${fmtDate(s.assignedAt)} • ${t('common.by')} ${esc(s.assignedByName || '—')}</span>
+          ${canAssignSoftware ? `<button class="btn btn-outline btn-sm" data-revoke-sw="${esc(s.id)}">${esc(t('common.revoke'))}</button>` : ''}
         </div>`).join('')}
       </div>`}
 
@@ -592,12 +590,12 @@ async function showEmployeeDetail(emp) {
       ${canViewHandover ? `
       <h3 style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--on-surface-variant);margin:0 0 8px">
         ${esc(t('emp.handoverReceipts'))} (${receipts.length})</h3>
-      ${receipts.length === 0 ? '<div class="cell-sub">No handover receipts yet.</div>' :
+      ${receipts.length === 0 ? `<div class="cell-sub">${esc(t('emp.noReceipts'))}</div>` :
         receipts.map((h) => `
         <div class="history-item" style="justify-content:space-between">
           <span class="when">${fmtDateTime(h.transactionDate)}</span>
-          <span>${(h.items || []).length} item(s) • <span class="cell-sub">${esc(h.documentType)}</span></span>
-          ${canReprintForm ? `<button class="btn btn-outline btn-sm" data-reprint="${esc(h.id)}"><span class="ms">print</span> Reprint Form</button>` : ''}
+          <span>${(t('emp.itemsDot')||'{n} item(s)').replace('{n}', (h.items || []).length)} • <span class="cell-sub">${esc(h.documentType)}</span></span>
+          ${canReprintForm ? `<button class="btn btn-outline btn-sm" data-reprint="${esc(h.id)}"><span class="ms">print</span> ${esc(t('emp.reprintForm'))}</button>` : ''}
         </div>`).join('')}
       ` : ''}
 
@@ -616,7 +614,7 @@ async function showEmployeeDetail(emp) {
                 ? `<span class="pill ${ev.type === 'line_unassigned' ? 'pill-rose' : 'pill-blue'}"><span class="ms ms-sm">sim_card</span> ${esc(ev.type === 'line_unassigned' ? t('emp.lineReturned') : t('emp.lineAssigned'))}</span>`
                 : empDeviceHistoryBadge(ev.type)}</span>
             <span class="mono">${esc(ev.label)}</span>
-            <span class="cell-sub">by ${esc(ev.by || '—')}</span>
+            <span class="cell-sub">${t('common.by')} ${esc(ev.by || '—')}</span>
             ${ev.notes ? `<span class="cell-sub" style="flex-basis:100%;padding-left:2px">↳ ${esc(ev.notes)}</span>` : ''}
           </div>`).join('') + '</div>'}
       </div>` : ''}
@@ -624,22 +622,22 @@ async function showEmployeeDetail(emp) {
       ${canSeeDocsTab ? `
       <div id="tab-documents" class="hidden">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-          <div class="cell-sub">Handover forms are auto-archived here. Upload signed/scanned copies (PDF or image).</div>
-          ${canUploadDocs ? '<button class="btn btn-primary btn-sm" id="doc-upload-btn"><span class="ms">upload_file</span> Upload scan</button>' : ''}
+          <div class="cell-sub">${esc(t("emp.docsHint"))}</div>
+          ${canUploadDocs ? `<button class="btn btn-primary btn-sm" id="doc-upload-btn"><span class="ms">upload_file</span> ${esc(t('emp.uploadScan'))}</button>` : ''}
         </div>
         <input type="file" id="doc-file" accept="application/pdf,image/png,image/jpeg,image/webp,.pdf,.png,.jpg,.jpeg,.webp" class="hidden">
         ${!canReadDocs
-          ? '<div class="table-empty">No permission to view zimmet documents (needs <strong>handover_document:read</strong>).</div>'
+          ? `<div class="table-empty">${esc(t('emp.docsNoPerm'))}</div>`
           : documents.length === 0
-            ? '<div class="table-empty">No documents yet. Execute a handover or upload a signed scan.</div>'
+            ? `<div class="table-empty">${esc(t('emp.noDocs'))}</div>`
             : `
         <div class="table-wrap" style="border:1px solid var(--outline-variant);border-radius:var(--radius-lg)"><table class="data">
-          <thead><tr><th>Document</th><th>Type</th><th>Size</th><th>Added</th><th style="text-align:right"></th></tr></thead>
+          <thead><tr><th>${esc(t('emp.docColName'))}</th><th>${esc(t('emp.docColType'))}</th><th>${esc(t('emp.docColSize'))}</th><th>${esc(t('emp.docColAdded'))}</th><th style="text-align:right"></th></tr></thead>
           <tbody>
             ${documents.map((d) => `
             <tr>
               <td>${docFileLabel(d, { canDownload: canDownloadDocs, viewAttr: 'data-doc-view' })}</td>
-              <td>${d.kind === 'scan' ? '<span class="pill pill-emerald">Signed scan</span>' : '<span class="pill pill-indigo">Generated</span>'}</td>
+              <td>${d.kind === 'scan' ? `<span class="pill pill-emerald">${esc(t('emp.signedScan'))}</span>` : `<span class="pill pill-indigo">${esc(t('emp.generated'))}</span>`}</td>
               <td class="cell-sub">${fmtKB(d.byteSize || 0)}</td>
               <td class="cell-sub">${fmtDateTime(d.createdAt)}${d.uploadedByName ? ' • ' + esc(d.uploadedByName) : ''}</td>
               <td class="actions">
@@ -651,7 +649,7 @@ async function showEmployeeDetail(emp) {
       </div>` : ''}
 `,
     foot: `
-      <button class="btn btn-outline" data-close>Close</button>
+      <button class="btn btn-outline" data-close>${esc(t('common.close'))}</button>
       ${canEdit && emp.status === 'Active' ? `
         ${empOnboardWindowOpen(emp) ? `<button class="btn btn-outline" id="emp-onboard-one"><span class="ms">event_available</span> ${esc(t('emp.onboard'))}</button>` : ''}
         <button class="btn btn-outline" id="emp-offboard"><span class="ms">person_off</span> ${esc(t('emp.offboard'))}</button>` : ''}
@@ -1032,7 +1030,7 @@ async function openOffboardWizard(emp) {
         </div>
         <div class="table-wrap" style="border:1px solid var(--outline-variant);border-radius:var(--radius-lg);margin-bottom:14px">
           <table class="data">
-            <thead><tr><th>Item</th><th>Action</th><th>${esc(t('emp.offboardColDetails'))}</th></tr></thead>
+            <thead><tr><th>${esc(t('emp.offboardColItem'))}</th><th>${esc(t('emp.offboardColAction'))}</th><th>${esc(t('emp.offboardColDetails'))}</th></tr></thead>
             <tbody>${rows}</tbody>
           </table>
         </div>
@@ -1119,7 +1117,7 @@ async function openOffboardWizard(emp) {
       </div>
       <div id="ob-error" class="form-error hidden" style="margin-top:10px"></div>`,
     foot: `
-      <button class="btn btn-outline" data-close>Cancel</button>
+      <button class="btn btn-outline" data-close>${esc(t('common.cancel'))}</button>
       <button class="btn btn-primary" id="ob-submit"><span class="ms">person_off</span> ${esc(t('emp.offboardSubmit'))}</button>`,
     onMount(overlay) {
       const pickers = new Map();
