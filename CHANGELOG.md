@@ -4,6 +4,19 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.2.18] — 2026-07-29
+
+### Added
+- **Custom report builder: filter Hardware Assets by assignment + employee.** A
+  new **Assignment** filter (All / Assigned / Unassigned) and a multi-select
+  **Assigned to (employees)** filter let you build a custom report scoped to one
+  or more specific holders.
+
+### Changed
+- **Custom report builder localized in all 12 languages** — data-source cards,
+  step labels, filter labels / options, column chips, Generate/preview text and
+  the generated custom-report title/columns now go through the i18n layer.
+
 ## [1.2.17] — 2026-07-29
 
 ### Changed

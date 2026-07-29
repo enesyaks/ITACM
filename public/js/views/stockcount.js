@@ -96,35 +96,35 @@ Views.reports = async function (el) {
 
     <div id="rep-panel-custom" class="rep-panel hidden">
       ${customSourceKeys.length === 0
-        ? `<div class="card card-pad"><p class="cell-sub">No data sources available — enable read on asset, employee, license, etc.</p></div>`
+        ? `<div class="card card-pad"><p class="cell-sub">${esc(t('crb.noSources'))}</p></div>`
         : `<div class="rep-builder">
           <div class="rep-builder-step">
-            <div class="rep-builder-step-label"><span>1</span> Choose data source</div>
+            <div class="rep-builder-step-label"><span>1</span> ${esc(t('crb.chooseSource'))}</div>
             <div class="rep-source-grid" id="crb-sources">
               ${customSourceKeys.map((k, i) => `
                 <button type="button" class="rep-source-card${i === 0 ? ' on' : ''}" data-source="${esc(k)}">
-                  <strong>${esc(CUSTOM_SOURCES[k].label)}</strong>
-                  <span>${CUSTOM_SOURCES[k].columns.length} columns</span>
+                  <strong>${esc(t('crb.src.' + k) || CUSTOM_SOURCES[k].label)}</strong>
+                  <span>${esc((t('crb.nColumns') || '{n} columns').replace('{n}', CUSTOM_SOURCES[k].columns.length))}</span>
                 </button>`).join('')}
             </div>
             <input type="hidden" id="crb-source" value="${esc(customSourceKeys[0] || '')}">
           </div>
           <div class="rep-builder-step">
-            <div class="rep-builder-step-label"><span>2</span> Filters <em>optional</em></div>
+            <div class="rep-builder-step-label"><span>2</span> ${esc(t('crb.filters'))} <em>${esc(t('crb.optional'))}</em></div>
             <div id="crb-filters" class="rep-builder-filters"></div>
           </div>
           <div class="rep-builder-step">
-            <div class="rep-builder-step-label"><span>3</span> Columns
-              <button type="button" class="btn btn-outline btn-sm" id="crb-all">All</button>
-              <button type="button" class="btn btn-outline btn-sm" id="crb-none">None</button>
+            <div class="rep-builder-step-label"><span>3</span> ${esc(t('crb.columns'))}
+              <button type="button" class="btn btn-outline btn-sm" id="crb-all">${esc(t('rep.filterAll'))}</button>
+              <button type="button" class="btn btn-outline btn-sm" id="crb-none">${esc(t('crb.none'))}</button>
             </div>
             <div id="crb-cols" class="rep-builder-cols"></div>
           </div>
           <div class="rep-builder-actions">
             <button id="crb-generate" class="btn btn-primary">
-              <span class="ms">table_view</span> Generate report
+              <span class="ms">table_view</span> ${esc(t('crb.generate'))}
             </button>
-            <span class="cell-sub">Preview up to 100 rows · CSV export includes everything</span>
+            <span class="cell-sub">${esc(t('crb.previewNote'))}</span>
           </div>
         </div>`}
     </div>
@@ -205,27 +205,48 @@ Views.reports = async function (el) {
     if (!def) return;
     el.querySelectorAll('.rep-source-card').forEach((b) =>
       b.classList.toggle('on', b.dataset.source === srcSel.value));
+    const colLabel = (k, fallback) => t('crb.col.' + k) || fallback;
+    const filtLabel = (f) => t('crb.filt.' + f.key) || f.label;
+    // Localize a select-option label: '' → All, known specials → keys, else raw value.
+    const optLabel = (o) => {
+      if (typeof o === 'object') {
+        const map = { 'All': 'rep.filterAll', 'Assigned': 'crb.assigned', 'Unassigned': 'crb.unassigned',
+          'Lifecycle: all': 'crb.opt.lifecycleAll', 'Past EOL (replace)': 'crb.opt.pastEol', 'Within lifecycle': 'crb.opt.withinLifecycle' };
+        return map[o.label] ? t(map[o.label]) : o.label;
+      }
+      return o === '' ? t('rep.filterAll') : o;
+    };
     $('#crb-cols', el).innerHTML = def.columns.map(([k, label]) => `
       <label class="rep-col-chip">
         <input type="checkbox" value="${esc(k)}" checked>
-        <span>${esc(label)}</span>
+        <span>${esc(colLabel(k, label))}</span>
       </label>`).join('');
     $('#crb-filters', el).innerHTML = def.filters.length
       ? def.filters.map((f) => {
+        if (f.type === 'employeeMulti') {
+          const emps = [...new Map(assets.filter((a) => a.currentEmployee)
+            .map((a) => [String(a.currentEmployee.id), a.currentEmployee.fullName])).entries()]
+            .sort((a, b) => a[1].localeCompare(b[1]));
+          return `<div class="form-field" style="grid-column:1/-1"><label>${esc(t('crb.assignedTo'))}</label>
+            <div class="rep-emp-multi" data-filter-group="${esc(f.key)}" style="display:flex;flex-wrap:wrap;gap:6px;max-height:120px;overflow:auto;border:1px solid var(--outline-variant);border-radius:10px;padding:8px">
+              ${emps.length
+                ? emps.map(([id, name]) => `<label class="rep-col-chip"><input type="checkbox" value="${esc(id)}"><span>${esc(name)}</span></label>`).join('')
+                : `<span class="cell-sub">${esc(t('crb.noAssignedEmp'))}</span>`}
+            </div></div>`;
+        }
         if (f.type === 'select') {
-          return `<div class="form-field"><label>${esc(f.label)}</label>
+          return `<div class="form-field"><label>${esc(filtLabel(f))}</label>
             <select data-filter="${esc(f.key)}">
               ${f.options.map((o) => {
                 const v = typeof o === 'object' ? o.value : o;
-                const l = typeof o === 'object' ? o.label : (o === '' ? 'All' : o);
-                return `<option value="${esc(v)}">${esc(l)}</option>`;
+                return `<option value="${esc(v)}">${esc(optLabel(o))}</option>`;
               }).join('')}
             </select></div>`;
         }
-        return `<div class="form-field"><label>${esc(f.label)}</label>
-          <input type="${esc(f.type)}" data-filter="${esc(f.key)}" placeholder="${esc(f.label)}"></div>`;
+        return `<div class="form-field"><label>${esc(filtLabel(f))}</label>
+          <input type="${esc(f.type)}" data-filter="${esc(f.key)}" placeholder="${esc(filtLabel(f))}"></div>`;
       }).join('')
-      : '<div class="cell-sub">No filters for this source — all rows will be included.</div>';
+      : `<div class="cell-sub">${esc(t('crb.noFilters'))}</div>`;
   }
 
   $('#rep-range', el).addEventListener('change', (e) => {
@@ -255,24 +276,35 @@ Views.reports = async function (el) {
     const srcSel = $('#crb-source', el);
     const def = CUSTOM_SOURCES[srcSel.value];
     const slot = $('#report-result', el);
-    slot.innerHTML = '<div class="table-empty">Generating report…</div>';
+    const srcLabel = t('crb.src.' + srcSel.value) || def.label;
+    const filtLabel = (f) => t('crb.filt.' + f.key) || f.label;
+    slot.innerHTML = `<div class="table-empty">${esc(t('crb.generating'))}</div>`;
     try {
       let rows = await def.fetch();
       const activeFilters = [];
+      // Single-value filters (select / date).
       el.querySelectorAll('#crb-filters [data-filter]').forEach((inp) => {
         const v = inp.value;
         if (v === '' || v == null) return;
         const f = def.filters.find((x) => x.key === inp.dataset.filter);
         rows = rows.filter((r) => f.apply(r, v));
-        activeFilters.push(`${f.label}: ${v}`);
+        activeFilters.push(`${filtLabel(f)}: ${v}`);
+      });
+      // Multi-select filters (employee etc.): apply an array of checked values.
+      el.querySelectorAll('#crb-filters [data-filter-group]').forEach((group) => {
+        const ids = [...group.querySelectorAll('input:checked')].map((c) => c.value);
+        if (!ids.length) return;
+        const f = def.filters.find((x) => x.key === group.dataset.filterGroup);
+        rows = rows.filter((r) => f.apply(r, ids));
+        activeFilters.push(`${t('crb.assignedTo')}: ${(t('crb.nSelected') || '{n} selected').replace('{n}', ids.length)}`);
       });
       const selCols = def.columns.filter(([k]) =>
         el.querySelector(`#crb-cols input[value="${k}"]`)?.checked);
-      if (selCols.length === 0) throw new Error('Select at least one column');
-      showReportResult(slot, `Custom — ${def.label}`, {
-        cols: selCols.map(([, label]) => label),
+      if (selCols.length === 0) throw new Error(t('crb.selectCol'));
+      showReportResult(slot, `${t('crb.custom')} — ${srcLabel}`, {
+        cols: selCols.map(([k, label]) => t('crb.col.' + k) || label),
         rows: rows.map((r) => selCols.map(([, , get]) => get(r))),
-        summary: `${rows.length} rows • ${def.label}`
+        summary: `${rows.length} ${t('common.result') || 'rows'} • ${srcLabel}`
           + (activeFilters.length ? ` • ${activeFilters.join('; ')}` : ''),
       });
     } catch (err) {
@@ -285,9 +317,9 @@ Views.reports = async function (el) {
     const def = REPORT_DEFS.find((r) => r.id === card.dataset.report);
     if (!def) return;
     const slot = $('#report-result', el);
-    slot.innerHTML = '<div class="table-empty">Generating report…</div>';
+    slot.innerHTML = `<div class="table-empty">${esc(t('crb.generating'))}</div>`;
     try {
-      showReportResult(slot, def.title, await buildReport(def.id));
+      showReportResult(slot, t('rep.' + def.id + '.t') || def.title, await buildReport(def.id));
     } catch (err) {
       slot.innerHTML = `<div class="card card-pad"><div class="form-error">${esc(err.message)}</div></div>`;
     }
