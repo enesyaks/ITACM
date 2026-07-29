@@ -4,6 +4,14 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.2.8] — 2026-07-29
+
+### Changed
+- **Dashboard now ships real translations for all 12 languages** (not just EN/TR
+  with English fallback). Every `dash.*` string is filled for DE, FR, ES, IT, PT,
+  NL, PL, RU, AR, JA. Start of expanding the whole UI to genuine 12-language
+  coverage; RU/AR/JA are machine-assisted and benefit from a native review.
+
 ## [1.2.7] — 2026-07-29
 
 ### Fixed
