@@ -125,6 +125,8 @@ Views.integrations = async function (el) {
           <div class="form-field"><label>From</label><input id="int-smtp-from" value="${esc(smtp.from || '')}" placeholder="itacm@company.com"${inputDis}></div>
           <div class="form-field"><label>Recipients (comma-separated)</label>
             <input id="int-notify-to" value="${esc((notify.to || []).join(', '))}" placeholder="ops@company.com"${inputDis}></div>
+          <div class="form-field full"><label>${esc(t('int.appUrl.label'))} <span class="ob-hint">${esc(t('int.appUrl.hint'))}</span></label>
+            <input id="int-notify-appurl" type="url" value="${esc(notify.appUrl || '')}" placeholder="https://itacm.company.com"${inputDis}></div>
           <div class="form-field full" style="display:flex;flex-wrap:wrap;gap:12px;align-items:center">
             <label><input type="checkbox" id="int-notify-on" ${notify.enabled ? 'checked' : ''}${chkDis}> Enable digests</label>
             <label title="Only for servers that require implicit TLS on 465. Leave off for iCloud (587)."><input type="checkbox" id="int-smtp-secure" ${smtp.secure ? 'checked' : ''}${chkDis}> TLS (port 465)</label>
@@ -421,6 +423,7 @@ GET /api/integrations/licenses/:id/sam
             schedule: $('#int-notify-schedule', el).value,
             hour: Number($('#int-notify-hour', el).value),
             weekday: Number($('#int-notify-weekday', el).value),
+            appUrl: $('#int-notify-appurl', el).value.trim(),
           },
         },
       });
