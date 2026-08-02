@@ -5534,3 +5534,13 @@ body.ai-open .ai-panel { opacity: 1; visibility: visible; transform: none; }
 .ai-sql summary::-webkit-details-marker { display: none; }
 .ai-sql summary:hover { color: var(--on-surface); }
 .ai-sql pre { margin: 6px 0 0; padding: 10px 12px; background: var(--surface-container); border: 1px solid var(--outline-variant); border-radius: var(--radius-lg); font-family: var(--mono); font-size: 0.78rem; overflow-x: auto; white-space: pre-wrap; word-break: break-word; }
+
+/* ---- full-page error / 404 / 403 states (rendered into #view; nav stays) ---- */
+.error-state { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; min-height: 62vh; padding: 40px 24px; animation: error-in .25s ease-out; }
+.error-state-badge { width: 84px; height: 84px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-container); color: var(--on-surface-variant); margin-bottom: 20px; }
+.error-state-badge .ms { font-size: 42px; line-height: 1; }
+.error-state-code { font-size: 54px; font-weight: 800; line-height: 1; letter-spacing: -.02em; color: var(--primary); margin-bottom: 10px; }
+.error-state-title { font-size: 20px; font-weight: 700; color: var(--on-surface); margin: 0 0 8px; }
+.error-state-msg { font-size: 14px; color: var(--on-surface-variant); max-width: 440px; line-height: 1.55; margin: 0 0 24px; word-break: break-word; }
+.error-state-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+@keyframes error-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }

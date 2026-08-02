@@ -154,6 +154,32 @@ function requirePermission(resource, action, getContext) {
 }
 
 /**
+ * Gate a LIST route on "may reach this resource at all", ignoring list
+ * constraints (department/location/category). The handler must then filter rows
+ * by scope (getConstraintScope). Using requirePermission here would evaluate the
+ * constraint against an empty context and fail closed, locking scoped users out
+ * of the whole list. Detail/write routes must keep requirePermission with a real
+ * context — this is only safe when the handler enforces the row scope itself.
+ */
+function requireCapability(resource, action) {
+  return async (req, res, next) => {
+    try {
+      if (!req.user) return next(HttpError.unauthorized());
+      const { permissionService } = require('../services');
+      const ok = await permissionService.hasResourceAction(req.user, resource, action);
+      if (!ok) {
+        return next(HttpError.forbidden(
+          `Access denied: insufficient permissions for ${resource}:${action}`
+        ));
+      }
+      next();
+    } catch (err) {
+      next(err instanceof HttpError ? err : HttpError.forbidden('Permission check failed'));
+    }
+  };
+}
+
+/**
  * En az bir (resource, action) çifti yeterli.
  * Kullanım: requireAnyPermission([['asset','unassign'],['asset','update']], getContext)
  */
@@ -227,6 +253,7 @@ module.exports = {
   authenticate,
   requireRole,
   requirePermission,
+  requireCapability,
   requireAnyPermission,
   requireAllPermissions,
   requireScope,
