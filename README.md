@@ -234,6 +234,20 @@ Prefer to configure by hand? Copy `.env.example` to `.env`, set at least `JWT_SE
 
 The compose file works unchanged on any host with Docker. Put a reverse proxy (Caddy / Nginx / Traefik) with TLS in front of port 8000 and set `CORS_ORIGINS` to your frontend's origin if it differs.
 
+### One-command HTTPS (built-in Caddy profile)
+
+The simplest path — no certbot, nginx, or manual certificates. The compose file ships an optional **Caddy** service (behind the `tls` profile) that fetches and renews a Let's Encrypt certificate automatically.
+
+1. Point a DNS **A/AAAA record** for your domain at the host.
+2. In `.env` set **`APP_DOMAIN=itacm.company.com`**, **`TRUST_PROXY=1`**, and **`APP_URL=https://itacm.company.com`** (or set the App URL in-app under **Integrations → Notifications**, so email links use the real domain).
+3. Start with the profile:
+
+```bash
+docker compose --profile tls up -d
+```
+
+Caddy listens on 80/443, redirects HTTP→HTTPS, proxies to the app, and renews the certificate on its own. With the proxy in front you don't need to expose the app port publicly — set `API_PORT=127.0.0.1:8000` in `.env` to keep it host-local. Want certificate-expiry emails? Add `{ email you@example.com }` to the top of the `Caddyfile`.
+
 ### Behind a reverse proxy / Cloudflare
 
 Rate-limiting and brute-force protection key on the client IP, so when a proxy sits in front you **must** tell the app to trust it — otherwise every visitor is bucketed under the proxy's IP and legitimate users get throttled as one:

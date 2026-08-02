@@ -4,6 +4,16 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.3] — 2026-08-03
+
+### Added
+- **One-command automatic HTTPS (Caddy `tls` compose profile).** `docker compose
+  --profile tls up -d` runs a bundled Caddy reverse proxy that fetches and renews
+  a Let's Encrypt certificate for `APP_DOMAIN` on its own — HTTP→HTTPS redirect
+  included, no certbot / nginx / manual certificates. Off by default, so the
+  standard stack is unchanged. New `Caddyfile`; documented in the README and
+  `.env.example` (`APP_DOMAIN`, plus the `TRUST_PROXY=1` / `APP_URL` pairing).
+
 ## [1.3.2] — 2026-08-03
 
 ### Added

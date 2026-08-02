@@ -1,0 +1,17 @@
+# Automatic-HTTPS reverse proxy for ITACM (optional "tls" compose profile).
+#
+# Caddy obtains and renews a Let's Encrypt certificate for $APP_DOMAIN on its
+# own, redirects HTTP→HTTPS, and proxies to the api container over the internal
+# Docker network. No certbot, no nginx, no manual renewal.
+#
+# Enable with:   docker compose --profile tls up -d
+# Requires:      APP_DOMAIN set in .env + a DNS A/AAAA record pointing at this host,
+#                and TRUST_PROXY=1 so the app reads the real client IP behind Caddy.
+#
+# Want certificate-expiry notices? Add a global block above the site:
+#   { email you@example.com }
+
+{$APP_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy api:8000
+}
