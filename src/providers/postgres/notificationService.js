@@ -16,9 +16,25 @@ const {
 } = require('../../utils/emailTemplates');
 const { shouldRunDigest, ymd } = require('../../utils/digestSchedule');
 
-/** Where links in templated mail point. */
-function appBaseUrl() {
-  return process.env.APP_URL || process.env.PUBLIC_URL || 'http://localhost:8000';
+/**
+ * Where links in templated mail point. Prefers the admin-set public URL
+ * (Integrations → Notifications), then the APP_URL / PUBLIC_URL env fallback,
+ * then localhost. `notify` is the loaded notification config (carries appUrl).
+ */
+function appBaseUrl(notify) {
+  const stored = notify && typeof notify.appUrl === 'string' ? notify.appUrl.trim() : '';
+  return stored || process.env.APP_URL || process.env.PUBLIC_URL || 'http://localhost:8000';
+}
+
+/** Validate + normalize an admin-entered public app URL. Empty = use fallback. */
+function cleanAppUrl(raw) {
+  const s = String(raw == null ? '' : raw).trim().slice(0, 200);
+  if (!s) return '';
+  if (!/^https?:\/\//i.test(s)) throw HttpError.badRequest('App URL must start with http:// or https://');
+  let u;
+  try { u = new URL(s); } catch { throw HttpError.badRequest('App URL is not a valid URL'); }
+  const path = u.pathname && u.pathname !== '/' ? u.pathname.replace(/\/+$/, '') : '';
+  return u.origin + path;
 }
 
 /** Minimal document shell around a rendered template body. */
@@ -45,6 +61,9 @@ const DEFAULT_NOTIFY = {
   hour: 8,
   weekday: 1,
   lastRunDate: null,
+  // Public URL this instance is reached at, used for links in outbound mail.
+  // Empty = fall back to APP_URL / PUBLIC_URL env, then localhost.
+  appUrl: '',
 };
 
 const SCHEDULE_MODES = ['off', 'daily', 'weekly'];
@@ -173,6 +192,7 @@ async function saveMailConfig({ smtp, notify }) {
       hour: clampInt(notify.hour, 0, 23, 8),
       weekday: clampInt(notify.weekday, 0, 6, 1),
       lastRunDate: prevNotify.lastRunDate || null,
+      appUrl: notify.appUrl !== undefined ? cleanAppUrl(notify.appUrl) : (prevNotify.appUrl || ''),
     }));
     sets.push(`notify_json = $${params.length}::jsonb`);
   }
@@ -363,7 +383,7 @@ async function runAlertDigest() {
     companyName,
     alertCount: String(count),
     alertSummary,
-    appUrl: appBaseUrl(),
+    appUrl: appBaseUrl(notify),
   });
 
   await sendMail({
@@ -411,7 +431,7 @@ async function notifyHandoverCompleted(receipt) {
       ackNote: receipt.ackToken
         ? 'An acknowledgement link was generated for the employee to confirm receipt.'
         : '',
-      appUrl: appBaseUrl(),
+      appUrl: appBaseUrl(notify),
     });
     await sendMail({
       to: notify.to,
@@ -430,13 +450,13 @@ async function notifyHandoverCompleted(receipt) {
  * created ones get a temporary one.
  */
 async function sendOwnerTransferEmail({ to, username, credentials }) {
-  const [{ companyName }, templates] = await Promise.all([getMailConfig(), getEmailTemplates()]);
+  const [{ companyName, notify }, templates] = await Promise.all([getMailConfig(), getEmailTemplates()]);
   const rendered = renderTemplate(templates.owner_transfer, {
     companyName,
     employeeName: username || to,
     employeeEmail: to,
     credentials: credentials || '',
-    appUrl: appBaseUrl(),
+    appUrl: appBaseUrl(notify),
   });
   return sendMail({
     to,

@@ -4,6 +4,18 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.2] — 2026-08-03
+
+### Added
+- **"App URL" setting (Integrations → Notifications).** The public address this
+  instance is reached at, used for links in outbound email (alert digest,
+  handover, owner-transfer). Previously those links came only from the
+  undocumented `APP_URL` / `PUBLIC_URL` env var and defaulted to
+  `http://localhost:8000`, so a deployed instance mailed broken localhost links.
+  It's now set in-app (no `.env` editing), validated and normalized (http/https,
+  trailing slash stripped), localized across 12 languages. The env var remains a
+  fallback and is documented in `.env.example`.
+
 ## [1.3.1] — 2026-08-03
 
 ### Fixed
