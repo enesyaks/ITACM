@@ -30,6 +30,8 @@ function hostLooksDangerous(hostname) {
   const host = String(hostname || '').toLowerCase().replace(/\.$/, '');
   if (!host) return true;
   if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local')) return true;
+  // Docker Desktop / Compose host gateway — only reachable with allowPrivate/allowLocalhost.
+  if (host === 'host.docker.internal') return true;
   if (host === 'metadata.google.internal' || host === 'metadata' || host.endsWith('.internal')) return true;
   if (host === 'kubernetes.default' || host === 'kubernetes.default.svc') return true;
   return false;
@@ -40,10 +42,23 @@ function hostLooksDangerous(hostname) {
  * @returns {Promise<Array<{address:string, family:number}>>} validated addresses
  *          (a single-entry list when `hostname` is already a literal IP).
  */
-async function resolveValidatedAddrs(hostname, { field = 'host', allowPrivate = false } = {}) {
+function isLocalhostName(hostname) {
+  const host = String(hostname || '').toLowerCase().replace(/\.$/, '');
+  return host === 'localhost'
+    || host.endsWith('.localhost')
+    || host.endsWith('.local')
+    || host === 'host.docker.internal';
+}
+
+async function resolveValidatedAddrs(hostname, {
+  field = 'host',
+  allowPrivate = false,
+  allowLocalhost = false,
+} = {}) {
   const host = String(hostname || '').trim().toLowerCase().replace(/\.$/, '');
   if (!host) throw HttpError.badRequest(`${field} is required`);
-  if (hostLooksDangerous(host)) {
+  // Local AI (Ollama) may explicitly opt into localhost; other outbound stays blocked.
+  if (hostLooksDangerous(host) && !(allowLocalhost && isLocalhostName(host))) {
     throw HttpError.badRequest(`${field} must not target localhost or internal names`);
   }
   const literal = net.isIP(host);
@@ -79,11 +94,13 @@ async function resolveAndAssertPublicHost(hostname, opts = {}) {
  * Validate http(s) webhook URL and ensure it does not resolve to private nets.
  * @returns {Promise<string>} normalized URL
  */
-async function assertSafeOutboundUrl(raw, { max = 500, field = 'url', allowPrivate = false } = {}) {
+async function assertSafeOutboundUrl(raw, {
+  max = 500, field = 'url', allowPrivate = false, allowLocalhost = false,
+} = {}) {
   const href = sanitizeHttpUrl(raw, { max, field });
   if (!href) throw HttpError.badRequest(`${field} is required`);
   const u = new URL(href);
-  await resolveAndAssertPublicHost(u.hostname, { field, allowPrivate });
+  await resolveAndAssertPublicHost(u.hostname, { field, allowPrivate, allowLocalhost });
   return href;
 }
 
@@ -95,11 +112,13 @@ async function assertSafeOutboundUrl(raw, { max = 500, field = 'url', allowPriva
  * certificate validation are unchanged.
  * @returns {Promise<{ href:string, lookup:Function }>}
  */
-async function assertSafeOutboundUrlPinned(raw, { max = 500, field = 'url', allowPrivate = false } = {}) {
+async function assertSafeOutboundUrlPinned(raw, {
+  max = 500, field = 'url', allowPrivate = false, allowLocalhost = false,
+} = {}) {
   const href = sanitizeHttpUrl(raw, { max, field });
   if (!href) throw HttpError.badRequest(`${field} is required`);
   const u = new URL(href);
-  const addrs = await resolveValidatedAddrs(u.hostname, { field, allowPrivate });
+  const addrs = await resolveValidatedAddrs(u.hostname, { field, allowPrivate, allowLocalhost });
   const lookup = (_hostname, options, cb) => {
     // Ignore the hostname entirely — only ever hand back pre-validated addresses,
     // so a rebind after validation cannot redirect the socket to a private IP.
@@ -116,6 +135,7 @@ function smtpAllowsPrivate() {
 module.exports = {
   isPrivateOrReservedIp,
   hostLooksDangerous,
+  isLocalhostName,
   resolveValidatedAddrs,
   resolveAndAssertPublicHost,
   assertSafeOutboundUrl,

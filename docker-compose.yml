@@ -77,6 +77,16 @@ services:
       # Set TRUST_PROXY=1 only behind a reverse proxy that sanitizes X-Forwarded-For.
       TRUST_PROXY: ${TRUST_PROXY:-0}
       ONBOARDING_VIDEO_URL: ${ONBOARDING_VIDEO_URL:-}
+      # AI assistant (optional — enable in Integrations → AI, or set AI_ENABLED=1)
+      AI_ENABLED: ${AI_ENABLED:-}
+      AI_PROVIDER: ${AI_PROVIDER:-}
+      AI_BASE_URL: ${AI_BASE_URL:-}
+      AI_MODEL: ${AI_MODEL:-}
+      AI_API_KEY: ${AI_API_KEY:-}
+      AI_ALLOW_PRIVATE: ${AI_ALLOW_PRIVATE:-1}
+    extra_hosts:
+      # So the API container can reach Ollama on the Docker host.
+      - "host.docker.internal:host-gateway"
     ports:
       - "${API_PORT:-8000}:8000"
     healthcheck:

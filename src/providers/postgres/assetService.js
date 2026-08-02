@@ -905,6 +905,25 @@ async function listAssets({
   return { items: rows.map((r) => mapAssetRow(r, lifecycles)), total: totalRes.rows[0].n, nextCursor: null };
 }
 
+/**
+ * Asset IDs that have at least one assigned or returned history row
+ * (i.e. were ever zimmet'ed to someone). Scoped to `assetIds` when provided.
+ */
+async function listEverAssignedAssetIds(assetIds) {
+  const ids = (Array.isArray(assetIds) ? assetIds : [])
+    .map((id) => String(id || '').trim())
+    .filter((id) => isUuid(id));
+  if (!ids.length) return [];
+  const { rows } = await query(
+    `SELECT DISTINCT asset_id::text AS asset_id
+     FROM asset_history
+     WHERE action_type IN ('assigned', 'returned')
+       AND asset_id = ANY($1::uuid[])`,
+    [ids]
+  );
+  return rows.map((r) => r.asset_id);
+}
+
 async function getAsset(assetId) {
   if (!isUuid(assetId)) throw HttpError.notFound(`Asset ${assetId} not found`);
   const { rows } = await query(`${ASSET_SELECT} WHERE a.id = $1`, [assetId]);
@@ -952,4 +971,7 @@ async function returnAsset(assetId, { conditionNote } = {}, itUser) {
   });
 }
 
-module.exports = { createAsset, updateAsset, listAssets, getAsset, returnAsset, nextAssetTag };
+module.exports = {
+  createAsset, updateAsset, listAssets, getAsset, returnAsset, nextAssetTag,
+  listEverAssignedAssetIds,
+};
