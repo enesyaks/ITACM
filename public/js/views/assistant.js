@@ -116,10 +116,10 @@
     root.id = 'ai-panel-root';
     root.innerHTML = `
       <button type="button" class="ai-launcher" id="ai-launcher" hidden
-        data-i18n-title="ai.launcherTitle" data-i18n-aria="ai.title" title="Assistant (Cmd+K)" aria-label="Assistant">
+        data-i18n-title="ai.launcherTitle" data-i18n-aria="ai.title" title="Assistant (Cmd+J)" aria-label="Assistant">
         <span class="ai-launcher-mark"><span class="ms">auto_awesome</span></span>
         <span class="ai-launcher-text" data-i18n="ai.title">Assistant</span>
-        <span class="ai-kbd-badge">⌘K</span>
+        <span class="ai-kbd-badge">⌘J</span>
       </button>
       <div class="ai-backdrop" data-ai-close hidden></div>
       <aside class="ai-panel" id="ai-panel" aria-hidden="true" role="dialog"

@@ -7,6 +7,10 @@ project adheres to [Semantic Versioning](https://semver.org/).
 ## [1.3.1] — 2026-08-03
 
 ### Fixed
+- **AI assistant launcher advertised the wrong shortcut.** The floating launcher
+  showed `⌘K`, but `⌘K` is bound to global search, so it never opened the
+  assistant (the working shortcut is `⌘J`). Corrected the badge and tooltip to
+  `⌘J` across all 12 locales; clicking the launcher continues to work.
 - **Department-scoped employee directory was inaccessible.** A user whose
   `employee:read` grant carried a department constraint got a 403 on the whole
   directory — the list gate evaluated the constraint against an empty context and
