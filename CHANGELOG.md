@@ -4,6 +4,43 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.0] — 2026-08-02
+
+### Added
+- **AI assistant (natural-language queries).** A provider-agnostic chat
+  assistant answers questions about the inventory in the selected UI language.
+  Works with a local Ollama model or a cloud API (OpenAI, DeepSeek, Anthropic,
+  Groq, Mistral, Together, OpenRouter, or a custom endpoint), with streaming
+  answers, result tables, CSV export, auto charts, and a collapsible "show SQL"
+  view. **Disabled by default** — an admin enables it under Integrations → AI.
+- **Guarded advanced queries.** For analytical questions the assistant can run a
+  read-only `advanced_query` against a curated `ai.*` view schema — never the
+  base tables. Executed under a low-privilege NOLOGIN role via `SET LOCAL ROLE`
+  in a read-only, statement-timed transaction (always rolled back), behind an
+  app-side single-SELECT validator.
+
+### Security
+- **Per-resource RBAC on `advanced_query`.** Every `ai.*` view maps to an app
+  permission; the caller must hold read on each view a query touches, so the
+  assistant cannot surface data (contracts, costs, lines…) a role is denied
+  elsewhere. Matching is fail-safe (can only withhold, never grant).
+- **`ai.contracts` hardened with `security_barrier`** (migration 044) to block
+  leaky-qual oracles across the Confidential-row filter.
+- **Per-user rate limit on `/api/ai/query`** (default 20/min, `AI_QUERY_RATE_MAX`
+  to override) to contain provider cost and abuse.
+- **SSRF-safe outbound** to AI endpoints (DNS-pinned; private/reserved/metadata
+  addresses blocked) and **encrypted-at-rest, masked** provider API keys.
+
+### Migrations
+- `042_ai_settings.sql`, `043_ai_query_schema.sql`, `044_ai_contracts_security_barrier.sql`
+  run automatically on start.
+
+### Fixed
+- **Handover screen fully localized.** The document-generation panel and other
+  handover UI strings (In Stock Only, Single/Separate document, Confirm & Print,
+  basket labels, condition-note fields, acknowledgement modal, etc.) were
+  hardcoded in English; they now follow the selected language across 12 locales.
+
 ## [1.2.24] — 2026-07-30
 
 ### Added
