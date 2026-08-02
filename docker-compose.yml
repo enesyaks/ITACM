@@ -98,8 +98,39 @@ services:
       retries: 5
       start_period: 30s
 
+  # Optional automatic-HTTPS reverse proxy. OFF by default — enable with:
+  #   docker compose --profile tls up -d
+  # Needs a real domain pointed at this host (DNS A/AAAA) + APP_DOMAIN in .env,
+  # and set TRUST_PROXY=1 so the app reads the real client IP behind Caddy.
+  # Caddy fetches + renews the Let's Encrypt certificate automatically.
+  # (With the proxy in front you no longer need to publish the api port — set
+  #  API_PORT=127.0.0.1:8000 in .env to keep it host-local.)
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    profiles: ["tls"]
+    depends_on:
+      - api
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:-}
+    volumes:
+      - type: bind
+        source: ./Caddyfile
+        target: /etc/caddy/Caddyfile
+        read_only: true
+      - caddy-data:/data
+      - caddy-config:/config
+
 volumes:
   db-data:
     name: itacm_db-data
   app-data:
     name: itacm_app-data
+  caddy-data:
+    name: itacm_caddy-data
+  caddy-config:
+    name: itacm_caddy-config
