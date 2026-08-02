@@ -35,7 +35,7 @@ Views.handover = async function (el) {
   /* ---- static shell: rendered ONCE so search inputs never lose focus ---- */
   el.innerHTML = `
     ${pageHead(t('page.handover.title'), t('page.handover.sub'),
-      '<span class="draft-chip">Draft Mode</span>')}
+      `<span class="draft-chip">${esc(t('handover.draftMode'))}</span>`)}
     <div class="ho-grid">
       <div>
         <div class="card card-pad" style="margin-bottom:20px">
@@ -53,7 +53,7 @@ Views.handover = async function (el) {
             <div class="section-title" style="justify-content:space-between">
               <span style="display:flex;align-items:center;gap:10px"><span class="ms">devices</span>
                 <span id="ho-stock-count">${esc(t('handover.availableHardware'))}</span></span>
-              <span class="stock-chip">In Stock Only</span>
+              <span class="stock-chip">${esc(t('handover.inStockOnly'))}</span>
             </div>
           </div>
           <div style="padding:0 20px 12px">
@@ -87,13 +87,13 @@ Views.handover = async function (el) {
         <div class="card ho-recent" style="margin-top:20px">
           <div class="card-head"><h3>${esc(t('handover.recentReceipts'))}</h3></div>
           <div class="table-wrap"><table class="data">
-            <thead><tr><th>Employee</th><th>Items</th><th>Date</th><th>Type</th><th style="text-align:right"></th></tr></thead>
+            <thead><tr><th>${esc(t('handover.colEmployee'))}</th><th>${esc(t('handover.colItems'))}</th><th>${esc(t('handover.colDate'))}</th><th>${esc(t('handover.colType'))}</th><th style="text-align:right"></th></tr></thead>
             <tbody>
-              ${past.length === 0 ? '<tr><td colspan="5" class="table-empty">No receipts yet.</td></tr>' :
+              ${past.length === 0 ? `<tr><td colspan="5" class="table-empty">${esc(t('handover.noReceipts'))}</td></tr>` :
                 past.map((h) => `
                 <tr><td class="cell-title">${esc(h.employeeName)}</td><td>${(h.items || []).length}</td>
                   <td>${fmtDateTime(h.transactionDate)}</td><td class="cell-sub">${esc(h.documentType)}</td>
-                  <td class="actions"><button class="btn btn-outline btn-sm" data-print="${esc(h.id)}"><span class="ms">print</span> Print</button></td></tr>`).join('')}
+                  <td class="actions"><button class="btn btn-outline btn-sm" data-print="${esc(h.id)}"><span class="ms">print</span> ${esc(t('common.print'))}</button></td></tr>`).join('')}
             </tbody>
           </table></div>
         </div>
@@ -106,32 +106,32 @@ Views.handover = async function (el) {
           <span class="ms ms-lg">shopping_basket</span>
           <div class="grow">
             <h3>${esc(t('handover.basket'))}</h3>
-            <p id="ho-basket-sub">0 items selected</p>
+            <p id="ho-basket-sub">${esc(t('handover.itemsSelected').replace('{n}', '0'))}</p>
           </div>
           <span class="basket-count" id="ho-basket-count">0</span>
         </div>
         <div class="basket-body" id="ho-basket-items"></div>
         <div class="doc-gen">
-          <h4>Document Generation</h4>
+          <h4>${esc(t('handover.docGeneration'))}</h4>
           ${typeof handoverTplSelectHtml === 'function' ? handoverTplSelectHtml(
             (AppConfig.handoverTemplates && AppConfig.handoverTemplates[0] && AppConfig.handoverTemplates[0].id) || 'default'
           ) : ''}
           <label class="doc-option">
             <input type="radio" name="doctype" value="single" checked>
-            <span><strong>Single Unified Document</strong>
-              <span class="cell-sub">Generates one master protocol listing all items.</span></span>
+            <span><strong>${esc(t('handover.docSingle'))}</strong>
+              <span class="cell-sub">${esc(t('handover.docSingleDesc'))}</span></span>
           </label>
           <label class="doc-option">
             <input type="radio" name="doctype" value="separate">
-            <span><strong>Separate Documents</strong>
-              <span class="cell-sub">Generates individual protocols per asset / line.</span></span>
+            <span><strong>${esc(t('handover.docSeparate'))}</strong>
+              <span class="cell-sub">${esc(t('handover.docSeparateDesc'))}</span></span>
           </label>
         </div>
         <div class="basket-foot">
           <button class="btn btn-primary btn-lg btn-block" id="ho-submit" disabled>
-            <span class="ms">print</span> Confirm Handover &amp; Print Form
+            <span class="ms">print</span> ${esc(t('handover.confirmPrint'))}
           </button>
-          <p class="basket-caption">This action will record the transaction and open the print dialog.</p>
+          <p class="basket-caption">${esc(t('handover.confirmCaption'))}</p>
         </div>
         </div>
       </div>
@@ -142,7 +142,7 @@ Views.handover = async function (el) {
 
   function renderEmps() {
     const list = $('#ho-emp-list', el);
-    list.innerHTML = (empList.length === 0 ? '<div class="table-empty">No matching employees.</div>' :
+    list.innerHTML = (empList.length === 0 ? `<div class="table-empty">${esc(t('handover.noMatchingEmployees'))}</div>` :
       empList.map((p) => `
       <div class="emp-option ${state.emp === p.id ? 'selected' : ''}" data-emp="${esc(p.id)}">
         <span class="avatar">${esc(initials(p.fullName))}</span>
@@ -152,7 +152,7 @@ Views.handover = async function (el) {
         </div>
         <span class="emp-radio"></span>
       </div>`).join('')) +
-      (empList.length >= 50 ? `<div class="cell-sub" style="padding:8px 2px">Showing first 50 — type a name to search all employees…</div>` : '');
+      (empList.length >= 50 ? `<div class="cell-sub" style="padding:8px 2px">${esc(t('handover.showingEmps'))}</div>` : '');
     list.querySelectorAll('[data-emp]').forEach((r) => r.addEventListener('click', () => {
       state.emp = r.dataset.emp;
       state.empObj = empList.find((p) => p.id === r.dataset.emp) || state.empObj;
@@ -228,7 +228,7 @@ Views.handover = async function (el) {
     const rows = sorted.slice(0, 200);
     const tbody = $('#ho-stock-body', el);
     tbody.innerHTML = (rows.length === 0
-      ? '<tr><td colspan="4" class="table-empty">No in-stock assets match your search.</td></tr>'
+      ? `<tr><td colspan="4" class="table-empty">${esc(t('handover.noStockMatch'))}</td></tr>`
       : rows.map((x) => `
         <tr class="hw-row" data-hw="${esc(x.id)}">
           <td><input type="checkbox" ${basket.has(x.id) ? 'checked' : ''} ${!canDo ? 'disabled' : ''}></td>
@@ -237,7 +237,7 @@ Views.handover = async function (el) {
           <td class="mono">${esc(x.assetTag)} · ${esc(x.serialNumber)}</td>
           <td style="text-align:right" class="cell-sub">${esc(x.category)}</td>
         </tr>`).join('')) +
-      (stock.length > 200 ? `<tr><td colspan="4" class="cell-sub" style="padding:10px 16px">Showing first 200 of ${stock.length} — refine the search…</td></tr>` : '');
+      (stock.length > 200 ? `<tr><td colspan="4" class="cell-sub" style="padding:10px 16px">${esc(t('handover.showingStock').replace('{n}', stock.length))}</td></tr>` : '');
     tbody.querySelectorAll('[data-hw]').forEach((r) => r.addEventListener('click', () => {
       if (!canDo) return;
       const id = r.dataset.hw;
@@ -303,10 +303,10 @@ Views.handover = async function (el) {
             <div class="cell-sub">${esc(p.title || '—')} • ${esc(p.department || '—')}</div>
             <div class="cell-sub">${esc(p.email)}</div>
           </div>
-          <button class="icon-btn" id="ho-clear-emp" title="Clear selection"><span class="ms">close</span></button>
+          <button class="icon-btn" id="ho-clear-emp" title="${esc(t('handover.clearSelection'))}"><span class="ms">close</span></button>
         </div>
         <div style="display:flex;align-items:center;gap:14px;margin-top:12px;padding-top:12px;border-top:1px solid var(--surface-container)">
-          <span class="cell-sub">Currently holds <strong>${p.activeAssetCount}</strong> asset(s)</span>
+          <span class="cell-sub">${esc(t('handover.currentlyHolds')).replace('{n}', `<strong>${p.activeAssetCount}</strong>`)}</span>
           <span style="margin-left:auto">${badge(p.status)}</span>
         </div>
       </div>`;
@@ -322,8 +322,10 @@ Views.handover = async function (el) {
   function renderBasket() {
     const selEmp = state.empObj;
     const total = basketTotal();
-    $('#ho-basket-sub', el).textContent =
-      `${total} item${total === 1 ? '' : 's'} selected${selEmp ? ' for ' + selEmp.fullName : ''}`
+    const subBase = selEmp
+      ? t('handover.itemsSelectedFor').replace('{n}', total).replace('{name}', selEmp.fullName)
+      : t('handover.itemsSelected').replace('{n}', total);
+    $('#ho-basket-sub', el).textContent = subBase
       + (lineBasket.size ? ` · ${lineBasket.size} ${t('handover.lines').toLowerCase()}` : '');
     $('#ho-basket-count', el).textContent = total;
 
@@ -339,11 +341,11 @@ Views.handover = async function (el) {
               <strong>${esc(asset.brand)} ${esc(asset.model)}</strong>
               <span class="cell-sub mono">${esc(asset.assetTag)}</span>
             </div>
-            <button class="icon-btn" data-remove="${esc(asset.id)}" title="Remove"><span class="ms">close</span></button>
+            <button class="icon-btn" data-remove="${esc(asset.id)}" title="${esc(t('handover.remove'))}"><span class="ms">close</span></button>
           </div>
           ${String(asset.notes || '').trim() ? `<div class="basket-asset-note"><span class="ms ms-sm">sticky_note_2</span> ${esc(String(asset.notes).trim())}</div>` : ''}
-          <div class="basket-note-label">Delivery Condition Note</div>
-          <input data-note="${esc(asset.id)}" placeholder="Optional condition note…" value="${esc(note)}">
+          <div class="basket-note-label">${esc(t('handover.deliveryNote'))}</div>
+          <input data-note="${esc(asset.id)}" placeholder="${esc(t('handover.deliveryNotePh'))}" value="${esc(note)}">
         </div>`);
       const lineBlocks = [...lineBasket.values()].map(({ line, note }) => `
         <div class="basket-item">
@@ -353,7 +355,7 @@ Views.handover = async function (el) {
               <strong class="mono">${esc(line.phoneNumber)}</strong>
               <span class="cell-sub">${esc(line.operator || '—')}${line.plan ? ' · ' + esc(line.plan) : ''}</span>
             </div>
-            <button class="icon-btn" data-remove-line="${esc(line.id)}" title="Remove"><span class="ms">close</span></button>
+            <button class="icon-btn" data-remove-line="${esc(line.id)}" title="${esc(t('handover.remove'))}"><span class="ms">close</span></button>
           </div>
           <div class="basket-note-label">${esc(t('handover.lineNote'))}</div>
           <input data-line-note="${esc(line.id)}" placeholder="${esc(t('handover.lineNotePh'))}" value="${esc(note)}">
@@ -432,21 +434,22 @@ Views.handover = async function (el) {
         body: { employeeId: state.emp, documentType: state.docType, items, lines, templateId },
       });
       const bits = [];
-      if (receipt.assetCount) bits.push(`${receipt.assetCount} asset(s)`);
-      if (receipt.lineCount) bits.push(`${receipt.lineCount} line(s)`);
-      toast(`Handover recorded — ${bits.join(' + ') || receipt.itemCount + ' item(s)'} → ${receipt.employee.fullName}`, 'success');
+      if (receipt.assetCount) bits.push(t('handover.nAssets').replace('{n}', receipt.assetCount));
+      if (receipt.lineCount) bits.push(t('handover.nLines').replace('{n}', receipt.lineCount));
+      const itemsStr = bits.join(' + ') || t('handover.nItems').replace('{n}', receipt.itemCount);
+      toast(t('handover.recorded').replace('{items}', itemsStr).replace('{name}', receipt.employee.fullName), 'success');
       if (receipt.ackToken) {
         const ackUrl = `${location.origin}/ack.html?token=${encodeURIComponent(receipt.ackToken)}`;
         openModal({
-          title: 'Employee acknowledgement link',
-          body: `<p class="cell-sub">Send this link so the employee can confirm receipt (no login).</p>
+          title: t('handover.ackTitle'),
+          body: `<p class="cell-sub">${esc(t('handover.ackBody'))}</p>
                  <p class="mono" style="word-break:break-all;font-size:13px">${esc(ackUrl)}</p>
-                 <button class="btn btn-outline btn-sm" id="ack-copy">Copy link</button>`,
-          foot: `<button class="btn btn-primary" data-close>Continue to print</button>`,
+                 <button class="btn btn-outline btn-sm" id="ack-copy">${esc(t('handover.copyLink'))}</button>`,
+          foot: `<button class="btn btn-primary" data-close>${esc(t('handover.continuePrint'))}</button>`,
           onMount(ov) {
             $('#ack-copy', ov)?.addEventListener('click', async () => {
-              try { await navigator.clipboard.writeText(ackUrl); toast('Copied', 'success'); }
-              catch { toast('Copy failed', 'error'); }
+              try { await navigator.clipboard.writeText(ackUrl); toast(t('handover.copied'), 'success'); }
+              catch { toast(t('handover.copyFailed'), 'error'); }
             });
           },
         });
