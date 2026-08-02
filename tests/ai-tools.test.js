@@ -46,6 +46,24 @@ test('sqlGuard rejects writes, multi-statement, and blocked functions; accepts r
   assert.equal(withLimit('SELECT 1 LIMIT 5'), 'SELECT 1 LIMIT 5');
 });
 
+test('sqlGuard.referencedResources maps ai views to RBAC resources (fail-safe over-match)', () => {
+  const { referencedResources } = require('../src/providers/ai/sqlGuard');
+  const sorted = (sql) => referencedResources(sql).sort();
+  // Both schema-qualified and bare (search_path=ai) references are caught, case-insensitively.
+  assert.deepEqual(sorted('SELECT * FROM ai.contracts'), ['contract']);
+  assert.deepEqual(sorted('select * from CONTRACTS'), ['contract']);
+  assert.deepEqual(
+    sorted('SELECT * FROM contracts c JOIN employees e ON e.id=c.id'),
+    ['contract', 'employee'],
+  );
+  assert.deepEqual(sorted('WITH x AS (SELECT * FROM licenses) SELECT * FROM x'), ['license']);
+  assert.deepEqual(sorted('SELECT * FROM ai.audit_log'), ['audit']);
+  // A view name that only appears inside a comment is not a reference.
+  assert.deepEqual(sorted('SELECT * FROM ai.assets a /* contracts */'), ['asset']);
+  // Pure constants touch no protected resource.
+  assert.deepEqual(sorted('SELECT 1'), []);
+});
+
 test('list tools advertise mode=count for kaç questions', () => {
   const defs = Object.fromEntries(getToolDefs().map((t) => [t.name, t]));
   for (const name of ['search_assets', 'list_licenses', 'list_contracts', 'find_employees', 'document_summary', 'query_operations', 'handover_history']) {

@@ -10,10 +10,44 @@ const MAX_CELL_CHARS = 400;
 const FORBIDDEN_KEYWORDS = /\b(insert|update|delete|merge|upsert|into|drop|alter|create|truncate|grant|revoke|comment|copy|call|do|vacuum|analyze|reindex|cluster|lock|set|reset|show|begin|start|commit|rollback|savepoint|release|execute|prepare|deallocate|listen|notify|unlisten|discard|refresh|import|declare|fetch|move|close|attach|detach)\b/i;
 const BLOCKED_FUNCTIONS = /\b(pg_read_file|pg_read_binary_file|pg_ls_dir|pg_stat_file|lo_import|lo_export|lo_get|lo_put|dblink|pg_sleep|pg_terminate_backend|pg_cancel_backend|pg_reload_conf|pg_rotate_logfile|current_setting|set_config|txid_current|pg_catalog|information_schema)\b/i;
 
+// Each ai.* view maps to the app permission a user must already hold to read it,
+// so advanced_query cannot bypass the per-resource RBAC the other tools enforce.
+const VIEW_PERMISSIONS = {
+  assets: 'asset',
+  asset_history: 'asset',
+  catalog_models: 'catalog',
+  employees: 'employee',
+  departments: 'employee',
+  teams: 'employee',
+  licenses: 'license',
+  license_assignments: 'license',
+  contracts: 'contract',
+  providers: 'provider',
+  mobile_lines: 'line',
+  consumables: 'consumable',
+  maintenance: 'maintenance',
+  stock_counts: 'stock_count',
+  handovers: 'handover',
+  audit_log: 'audit',
+};
+
 function stripComments(sql) {
   return String(sql)
     .replace(/\/\*[\s\S]*?\*\//g, ' ')
     .replace(/--[^\n]*/g, ' ');
+}
+
+// Return the distinct app resources a query touches. Matching is whole-word and
+// covers both `ai.<view>` and the bare `<view>` (search_path=ai). Over-matching a
+// column/alias that happens to share a view name only ADDS a required permission,
+// so the check is fail-safe: it can never grant access, only withhold it.
+function referencedResources(rawSql) {
+  const bare = stripComments(rawSql).toLowerCase();
+  const resources = new Set();
+  for (const [view, resource] of Object.entries(VIEW_PERMISSIONS)) {
+    if (new RegExp(`\\b(?:ai\\.)?${view}\\b`).test(bare)) resources.add(resource);
+  }
+  return [...resources];
 }
 
 function validateSql(raw) {
@@ -108,6 +142,8 @@ module.exports = {
   withLimit,
   runReadOnlyQuery,
   isAvailable,
+  referencedResources,
+  VIEW_PERMISSIONS,
   AI_ROLE,
   MAX_ROWS,
 };

@@ -3098,11 +3098,11 @@ async function toolKapsamliSorgula(args, ctx) {
 }
 
 const SQL_RESULT_STRINGS = {
-  en: { rows: (n) => `${n} row${n === 1 ? '' : 's'} returned.`, capped: 'showing the first 200', empty: 'No rows matched.', missing: 'No SQL was provided.' },
-  tr: { rows: (n) => `${n} satır döndü.`, capped: 'ilk 200 satır gösteriliyor', empty: 'Eşleşen satır yok.', missing: 'Sorgu (SQL) verilmedi.' },
-  de: { rows: (n) => `${n} Zeile${n === 1 ? '' : 'n'} zurückgegeben.`, capped: 'erste 200 Zeilen', empty: 'Keine Zeilen gefunden.', missing: 'Keine SQL angegeben.' },
-  fr: { rows: (n) => `${n} ligne${n === 1 ? '' : 's'} renvoyée${n === 1 ? '' : 's'}.`, capped: '200 premières lignes', empty: 'Aucune ligne trouvée.', missing: 'Aucune requête fournie.' },
-  es: { rows: (n) => `${n} fila${n === 1 ? '' : 's'} devuelta${n === 1 ? '' : 's'}.`, capped: 'primeras 200 filas', empty: 'Sin filas coincidentes.', missing: 'No se proporcionó SQL.' },
+  en: { rows: (n) => `${n} row${n === 1 ? '' : 's'} returned.`, capped: 'showing the first 200', empty: 'No rows matched.', missing: 'No SQL was provided.', denied: 'You do not have permission to query that data.' },
+  tr: { rows: (n) => `${n} satır döndü.`, capped: 'ilk 200 satır gösteriliyor', empty: 'Eşleşen satır yok.', missing: 'Sorgu (SQL) verilmedi.', denied: 'Bu veriyi sorgulama yetkiniz yok.' },
+  de: { rows: (n) => `${n} Zeile${n === 1 ? '' : 'n'} zurückgegeben.`, capped: 'erste 200 Zeilen', empty: 'Keine Zeilen gefunden.', missing: 'Keine SQL angegeben.', denied: 'Sie sind nicht berechtigt, diese Daten abzufragen.' },
+  fr: { rows: (n) => `${n} ligne${n === 1 ? '' : 's'} renvoyée${n === 1 ? '' : 's'}.`, capped: '200 premières lignes', empty: 'Aucune ligne trouvée.', missing: 'Aucune requête fournie.', denied: "Vous n'êtes pas autorisé à interroger ces données." },
+  es: { rows: (n) => `${n} fila${n === 1 ? '' : 's'} devuelta${n === 1 ? '' : 's'}.`, capped: 'primeras 200 filas', empty: 'Sin filas coincidentes.', missing: 'No se proporcionó SQL.', denied: 'No tiene permiso para consultar esos datos.' },
 };
 function sqlStrings(lang) {
   return SQL_RESULT_STRINGS[normalizeLang(lang)] || SQL_RESULT_STRINGS.en;
@@ -3114,7 +3114,20 @@ async function toolGelismisSorgu(args, ctx) {
   const sql = String(args?.sql || args?.query || '').trim();
   if (!sql) return { summary: s.missing, rows: [], error: true, meta: { tools: ['advanced_query'] } };
 
-  const { runReadOnlyQuery } = require('../sqlGuard');
+  const { runReadOnlyQuery, referencedResources } = require('../sqlGuard');
+
+  // Enforce the same per-resource RBAC the dedicated tools use: the caller must
+  // hold read on every ai.* view the query touches. Without this, advanced_query
+  // would let any staff user read data (contracts, costs, lines…) their role is
+  // denied elsewhere in the app.
+  try {
+    for (const resource of referencedResources(sql)) {
+      await assertPerm(ctx?.user, resource, 'read');
+    }
+  } catch (err) {
+    return { summary: err.message || s.denied, rows: [], error: true, meta: { tools: ['advanced_query'] } };
+  }
+
   let out;
   try {
     out = await runReadOnlyQuery(sql);
