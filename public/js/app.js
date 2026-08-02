@@ -74,6 +74,24 @@ function renderNav() {
   if (typeof syncMobileChrome === 'function') syncMobileChrome();
 }
 
+/** Full-page error/empty state rendered into #view (nav + topbar stay usable). */
+function renderErrorState(view, { icon = 'error_outline', code = '', title = '', message = '', actions = [] }) {
+  view.innerHTML = `
+    <div class="error-state">
+      <div class="error-state-badge"><span class="ms">${esc(icon)}</span></div>
+      ${code ? `<div class="error-state-code">${esc(code)}</div>` : ''}
+      <h2 class="error-state-title">${esc(title)}</h2>
+      ${message ? `<p class="error-state-msg">${esc(message)}</p>` : ''}
+      <div class="error-state-actions">
+        ${actions.map((a, i) => `<button type="button" class="btn ${a.primary ? 'btn-primary' : 'btn-outline'}" data-err="${i}">${a.icon ? `<span class="ms">${esc(a.icon)}</span> ` : ''}${esc(a.label)}</button>`).join('')}
+      </div>
+    </div>`;
+  actions.forEach((a, i) => {
+    const b = view.querySelector(`[data-err="${i}"]`);
+    if (b && typeof a.onClick === 'function') b.addEventListener('click', a.onClick);
+  });
+}
+
 async function navigate() {
   closeNav();
   // Drop any open modal when the route changes — otherwise overlays from Users /
@@ -83,20 +101,42 @@ async function navigate() {
   // Support query params in the hash, e.g. #/assets?lifecycle=overdue
   const [rawHash, rawQuery] = location.hash.split('?');
   const homeHash = isPortalUser() ? PORTAL_HASH : (isHrUser() ? HR_HOME_HASH : '#/dashboard');
+  const params = Object.fromEntries(new URLSearchParams(rawQuery || ''));
+  const view = $('#view');
+  const goHome = { label: t('error.goHome'), icon: 'home', primary: true, onClick: () => { location.hash = homeHash; } };
+
+  // Unknown / mistyped hash → 404 screen (nav stays usable). Empty hash → home.
+  if (rawHash && rawHash !== '#/' && rawHash !== '#' && !ROUTES[rawHash]) {
+    $$('#nav a').forEach((a) => a.classList.remove('active'));
+    view.dataset.navGen = String(gen);
+    renderErrorState(view, {
+      icon: 'wrong_location', code: '404',
+      title: t('error.notFoundTitle'), message: t('error.notFoundMsg'), actions: [goHome],
+    });
+    return;
+  }
+
   const hash = ROUTES[rawHash] ? rawHash : homeHash;
   const route = ROUTES[hash];
-  const params = Object.fromEntries(new URLSearchParams(rawQuery || ''));
   // Portal accounts are confined to their own zimmet page.
   if (isPortalUser() && hash !== PORTAL_HASH) { location.hash = PORTAL_HASH; return; }
   if (isHrUser() && !HR_ALLOWED_HASHES.has(hash)) { location.hash = HR_HOME_HASH; return; }
   // Typing #/hr by hand must not work for IT either — approving happens on the
   // Dashboard, and this page is scoped to the people who file the tickets.
   if (route.hrOnly && !isHrUser()) { location.hash = homeHash; return; }
-  if (route.perm && !Auth.can(route.perm)) { location.hash = homeHash; return; }
+  // A route the user isn't permitted to open → 403 screen (clearer than a silent bounce).
+  if (route.perm && !Auth.can(route.perm)) {
+    $$('#nav a').forEach((a) => a.classList.remove('active'));
+    view.dataset.navGen = String(gen);
+    renderErrorState(view, {
+      icon: 'lock', code: '403',
+      title: t('error.forbiddenTitle'), message: t('error.forbiddenMsg'), actions: [goHome],
+    });
+    return;
+  }
 
   $$('#nav a').forEach((a) => a.classList.toggle('active', a.dataset.route === hash));
 
-  const view = $('#view');
   view.dataset.navGen = String(gen);
   if (view._viewAbort) view._viewAbort.abort(); // drop stale delegated listeners
   view.innerHTML = `<div class="table-empty">${esc(t('common.loading'))}</div>`;
@@ -105,7 +145,15 @@ async function navigate() {
     if (isStaleView(view)) return;
   } catch (err) {
     if (isStaleView(view)) return;
-    view.innerHTML = `<div class="card card-pad"><div class="form-error">${esc(err.message)}</div></div>`;
+    renderErrorState(view, {
+      icon: 'error_outline',
+      title: t('error.crashTitle'),
+      message: (err && err.message) ? err.message : t('error.crashMsg'),
+      actions: [
+        { label: t('error.retry'), icon: 'refresh', primary: true, onClick: () => navigate() },
+        { label: t('error.goHome'), icon: 'home', onClick: () => { location.hash = homeHash; } },
+      ],
+    });
   }
   if (isStaleView(view)) return;
   renderPageTip();

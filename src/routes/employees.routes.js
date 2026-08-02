@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { authenticate, requirePermission, requireAnyPermission, requireAllPermissions } = require('../middleware/auth');
+const { authenticate, requirePermission, requireCapability, requireAnyPermission, requireAllPermissions } = require('../middleware/auth');
 const { asyncHandler } = require('../utils/asyncHandler');
 const {
   employeeService, documentService, offboardService, permissionService,
@@ -53,7 +53,10 @@ async function applyDepartmentScope(user, query) {
 /** GET /api/employees — Employee Directory. İzin: employee:read (+ optional department constraint)
  *  Query: sort=name|department|assets|status  order=asc|desc
  */
-router.get('/', requirePermission('employee', 'read'), asyncHandler(async (req, res) => {
+router.get('/', requireCapability('employee', 'read'), asyncHandler(async (req, res) => {
+  // requireCapability gates "may read employees at all"; applyDepartmentScope
+  // enforces the row-level department scope (and 403s an empty scope). Using
+  // requirePermission here would fail closed for department-scoped users.
   const query = await applyDepartmentScope(req.user, { ...req.query });
   if (query.department === '__none__') {
     return res.json({

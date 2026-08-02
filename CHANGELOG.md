@@ -4,6 +4,35 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.1] — 2026-08-03
+
+### Fixed
+- **AI assistant launcher advertised the wrong shortcut.** The floating launcher
+  showed `⌘K`, but `⌘K` is bound to global search, so it never opened the
+  assistant (the working shortcut is `⌘J`). Corrected the badge and tooltip to
+  `⌘J` across all 12 locales; clicking the launcher continues to work.
+- **Department-scoped employee directory was inaccessible.** A user whose
+  `employee:read` grant carried a department constraint got a 403 on the whole
+  directory — the list gate evaluated the constraint against an empty context and
+  failed closed, before the row-scoping filter could run. List reads are now
+  gated on the capability (`requireCapability`) and the department scope is
+  enforced on the rows, so such users see exactly their department(s). Fails
+  safe: no grant → still 403; cross-department detail reads remain blocked.
+
+### Security
+- **body-parser bumped to 1.20.6** (from 1.20.5) to clear a low-severity DoS
+  advisory (GHSA-v422-hmwv-36x6). `npm audit`: 0 vulnerabilities. Follows a deep
+  security review (auth/JWT, IAM constraints, injection, SSRF, path-traversal,
+  CSV formula injection, XSS/CSP) that surfaced no exploitable High/Critical/
+  Medium issues.
+
+### Added
+- **Designed 404 / 403 / error screens.** Unknown routes now show a localized
+  404 page (previously a silent redirect to the dashboard); routes the user
+  cannot open show a 403 "access denied" page; a view that fails to load shows an
+  error screen with Retry / Home actions. All render in the content area with the
+  navigation intact, in the selected language (12 locales).
+
 ## [1.3.0] — 2026-08-02
 
 ### Added

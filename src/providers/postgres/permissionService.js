@@ -242,6 +242,28 @@ function checkRoleFallback(user, resource, action) {
 }
 
 /**
+ * Does the user have ANY grant for (resource, action), ignoring list constraints?
+ *
+ * For LIST endpoints that filter rows by scope (via getConstraintScope +
+ * applyDepartmentScope), the middleware must not evaluate a department/location
+ * constraint against an empty context — that fails closed and locks a scoped user
+ * out of the whole list. This answers "may this user reach the resource at all?"
+ * and leaves the row-level scope to the handler. Write/detail routes keep using
+ * checkPermission with a real context.
+ */
+async function hasResourceAction(user, resource, action) {
+  if (!user) return false;
+  if (isOwner(user)) return true;
+  const groupId = user.permissionGroupId;
+  if (!groupId) return checkRoleFallback(user, resource, action);
+  const { rows } = await query(
+    'SELECT 1 FROM permission_entries WHERE group_id = $1 AND resource = $2 AND action = $3 LIMIT 1',
+    [groupId, resource, action]
+  );
+  return rows.length > 0;
+}
+
+/**
  * Birden çok izin kontrolü (ve mantığı). Tümü true olmalı.
  */
 async function checkAllPermissions(user, checks) {
@@ -839,6 +861,7 @@ async function getConstraintScope(user, resource, action, constraintType = 'depa
 
 module.exports = {
   checkPermission,
+  hasResourceAction,
   // Exported so the role matrix — the fallback every user without a custom IAM
   // group is judged by — can be unit-tested without a database.
   checkRoleFallback,
