@@ -10,7 +10,7 @@ Views.integrations = async function (el) {
   const readOnly = canRead && !canManage;
   const lockedTip = esc(t('integration.viewLocked') || 'Saved — editing requires integration:manage');
 
-  const [mail, keys, hooks, cfAsset, cfEmp, cfContract, emailTemplates] = await Promise.all([
+  const [mail, keys, hooks, cfAsset, cfEmp, cfContract, emailTemplates, aiCfg] = await Promise.all([
     api('/integrations/notifications'),
     api('/integrations/api-keys'),
     api('/integrations/webhooks'),
@@ -18,6 +18,7 @@ Views.integrations = async function (el) {
     api('/integrations/custom-fields/employee'),
     api('/integrations/custom-fields/contract'),
     api('/integrations/email-templates').catch(() => ({})),
+    api('/ai/config').catch(() => ({ enabled: false, provider: 'ollama', providers: [] })),
   ]);
   // The server ships every template it knows about, with its label and
   // placeholders — no local copy of the list to drift out of sync.
@@ -58,8 +59,13 @@ Views.integrations = async function (el) {
       </tbody></table></div>`;
   }
 
+  const aiProviders = Array.isArray(aiCfg.providers) ? aiCfg.providers : [];
+  const aiProviderOpts = aiProviders.map((p) =>
+    `<option value="${esc(p.id)}" ${aiCfg.provider === p.id ? 'selected' : ''}>${esc(p.label)}</option>`
+  ).join('') || '<option value="ollama">Ollama</option><option value="deepseek">DeepSeek</option>';
+
   el.innerHTML = `
-    ${pageHead('Integrations', 'SMTP alerts, API keys, webhooks, custom fields, and sync connectors.', '')}
+    ${pageHead('Integrations', 'SMTP alerts, API keys, webhooks, custom fields, AI assistant, and sync connectors.', '')}
     ${readOnly ? `<div class="card card-pad" style="margin-bottom:16px;border-style:dashed">
       <span class="ms" style="vertical-align:-3px;color:var(--on-surface-variant)">lock</span>
       <span class="cell-sub">${lockedTip}</span>
@@ -67,11 +73,46 @@ Views.integrations = async function (el) {
     <div class="settings-shell">
 
       <section class="card card-pad" style="margin-bottom:16px">
+        <h3 style="margin:0 0 8px"><span class="ms ms-sm" style="vertical-align:-3px">auto_awesome</span> AI Assistant</h3>
+        <p class="cell-sub" style="margin:0 0 12px">
+          Multi-provider ask-and-get assistant (Ollama local-first, then DeepSeek / OpenAI / Anthropic / Groq…).
+          Tools are read-only and respect IAM. Open with the sparkles button or <kbd>Cmd/Ctrl+J</kbd>.
+        </p>
+        ${aiCfg.apiKeyCorrupt ? `<p class="banner banner-rose" style="margin-bottom:12px">Saved AI API key could not be read — enter it again and Save.</p>` : ''}
+        <div class="form-grid">
+          <div class="form-field"><label>Enabled</label>
+            <label class="chk" style="margin-top:8px"><input type="checkbox" id="int-ai-enabled" ${aiCfg.enabled ? 'checked' : ''}${chkDis}> On</label>
+          </div>
+          <div class="form-field"><label>Provider</label>
+            <select id="int-ai-provider"${inputDis}>${aiProviderOpts}</select>
+          </div>
+          <div class="form-field"><label>Model</label>
+            <input id="int-ai-model" value="${esc(aiCfg.model || '')}" placeholder="llama3.1 / deepseek-chat"${inputDis}>
+          </div>
+          <div class="form-field"><label>Base URL</label>
+            <input id="int-ai-base" value="${esc(aiCfg.baseUrl || '')}" placeholder="http://127.0.0.1:11434"${inputDis}>
+          </div>
+          <div class="form-field"><label>API key ${aiCfg.apiKeyConfigured ? '<span class="ob-hint">(saved — leave blank to keep)</span>' : '<span class="ob-hint">(not needed for local Ollama)</span>'}</label>
+            ${readOnly && aiCfg.apiKeyConfigured
+              ? secretLocked('••••••••••••', true)
+              : `<input id="int-ai-key" type="password" value="" placeholder="${aiCfg.apiKeyConfigured ? '••••••••  leave blank to keep' : 'sk-…'}" autocomplete="new-password"${inputDis}>`}
+          </div>
+        </div>
+        ${aiCfg.enabled ? `<p class="banner" style="margin:12px 0 0;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <span>${esc(t('ai.launcherHintOn'))}</span>
+          <button type="button" class="btn btn-primary btn-sm" id="int-ai-open">${esc(t('ai.openChat'))}</button>
+        </p>` : `<p class="cell-sub" style="margin:12px 0 0">${esc(t('ai.launcherHintOff'))}</p>`}
+        ${canManage ? `<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+          <button class="btn btn-primary" id="int-ai-save">Save AI</button>
+          <button class="btn btn-outline" id="int-ai-test">Test connection</button>
+          <button class="btn btn-outline" id="int-ai-clear" style="margin-left:auto;color:var(--rose,#be123c)">Clear AI</button>
+        </div>` : ''}
+      </section>
+
+      <section class="card card-pad" style="margin-bottom:16px">
         <h3 style="margin:0 0 8px">SMTP &amp; alert digest</h3>
-        <p class="cell-sub" style="margin:0 0 12px">Daily digest of expired licenses, low stock, EOL, onboarding due.
-          iCloud/Gmail: Apple/Google hesap şifresi değil, <strong>app-specific password</strong> kullanın.
-          iCloud: host <code>smtp.mail.me.com</code>, port <code>587</code>, <strong>TLS (port 465) kapalı</strong> (STARTTLS).</p>
-        ${smtp.passCorrupt ? `<p class="banner banner-rose" style="margin-bottom:12px">Kayıtlı SMTP şifresi okunamıyor — app-specific password’ü yeniden girip Save edin.</p>` : ''}
+        <p class="cell-sub" style="margin:0 0 12px">${t('int.smtp.hint')}</p>
+        ${smtp.passCorrupt ? `<p class="banner banner-rose" style="margin-bottom:12px">${esc(t('int.smtp.passCorrupt'))}</p>` : ''}
         <div class="form-grid">
           <div class="form-field"><label>Host</label><input id="int-smtp-host" value="${esc(smtp.host || '')}" placeholder="smtp.mail.me.com"${inputDis}></div>
           <div class="form-field"><label>Port</label><input id="int-smtp-port" type="number" value="${esc(smtp.port || 587)}"${inputDis}></div>
@@ -273,6 +314,81 @@ GET /api/integrations/licenses/:id/sam
   };
   $('#int-notify-schedule', el)?.addEventListener('change', syncWeekdayVisibility);
   syncWeekdayVisibility();
+
+  $('#int-ai-provider', el)?.addEventListener('change', () => {
+    const sel = $('#int-ai-provider', el);
+    const prov = aiProviders.find((p) => p.id === sel?.value);
+    if (!prov) return;
+    const model = $('#int-ai-model', el);
+    const base = $('#int-ai-base', el);
+    if (model) model.value = prov.defaultModel || '';
+    if (base) base.value = prov.defaultBaseUrl || '';
+  });
+
+  $('#int-ai-open', el)?.addEventListener('click', async () => {
+    try {
+      if (typeof syncAssistantChrome === 'function') await syncAssistantChrome();
+      if (typeof openAssistant === 'function') openAssistant();
+      else toast(t('ai.loadFailed'), 'error');
+    } catch (err) { toast(err.message, 'error'); }
+  });
+
+  // Keep floating launcher in sync with the saved toggle when this page is open.
+  if (typeof syncAssistantChrome === 'function') syncAssistantChrome().catch(() => {});
+
+  $('#int-ai-save', el)?.addEventListener('click', async () => {
+    try {
+      const enabled = !!$('#int-ai-enabled', el)?.checked;
+      await api('/ai/config', {
+        method: 'PUT',
+        body: {
+          enabled,
+          provider: $('#int-ai-provider', el)?.value,
+          model: $('#int-ai-model', el)?.value.trim(),
+          baseUrl: $('#int-ai-base', el)?.value.trim(),
+          apiKey: $('#int-ai-key', el)?.value,
+        },
+      });
+      toast(enabled ? t('ai.savedOn') : t('ai.savedOff'), 'success');
+      if (typeof syncAssistantChrome === 'function') await syncAssistantChrome();
+      Views.integrations(el);
+    } catch (err) { toast(err.message, 'error'); }
+  });
+
+  $('#int-ai-test', el)?.addEventListener('click', async () => {
+    const btn = $('#int-ai-test', el);
+    try {
+      btn.disabled = true;
+      // Persist first so test uses the form values.
+      await api('/ai/config', {
+        method: 'PUT',
+        body: {
+          enabled: true,
+          provider: $('#int-ai-provider', el)?.value,
+          model: $('#int-ai-model', el)?.value.trim(),
+          baseUrl: $('#int-ai-base', el)?.value.trim(),
+          apiKey: $('#int-ai-key', el)?.value,
+        },
+      });
+      const data = await api('/ai/test', { method: 'POST', body: {} });
+      const models = (data.models || []).slice(0, 8).join(', ');
+      toast(data.ok
+        ? `Connected${models ? ` — models: ${models}` : ''}`
+        : 'Probe finished', 'success');
+      if (typeof syncAssistantChrome === 'function') syncAssistantChrome().catch(() => {});
+      Views.integrations(el);
+    } catch (err) { toast(err.message, 'error'); }
+    finally { if (btn) btn.disabled = false; }
+  });
+
+  $('#int-ai-clear', el)?.addEventListener('click', () => {
+    confirmModal('Clear AI provider settings (API key + model)?', async () => {
+      await api('/ai/config', { method: 'DELETE' });
+      toast('AI settings cleared', 'success');
+      if (typeof syncAssistantChrome === 'function') syncAssistantChrome().catch(() => {});
+      Views.integrations(el);
+    });
+  });
 
   $('#int-smtp-save', el)?.addEventListener('click', async () => {
     try {

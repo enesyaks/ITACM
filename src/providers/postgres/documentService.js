@@ -406,8 +406,62 @@ async function deleteLicenseDoc(docId) {
   return { id: docId, deleted: true };
 }
 
+/**
+ * Employees who have ≥1 profile/handover document uploaded.
+ * Read-only aggregate for AI / dashboards — no file content.
+ */
+async function summarizeEmployeesWithDocs({ search, limit = 40 } = {}) {
+  const lim = Math.min(100, Math.max(1, Number(limit) || 40));
+  const params = [];
+  let filter = '';
+  if (search && String(search).trim()) {
+    params.push(`%${String(search).trim()}%`);
+    filter = ` AND (e.full_name ILIKE $${params.length} OR e.email ILIKE $${params.length}
+      OR COALESCE(e.department, '') ILIKE $${params.length}
+      OR COALESCE(e.title, '') ILIKE $${params.length})`;
+  }
+
+  const countRes = await query(
+    `SELECT COUNT(DISTINCT d.employee_id)::int AS n
+     FROM handover_documents d
+     INNER JOIN employees e ON e.id = d.employee_id
+     WHERE 1=1${filter}`,
+    params
+  );
+  const totalEmployeesWithDocs = countRes.rows[0]?.n || 0;
+
+  const listParams = [...params, lim];
+  const { rows } = await query(
+    `SELECT e.id, e.full_name, e.department, e.title, e.email, e.status,
+            COUNT(d.id)::int AS doc_count,
+            MAX(d.created_at) AS last_doc_at
+     FROM handover_documents d
+     INNER JOIN employees e ON e.id = d.employee_id
+     WHERE 1=1${filter}
+     GROUP BY e.id
+     ORDER BY doc_count DESC, e.full_name ASC
+     LIMIT $${listParams.length}`,
+    listParams
+  );
+
+  return {
+    totalEmployeesWithDocs,
+    items: rows.map((r) => ({
+      id: r.id,
+      fullName: r.full_name,
+      department: r.department,
+      title: r.title,
+      email: r.email,
+      status: r.status,
+      documentCount: Number(r.doc_count) || 0,
+      lastDocumentAt: r.last_doc_at ? new Date(r.last_doc_at).toISOString() : null,
+    })),
+  };
+}
+
 module.exports = {
   saveDocument, listByEmployee, getDocument, deleteDocument,
+  summarizeEmployeesWithDocs,
   saveMaintenanceDoc, listMaintenanceDocsByAsset, listMaintenanceDocsByLog,
   getMaintenanceDoc, deleteMaintenanceDoc,
   saveProviderDoc, listProviderDocs, getProviderDoc, deleteProviderDoc,

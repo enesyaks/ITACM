@@ -384,6 +384,7 @@ function showApp() {
   }
   renderNav();
   navigate().then(() => {
+    if (typeof syncAssistantChrome === 'function') syncAssistantChrome().catch(() => {});
     if (localStorage.getItem('itacm_tips_pending') === '1') {
       localStorage.removeItem('itacm_tips_pending');
       setTimeout(() => {
@@ -427,6 +428,7 @@ function showLogin() {
   $('#app').classList.add('hidden');
   $('#onboarding-screen').classList.add('hidden');
   $('#login-screen').classList.remove('hidden');
+  if (typeof teardownAssistantChrome === 'function') teardownAssistantChrome();
   if (typeof setMobileChromeVisible === 'function') setMobileChromeVisible(false);
   else if (typeof syncMobileChrome === 'function') syncMobileChrome();
   if (typeof applyStaticI18n === 'function') applyStaticI18n();
@@ -3432,6 +3434,20 @@ async function init() {
       e.preventDefault();
       e.stopPropagation();
       focusGlobalSearch();
+      return;
+    }
+    // Cmd/Ctrl+J opens the AI assistant when the floating launcher is active.
+    if ((e.metaKey || e.ctrlKey) && key === 'j' && !isHrUser()
+      && document.body.classList.contains('ai-launcher-on')) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (typeof toggleAssistant === 'function') toggleAssistant();
+      return;
+    }
+    if (key === 'escape' && document.body.classList.contains('ai-open')
+      && typeof closeAssistant === 'function') {
+      e.preventDefault();
+      closeAssistant();
       return;
     }
     // Slash focuses search when not already typing in a field.
