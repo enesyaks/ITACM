@@ -22,6 +22,31 @@ function isStaff(user) {
   return user && !['Portal', 'HR'].includes(user.role);
 }
 
+// Per-user throttle for the agentic /query endpoint. Each query fans out to an
+// LLM (and possibly a DB read), so it is far more expensive than a normal API
+// call — the coarse global /api limiter is not enough to contain runaway cost
+// or a single account hammering the provider. In-memory is fine: the limit is
+// per-process and only needs to blunt bursts.
+const AI_QUERY_MAX = Number(process.env.AI_QUERY_RATE_MAX) > 0
+  ? Number(process.env.AI_QUERY_RATE_MAX) : 20;
+const AI_QUERY_WINDOW_MS = 60 * 1000;
+const aiQueryHits = new Map();
+function aiQueryRateLimited(uid) {
+  const key = String(uid || 'anon');
+  const now = Date.now();
+  let entry = aiQueryHits.get(key);
+  if (!entry || now > entry.resetAt) {
+    entry = { count: 0, resetAt: now + AI_QUERY_WINDOW_MS };
+    aiQueryHits.set(key, entry);
+  }
+  entry.count += 1;
+  // Sweep only expired buckets so a churn of ids cannot evict an active abuser.
+  if (aiQueryHits.size > 5000) {
+    for (const [k, e] of aiQueryHits) if (now > e.resetAt) aiQueryHits.delete(k);
+  }
+  return entry.count > AI_QUERY_MAX;
+}
+
 function writeSse(res, event, data) {
   res.write(`event: ${event}\n`);
   res.write(`data: ${JSON.stringify(data)}\n\n`);
@@ -103,6 +128,9 @@ router.get('/exports/:id', authenticate, asyncHandler(async (req, res) => {
 
 router.post('/query', authenticate, asyncHandler(async (req, res) => {
   if (!isStaff(req.user)) throw HttpError.forbidden('AI assistant is not available for this role');
+  if (aiQueryRateLimited(req.user.uid)) {
+    throw HttpError.tooMany('Too many AI queries — wait a moment and try again');
+  }
 
   const prompt = String(req.body?.prompt || req.body?.message || '').trim();
   if (!prompt) throw HttpError.badRequest('prompt is required');
