@@ -287,14 +287,24 @@ For managed platforms (Railway, Render, Fly.io, Cloud Run…), deploy the `Docke
 
 ## ⬆️ Updating
 
-Releases are tagged (`v1.1.0`, …) and listed under [Releases](https://github.com/enesyaks/ITACM/releases); see [`CHANGELOG.md`](CHANGELOG.md) for what changed. Schema migrations run automatically on startup, so updating is just pull-and-restart:
+Releases are tagged (`v1.1.0`, …) and listed under [Releases](https://github.com/enesyaks/ITACM/releases); see [`CHANGELOG.md`](CHANGELOG.md) for what changed. Schema migrations run automatically on startup.
+
+**The easy way — one command:**
+
+```bash
+npm run update            # or: npm run update -- --dry-run  (preview only)
+```
+
+This backs up the database, pulls the latest code, and rebuilds with the compose profile your `.env` implies (plain / `tls` / `cloudflare`) — so you never have to remember which `--profile` or `--build` flag to pass — then prints the version now running. Your `.env` and `certs/` are left untouched.
+
+**Or do it manually:**
 
 ```bash
 git pull                       # or: docker compose pull  (if you use a published image)
 docker compose up -d --build
 ```
 
-> **Using an HTTPS profile?** If you started with `--profile tls` or `--profile cloudflare`, include the **same flag** when you update — otherwise the reverse-proxy (Caddy) container isn't recreated and HTTPS goes down. Your `.env` and `certs/` are untouched by `git pull`:
+> **Using an HTTPS profile manually?** If you started with `--profile tls` or `--profile cloudflare`, include the **same flag** when you update — otherwise the reverse-proxy (Caddy) container isn't recreated and HTTPS goes down. (`npm run update` handles this for you.)
 > ```bash
 > docker compose --profile cloudflare up -d --build
 > ```
