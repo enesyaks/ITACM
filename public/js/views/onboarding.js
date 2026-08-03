@@ -64,18 +64,18 @@ async function openOnboardWizard(existingEmp) {
           <div id="obn-emp-host" class="emp-search-host" style="margin-top:6px;max-width:420px"></div>
         </div>
         <div id="obn-new" class="grid grid-2 ${mode === 'new' ? '' : 'hidden'}" style="margin-top:8px">
-          <div class="form-field"><label>Full name *</label>
+          <div class="form-field"><label>${esc(t('onb.fldFullName'))} *</label>
             <input name="fullName" autocomplete="name" value="${esc(stash.fullName)}"></div>
-          <div class="form-field"><label>Email *</label>
+          <div class="form-field"><label>${esc(t('onb.fldEmail'))} *</label>
             <input name="email" type="email" autocomplete="email" value="${esc(stash.email)}"></div>
-          <div class="form-field"><label>Department</label>
+          <div class="form-field"><label>${esc(t('onb.fldDept'))}</label>
             <select name="department">
               <option value="">—</option>
               ${(AppConfig.departments || []).map((d) =>
                 `<option value="${esc(d)}" ${stash.department === d ? 'selected' : ''}>${esc(d)}</option>`
               ).join('')}
             </select></div>
-          <div class="form-field"><label>Title</label>
+          <div class="form-field"><label>${esc(t('onb.fldTitle'))}</label>
             <input name="title" value="${esc(stash.title)}"></div>
         </div>
         <div class="form-field" style="margin-top:12px;max-width:240px">
@@ -83,7 +83,7 @@ async function openOnboardWizard(existingEmp) {
           <input type="date" name="startDate" value="${esc(stash.startDate)}">
         </div>
         <div class="form-field full" style="margin-top:10px">
-          <label>Notes</label>
+          <label>${esc(t('onb.fldNotes'))}</label>
           <textarea name="notes" rows="2" maxlength="2000">${esc(stash.notes)}</textarea>
         </div>
       </div>
@@ -91,7 +91,7 @@ async function openOnboardWizard(existingEmp) {
         <p class="cell-sub" style="margin:0 0 10px">${esc(t('emp.onboardNoGearOk'))}</p>
         <div class="search-box" style="margin-bottom:10px;max-width:360px">
           <span class="ms">search</span>
-          <input type="search" id="obn-gear-q" placeholder="Filter stock…" autocomplete="off">
+          <input type="search" id="obn-gear-q" placeholder="${esc(t('onb.filterStock'))}" autocomplete="off">
         </div>
         <h3 style="font-size:11px;text-transform:uppercase;color:var(--on-surface-variant);margin:0 0 6px">${esc(t('emp.onboardPickStock'))} (${stock.length})</h3>
         <div id="obn-assets" class="obn-pick-list"></div>
@@ -100,9 +100,9 @@ async function openOnboardWizard(existingEmp) {
       </div>
       <div id="obn-step-3" class="hidden"></div>`,
     foot: `
-      <button class="btn btn-outline" data-close>Cancel</button>
-      <button class="btn btn-outline hidden" id="obn-back">Back</button>
-      <button class="btn btn-primary" id="obn-next">Next</button>
+      <button class="btn btn-outline" data-close>${esc(t('common.cancel'))}</button>
+      <button class="btn btn-outline hidden" id="obn-back">${esc(t('common.back'))}</button>
+      <button class="btn btn-primary" id="obn-next">${esc(t('common.next'))}</button>
       <button class="btn btn-primary hidden" id="obn-submit"><span class="ms">event_available</span> ${esc(t('emp.onboardSchedule'))}</button>`,
     onMount(overlay) {
       function readStep1() {
@@ -151,13 +151,13 @@ async function openOnboardWizard(existingEmp) {
             <span class="obn-pick-tag">${esc(a.assetTag)}</span>
             <span class="obn-pick-meta">${esc(a.brand)} ${esc(a.model)}
               <span class="cell-sub"> · ${esc(a.category)}</span></span>
-          </label>`).join('') || `<div class="cell-sub" style="padding:12px">No stock matches.</div>`;
+          </label>`).join('') || `<div class="cell-sub" style="padding:12px">${esc(t('onb.noStock'))}</div>`;
         linesEl.innerHTML = freeLines.filter(matchL).map((l) => `
           <label class="obn-pick-row">
             <input type="checkbox" data-line="${esc(l.id)}" ${pickedLines.has(l.id) ? 'checked' : ''}>
             <span class="obn-pick-meta">${esc(l.phoneNumber)}
               <span class="cell-sub"> · ${esc([l.operator, l.plan].filter(Boolean).join(' · ') || '—')}</span></span>
-          </label>`).join('') || `<div class="cell-sub" style="padding:12px">No free lines.</div>`;
+          </label>`).join('') || `<div class="cell-sub" style="padding:12px">${esc(t('onb.noLines'))}</div>`;
         assetsEl.querySelectorAll('[data-asset]').forEach((cb) => {
           cb.addEventListener('change', () => {
             if (cb.checked) pickedAssets.add(cb.dataset.asset);
@@ -183,16 +183,16 @@ async function openOnboardWizard(existingEmp) {
         $('#obn-step-3', overlay).innerHTML = `
           <div class="banner banner-amber" style="margin-bottom:12px">${esc(t('emp.onboardHint'))}</div>
           <div class="grid grid-2" style="gap:12px">
-            <div><span class="cell-sub">Employee</span><div class="cell-title">${esc(empLabel)}</div>
+            <div><span class="cell-sub">${esc(t('onb.employee'))}</span><div class="cell-title">${esc(empLabel)}</div>
               ${mode === 'new' ? `<div class="cell-sub">${esc(stash.email)}</div>` : ''}</div>
             <div><span class="cell-sub">${esc(t('emp.onboardStartDate'))}</span>
               <div class="cell-title">${esc(stash.startDate)}</div></div>
           </div>
-          ${stash.notes ? `<div style="margin-top:10px"><span class="cell-sub">Notes</span><div>${esc(stash.notes)}</div></div>` : ''}
-          <h3 style="font-size:11px;text-transform:uppercase;color:var(--on-surface-variant);margin:16px 0 6px">Reserved assets (${aLabels.length})</h3>
+          ${stash.notes ? `<div style="margin-top:10px"><span class="cell-sub">${esc(t('onb.fldNotes'))}</span><div>${esc(stash.notes)}</div></div>` : ''}
+          <h3 style="font-size:11px;text-transform:uppercase;color:var(--on-surface-variant);margin:16px 0 6px">${esc(t('onb.reservedAssets'))} (${aLabels.length})</h3>
           ${aLabels.length ? `<ul style="margin:0;padding-left:18px">${aLabels.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>`
             : `<div class="cell-sub">${esc(t('emp.onboardNoGearOk'))}</div>`}
-          <h3 style="font-size:11px;text-transform:uppercase;color:var(--on-surface-variant);margin:16px 0 6px">Reserved lines (${lLabels.length})</h3>
+          <h3 style="font-size:11px;text-transform:uppercase;color:var(--on-surface-variant);margin:16px 0 6px">${esc(t('onb.reservedLines'))} (${lLabels.length})</h3>
           ${lLabels.length ? `<ul style="margin:0;padding-left:18px">${lLabels.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>`
             : `<div class="cell-sub">—</div>`}`;
       }
@@ -239,7 +239,7 @@ async function openOnboardWizard(existingEmp) {
             if (mode === 'existing') {
               if (!selectedEmp?.id) throw new Error(t('emp.offboardPickPerson'));
             } else if (!stash.fullName || !stash.email) {
-              throw new Error('Full name and email are required');
+              throw new Error(t('onb.nameEmailReq'));
             }
           }
           showStep(step + 1);
@@ -413,7 +413,7 @@ async function openOnboardingDueModal({ force = false, focusId = null } = {}) {
             </button>`).join('')}
         </div>` : ''}
       <div class="grid grid-2" style="margin-bottom:12px">
-        <div><span class="cell-sub">Employee</span>
+        <div><span class="cell-sub">${esc(t('onb.employee'))}</span>
           <div class="cell-title">${esc(emp.fullName || current.employeeName || '—')}</div>
           <div class="cell-sub">${esc(emp.email || '')}</div></div>
         <div><span class="cell-sub">${esc(t('emp.onboardStartDate'))}</span>

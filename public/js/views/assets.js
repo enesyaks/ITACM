@@ -89,7 +89,7 @@ Views.assets = async function (el, params = {}) {
         ? 'Other statuses (Repair, Scrap, Reserved…) are hidden for this permission.'
         : null));
   const statusPill = forcedStatuses
-    ? `<span class="pill pill-emerald">Status: ${esc(forcedStatuses.join(' / '))}</span>`
+    ? `<span class="pill pill-emerald">${esc(t('common.status'))}: ${esc(forcedStatuses.map(statusLabel).join(' / '))}</span>`
     : null;
   if (isStaleView(el)) return;
   const a = stats.assets;
@@ -113,7 +113,7 @@ Views.assets = async function (el, params = {}) {
     ? items.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
     : items;
   const chips = [];
-  selectedStatus.forEach((s) => chips.push({ key: 'status', value: s, label: `Status: ${s}` }));
+  selectedStatus.forEach((s) => chips.push({ key: 'status', value: s, label: `${t('common.status')}: ${statusLabel(s)}` }));
   selectedCats.forEach((c) => chips.push({ key: 'category', value: c, label: `Category: ${c}` }));
   selectedLocs.forEach((l) => chips.push({ key: 'location', value: l, label: `Location: ${l}` }));
   if (params.lifecycle) chips.push({ key: 'lifecycle', label: `Lifecycle: ${params.lifecycle === 'overdue' ? 'Past EOL' : 'EOL soon'}` });
@@ -187,7 +187,7 @@ Views.assets = async function (el, params = {}) {
           id: 'status',
           allLabel: t('network.allStatuses'),
           selected: selectedStatus,
-          options: STATUSES.map((s) => ({ value: s, label: s })),
+          options: STATUSES.map((s) => ({ value: s, label: statusLabel(s) })),
         })}
       ${multiSelectHtml({
         id: 'category',
@@ -213,8 +213,8 @@ Views.assets = async function (el, params = {}) {
       const lifePills = (x) => {
         const l = lifecycleInfo(x);
         if (x.status === 'Scrap' || x.status === 'Sold') return '';
-        if (l.overdue) return `<span class="pill pill-rose" title="${esc('Past its lifecycle — replacement due')}">EOL</span>`;
-        if (l.pct != null && l.pct >= 90) return `<span class="pill pill-amber" title="${esc('Approaching end of lifecycle')}">EOL soon</span>`;
+        if (l.overdue) return `<span class="pill pill-rose" title="${esc(t('asset.eolTitle'))}">${esc(t('asset.eol'))}</span>`;
+        if (l.pct != null && l.pct >= 90) return `<span class="pill pill-amber" title="${esc(t('asset.eolSoonTitle'))}">${esc(t('asset.eolSoon'))}</span>`;
         return '';
       };
       const rowActions = (x, { mobile = false } = {}) => `<div class="hw-actions${mobile ? ' hw-actions-mobile' : ''}">
