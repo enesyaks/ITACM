@@ -665,9 +665,7 @@ const OB_TOUR = [
     title: 'See the product in action',
     desc: 'A short walkthrough of the daily loop: register hardware → assign people → print zimmet → renew licenses and contracts — all with an audit trail.',
     bullets: [
-      'Watch the animated demo below (no account needed)',
-      'Drop your own video at /media/how-it-works.mp4 if you prefer a recorded tour',
-      'Or set ONBOARDING_VIDEO_URL (YouTube / MP4) in the server environment',
+      'A short animated walkthrough of the daily loop — no account needed',
     ],
     tip: 'Use the left rail to jump ahead — every module shows a live-style UI preview.',
     preview: 'howto',
@@ -884,9 +882,7 @@ const OB_TOUR_I18N = {
     title: 'Ürünü işleyişte görün',
     desc: 'Günlük döngü: donanım kaydı → kişiye zimmet → PDF yazdırma → lisans / sözleşme yenileme — hepsi denetim iziyle.',
     bullets: [
-      'Aşağıdaki animasyonlu demoyu izleyin (hesap gerekmez)',
-      'Kendi kaydınızı kullanmak için /media/how-it-works.mp4 dosyasını koyun',
-      'Veya sunucuda ONBOARDING_VIDEO_URL (YouTube / MP4) ayarlayın',
+      'Günlük döngünün kısa animasyonlu turu — hesap gerekmez',
     ],
     tip: 'Soldaki listeden modüllere atlayın — her adımda canlı tarzı arayüz önizlemesi vardır.',
   },
