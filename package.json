@@ -1,7 +1,7 @@
 {
   "name": "itacm",
-  "version": "1.3.12",
-  "description": "IT Asset Control Pro \u2014 self-hosted IT asset management (PostgreSQL + Docker Compose) with a built-in web UI",
+  "version": "1.3.13",
+  "description": "IT Asset Control Pro — self-hosted IT asset management (PostgreSQL + Docker Compose) with a built-in web UI",
   "main": "server.js",
   "engines": {
     "node": ">=20"
@@ -22,7 +22,8 @@
     "change-db-password": "bash scripts/change-db-password.sh",
     "reset-password": "node scripts/reset-password.js",
     "lint": "node --check server.js && find src scripts -name '*.js' -exec node --check {} +",
-    "seed:all": "node scripts/seed-all.js"
+    "seed:all": "node scripts/seed-all.js",
+    "update": "bash scripts/update.sh"
   },
   "keywords": [
     "it-asset-management",
@@ -45,7 +46,7 @@
     "pg": "^8.12.0",
     "qrcode": "^1.5.4"
   },
-  "author": "Enes Yak\u0131\u015f\u0131k",
+  "author": "Enes Yakışık",
   "repository": {
     "type": "git",
     "url": "https://github.com/enesyakisik/itacm.git"

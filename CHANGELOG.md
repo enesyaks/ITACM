@@ -4,6 +4,17 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.13] — 2026-08-03
+
+### Added
+- **`npm run update` — one-command update.** Backs up the database, `git pull`s,
+  and rebuilds with the compose profile your `.env` implies — plain
+  (`docker compose up`), own domain (`--profile tls`), or Cloudflare
+  (`--profile cloudflare`, detected from `APP_DOMAIN` + `certs/origin.pem`) — so
+  you never have to remember which `--profile` / `--build` flag to pass. Then it
+  prints the version now running. `npm run update -- --dry-run` previews the
+  detected command without changing anything. `.env` and `certs/` are untouched.
+
 ## [1.3.12] — 2026-08-03
 
 ### Added
