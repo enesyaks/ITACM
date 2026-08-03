@@ -954,6 +954,7 @@ code, .mono { font-family: var(--mono); font-size: 12px; }
 .sidebar-user-info { flex: 1; min-width: 0; }
 .sidebar-user-info strong { display: block; color: #fff; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sidebar-user-info small { color: var(--sidebar-muted); font-size: 11px; }
+.sidebar-version { text-align: center; color: var(--sidebar-muted); font-size: 10px; letter-spacing: .04em; padding: 0 16px 10px; opacity: .7; font-variant-numeric: tabular-nums; }
 
 .main {
   min-width: 0;
