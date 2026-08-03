@@ -4,6 +4,15 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.5] — 2026-08-03
+
+### Fixed
+- **Onboarding tour no longer shows developer setup notes.** The "See the product
+  in action" step listed "drop your own video at /media/how-it-works.mp4" and
+  "set ONBOARDING_VIDEO_URL" — internal setup instructions that don't belong in an
+  end-user wizard. Replaced with a single plain-language line (EN + TR); the step
+  still falls back to the built-in animated demo reel when no video is configured.
+
 ## [1.3.4] — 2026-08-03
 
 ### Added
