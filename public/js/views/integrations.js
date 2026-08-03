@@ -286,10 +286,14 @@ Views.integrations = async function (el) {
           <input type="checkbox" id="int-update-check" ${AppConfig.updateCheck ? 'checked' : ''}>
           <span>${esc(t('integration.updatesToggle') || 'Check for new releases and notify the Owner')}</span>
         </label>
-        <div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <button type="button" class="btn btn-primary" id="int-update-save">
             <span class="ms">save</span> ${esc(t('common.save') || 'Save')}
           </button>
+          <button type="button" class="btn btn-outline" id="int-update-now">
+            <span class="ms">sync</span> ${esc(t('integration.checkNow') || 'Check now')}
+          </button>
+          <span class="cell-sub" id="int-update-result" style="margin:0"></span>
         </div>
       </section>` : ''}
 
@@ -531,6 +535,29 @@ GET /api/integrations/licenses/:id/sam
       if (typeof AppConfig === 'object' && AppConfig) AppConfig.updateCheck = saved ? !!saved.updateCheck : on;
       toast(t('integration.updatesSaved') || 'Update settings saved', 'success');
     } catch (err) { toast(err.message, 'error'); }
+    finally { if (btn) btn.disabled = false; }
+  });
+
+  $('#int-update-now', el)?.addEventListener('click', async () => {
+    const btn = $('#int-update-now', el);
+    const out = $('#int-update-result', el);
+    if (btn) btn.disabled = true;
+    if (out) out.textContent = t('integration.checking') || 'Checking…';
+    try {
+      const info = await api('/integrations/update-check', { method: 'POST' });
+      if (!info || !info.ok) {
+        if (out) out.textContent = t('integration.checkFailed') || 'Could not reach the update server';
+      } else if (info.updateAvailable) {
+        const msg = (t('integration.updateAvail') || 'Update available: v{v}').replace('{v}', info.updateAvailable);
+        if (out) out.textContent = msg;
+        if (typeof AppConfig === 'object' && AppConfig) AppConfig.updateAvailable = info.updateAvailable;
+        toast(msg, 'success');
+      } else {
+        const msg = (t('integration.upToDate') || 'You are on the latest version (v{v})').replace('{v}', info.current);
+        if (out) out.textContent = msg;
+        toast(msg, 'success');
+      }
+    } catch (err) { toast(err.message, 'error'); if (out) out.textContent = ''; }
     finally { if (btn) btn.disabled = false; }
   });
 

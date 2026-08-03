@@ -97,4 +97,20 @@ function getUpdateInfo(enabled) {
   return { enabled: true, current, latest, updateAvailable };
 }
 
-module.exports = { getUpdateInfo, compareVersions, tagToVersion, _cache: cache };
+/**
+ * Force an immediate check (ignores the once-a-day throttle) and await the
+ * result. Used by the "Check now" button — an explicit user action, so it runs
+ * regardless of the auto-check toggle. Never throws.
+ * @returns {Promise<{ok:boolean,current:string,latest:string|null,updateAvailable:string|null}>}
+ */
+async function checkNow() {
+  const version = await fetchLatestRelease();
+  cache.checkedAt = Date.now();
+  if (version) cache.latest = version;
+  const current = config.appVersion;
+  const latest = version || null;
+  const updateAvailable = latest && compareVersions(latest, current) > 0 ? latest : null;
+  return { ok: !!version, current, latest, updateAvailable };
+}
+
+module.exports = { getUpdateInfo, checkNow, compareVersions, tagToVersion, _cache: cache };
