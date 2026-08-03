@@ -258,17 +258,18 @@ Caddy listens on 80/443, redirects HTTP→HTTPS, proxies to the app, and renews 
 
 When your domain is **proxied by Cloudflare** (orange cloud), the turnkey path is a **Cloudflare Origin Certificate** — a cert Cloudflare pre-issues for your origin, so there's no Let's Encrypt challenge to break. You get full end-to-end HTTPS with SSL/TLS mode **Full (strict)**.
 
-1. Cloudflare dashboard → **SSL/TLS → Origin Server → Create Certificate** (keep defaults, list your hostname). Save the two blocks into `./certs`:
+1. **DNS** — in Cloudflare, add an **A record**: your hostname → the server's public IP, **Proxied** (orange cloud). *(once)*
+2. **Origin Certificate** — Cloudflare → **SSL/TLS → Origin Server → Create Certificate** (keep defaults, list your hostname). Save the two blocks into `./certs`: *(once)*
    - Origin Certificate → `certs/origin.pem`
    - Private Key → `certs/origin.key`  (then `chmod 600 certs/origin.key`)
-2. In `.env`: set `APP_DOMAIN`, `TRUST_PROXY=1`, `APP_URL=https://your-domain`, and keep the app host-local: `API_PORT=127.0.0.1:8000`.
-3. Start with the profile:
+3. In `.env`: set `APP_DOMAIN`, `TRUST_PROXY=1`, `APP_URL=https://your-domain`, and keep the app host-local: `API_PORT=127.0.0.1:8000`.
+4. Start with the profile:
 
 ```bash
 docker compose --profile cloudflare up -d
 ```
 
-4. Cloudflare → **SSL/TLS → Overview → Full (strict)**. Keep the record proxied (orange cloud).
+5. Cloudflare → **SSL/TLS → Overview → Full (strict)**, then open the origin firewall for Cloudflare: `sudo ufw allow 443/tcp` (port 80 on the origin is no longer needed). Keep the record proxied. *(once)*
 
 Caddy serves 443 with the Cloudflare-trusted certificate and proxies to the app; the key/cert are git-ignored (see `certs/README.md`). The `tls` and `cloudflare` profiles are mutually exclusive — pick the one that matches your setup.
 
@@ -292,6 +293,11 @@ Releases are tagged (`v1.1.0`, …) and listed under [Releases](https://github.c
 git pull                       # or: docker compose pull  (if you use a published image)
 docker compose up -d --build
 ```
+
+> **Using an HTTPS profile?** If you started with `--profile tls` or `--profile cloudflare`, include the **same flag** when you update — otherwise the reverse-proxy (Caddy) container isn't recreated and HTTPS goes down. Your `.env` and `certs/` are untouched by `git pull`:
+> ```bash
+> docker compose --profile cloudflare up -d --build
+> ```
 
 Take a backup first (`npm run backup`) — it's a one-liner and makes rollback trivial. After the new version boots, the running version is exposed at `GET /api/health` (`version` field) and shown in **Help → About**. The first time the **Owner** signs in on a newer version, a popup announces the update so at least the people running the instance know it changed.
 

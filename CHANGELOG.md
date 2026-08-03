@@ -4,6 +4,16 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.8] — 2026-08-03
+
+### Documentation
+- **Cloudflare HTTPS guide completed + update pitfall fixed.** The "Behind
+  Cloudflare" section now includes the DNS A-record and firewall (`443`) steps,
+  so it's a full from-scratch walkthrough. The Updating section now warns that if
+  you started with an HTTPS profile (`--profile tls` / `--profile cloudflare`)
+  you must pass the **same flag** when updating — otherwise the reverse-proxy
+  container isn't recreated and HTTPS goes down. Docs only.
+
 ## [1.3.7] — 2026-08-03
 
 ### Documentation
