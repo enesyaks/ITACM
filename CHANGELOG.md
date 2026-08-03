@@ -4,6 +4,17 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.18] — 2026-08-03
+
+### Fixed
+- **Mobile modal action bar no longer covers the screen.** On phones the modal
+  footer stacked every action button full-width in a single column, so an
+  action-heavy dialog — e.g. the asset detail with Close / QR / Label / Edit /
+  Duplicate / Repair / Handover — produced a ~7-row footer that filled the lower
+  half of the screen and pushed the body content behind it. The footer is now a
+  2-column grid (a lone trailing button spans the full width), roughly halving its
+  height so the scrollable body keeps its room.
+
 ## [1.3.17] — 2026-08-03
 
 ### Fixed

@@ -2105,16 +2105,21 @@ tr.net-row:hover td { background: var(--surface-low); }
   .modal-head { padding: 12px 14px; }
   .modal-head h3 { font-size: 14px; }
   .modal-body { padding: 14px; max-height: none; overscroll-behavior: contain; }
-  /* Stack footer actions full-width — 3-col grid cramped 4+ buttons
-     (e.g. onboarding-due: remind / email / add / print). */
+  /* Footer actions in a 2-column grid. A single stacked column made action-heavy
+     modals (e.g. the asset detail: Close/QR/Label/Edit/Duplicate/Repair/Handover)
+     overflow and cover the body. Two columns roughly halve the footer height while
+     the body still scrolls above it. A lone trailing button fills the row so no
+     empty cell is left. Primary buttons stay prominent by colour. */
   .modal-foot {
-    display: flex;
-    flex-direction: column;
-    flex-wrap: nowrap;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
     align-items: stretch;
     gap: 8px;
     padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
     border-radius: 0;
+  }
+  .modal-foot .btn:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
   }
   .modal-foot .btn {
     width: 100%;
