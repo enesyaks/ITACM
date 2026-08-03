@@ -4,6 +4,19 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.10] — 2026-08-03
+
+### Added
+- **`npm run setup` now configures HTTPS interactively.** The new-install wizard
+  asks how the app will be reached — local HTTP, own domain (auto HTTPS via
+  Caddy), or behind Cloudflare — and writes the matching `.env` (`APP_DOMAIN`,
+  `APP_URL`, `TRUST_PROXY`, host-local `API_PORT`) plus the exact
+  `docker compose --profile …` start command. For the Cloudflare path it walks
+  you through creating an Origin Certificate and lets you **paste the certificate
+  and key straight in**, writing `certs/origin.pem` / `certs/origin.key` (key
+  `chmod 600`) for you — no manual file editing. It then prints the steps only you
+  can do (DNS record, Cloudflare SSL mode, firewall).
+
 ## [1.3.9] — 2026-08-03
 
 ### Changed
