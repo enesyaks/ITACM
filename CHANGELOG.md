@@ -4,6 +4,16 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.17] — 2026-08-03
+
+### Fixed
+- **Barcode/QR scanner: closed the last un-gated entry point.** v1.3.14 hid the
+  scanner from users without inventory access on the desktop topbar and the mobile
+  center FAB, but the **"Scan asset" item in the mobile "More" sheet** was still
+  shown to everyone. It is now gated on the same `asset:read` permission, so Portal
+  (self-service), HR and other restricted users no longer see any way to open the
+  camera scanner.
+
 ## [1.3.16] — 2026-08-03
 
 ### Fixed

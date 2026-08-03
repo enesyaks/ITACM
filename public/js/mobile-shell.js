@@ -284,6 +284,11 @@ function renderMobileNav() {
 function renderMobileMoreSheet() {
   const sheet = $('#mobile-more');
   if (!sheet) return;
+  // Same inventory gate as the scan FAB: "Scan asset" looks an asset up by tag,
+  // so users without asset:read (Portal, HR, restricted staff) must not see it.
+  const moreCanScan = (typeof Auth !== 'undefined' && typeof Auth.canIam === 'function')
+    ? Auth.canIam('asset', 'read')
+    : !((typeof isPortalUser === 'function' && isPortalUser()) || (typeof isHrUser === 'function' && isHrUser()));
   const hash = (location.hash.split('?')[0]) || '#/dashboard';
   const primary = new Set(MOBILE_PRIMARY.map((p) => p.hash));
   const extras = Object.entries(ROUTES)
@@ -323,10 +328,10 @@ function renderMobileMoreSheet() {
           <span class="ms">search</span>
           <span>${esc(t('common.search'))}</span>
         </button>
-        <button type="button" class="mobile-more-item" id="mobile-more-scan">
+        ${moreCanScan ? `<button type="button" class="mobile-more-item" id="mobile-more-scan">
           <span class="ms">qr_code_scanner</span>
           <span>${esc(t('qs.scanAsset'))}</span>
-        </button>
+        </button>` : ''}
         <button type="button" class="mobile-more-item" id="mobile-more-settings">
           <span class="ms">settings</span>
           <span>${esc(t('common.settings'))}</span>
