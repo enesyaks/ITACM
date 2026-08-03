@@ -4,6 +4,20 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.6] — 2026-08-03
+
+### Added
+- **Turnkey HTTPS behind Cloudflare (Origin Certificate).** New
+  `docker compose --profile cloudflare up -d` serves the app on 443 with a
+  Cloudflare Origin Certificate instead of Let's Encrypt — which cannot be issued
+  behind Cloudflare's orange-cloud proxy. Drop the cert/key from Cloudflare
+  (SSL/TLS → Origin Server) into `certs/`, set `APP_DOMAIN`, keep the api
+  host-local, and switch Cloudflare to Full (strict) for end-to-end TLS. New
+  `Caddyfile.cloudflare` and `caddy-cf` service; `certs/` keys are git-ignored
+  (with a README); README and `.env.example` now document both HTTPS paths (`tls`
+  for direct, `cloudflare` for proxied). Off by default; the standard stack is
+  unchanged.
+
 ## [1.3.5] — 2026-08-03
 
 ### Fixed

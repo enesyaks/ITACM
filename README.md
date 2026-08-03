@@ -248,6 +248,26 @@ docker compose --profile tls up -d
 
 Caddy listens on 80/443, redirects HTTP→HTTPS, proxies to the app, and renews the certificate on its own. With the proxy in front you don't need to expose the app port publicly — set `API_PORT=127.0.0.1:8000` in `.env` to keep it host-local. Want certificate-expiry emails? Add `{ email you@example.com }` to the top of the `Caddyfile`.
 
+> **Behind Cloudflare?** Don't use the `tls` profile above — Caddy can't complete a Let's Encrypt challenge through Cloudflare's orange-cloud proxy. Use the `cloudflare` profile instead (next section).
+
+### Behind Cloudflare — end-to-end TLS (Origin Certificate)
+
+When your domain is **proxied by Cloudflare** (orange cloud), the turnkey path is a **Cloudflare Origin Certificate** — a cert Cloudflare pre-issues for your origin, so there's no Let's Encrypt challenge to break. You get full end-to-end HTTPS with SSL/TLS mode **Full (strict)**.
+
+1. Cloudflare dashboard → **SSL/TLS → Origin Server → Create Certificate** (keep defaults, list your hostname). Save the two blocks into `./certs`:
+   - Origin Certificate → `certs/origin.pem`
+   - Private Key → `certs/origin.key`  (then `chmod 600 certs/origin.key`)
+2. In `.env`: set `APP_DOMAIN`, `TRUST_PROXY=1`, `APP_URL=https://your-domain`, and keep the app host-local: `API_PORT=127.0.0.1:8000`.
+3. Start with the profile:
+
+```bash
+docker compose --profile cloudflare up -d
+```
+
+4. Cloudflare → **SSL/TLS → Overview → Full (strict)**. Keep the record proxied (orange cloud).
+
+Caddy serves 443 with the Cloudflare-trusted certificate and proxies to the app; the key/cert are git-ignored (see `certs/README.md`). The `tls` and `cloudflare` profiles are mutually exclusive — pick the one that matches your setup.
+
 ### Behind a reverse proxy / Cloudflare
 
 Rate-limiting and brute-force protection key on the client IP, so when a proxy sits in front you **must** tell the app to trust it — otherwise every visitor is bucketed under the proxy's IP and legitimate users get throttled as one:
