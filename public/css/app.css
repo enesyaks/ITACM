@@ -5544,3 +5544,13 @@ body.ai-open .ai-panel { opacity: 1; visibility: visible; transform: none; }
 .error-state-msg { font-size: 14px; color: var(--on-surface-variant); max-width: 440px; line-height: 1.55; margin: 0 0 24px; word-break: break-word; }
 .error-state-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
 @keyframes error-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+/* ---- loading states: boot splash + per-view spinner ---- */
+@keyframes itacm-spin { to { transform: rotate(360deg); } }
+#boot-splash { position: fixed; inset: 0; z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; background: var(--surface, #f7f6fb); transition: opacity .25s ease; }
+#boot-splash.hidden { opacity: 0; pointer-events: none; }
+.boot-spinner { width: 44px; height: 44px; border-radius: 50%; border: 3px solid var(--surface-container, #e9e6f2); border-top-color: var(--primary, #3525cd); animation: itacm-spin .8s linear infinite; }
+.boot-title { font: 600 13px/1.3 system-ui, -apple-system, sans-serif; color: var(--on-surface-variant, #464555); letter-spacing: .02em; text-align: center; }
+.view-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; min-height: 48vh; color: var(--on-surface-variant); }
+.view-loading .spinner { width: 34px; height: 34px; border-radius: 50%; border: 3px solid var(--surface-container); border-top-color: var(--primary); animation: itacm-spin .8s linear infinite; }
+.view-loading span { font-size: 13px; }

@@ -139,7 +139,7 @@ async function navigate() {
 
   view.dataset.navGen = String(gen);
   if (view._viewAbort) view._viewAbort.abort(); // drop stale delegated listeners
-  view.innerHTML = `<div class="table-empty">${esc(t('common.loading'))}</div>`;
+  view.innerHTML = `<div class="view-loading"><div class="spinner"></div><span>${esc(t('common.loading'))}</span></div>`;
   try {
     await Views[route.view](view, params);
     if (isStaleView(view)) return;
@@ -399,7 +399,17 @@ async function showMandatoryOwnerMfa() {
   });
 }
 
+/** Fade out the first-load boot splash once a real screen is ready. */
+function hideBootSplash() {
+  const b = document.getElementById('boot-splash');
+  if (b && !b.classList.contains('hidden')) {
+    b.classList.add('hidden');
+    setTimeout(() => b.remove(), 300);
+  }
+}
+
 function showApp() {
+  hideBootSplash();
   if (needsForcedPasswordChange(Auth.profile)) {
     showMandatoryPasswordChange();
     return;
@@ -473,6 +483,7 @@ function showApp() {
 }
 
 function showLogin() {
+  hideBootSplash();
   $('#app').classList.add('hidden');
   $('#onboarding-screen').classList.add('hidden');
   $('#login-screen').classList.remove('hidden');
@@ -510,6 +521,7 @@ function showConfigError(targetSel) {
 }
 
 function showOnboarding() {
+  hideBootSplash();
   $('#app').classList.add('hidden');
   $('#login-screen').classList.add('hidden');
   $('#onboarding-screen').classList.remove('hidden');
@@ -3529,4 +3541,10 @@ async function init() {
   showLogin();
 }
 
-init();
+// Boot. If init throws before any screen renders, fall back to login so the
+// splash never sticks; a timeout is the last-resort failsafe.
+init().catch((err) => {
+  console.error('Boot failed:', err);
+  try { showLogin(); } catch { hideBootSplash(); }
+});
+setTimeout(hideBootSplash, 10000);
