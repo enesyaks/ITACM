@@ -24,6 +24,10 @@ Hardware & network inventory · employee handovers with printable PDF receipts �
 
 <br />
 
+📘 **New here?** Follow the simple, copy-paste [**visual install guide**](docs/install-guide.html) — available in 12 languages.
+
+<br />
+
 ![Dashboard](docs/screenshots/dashboard.png)
 
 </div>
