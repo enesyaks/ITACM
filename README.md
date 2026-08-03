@@ -4,7 +4,7 @@
 
 ### Self-hosted IT asset management, batteries included.
 
-Hardware & network inventory · employee handovers with printable PDF receipts · software licenses · mobile lines · vendors & contracts · repairs · physical stock counts · a full audit trail — all behind a built-in, mobile-ready web UI running entirely on your own infrastructure.
+Hardware & network inventory · employee handovers with printable PDF receipts · software licenses · mobile lines · vendors & contracts · repairs · physical stock counts · a natural-language AI assistant · a full audit trail — all behind a built-in, mobile-ready web UI running entirely on your own infrastructure.
 
 <br />
 
@@ -125,6 +125,9 @@ Departments (with a **manager**), teams (with a **lead**) and their members draw
 </td>
 <td width="50%" valign="top">
 
+### 🤖 AI assistant (natural-language queries)
+Ask about your inventory in plain language and get grounded answers — **provider-agnostic**: a local **Ollama** model or a cloud API (OpenAI, DeepSeek, Anthropic, Groq, Mistral, Together, OpenRouter, or a custom endpoint). Streaming replies, result tables, CSV export, auto charts and a collapsible "show SQL". Analytical questions run a **guarded read-only** query against a curated view schema — never the base tables — under a low-privilege role, honouring each user's RBAC (a user can't surface data the UI denies them), with SSRF-safe outbound and a per-user rate limit. **Off by default** — enable under **Integrations → AI**.
+
 ### 🔐 Role-based access control
 `Owner`, `Admin`, `Helpdesk`, `Viewer` roles enforced on **every** endpoint, re-checked on each request so changes apply instantly. Owners can disable or delete accounts — every disable/enable/delete/role change is recorded. Sign-in is local email/password with **TOTP MFA** — optional for every role and **mandatory for `Owner` accounts**: an Owner must enrol MFA before using the app, cannot disable it, and no one can be promoted to Owner until they have it enabled. Plus password change and server-side logout (JWT revoke). There is no SSO / Entra login.
 
@@ -158,10 +161,11 @@ Seat pools with atomic claim/release and 30-day expiry alerts. Print scannable *
 
 ## 🧩 Modules
 
-The sidebar maps 1:1 to the feature set:
+The sidebar maps 1:1 to the feature set, plus a floating **AI assistant** (⌘/Ctrl+J) on top:
 
 | Module | What it does |
 |---|---|
+| **AI Assistant** | Natural-language queries over your inventory — floating launcher (⌘/Ctrl+J), provider-agnostic, guarded read-only. Off by default (Integrations → AI) |
 | **Dashboard** | KPIs, attention-required alerts (licenses, low stock, EOL), asset distribution, recent activity |
 | **Hardware** | Full device inventory — QR codes, bulk actions, cost/warranty, lifecycle, global search |
 | **Network & Server** | Infra inventory + dependency topology + rack cabinets (site/owner, not personal zimmet) |
@@ -358,6 +362,9 @@ docker compose exec api npm run reset-password -- owner@example.com --password '
 | `JWT_EXPIRES_IN` | – | Token lifetime (default `12h`) |
 | `ADMIN_EMAIL` / `ADMIN_USERNAME` / `ADMIN_PASSWORD` | – | First-run Owner seed (password auto-generated if empty) |
 | `TRUST_PROXY` | – | `1` (or a hop count) when behind a reverse proxy / Cloudflare, so rate limits key on the real client IP. Off by default. |
+| `APP_URL` | – | Public URL used in outbound email links. Prefer setting it in-app (Integrations → Notifications → App URL); this env var is the fallback. Defaults to `http://localhost:8000`. |
+| `APP_DOMAIN` | – | Domain for the HTTPS compose profiles (`--profile tls` / `--profile cloudflare`). |
+| `AI_ENABLED` / `AI_PROVIDER` / `AI_MODEL` / `AI_BASE_URL` / `AI_API_KEY` | – | AI assistant defaults (optional). Normally configured in **Integrations → AI**, not via env. Assistant is off unless enabled. |
 
 With docker compose, `POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD` feed both the database container and the API's `DATABASE_URL`.
 
@@ -394,6 +401,9 @@ All responses are `{ success, data }` or `{ success: false, error, details? }`. 
 | POST | `/api/import/inventory` | Owner, Admin | Excel/CSV migration (dry-run + commit) |
 | GET | `/api/documents/:id/download` | Owner, Admin, Helpdesk | Stream a stored handover document (auth required) |
 | GET | `/api/audit` · `/:bucket/:id` | Owner, Admin | Unified audit timeline + event detail |
+| POST | `/api/ai/query` | staff | **AI assistant** — SSE streaming, agentic tool loop, guarded read-only queries (per-user rate-limited) |
+| GET | `/api/ai/status` | staff | Assistant availability (provider/model) |
+| GET/PUT/DELETE | `/api/ai/config` | integration:read / manage | Read / save / clear AI settings (API key encrypted, masked) |
 
 <details>
 <summary><b>The atomic handover basket — how it works</b></summary>

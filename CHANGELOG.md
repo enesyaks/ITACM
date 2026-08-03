@@ -4,6 +4,14 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.7] — 2026-08-03
+
+### Documentation
+- **README brought up to date with the AI assistant** (added in 1.3.0 but not
+  documented): a new Feature-highlights entry, a Modules-table row, `/api/ai/*`
+  in the API reference, and `AI_*` / `APP_URL` / `APP_DOMAIN` in the
+  configuration reference. No code changes.
+
 ## [1.3.6] — 2026-08-03
 
 ### Added
