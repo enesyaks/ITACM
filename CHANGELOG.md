@@ -4,6 +4,35 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.16] — 2026-08-03
+
+### Fixed
+- **Localized the Onboarding wizard, reports, status badges and the catalog-model
+  dialog.** Several surfaces still showed English inside a non-English UI:
+  - Onboarding wizard field labels (Full name / Email / Department / Title /
+    Notes), the stock filter, "no stock / no free lines" empty states, the
+    review step (Employee / Reserved assets / Reserved lines) and the
+    Cancel / Back / Next buttons.
+  - Asset **status badges** (In Stock / Assigned / In Repair / Reserved / Scrap /
+    Sold, plus Active / Inactive) now translate everywhere via a single display
+    helper — the canonical English value is unchanged, so filters and exports
+    keep working. The **EOL / EOL soon** lifecycle pills are localized too.
+  - **Report** chrome: Print / Export CSV buttons, the "first 100 of N rows"
+    preview note, the row-count footer, common column headers and the
+    "N assigned assets across M employees" summary. CSV exports keep English
+    headers for stable downstream parsing.
+  - The **Add catalog model** dialog (title, field labels, placeholder, submit
+    button and success toast).
+
+### Changed
+- **HR onboarding email is now optional for HR — IT fills it in.** HR often does
+  not know a new hire's address when filing the ticket. The HR onboarding form no
+  longer requires an email; when IT acknowledges the request on the dashboard, it
+  prompts for a valid email (only when the ticket has none) and saves it onto the
+  request before provisioning the employee. A new migration
+  (`046_hr_request_optional_email.sql`) rebuilds the pending-onboard dedup index so
+  it only applies to tickets that actually carry an email.
+
 ## [1.3.15] — 2026-08-03
 
 ### Fixed

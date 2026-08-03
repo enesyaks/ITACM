@@ -61,10 +61,12 @@ router.post('/offboard-requests', requirePermission('hr_request', 'create'), asy
 
 /**
  * POST /api/hr/requests/:id/acknowledge — IT picks the ticket up. For onboard
- * tickets this provisions the employee + scheduled onboarding. İzin: hr_request:update
+ * tickets this provisions the employee + scheduled onboarding. The optional
+ * body { email } lets IT supply the new hire's address when HR filed without
+ * one. İzin: hr_request:update
  */
 router.post('/requests/:id/acknowledge', requirePermission('hr_request', 'update'), asyncHandler(async (req, res) => {
-  const data = await hrRequestService.acknowledgeRequest(req.params.id, req.user);
+  const data = await hrRequestService.acknowledgeRequest(req.params.id, req.user, req.body);
   res.json({ success: true, data });
 }));
 

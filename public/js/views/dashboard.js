@@ -358,6 +358,18 @@ async function openHrRequestModal(requestId, el) {
        </table></div>`
     : '';
 
+  // HR can file an onboard ticket without an email; IT supplies it here before
+  // approving so the employee record can be created.
+  const needsEmail = !isOffboard && !r.email && canAct && r.status === 'pending';
+  const emailInputHtml = needsEmail
+    ? `<div class="form-field" style="margin-top:14px" id="hr-email-field">
+         <label>${esc(t('hr.itEmailTitle'))} *</label>
+         <input id="hr-ack-email" type="email" autocomplete="email" placeholder="ad.soyad@sirket.com">
+         <span class="cell-sub" style="display:block;margin-top:4px">${esc(t('hr.itEmailHint'))}</span>
+         <div id="hr-ack-email-err" class="form-error hidden" style="margin-top:6px"></div>
+       </div>`
+    : '';
+
   openModal({
     title: t(isOffboard ? 'hr.reviewOffboard' : 'hr.reviewOnboard') + ' — ' + (r.fullName || ''),
     body: `
@@ -373,6 +385,7 @@ async function openHrRequestModal(requestId, el) {
         ${row(t('hr.notes'), r.notes)}
       </tbody></table></div>
       ${itemsHtml}
+      ${emailInputHtml}
       <p class="cell-sub" style="margin:14px 0 0">${esc(t(isOffboard ? 'hr.offboardHint' : 'hr.onboardHint'))}</p>`,
     foot: `
       <button class="btn btn-outline" data-close>${esc(t('common.close'))}</button>
@@ -384,9 +397,22 @@ async function openHrRequestModal(requestId, el) {
       const reject = overlay.querySelector('#hr-reject');
       if (approve) {
         approve.addEventListener('click', async () => {
+          const body = {};
+          if (needsEmail) {
+            const emailEl = overlay.querySelector('#hr-ack-email');
+            const errEl = overlay.querySelector('#hr-ack-email-err');
+            const val = String((emailEl && emailEl.value) || '').trim();
+            const ok = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val);
+            if (!ok) {
+              if (errEl) { errEl.textContent = t('hr.itEmailRequired'); errEl.classList.remove('hidden'); }
+              if (emailEl) emailEl.focus();
+              return;
+            }
+            body.email = val;
+          }
           approve.disabled = true;
           try {
-            const res = await api('/hr/requests/' + encodeURIComponent(r.id) + '/acknowledge', { method: 'POST' });
+            const res = await api('/hr/requests/' + encodeURIComponent(r.id) + '/acknowledge', { method: 'POST', body });
             closeModal();
             toast(res && res.onboardingId
               ? (t('hr.ackOnboardOk'))

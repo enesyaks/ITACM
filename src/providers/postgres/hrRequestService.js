@@ -204,7 +204,10 @@ async function createOnboardRequest(body, user) {
   const eventDate = parseDateOnly(body && (body.eventDate || body.startDate));
   const items = normalizeItems((body && (body.items || body.equipment)) || []);
   if (!fullName) throw HttpError.badRequest('fullName is required');
-  if (!email || !EMAIL_RE.test(email)) throw HttpError.badRequest('Valid email is required');
+  // Email is optional at HR filing time — HR often does not know the new hire's
+  // address yet. IT supplies it when acknowledging the request. When HR does
+  // provide one, it still has to be a valid address.
+  if (email && !EMAIL_RE.test(email)) throw HttpError.badRequest('Enter a valid email or leave it blank');
   if (!eventDate) throw HttpError.badRequest('eventDate (YYYY-MM-DD) is required');
   if (!items.length) throw HttpError.badRequest('Select at least one equipment category');
   const a = actor(user);
@@ -212,18 +215,22 @@ async function createOnboardRequest(body, user) {
   let requestId;
   try {
     requestId = await withTransaction(async (t) => {
-      const pending = await t.query(
-        "SELECT id FROM hr_requests WHERE type = 'onboard' AND status = 'pending' AND lower(email) = $1 LIMIT 1",
-        [email]
-      );
-      if (pending.rows[0]) throw HttpError.conflict('A pending onboard request already exists for this email');
+      // The email dedup / employee link only apply when HR gave us an email.
+      let employeeId = null;
+      if (email) {
+        const pending = await t.query(
+          "SELECT id FROM hr_requests WHERE type = 'onboard' AND status = 'pending' AND lower(email) = $1 LIMIT 1",
+          [email]
+        );
+        if (pending.rows[0]) throw HttpError.conflict('A pending onboard request already exists for this email');
 
-      // Read-only lookup: an existing record is linked for IT's context, never mutated.
-      const existing = await t.query(
-        'SELECT id, status FROM employees WHERE lower(email) = $1 LIMIT 1',
-        [email]
-      );
-      const employeeId = existing.rows[0] ? existing.rows[0].id : null;
+        // Read-only lookup: an existing record is linked for IT's context, never mutated.
+        const existing = await t.query(
+          'SELECT id, status FROM employees WHERE lower(email) = $1 LIMIT 1',
+          [email]
+        );
+        employeeId = existing.rows[0] ? existing.rows[0].id : null;
+      }
 
       const { rows } = await t.query(
         `INSERT INTO hr_requests
@@ -254,7 +261,7 @@ async function createOnboardRequest(body, user) {
   await audit({
     action: 'hr.request.create',
     source: 'hr',
-    summary: 'HR onboard request for ' + fullName + ' (' + email + ') on ' + eventDate,
+    summary: 'HR onboard request for ' + fullName + (email ? ' (' + email + ')' : '') + ' on ' + eventDate,
     actorId: a.id,
     actorEmail: a.email,
     actorName: a.name,
@@ -355,7 +362,7 @@ async function releaseClaim(id) {
  * offboard → marks the ticket handled and points IT at the offboard checklist;
  *            no employee status changes here.
  */
-async function acknowledgeRequest(id, user) {
+async function acknowledgeRequest(id, user, body) {
   if (!isUuid(id)) throw HttpError.notFound('HR request ' + id + ' not found');
   const a = actor(user);
   const claimed = await claimPending(id, a);
@@ -363,7 +370,18 @@ async function acknowledgeRequest(id, user) {
   let onboardingId = null;
   if (claimed.type === 'onboard') {
     try {
-      const email = String(claimed.email || '').trim().toLowerCase();
+      // HR may have filed the request without an email; IT supplies it here.
+      // Prefer the email already on the request, otherwise take it from IT.
+      let email = String(claimed.email || '').trim().toLowerCase();
+      if (!email) {
+        const supplied = String((body && body.email) || '').trim().toLowerCase().slice(0, 200);
+        if (!supplied || !EMAIL_RE.test(supplied)) {
+          throw HttpError.badRequest('A valid email is required to acknowledge this onboarding request');
+        }
+        email = supplied;
+        // Persist it so the request record is complete for audit/history.
+        await query('UPDATE hr_requests SET email = $2 WHERE id = $1', [id, email]);
+      }
       const existing = await query(
         'SELECT id, status, full_name FROM employees WHERE lower(email) = $1 LIMIT 1',
         [email]

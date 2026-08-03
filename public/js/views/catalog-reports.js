@@ -45,19 +45,19 @@ Views.catalog = async function (el) {
 
   if (canCreate) {
     $('#cat-new', el)?.addEventListener('click', () => formModal({
-      title: 'Add catalog model',
+      title: t('cat.addModelTitle'),
       fields: [
-        { name: 'category', label: 'Category *', type: 'select', required: true, value: 'Laptop',
+        { name: 'category', label: t('cat.fCategory') + ' *', type: 'select', required: true, value: 'Laptop',
           options: ['Laptop', 'Desktop', 'Monitor', 'Television', 'Phone', 'Tablet', 'Printer', 'Network', 'Server', 'Keyboard', 'Mouse', 'Headset', 'Docking Station', 'Webcam', 'Peripheral', 'Accessory', 'Other'] },
-        { name: 'brand', label: 'Brand *', required: true },
-        { name: 'model', label: 'Model *', required: true, full: true },
-        { name: 'lifecycleMonths', label: 'Lifecycle (months)', type: 'number', full: true,
-          placeholder: 'Blank = category default. e.g. Apple / MacBook → 60' },
+        { name: 'brand', label: t('cat.fBrand') + ' *', required: true },
+        { name: 'model', label: t('cat.fModel') + ' *', required: true, full: true },
+        { name: 'lifecycleMonths', label: t('cat.fLifecycle'), type: 'number', full: true,
+          placeholder: t('cat.fLifecyclePh') },
       ],
-      submitLabel: 'Add to catalog',
+      submitLabel: t('cat.addModelSubmit'),
       async onSubmit(d) {
         await api('/catalog', { method: 'POST', body: d });
-        toast(`${d.brand} ${d.model} added to catalog`, 'success');
+        toast(t('cat.addedToast').replace('{brand}', d.brand).replace('{model}', d.model), 'success');
         Views.catalog(el);
       },
     }));
@@ -720,7 +720,9 @@ const REPORT_BUILDERS = {
       })
       .sort((a2, b2) => a2[0].localeCompare(b2[0]));
     return { cols: ['Employee', 'Department', 'Asset Tag', 'Brand / Model', 'Category', 'Serial No'], rows,
-      summary: `${items.length} assigned assets across ${new Set(rows.map((r) => r[0])).size} employees` };
+      summary: t('rep.sumAssignedAcross')
+        .replace('{n}', items.length)
+        .replace('{m}', new Set(rows.map((r) => r[0])).size) };
   },
 
   employees: async () => {
@@ -990,6 +992,30 @@ const CUSTOM_SOURCES = {
   },
 };
 
+// Report column headers are canonical English strings inside each report
+// builder. Map the common ones to translations for DISPLAY; unknown headers
+// fall through unchanged. CSV export keeps the original English headers.
+const REP_COL_I18N = {
+  'Employee': 'rep.col.employee',
+  'Department': 'rep.col.department',
+  'Asset Tag': 'rep.col.assetTag',
+  'Brand / Model': 'rep.col.brandModel',
+  'Category': 'rep.col.category',
+  'Serial No': 'rep.col.serialNo',
+  'Location': 'rep.col.location',
+  'Purchase Date': 'rep.col.purchaseDate',
+  'Email': 'rep.col.email',
+  'Title': 'rep.col.title',
+  'Status': 'common.status',
+  'Assets Held': 'rep.col.assetsHeld',
+};
+function repCol(name) {
+  const key = REP_COL_I18N[name];
+  if (!key) return name;
+  const out = t(key);
+  return out && out !== key ? out : name;
+}
+
 /* Shared result renderer: preview table + Export CSV + Print. */
 function showReportResult(slot, title, rep) {
   const shown = rep.rows.slice(0, 100);
@@ -999,20 +1025,20 @@ function showReportResult(slot, title, rep) {
         <h3>${esc(title)} — ${new Date().toLocaleDateString()}</h3>
         <div style="display:flex;gap:8px">
           ${Auth.canIam('report', 'export')
-            ? '<button class="btn btn-outline btn-sm" id="rep-print"><span class="ms">print</span> Print</button><button class="btn btn-primary btn-sm" id="rep-csv"><span class="ms">download</span> Export CSV</button>'
+            ? `<button class="btn btn-outline btn-sm" id="rep-print"><span class="ms">print</span> ${esc(t('rep.print'))}</button><button class="btn btn-primary btn-sm" id="rep-csv"><span class="ms">download</span> ${esc(t('rep.exportCsv'))}</button>`
             : ''}
         </div>
       </div>
       <div class="card-pad" style="padding-bottom:8px"><span class="cell-sub">${esc(rep.summary)}</span></div>
       <div class="table-wrap" style="max-height:480px;overflow-y:auto"><table class="data">
-        <thead><tr>${rep.cols.map((c) => `<th>${esc(c)}</th>`).join('')}</tr></thead>
+        <thead><tr>${rep.cols.map((c) => `<th>${esc(repCol(c))}</th>`).join('')}</tr></thead>
         <tbody>
           ${shown.map((row) => `<tr>${row.map((v) => `<td>${esc(v)}</td>`).join('')}</tr>`).join('')}
           ${rep.rows.length > 100 ? `<tr><td colspan="${rep.cols.length}" class="cell-sub" style="padding:10px 16px">
-            Preview shows first 100 of ${rep.rows.length} rows — the CSV export contains everything.</td></tr>` : ''}
+            ${esc(t('rep.previewNote').replace('{n}', rep.rows.length))}</td></tr>` : ''}
         </tbody>
       </table></div>
-      <div class="table-foot">${rep.rows.length} rows</div>
+      <div class="table-foot">${rep.rows.length} ${esc(t('rep.rowsLabel'))}</div>
     </div>`;
   slot.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
@@ -1043,7 +1069,7 @@ function showReportResult(slot, title, rep) {
           <p class="r-terms">${esc(rep.summary)}</p>
           <section class="r-card">
             <table class="r-items">
-              <thead><tr>${rep.cols.map((c) => `<th>${esc(c)}</th>`).join('')}</tr></thead>
+              <thead><tr>${rep.cols.map((c) => `<th>${esc(repCol(c))}</th>`).join('')}</tr></thead>
               <tbody>${rep.rows.map((row) => `<tr>${row.map((v) => `<td>${esc(v)}</td>`).join('')}</tr>`).join('')}</tbody>
             </table>
           </section>

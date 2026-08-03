@@ -61,7 +61,8 @@ Views.hr = async function (el) {
       + '<div id="hr-on-err" class="form-error hidden" style="margin-bottom:10px"></div>'
       + '<div class="grid grid-2">'
       + '<div class="form-field"><label>' + esc(t('hr.fullName')) + ' *</label><input id="hr-on-name" autocomplete="name"></div>'
-      + '<div class="form-field"><label>' + esc(t('hr.email')) + ' *</label><input id="hr-on-email" type="email" autocomplete="email"></div>'
+      + '<div class="form-field"><label>' + esc(t('hr.email')) + '</label><input id="hr-on-email" type="email" autocomplete="email">'
+      + '<span class="cell-sub" style="display:block;margin-top:4px">' + esc(t('hr.emailOptionalHint')) + '</span></div>'
       + '<div class="form-field"><label>' + esc(t('hr.department')) + '</label><select id="hr-on-dept"><option value="">—</option>'
       + (AppConfig.departments || []).map((d) => '<option value="' + esc(d) + '">' + esc(d) + '</option>').join('')
       + '</select></div>'

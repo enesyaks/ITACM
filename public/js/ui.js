@@ -142,8 +142,27 @@ const STATUS_PILLS = {
   'line_unassigned': 'pill-rose',
   'Completed': 'pill-emerald',
 };
+// Canonical asset/employee status values map to translation keys for DISPLAY
+// only — the underlying value stays English so filters, API calls and
+// comparisons elsewhere keep working unchanged.
+const STATUS_I18N = {
+  'In Stock': 'status.inStock',
+  'Assigned': 'status.assigned',
+  'In Repair': 'status.inRepair',
+  'Reserved': 'status.reserved',
+  'Scrap': 'status.scrap',
+  'Sold': 'status.sold',
+  'Active': 'status.active',
+  'Inactive': 'status.inactive',
+};
+function statusLabel(text) {
+  const key = STATUS_I18N[text];
+  if (!key || typeof t !== 'function') return text;
+  const out = t(key);
+  return out && out !== key ? out : text;
+}
 function badge(text) {
-  return `<span class="pill ${STATUS_PILLS[text] || 'pill-slate'}">${esc(text)}</span>`;
+  return `<span class="pill ${STATUS_PILLS[text] || 'pill-slate'}">${esc(statusLabel(text))}</span>`;
 }
 
 /** "Elif Yılmaz" → "EY" for avatar circles. */
