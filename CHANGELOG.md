@@ -4,6 +4,17 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.11] — 2026-08-03
+
+### Added
+- **Manual "Check now" button for software updates** (Integrations → Software
+  updates, Owner). The automatic check runs at most once a day; this button forces
+  an immediate check against GitHub and shows the result inline — "you're on the
+  latest version (vX)", "update available: vX", or "couldn't reach the update
+  server". It runs regardless of the auto-check toggle (clicking is explicit
+  consent). New `POST /api/integrations/update-check` (integration:manage); the
+  check awaits the result and ignores the daily throttle.
+
 ## [1.3.10] — 2026-08-03
 
 ### Added

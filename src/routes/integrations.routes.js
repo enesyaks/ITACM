@@ -59,6 +59,11 @@ router.post('/notifications/digest', authenticate, requirePermission('integratio
   res.json({ success: true, data: await notificationService.runAlertDigest() });
 }));
 
+/** Manual "check for updates now" — explicit action, ignores the daily throttle. */
+router.post('/update-check', authenticate, requirePermission('integration', 'manage'), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await require('../utils/updateCheck').checkNow() });
+}));
+
 router.delete('/notifications', authenticate, requirePermission('integration', 'manage'), asyncHandler(async (req, res) => {
   const smtp = req.query.smtp !== '0' && req.body?.smtp !== false;
   const notify = req.query.notify !== '0' && req.body?.notify !== false;
