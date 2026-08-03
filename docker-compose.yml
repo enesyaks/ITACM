@@ -125,6 +125,36 @@ services:
       - caddy-data:/data
       - caddy-config:/config
 
+  # HTTPS for a Cloudflare-PROXIED domain — uses a Cloudflare Origin Certificate
+  # instead of Let's Encrypt (which can't be issued behind the orange cloud).
+  # End-to-end TLS with Cloudflare SSL/TLS mode = Full (strict).
+  #   docker compose --profile cloudflare up -d
+  # Put the cert + key from Cloudflare (SSL/TLS → Origin Server) in ./certs as
+  # origin.pem / origin.key, set APP_DOMAIN + TRUST_PROXY=1, and keep the api port
+  # host-local (API_PORT=127.0.0.1:8000). Cloudflare reaches the origin on 443.
+  caddy-cf:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    profiles: ["cloudflare"]
+    depends_on:
+      - api
+    ports:
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:-}
+    volumes:
+      - type: bind
+        source: ./Caddyfile.cloudflare
+        target: /etc/caddy/Caddyfile
+        read_only: true
+      - type: bind
+        source: ./certs
+        target: /etc/caddy/certs
+        read_only: true
+      - caddy-data:/data
+      - caddy-config:/config
+
 volumes:
   db-data:
     name: itacm_db-data

@@ -6,6 +6,11 @@ node_modules/
 data/
 data/.itacm-bootstrap-password
 
+# TLS material — never commit certificates or private keys (Cloudflare Origin cert)
+certs/*.pem
+certs/*.key
+certs/*.crt
+
 # Logs
 *.log
 

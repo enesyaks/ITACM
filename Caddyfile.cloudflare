@@ -1,0 +1,22 @@
+# Reverse proxy for a Cloudflare-PROXIED domain, using a Cloudflare Origin
+# Certificate instead of Let's Encrypt.
+#
+# Why: behind Cloudflare's orange-cloud proxy, Caddy cannot complete a Let's
+# Encrypt challenge (the proxy intercepts it), so automatic HTTPS fails. A
+# Cloudflare Origin Certificate is pre-issued by Cloudflare for your domain and
+# trusted by Cloudflare's edge — no challenge needed. This gives end-to-end TLS
+# (browser↔Cloudflare↔origin) with SSL/TLS mode set to Full (strict).
+#
+# Enable with:   docker compose --profile cloudflare up -d
+# Requires:
+#   - APP_DOMAIN in .env (e.g. itacm.company.com)
+#   - certs/origin.pem  (the Origin Certificate)
+#   - certs/origin.key  (its Private Key)
+#     Get both from Cloudflare → SSL/TLS → Origin Server → Create Certificate.
+#   - TRUST_PROXY=1, and Cloudflare SSL/TLS mode = Full (strict).
+
+{$APP_DOMAIN} {
+	encode zstd gzip
+	tls /etc/caddy/certs/origin.pem /etc/caddy/certs/origin.key
+	reverse_proxy api:8000
+}
