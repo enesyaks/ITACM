@@ -4,6 +4,18 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.9] — 2026-08-03
+
+### Changed
+- **AI assistant is now a matrix-controlled permission (`ai:use`).** Previously
+  every non-Portal/HR user could open the assistant; it now requires the new
+  `ai:use` permission, so access is granted per group in the IAM matrix. Owner
+  and Admin get it by default (migration 045 + role fallback); Helpdesk, Viewer
+  and custom groups must be granted it explicitly. `/api/ai/status`, `/query` and
+  `/exports/:id` enforce it, so the launcher simply doesn't appear for users who
+  lack it. The assistant's tools still apply each user's own per-resource RBAC on
+  top of this.
+
 ## [1.3.8] — 2026-08-03
 
 ### Documentation

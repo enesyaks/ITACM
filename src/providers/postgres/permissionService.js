@@ -219,15 +219,17 @@ function checkRoleFallback(user, resource, action) {
       if (resource === 'document') return false;
       if (['provider', 'contract'].includes(resource) && action !== 'read') return false;
       if (['report'].includes(resource) && action !== 'read') return false;
-      if (['settings', 'user_management', 'integration', 'audit'].includes(resource)) return false;
+      // AI assistant is not granted to Helpdesk by default — assign it explicitly
+      // in the permission matrix (ai:use) to a group that should have it.
+      if (['settings', 'user_management', 'integration', 'audit', 'ai'].includes(resource)) return false;
       if (action === 'delete') return false;
       return true;
 
     case 'Viewer':
-      // Viewer: sadece read
+      // Viewer: sadece read (ai:use is not 'read', so already excluded — listed for clarity)
       if (action !== 'read') return false;
-      // Viewer settings, user_management, integration göremez
-      if (['settings', 'user_management', 'integration', 'audit'].includes(resource)) return false;
+      // Viewer settings, user_management, integration, ai göremez
+      if (['settings', 'user_management', 'integration', 'audit', 'ai'].includes(resource)) return false;
       return true;
 
     case 'HR':

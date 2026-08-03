@@ -18,10 +18,6 @@ const { openAiExport } = require('../providers/ai/exportStore');
 const { contentDisposition } = require('../utils/contentDisposition');
 const { HttpError } = require('../utils/httpError');
 
-function isStaff(user) {
-  return user && !['Portal', 'HR'].includes(user.role);
-}
-
 // Per-user throttle for the agentic /query endpoint. Each query fans out to an
 // LLM (and possibly a DB read), so it is far more expensive than a normal API
 // call — the coarse global /api limiter is not enough to contain runaway cost
@@ -52,8 +48,7 @@ function writeSse(res, event, data) {
   res.write(`data: ${JSON.stringify(data)}\n\n`);
 }
 
-router.get('/status', authenticate, asyncHandler(async (req, res) => {
-  if (!isStaff(req.user)) throw HttpError.forbidden('AI assistant is not available for this role');
+router.get('/status', authenticate, requirePermission('ai', 'use'), asyncHandler(async (req, res) => {
   const cfg = await aiConfigService.getAiConfig();
   const enabled = !!cfg.enabled;
   const lang = normalizeLang(req.query?.lang);
@@ -117,8 +112,7 @@ router.post('/test', authenticate, requirePermission('integration', 'manage'), a
 }));
 
 /** Short-lived report PDF produced by build_report (owner-only). */
-router.get('/exports/:id', authenticate, asyncHandler(async (req, res) => {
-  if (!isStaff(req.user)) throw HttpError.forbidden('AI assistant is not available for this role');
+router.get('/exports/:id', authenticate, requirePermission('ai', 'use'), asyncHandler(async (req, res) => {
   const { meta, filePath } = await openAiExport(req.params.id, req.user.uid);
   res.setHeader('Content-Type', meta.contentType || 'application/pdf');
   res.setHeader('Content-Disposition', contentDisposition(meta.filename || 'report.pdf'));
@@ -126,8 +120,7 @@ router.get('/exports/:id', authenticate, asyncHandler(async (req, res) => {
   fs.createReadStream(filePath).pipe(res);
 }));
 
-router.post('/query', authenticate, asyncHandler(async (req, res) => {
-  if (!isStaff(req.user)) throw HttpError.forbidden('AI assistant is not available for this role');
+router.post('/query', authenticate, requirePermission('ai', 'use'), asyncHandler(async (req, res) => {
   if (aiQueryRateLimited(req.user.uid)) {
     throw HttpError.tooMany('Too many AI queries — wait a moment and try again');
   }
