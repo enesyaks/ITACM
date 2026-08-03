@@ -16,7 +16,7 @@ const RESOURCES = Object.freeze([
   'line', 'consumable', 'maintenance', 'stock_count', 'report',
   'audit', 'dashboard', 'settings', 'user_management',
   'integration', 'document', 'handover_document', 'catalog', 'handover', 'onboarding',
-  'hr_request',
+  'hr_request', 'ai',
 ]);
 
 /** Full union of actions (legacy rows + matrix). */
@@ -24,7 +24,7 @@ const ACTIONS = Object.freeze([
   'read', 'create', 'update', 'delete', 'assign', 'unassign',
   'export', 'import', 'manage', 'approve', 'view_confidential',
   'view_history', 'view_inventory', 'view_handover',
-  'download', 'upload',
+  'download', 'upload', 'use',
 ]);
 
 /**
@@ -83,6 +83,9 @@ const ACTIONS_BY_RESOURCE = Object.freeze({
   integration: Object.freeze([
     'read', 'update', 'manage',
   ]),
+  // AI assistant chat. `use` = may open the assistant and run queries. The tools
+  // it calls still enforce each user's own per-resource RBAC on top of this.
+  ai: Object.freeze(['use']),
 });
 
 /**
@@ -137,6 +140,7 @@ function getIamSchema() {
       maintenance: 'read = logs & reports. create = send to repair. update = close/notes. view_confidential = costs.',
       handover: 'handover:create = make zimmet form. employee:view_handover + handover_document:* = Documents tab / scans.',
       assign: 'license:assign / line:assign / asset:assign|unassign control employee-card and list assign actions.',
+      ai: 'ai:use = may open the AI assistant and run queries. The assistant still honours each user\'s own read permissions (a user can\'t surface data the UI denies them). Off unless enabled in Integrations → AI.',
     },
   };
 }

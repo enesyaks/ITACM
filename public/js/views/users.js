@@ -153,6 +153,7 @@ Views.users = async function (el) {
     'line', 'consumable', 'maintenance', 'stock_count', 'report',
     'audit', 'dashboard', 'settings', 'user_management',
     'integration', 'document', 'handover_document', 'catalog', 'handover', 'onboarding',
+    'ai',
   ];
   const ACTIONS_BY_RESOURCE = {
     asset: ['read', 'create', 'update', 'delete', 'assign', 'unassign', 'export', 'import', 'manage'],
@@ -175,6 +176,7 @@ Views.users = async function (el) {
     settings: ['manage'],
     user_management: ['read', 'create', 'update', 'delete'],
     integration: ['read', 'update', 'manage'],
+    ai: ['use'],
   };
   const IAM_ACTIONS_FLAT = [...new Set(Object.values(ACTIONS_BY_RESOURCE).flat())];
   const IAM_CONSTRAINTS = [

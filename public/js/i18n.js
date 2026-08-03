@@ -1018,6 +1018,7 @@
     'common.documents': L('Documents', 'Belgeler', 'Dokumente', 'Documents', 'Documentos', 'Documenti', 'Documentos', 'Documenten', 'Dokumenty', 'Документы', 'المستندات', '文書'),
     'iam.resource.document': L('General documents', 'Genel belgeler', 'Allgemeine Dokumente', 'Documents généraux', 'Documentos generales', 'Documenti generali', 'Documentos gerais', 'Algemene documenten', 'Dokumenty ogólne', 'Общие документы', 'مستندات عامة', '一般文書'),
     'iam.resource.handover_document': L('Zimmet / handover documents', 'Zimmet belgeleri', 'Übergabe-Dokumente', 'Documents de remise', 'Documentos de entrega', 'Documenti di consegna', 'Documentos de entrega', 'Overdrachtsdocumenten', 'Dokumenty przekazania', 'Документы передачи', 'مستندات التسليم', '貸与ドキュメント'),
+    'iam.resource.ai': L('AI assistant', 'AI asistanı', 'KI-Assistent', 'Assistant IA', 'Asistente de IA', 'Assistente IA', 'Assistente de IA', 'AI-assistent', 'Asystent AI', 'AI-ассистент', 'مساعد الذكاء الاصطناعي', 'AIアシスタント'),
     'common.history': L('History', 'Geçmiş', 'Verlauf', 'Historique', 'Historial', 'Cronologia', 'Histórico', 'Geschiedenis', 'Historia', 'История', 'السجل', '履歴'),
     'common.unknown': L('Unknown', 'Bilinmiyor', 'Unbekannt', 'Inconnu', 'Desconocido', 'Sconosciuto', 'Desconhecido', 'Onbekend', 'Nieznany', 'Неизвестно', 'غير معروف', '不明'),
     'common.matched': L('Matched', 'Eşleşti', 'Übereinstimmung', 'Correspondant', 'Coincidente', 'Corrispondente', 'Correspondido', 'Overeenkomend', 'Dopasowano', 'Совпало', 'مطابق', '一致'),
