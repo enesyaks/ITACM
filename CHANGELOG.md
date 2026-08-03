@@ -4,6 +4,15 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.12] — 2026-08-03
+
+### Added
+- **Running version shown in the sidebar.** A small, muted label (e.g. `v1.3.12`)
+  now sits at the bottom of the left sidebar so the current version is visible at
+  a glance (previously only under Help → About). It reads what the backend reports
+  at `/api/config`, so after an update it reflects the running build — a quick way
+  to confirm a rebuild actually took effect.
+
 ## [1.3.11] — 2026-08-03
 
 ### Added

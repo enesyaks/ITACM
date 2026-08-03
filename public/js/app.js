@@ -434,6 +434,12 @@ function showApp() {
   $('#topbar-avatar').textContent = initials(name);
   const logoutBtn = $('#logout-btn');
   if (logoutBtn) logoutBtn.title = t('common.signout') || 'Sign out';
+  const verEl = $('#sidebar-version');
+  if (verEl && AppConfig && AppConfig.version) {
+    verEl.textContent = `v${AppConfig.version}`;
+    verEl.title = `ITACM — IT Asset Control Pro v${AppConfig.version}`;
+    verEl.hidden = false;
+  }
   $('#sidebar-new-asset').style.display = Auth.canIam('asset', 'create') ? '' : 'none';
   applyBranding();
   if (typeof initMobileShell === 'function' && !window.__mobileShellReady) {
