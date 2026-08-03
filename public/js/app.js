@@ -441,6 +441,10 @@ function showApp() {
     verEl.hidden = false;
   }
   $('#sidebar-new-asset').style.display = Auth.canIam('asset', 'create') ? '' : 'none';
+  // Barcode/QR scan looks an asset up by its tag — only for users who can read
+  // assets (hides it for Portal self-service, HR and inventory-less staff).
+  const scanBtn = $('#btn-quick-scan');
+  if (scanBtn) scanBtn.style.display = Auth.canIam('asset', 'read') ? '' : 'none';
   applyBranding();
   if (typeof initMobileShell === 'function' && !window.__mobileShellReady) {
     window.__mobileShellReady = true;
