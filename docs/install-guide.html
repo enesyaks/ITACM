@@ -1,0 +1,497 @@
+<title>ITACM — Installation Guide</title>
+<style>
+  :root{
+    --bg:#f6f5fb; --card:#ffffff; --ink:#1b1b24; --muted:#56546a; --faint:#8b88a0;
+    --line:#e7e3f2; --line-soft:#f0edf8;
+    --accent:#4f46e5; --accent-deep:#3525cd; --accent-soft:#ece9fb;
+    --term-bg:#161326; --term-ink:#e9e6f6; --term-prompt:#9d95f0; --term-line:#2b2740;
+    --good:#15803d; --good-soft:#e7f5ec; --good-line:#c3e6ce;
+    --radius:14px; --radius-sm:9px;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#100f18; --card:#1a1926; --ink:#eceaf5; --muted:#a6a2bd; --faint:#736f8c;
+      --line:#2a2838; --line-soft:#211f2e;
+      --accent:#8c84f1; --accent-deep:#a79ff6; --accent-soft:#211d38;
+      --term-bg:#0c0b15; --term-ink:#e9e6f6; --term-prompt:#a79ff6; --term-line:#221f36;
+      --good:#4ade80; --good-soft:#132a1d; --good-line:#1f4a30;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#100f18; --card:#1a1926; --ink:#eceaf5; --muted:#a6a2bd; --faint:#736f8c;
+    --line:#2a2838; --line-soft:#211f2e;
+    --accent:#8c84f1; --accent-deep:#a79ff6; --accent-soft:#211d38;
+    --term-bg:#0c0b15; --term-ink:#e9e6f6; --term-prompt:#a79ff6; --term-line:#221f36;
+    --good:#4ade80; --good-soft:#132a1d; --good-line:#1f4a30;
+  }
+  :root[data-theme="light"]{
+    --bg:#f6f5fb; --card:#ffffff; --ink:#1b1b24; --muted:#56546a; --faint:#8b88a0;
+    --line:#e7e3f2; --line-soft:#f0edf8;
+    --accent:#4f46e5; --accent-deep:#3525cd; --accent-soft:#ece9fb;
+    --term-bg:#161326; --term-ink:#e9e6f6; --term-prompt:#9d95f0; --term-line:#2b2740;
+    --good:#15803d; --good-soft:#e7f5ec; --good-line:#c3e6ce;
+  }
+
+  *{box-sizing:border-box}
+  body{background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.6;
+    -webkit-font-smoothing:antialiased;margin:0}
+  .page{max-width:760px;margin:0 auto;padding:44px 22px 80px}
+
+  /* top bar */
+  .topbar{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:34px}
+  .brand{display:inline-flex;align-items:center;gap:11px}
+  .brand .glyph{width:38px;height:38px;border-radius:10px;background:var(--accent);color:#fff;
+    display:grid;place-items:center;box-shadow:0 4px 14px rgba(79,70,229,.32);flex:none}
+  .brand .glyph svg{width:22px;height:22px}
+  .brand b{font-size:15px;font-weight:700;letter-spacing:-.01em;line-height:1.1;display:block}
+  .brand span{font-size:12px;color:var(--faint);display:block;font-weight:500}
+  .lang{position:relative;flex:none}
+  .lang select{appearance:none;-webkit-appearance:none;font-family:var(--sans);font-size:13px;
+    font-weight:600;color:var(--ink);background:var(--card);border:1px solid var(--line);
+    border-radius:9px;padding:8px 30px 8px 12px;cursor:pointer}
+  .lang svg{position:absolute;top:50%;right:9px;transform:translateY(-50%);width:15px;height:15px;
+    color:var(--faint);pointer-events:none}
+  [dir="rtl"] .lang select{padding:8px 12px 8px 30px}
+  [dir="rtl"] .lang svg{right:auto;left:9px}
+  .lang select:focus-visible,button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+  /* header */
+  .hero{margin-bottom:38px}
+  .eyebrow{font-size:12px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--accent);margin:0 0 12px}
+  h1{font-size:clamp(28px,5vw,39px);line-height:1.1;letter-spacing:-.025em;font-weight:800;
+    margin:0 0 14px;text-wrap:balance}
+  .lede{font-size:17px;color:var(--muted);margin:0;max-width:62ch}
+
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:22px 24px}
+  h2{font-size:13px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin:0 0 16px}
+
+  .prereq{margin-bottom:38px}
+  .prereq ul{list-style:none;margin:0;padding:0;display:grid;gap:15px}
+  .prereq li{display:flex;gap:13px;align-items:flex-start}
+  .prereq .ic{width:30px;height:30px;border-radius:8px;background:var(--accent-soft);color:var(--accent);
+    display:grid;place-items:center;flex:none;margin-top:1px}
+  .prereq .ic svg{width:17px;height:17px}
+  .prereq b{font-weight:650;font-size:15px}
+  .prereq p{margin:2px 0 0;font-size:14px;color:var(--muted)}
+  .tag{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--faint);
+    border:1px solid var(--line);border-radius:20px;padding:1px 9px;margin:0 7px;vertical-align:2px}
+
+  .sec-title{font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--faint);margin:0 0 20px}
+  .steps{list-style:none;margin:0 0 38px;padding:0;position:relative}
+  .steps:before{content:"";position:absolute;inset-inline-start:18px;top:14px;bottom:24px;width:2px;
+    background:linear-gradient(var(--line),transparent);z-index:0}
+  .step{display:grid;grid-template-columns:38px 1fr;gap:18px;position:relative;z-index:1;padding-bottom:26px}
+  .num{width:38px;height:38px;border-radius:50%;background:var(--card);border:2px solid var(--accent);
+    color:var(--accent);font-weight:800;font-size:16px;display:grid;place-items:center;
+    font-variant-numeric:tabular-nums;flex:none}
+  .step h3{margin:6px 0 6px;font-size:18px;font-weight:700;letter-spacing:-.01em;text-wrap:balance}
+  .step p{margin:0 0 13px;color:var(--muted);font-size:15px}
+  .step p:last-child{margin-bottom:0}
+  code.inl{font-family:var(--mono);font-size:.86em;background:var(--accent-soft);
+    color:var(--accent-deep);padding:1px 6px;border-radius:6px;font-weight:600;direction:ltr;
+    display:inline-block;unicode-bidi:embed}
+
+  .term{background:var(--term-bg);border:1px solid var(--term-line);border-radius:var(--radius-sm);
+    overflow:hidden;position:relative;direction:ltr}
+  .term-bar{display:flex;gap:6px;padding:11px 13px 0}
+  .term-bar i{width:10px;height:10px;border-radius:50%;background:#ffffff1f}
+  .term pre{margin:0;padding:12px 15px 15px;overflow-x:auto}
+  .term code{font-family:var(--mono);font-size:13.5px;line-height:1.75;color:var(--term-ink);white-space:pre}
+  .term .p{color:var(--term-prompt);user-select:none;margin-right:9px}
+  .term .cm{color:#8a86a8}
+  .copy{position:absolute;top:9px;inset-inline-end:9px;font-family:var(--sans);font-size:11px;font-weight:600;
+    letter-spacing:.03em;color:#c8c3ee;background:#ffffff14;border:1px solid #ffffff22;
+    border-radius:7px;padding:4px 10px;cursor:pointer;transition:background .15s,color .15s}
+  .copy:hover{background:#ffffff26;color:#fff}
+  .copy.ok{background:var(--accent);border-color:var(--accent);color:#fff}
+
+  .ninote{margin:12px 0 0;font-size:13px;color:var(--faint);display:flex;gap:8px;align-items:baseline;line-height:1.5}
+  .ninote span{color:var(--accent);font-weight:800;flex:none}
+  .callout{margin-top:14px;border:1px solid var(--line);border-radius:var(--radius-sm);
+    background:var(--line-soft);padding:14px 16px}
+  .callout h4{margin:0 0 9px;font-size:13px;font-weight:700;color:var(--ink)}
+  .callout ul{margin:0;padding:0;list-style:none;display:grid;gap:8px}
+  .callout li{font-size:13.5px;color:var(--muted);display:flex;gap:9px;align-items:baseline}
+  .callout li b{color:var(--ink);font-weight:650}
+  .callout li .d{color:var(--accent);font-weight:800;flex:none}
+
+  .done{background:var(--good-soft);border:1px solid var(--good-line);border-radius:var(--radius);
+    padding:20px 24px;display:flex;gap:15px;align-items:center;margin-bottom:38px}
+  .done .chk{width:38px;height:38px;border-radius:50%;background:var(--good);color:#fff;
+    display:grid;place-items:center;flex:none}
+  .done .chk svg{width:21px;height:21px}
+  .done b{font-size:16px;display:block;color:var(--ink)}
+  .done p{margin:2px 0 0;font-size:14px;color:var(--muted)}
+
+  .grid2{display:grid;gap:18px;margin-bottom:36px}
+  .update h2{color:var(--accent)}
+  .update p{margin:0 0 14px;font-size:15px;color:var(--muted)}
+  .trouble dl{margin:0;display:grid;gap:16px}
+  .trouble dt{font-weight:650;font-size:14.5px;margin-bottom:4px}
+  .trouble dd{margin:0;font-size:14px;color:var(--muted)}
+  .trouble .term{margin-top:10px}
+
+  footer{border-top:1px solid var(--line);padding-top:22px;display:flex;justify-content:space-between;
+    align-items:center;gap:16px;flex-wrap:wrap;color:var(--faint);font-size:13px}
+  footer a{color:var(--accent);font-weight:600;text-decoration:none}
+  footer a:hover{text-decoration:underline}
+
+  @media (max-width:520px){
+    .page{padding:32px 16px 60px}
+    .step{grid-template-columns:32px 1fr;gap:14px}
+    .num{width:32px;height:32px;font-size:14px}
+    .steps:before{inset-inline-start:15px}
+  }
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="page">
+  <div class="topbar">
+    <div class="brand">
+      <span class="glyph" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+      </span>
+      <span><b>ITACM</b><span>IT Asset Control Pro</span></span>
+    </div>
+    <div class="lang">
+      <select id="lang" aria-label="Language"></select>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+    </div>
+  </div>
+  <div id="content"></div>
+</div>
+
+<script>
+(function(){
+  var NAMES = {en:"English",tr:"Türkçe",de:"Deutsch",fr:"Français",es:"Español",it:"Italiano",pt:"Português",nl:"Nederlands",pl:"Polski",ru:"Русский",ar:"العربية",ja:"日本語"};
+  var ORDER = ["en","tr","de","fr","es","it","pt","nl","pl","ru","ar","ja"];
+
+  // Shared, non-translated commands
+  var C = {
+    clone: "git clone https://github.com/enesyaks/ITACM.git\ncd ITACM",
+    setup: "npm run setup",
+    logs:  "docker compose logs api",
+    update:"npm run update",
+    reset: "docker compose exec api npm run reset-password -- owner@example.com"
+  };
+
+  // "No npm install needed" note — a common first-time question.
+  var NI = {
+    en:"No npm install needed — setup uses only built-in Node, and the app's dependencies are built into the Docker image in the next step.",
+    tr:"npm install gerekmez — kurulum yalnızca yerleşik Node kullanır; uygulamanın bağımlılıkları bir sonraki adımda Docker imajının içine kurulur.",
+    de:"Kein npm install nötig — Setup nutzt nur eingebautes Node; die Abhängigkeiten werden im nächsten Schritt ins Docker-Image gebaut.",
+    fr:"Pas de npm install — le setup n'utilise que Node intégré ; les dépendances sont intégrées à l'image Docker à l'étape suivante.",
+    es:"No hace falta npm install — el setup usa solo Node integrado; las dependencias se integran en la imagen Docker en el paso siguiente.",
+    it:"Nessun npm install — il setup usa solo Node integrato; le dipendenze vengono incluse nell'immagine Docker al passo successivo.",
+    pt:"Sem npm install — o setup usa apenas o Node integrado; as dependências são incluídas na imagem Docker no próximo passo.",
+    nl:"Geen npm install nodig — setup gebruikt alleen ingebouwd Node; de dependencies komen in de volgende stap in de Docker-image.",
+    pl:"Bez npm install — setup używa tylko wbudowanego Node; zależności trafiają do obrazu Dockera w kolejnym kroku.",
+    ru:"npm install не нужен — установщик использует только встроенный Node; зависимости попадают в образ Docker на следующем шаге.",
+    ar:"لا حاجة إلى npm install — يستخدم الإعداد Node المدمج فقط، وتُبنى تبعيات التطبيق داخل صورة Docker في الخطوة التالية.",
+    ja:"npm install は不要 — セットアップは組み込みの Node のみを使い、依存関係は次のステップで Docker イメージに組み込まれます。"
+  };
+
+  var T = {
+  en:{eyebrow:"Installation Guide",title:"Set up ITACM on your server",lede:"A self-hosted IT asset management system that is entirely yours — no cloud, no subscription. Follow the steps in order; copying and pasting the commands is all it takes.",
+    prereqTitle:"Before you start",p1t:"A publicly reachable server",p1d:"A machine with Docker and Node.js installed — your own VPS (e.g. Hetzner, DigitalOcean, or any cloud). A fresh Ubuntu server is fine.",p2t:"A domain name",p2tag:"optional",p2d:"Only needed for HTTPS (the green padlock). Without one it still runs over plain HTTP on the server's IP.",
+    stepsLabel:"Steps",
+    s1t:"Download the code onto the server",s1d:"Connect to your server, clone the project and enter the folder. If git isn't installed yet, install it first (e.g. sudo apt install git).",
+    s2t:"Run the setup wizard",s2d:"It asks a few things (the admin account, how the app will be reached) and generates the passwords and the .env file for you — no manual file editing. Everything it writes stays private on the server.",
+    httpsQ:"When it asks “How will it be reached?”, your options are:",o1:"Local / plain HTTP",o1d:"localhost or an IP address. The simplest.",o2:"Your own domain",o2d:"automatic HTTPS via Let's Encrypt — you just type the domain.",o3:"Behind Cloudflare",o3d:"the wizard explains how to get a certificate; you paste it in and it saves the files for you.",
+    s3t:"Start it",s3d:"The wizard prints the exact command — one of these, depending on what you chose:",cm1:"# local / plain HTTP",cm2:"# behind Cloudflare",
+    s4t:"Get your admin password",s4d:"If you didn't set one yourself, the admin account created on the first run is printed in the logs — look for the “Owner account created” line.",
+    s5t:"Open it in a browser and finish",s5d:"Go to https://your-domain (or http://server-ip). In the first-run screen, enter your company name and the Owner account. Done.",
+    doneT:"Setup complete.",doneD:"The app is running. The version is shown at the bottom of the left sidebar.",
+    updateT:"Updating",updateD:"When a new version is out, one command does everything — it backs up, pulls the latest code, and restarts with the right settings. No flags to remember.",
+    troubleT:"If you get stuck",
+    t1q:"“Web server is down” / error 521",t1a:"Cloudflare's SSL mode doesn't match your origin. Set Cloudflare → SSL/TLS → Full (strict) (or Flexible as a quick fix).",
+    t2q:"A new button or feature doesn't work",t2a:"The backend is out of date. Run npm run update — it rebuilds the image.",
+    t3q:"Locked out / forgot the admin password",t3a:"Reset it from the server (forces a new password on next sign-in):",
+    footer:"For every detail and advanced option, see the repository.",readme:"README →"},
+
+  tr:{eyebrow:"Kurulum Rehberi",title:"ITACM'i sunucuna kur",lede:"Kendi sunucunda çalışan, tamamen sana ait bir IT envanter sistemi — bulut yok, abonelik yok. Adımları sırayla izle; komutları kopyalayıp yapıştırman yeterli.",
+    prereqTitle:"Başlamadan önce",p1t:"İnternete açık bir sunucu",p1d:"Docker ve Node.js kurulu bir makine — kendi VPS'in (ör. Hetzner, DigitalOcean ya da herhangi bir bulut). Temiz bir Ubuntu sunucu yeterli.",p2t:"Bir alan adı",p2tag:"isteğe bağlı",p2d:"Yalnızca HTTPS (yeşil kilit) için gerekir. Yoksa sunucunun IP'si üzerinden düz HTTP ile de çalışır.",
+    stepsLabel:"Adımlar",
+    s1t:"Kodu sunucuya indir",s1d:"Sunucuna bağlan, projeyi klonla ve klasöre gir. git kurulu değilse önce onu kur (ör. sudo apt install git).",
+    s2t:"Kurulum sihirbazını çalıştır",s2d:"Sana birkaç şey sorar (admin hesabı, nasıl erişileceği) ve şifreleri, .env dosyasını senin yerine üretir — elle dosya düzenlemek yok. Yazdığı her şey sunucuda gizli kalır.",
+    httpsQ:"“Nasıl erişilecek?” sorusunda seçeneklerin:",o1:"Yerel / düz HTTP",o1d:"localhost ya da bir IP adresi. En basiti.",o2:"Kendi domain'im",o2d:"Let's Encrypt ile otomatik HTTPS — sadece domain'i yazarsın.",o3:"Cloudflare arkasında",o3d:"sihirbaz sertifikayı nasıl alacağını anlatır; yapıştırırsın, dosyaları o yazar.",
+    s3t:"Başlat",s3d:"Sihirbaz tam komutu yazar — seçtiğine göre biri:",cm1:"# yerel / düz HTTP",cm2:"# Cloudflare arkasında",
+    s4t:"Admin şifreni al",s4d:"Şifreyi kendin girmediysen, ilk açılışta oluşturulan admin bilgileri loglarda görünür — “Owner account created” satırına bak.",
+    s5t:"Tarayıcıda aç ve tamamla",s5d:"https://senin-domain (ya da http://sunucu-ip) adresini aç. İlk-açılış ekranında şirket adını ve Owner hesabını gir. Bitti.",
+    doneT:"Kurulum tamam.",doneD:"Sistem çalışıyor. Sürüm, sol menünün en altında görünür.",
+    updateT:"Güncelleme",updateD:"Yeni sürüm çıktığında tek komut her şeyi yapar — yedek alır, kodu çeker ve doğru ayarla yeniden başlatır. Hatırlanacak bayrak yok.",
+    troubleT:"Takılırsan",
+    t1q:"“Web server is down” / hata 521",t1a:"Cloudflare SSL modu origin'e uymuyor. Cloudflare → SSL/TLS → Full (strict) yap (ya da hızlı çözüm için Flexible).",
+    t2q:"Yeni bir buton/özellik çalışmıyor",t2a:"Backend eski. npm run update çalıştır — imajı yeniden derler.",
+    t3q:"Kilitlendin / admin şifresini unuttun",t3a:"Sunucudan sıfırla (bir sonraki girişte yeni şifre ister):",
+    footer:"Tüm ayrıntılar ve gelişmiş seçenekler için depoyu incele.",readme:"README →"},
+
+  de:{eyebrow:"Installationsanleitung",title:"ITACM auf deinem Server einrichten",lede:"Ein selbst gehostetes IT-Asset-Management, das ganz dir gehört — keine Cloud, kein Abo. Folge den Schritten der Reihe nach; die Befehle musst du nur kopieren und einfügen.",
+    prereqTitle:"Bevor du beginnst",p1t:"Ein öffentlich erreichbarer Server",p1d:"Eine Maschine mit Docker und Node.js — dein eigener VPS (z. B. Hetzner, DigitalOcean). Ein frischer Ubuntu-Server reicht.",p2t:"Eine Domain",p2tag:"optional",p2d:"Nur für HTTPS (das grüne Schloss) nötig. Ohne läuft es weiter über einfaches HTTP auf der Server-IP.",
+    stepsLabel:"Schritte",
+    s1t:"Den Code auf den Server holen",s1d:"Mit dem Server verbinden, das Projekt klonen und in den Ordner wechseln. Falls git fehlt, zuerst installieren (z. B. sudo apt install git).",
+    s2t:"Den Einrichtungsassistenten starten",s2d:"Er fragt ein paar Dinge (Admin-Konto, Erreichbarkeit) und erzeugt die Passwörter und die .env-Datei für dich — kein manuelles Bearbeiten. Alles bleibt privat auf dem Server.",
+    httpsQ:"Bei „Wie wird zugegriffen?“ hast du die Wahl:",o1:"Lokal / einfaches HTTP",o1d:"localhost oder eine IP. Am einfachsten.",o2:"Eigene Domain",o2d:"automatisches HTTPS über Let's Encrypt — du tippst nur die Domain.",o3:"Hinter Cloudflare",o3d:"der Assistent erklärt das Zertifikat; du fügst es ein, er speichert die Dateien.",
+    s3t:"Starten",s3d:"Der Assistent zeigt den genauen Befehl — je nach Wahl einer davon:",cm1:"# lokal / einfaches HTTP",cm2:"# hinter Cloudflare",
+    s4t:"Admin-Passwort holen",s4d:"Wenn du keins gesetzt hast, steht das beim ersten Start erzeugte Admin-Konto im Log — suche die Zeile „Owner account created“.",
+    s5t:"Im Browser öffnen und abschließen",s5d:"Öffne https://deine-domain (oder http://server-ip). Im Startbildschirm Firmennamen und Owner-Konto eingeben. Fertig.",
+    doneT:"Einrichtung fertig.",doneD:"Die App läuft. Die Version steht unten in der linken Seitenleiste.",
+    updateT:"Aktualisieren",updateD:"Bei einer neuen Version erledigt ein Befehl alles — Backup, neuester Code, Neustart mit den richtigen Einstellungen. Keine Flags zu merken.",
+    troubleT:"Wenn es hakt",
+    t1q:"„Web server is down“ / Fehler 521",t1a:"Cloudflares SSL-Modus passt nicht zum Origin. Cloudflare → SSL/TLS → Full (strict) (oder kurzfristig Flexible).",
+    t2q:"Ein neuer Button/Feature geht nicht",t2a:"Das Backend ist veraltet. npm run update ausführen — baut das Image neu.",
+    t3q:"Ausgesperrt / Admin-Passwort vergessen",t3a:"Vom Server zurücksetzen (erzwingt beim nächsten Login ein neues):",
+    footer:"Alle Details und erweiterten Optionen findest du im Repository.",readme:"README →"},
+
+  fr:{eyebrow:"Guide d'installation",title:"Installez ITACM sur votre serveur",lede:"Un gestionnaire de parc informatique auto-hébergé qui vous appartient entièrement — sans cloud, sans abonnement. Suivez les étapes dans l'ordre ; il suffit de copier-coller les commandes.",
+    prereqTitle:"Avant de commencer",p1t:"Un serveur accessible publiquement",p1d:"Une machine avec Docker et Node.js — votre propre VPS (Hetzner, DigitalOcean, etc.). Un Ubuntu neuf convient.",p2t:"Un nom de domaine",p2tag:"facultatif",p2d:"Nécessaire uniquement pour le HTTPS (le cadenas vert). Sinon il fonctionne en HTTP simple sur l'IP du serveur.",
+    stepsLabel:"Étapes",
+    s1t:"Télécharger le code sur le serveur",s1d:"Connectez-vous au serveur, clonez le projet et entrez dans le dossier. Si git n'est pas installé, installez-le d'abord (ex. sudo apt install git).",
+    s2t:"Lancer l'assistant d'installation",s2d:"Il pose quelques questions (compte admin, mode d'accès) et génère les mots de passe et le fichier .env pour vous — aucune édition manuelle. Tout reste privé sur le serveur.",
+    httpsQ:"À « Comment y accéder ? », vos options :",o1:"Local / HTTP simple",o1d:"localhost ou une IP. Le plus simple.",o2:"Votre propre domaine",o2d:"HTTPS automatique via Let's Encrypt — vous saisissez juste le domaine.",o3:"Derrière Cloudflare",o3d:"l'assistant explique le certificat ; vous le collez, il enregistre les fichiers.",
+    s3t:"Démarrer",s3d:"L'assistant affiche la commande exacte — l'une de celles-ci selon votre choix :",cm1:"# local / HTTP simple",cm2:"# derrière Cloudflare",
+    s4t:"Récupérer le mot de passe admin",s4d:"Si vous n'en avez pas défini, le compte admin créé au premier lancement s'affiche dans les logs — cherchez la ligne « Owner account created ».",
+    s5t:"Ouvrir dans un navigateur et terminer",s5d:"Allez sur https://votre-domaine (ou http://ip-serveur). Dans l'écran initial, saisissez le nom de l'entreprise et le compte Owner. Terminé.",
+    doneT:"Installation terminée.",doneD:"L'application tourne. La version s'affiche en bas de la barre latérale gauche.",
+    updateT:"Mise à jour",updateD:"Quand une nouvelle version sort, une seule commande fait tout — sauvegarde, dernier code, redémarrage avec les bons réglages. Aucun indicateur à retenir.",
+    troubleT:"En cas de blocage",
+    t1q:"« Web server is down » / erreur 521",t1a:"Le mode SSL de Cloudflare ne correspond pas à l'origine. Cloudflare → SSL/TLS → Full (strict) (ou Flexible en dépannage).",
+    t2q:"Un nouveau bouton/fonction ne marche pas",t2a:"Le backend est ancien. Lancez npm run update — il reconstruit l'image.",
+    t3q:"Bloqué / mot de passe admin oublié",t3a:"Réinitialisez-le depuis le serveur (impose un nouveau à la prochaine connexion) :",
+    footer:"Pour tous les détails et options avancées, consultez le dépôt.",readme:"README →"},
+
+  es:{eyebrow:"Guía de instalación",title:"Instala ITACM en tu servidor",lede:"Un gestor de inventario de TI autoalojado que es totalmente tuyo — sin nube, sin suscripción. Sigue los pasos en orden; solo tienes que copiar y pegar los comandos.",
+    prereqTitle:"Antes de empezar",p1t:"Un servidor accesible públicamente",p1d:"Una máquina con Docker y Node.js — tu propio VPS (Hetzner, DigitalOcean, etc.). Un Ubuntu nuevo sirve.",p2t:"Un nombre de dominio",p2tag:"opcional",p2d:"Solo hace falta para HTTPS (el candado verde). Sin él funciona por HTTP simple en la IP del servidor.",
+    stepsLabel:"Pasos",
+    s1t:"Descargar el código en el servidor",s1d:"Conéctate al servidor, clona el proyecto y entra en la carpeta. Si git no está instalado, instálalo primero (p. ej. sudo apt install git).",
+    s2t:"Ejecutar el asistente de configuración",s2d:"Pregunta algunas cosas (cuenta admin, cómo se accederá) y genera las contraseñas y el archivo .env por ti — sin editar archivos a mano. Todo queda privado en el servidor.",
+    httpsQ:"En «¿Cómo se accederá?», tus opciones:",o1:"Local / HTTP simple",o1d:"localhost o una IP. Lo más sencillo.",o2:"Tu propio dominio",o2d:"HTTPS automático con Let's Encrypt — solo escribes el dominio.",o3:"Detrás de Cloudflare",o3d:"el asistente explica el certificado; lo pegas y él guarda los archivos.",
+    s3t:"Arrancar",s3d:"El asistente muestra el comando exacto — uno de estos según tu elección:",cm1:"# local / HTTP simple",cm2:"# detrás de Cloudflare",
+    s4t:"Obtener la contraseña admin",s4d:"Si no pusiste una, la cuenta admin creada en el primer arranque aparece en los logs — busca la línea «Owner account created».",
+    s5t:"Abrir en el navegador y terminar",s5d:"Ve a https://tu-dominio (o http://ip-servidor). En la pantalla inicial, indica el nombre de la empresa y la cuenta Owner. Listo.",
+    doneT:"Instalación completa.",doneD:"La app está funcionando. La versión aparece al final de la barra lateral izquierda.",
+    updateT:"Actualizar",updateD:"Cuando sale una versión, un solo comando lo hace todo — copia de seguridad, último código, reinicio con la configuración correcta. Sin flags que recordar.",
+    troubleT:"Si te atascas",
+    t1q:"«Web server is down» / error 521",t1a:"El modo SSL de Cloudflare no coincide con el origen. Cloudflare → SSL/TLS → Full (strict) (o Flexible como solución rápida).",
+    t2q:"Un botón/función nuevo no funciona",t2a:"El backend está desactualizado. Ejecuta npm run update — reconstruye la imagen.",
+    t3q:"Bloqueado / olvidaste la contraseña admin",t3a:"Restablécela desde el servidor (fuerza una nueva en el próximo acceso):",
+    footer:"Para todos los detalles y opciones avanzadas, consulta el repositorio.",readme:"README →"},
+
+  it:{eyebrow:"Guida all'installazione",title:"Installa ITACM sul tuo server",lede:"Un gestore dell'inventario IT self-hosted che è interamente tuo — niente cloud, niente abbonamento. Segui i passi in ordine; basta copiare e incollare i comandi.",
+    prereqTitle:"Prima di iniziare",p1t:"Un server raggiungibile pubblicamente",p1d:"Una macchina con Docker e Node.js — il tuo VPS (Hetzner, DigitalOcean, ecc.). Un Ubuntu appena installato va bene.",p2t:"Un nome di dominio",p2tag:"facoltativo",p2d:"Serve solo per l'HTTPS (il lucchetto verde). Senza, funziona in HTTP semplice sull'IP del server.",
+    stepsLabel:"Passi",
+    s1t:"Scaricare il codice sul server",s1d:"Collegati al server, clona il progetto ed entra nella cartella. Se git non è installato, installalo prima (es. sudo apt install git).",
+    s2t:"Avviare la procedura guidata",s2d:"Chiede alcune cose (account admin, come sarà raggiunto) e genera le password e il file .env per te — nessuna modifica manuale. Tutto resta privato sul server.",
+    httpsQ:"Alla domanda «Come verrà raggiunto?», le opzioni:",o1:"Locale / HTTP semplice",o1d:"localhost o un IP. Il più semplice.",o2:"Il tuo dominio",o2d:"HTTPS automatico con Let's Encrypt — basta digitare il dominio.",o3:"Dietro Cloudflare",o3d:"la procedura spiega il certificato; lo incolli e salva i file per te.",
+    s3t:"Avviare",s3d:"La procedura mostra il comando esatto — uno di questi in base alla scelta:",cm1:"# locale / HTTP semplice",cm2:"# dietro Cloudflare",
+    s4t:"Ottenere la password admin",s4d:"Se non l'hai impostata, l'account admin creato al primo avvio è nei log — cerca la riga «Owner account created».",
+    s5t:"Aprire nel browser e finire",s5d:"Vai su https://il-tuo-dominio (o http://ip-server). Nella schermata iniziale inserisci il nome dell'azienda e l'account Owner. Fatto.",
+    doneT:"Installazione completata.",doneD:"L'app è in funzione. La versione è in fondo alla barra laterale sinistra.",
+    updateT:"Aggiornamento",updateD:"Quando esce una nuova versione, un comando fa tutto — backup, ultimo codice, riavvio con le impostazioni giuste. Nessun flag da ricordare.",
+    troubleT:"Se ti blocchi",
+    t1q:"«Web server is down» / errore 521",t1a:"La modalità SSL di Cloudflare non corrisponde all'origin. Cloudflare → SSL/TLS → Full (strict) (o Flexible come rimedio rapido).",
+    t2q:"Un nuovo pulsante/funzione non va",t2a:"Il backend è vecchio. Esegui npm run update — ricostruisce l'immagine.",
+    t3q:"Bloccato / password admin dimenticata",t3a:"Reimpostala dal server (forza una nuova al prossimo accesso):",
+    footer:"Per ogni dettaglio e opzione avanzata, vedi il repository.",readme:"README →"},
+
+  pt:{eyebrow:"Guia de instalação",title:"Instale o ITACM no seu servidor",lede:"Um gestor de inventário de TI auto-hospedado que é totalmente seu — sem nuvem, sem assinatura. Siga os passos em ordem; basta copiar e colar os comandos.",
+    prereqTitle:"Antes de começar",p1t:"Um servidor acessível publicamente",p1d:"Uma máquina com Docker e Node.js — o seu VPS (Hetzner, DigitalOcean, etc.). Um Ubuntu novo serve.",p2t:"Um nome de domínio",p2tag:"opcional",p2d:"Só é preciso para HTTPS (o cadeado verde). Sem ele funciona em HTTP simples no IP do servidor.",
+    stepsLabel:"Passos",
+    s1t:"Baixar o código no servidor",s1d:"Conecte-se ao servidor, clone o projeto e entre na pasta. Se o git não estiver instalado, instale-o primeiro (ex. sudo apt install git).",
+    s2t:"Executar o assistente de configuração",s2d:"Ele pergunta algumas coisas (conta admin, como será acessado) e gera as senhas e o arquivo .env por você — sem editar arquivos manualmente. Tudo fica privado no servidor.",
+    httpsQ:"Em «Como será acessado?», as opções:",o1:"Local / HTTP simples",o1d:"localhost ou um IP. O mais simples.",o2:"Seu próprio domínio",o2d:"HTTPS automático via Let's Encrypt — você só digita o domínio.",o3:"Atrás do Cloudflare",o3d:"o assistente explica o certificado; você cola e ele salva os arquivos.",
+    s3t:"Iniciar",s3d:"O assistente mostra o comando exato — um destes conforme sua escolha:",cm1:"# local / HTTP simples",cm2:"# atrás do Cloudflare",
+    s4t:"Obter a senha de admin",s4d:"Se você não definiu uma, a conta admin criada no primeiro início aparece nos logs — procure a linha «Owner account created».",
+    s5t:"Abrir no navegador e concluir",s5d:"Acesse https://seu-dominio (ou http://ip-servidor). Na tela inicial, informe o nome da empresa e a conta Owner. Pronto.",
+    doneT:"Instalação concluída.",doneD:"O app está rodando. A versão aparece no fim da barra lateral esquerda.",
+    updateT:"Atualização",updateD:"Quando sai uma nova versão, um comando faz tudo — backup, código mais recente, reinício com as configurações certas. Sem flags para lembrar.",
+    troubleT:"Se travar",
+    t1q:"«Web server is down» / erro 521",t1a:"O modo SSL do Cloudflare não bate com a origem. Cloudflare → SSL/TLS → Full (strict) (ou Flexible como solução rápida).",
+    t2q:"Um botão/recurso novo não funciona",t2a:"O backend está desatualizado. Rode npm run update — ele reconstrói a imagem.",
+    t3q:"Bloqueado / esqueceu a senha de admin",t3a:"Redefina pelo servidor (força uma nova no próximo acesso):",
+    footer:"Para todos os detalhes e opções avançadas, veja o repositório.",readme:"README →"},
+
+  nl:{eyebrow:"Installatiegids",title:"ITACM op je server installeren",lede:"Een zelf-gehost IT-assetbeheer dat helemaal van jou is — geen cloud, geen abonnement. Volg de stappen op volgorde; de commando's hoef je alleen te kopiëren en plakken.",
+    prereqTitle:"Voordat je begint",p1t:"Een openbaar bereikbare server",p1d:"Een machine met Docker en Node.js — je eigen VPS (Hetzner, DigitalOcean, enz.). Een verse Ubuntu-server volstaat.",p2t:"Een domeinnaam",p2tag:"optioneel",p2d:"Alleen nodig voor HTTPS (het groene slot). Zonder draait het via gewoon HTTP op het IP van de server.",
+    stepsLabel:"Stappen",
+    s1t:"De code naar de server halen",s1d:"Verbind met je server, kloon het project en ga in de map. Als git nog ontbreekt, installeer het eerst (bijv. sudo apt install git).",
+    s2t:"De installatiewizard uitvoeren",s2d:"Hij vraagt een paar dingen (adminaccount, hoe het bereikt wordt) en maakt de wachtwoorden en het .env-bestand voor je — geen handmatig bewerken. Alles blijft privé op de server.",
+    httpsQ:"Bij «Hoe wordt het bereikt?» heb je de keuze:",o1:"Lokaal / gewoon HTTP",o1d:"localhost of een IP. Het eenvoudigst.",o2:"Je eigen domein",o2d:"automatische HTTPS via Let's Encrypt — je typt alleen het domein.",o3:"Achter Cloudflare",o3d:"de wizard legt het certificaat uit; je plakt het en hij bewaart de bestanden.",
+    s3t:"Starten",s3d:"De wizard toont het exacte commando — een van deze, afhankelijk van je keuze:",cm1:"# lokaal / gewoon HTTP",cm2:"# achter Cloudflare",
+    s4t:"Je adminwachtwoord ophalen",s4d:"Als je er geen instelde, staat het bij de eerste start gemaakte adminaccount in de logs — zoek de regel «Owner account created».",
+    s5t:"In een browser openen en afronden",s5d:"Ga naar https://jouw-domein (of http://server-ip). Voer in het startscherm je bedrijfsnaam en het Owner-account in. Klaar.",
+    doneT:"Installatie voltooid.",doneD:"De app draait. De versie staat onderaan de linker zijbalk.",
+    updateT:"Bijwerken",updateD:"Bij een nieuwe versie doet één commando alles — back-up, nieuwste code, herstart met de juiste instellingen. Geen vlaggen om te onthouden.",
+    troubleT:"Als je vastloopt",
+    t1q:"«Web server is down» / fout 521",t1a:"Cloudflares SSL-modus past niet bij je origin. Zet Cloudflare → SSL/TLS → Full (strict) (of Flexible als snelle oplossing).",
+    t2q:"Een nieuwe knop/functie werkt niet",t2a:"De backend is verouderd. Voer npm run update uit — het herbouwt de image.",
+    t3q:"Buitengesloten / adminwachtwoord vergeten",t3a:"Reset het vanaf de server (forceert een nieuw wachtwoord bij de volgende aanmelding):",
+    footer:"Voor alle details en geavanceerde opties, zie de repository.",readme:"README →"},
+
+  pl:{eyebrow:"Przewodnik instalacji",title:"Zainstaluj ITACM na swoim serwerze",lede:"Samodzielnie hostowany system zarządzania zasobami IT, który należy w całości do Ciebie — bez chmury, bez abonamentu. Wykonuj kroki po kolei; wystarczy kopiować i wklejać polecenia.",
+    prereqTitle:"Zanim zaczniesz",p1t:"Serwer dostępny publicznie",p1d:"Maszyna z Dockerem i Node.js — Twój własny VPS (Hetzner, DigitalOcean itp.). Świeży Ubuntu wystarczy.",p2t:"Nazwa domeny",p2tag:"opcjonalnie",p2d:"Potrzebna tylko do HTTPS (zielona kłódka). Bez niej działa po zwykłym HTTP na IP serwera.",
+    stepsLabel:"Kroki",
+    s1t:"Pobierz kod na serwer",s1d:"Połącz się z serwerem, sklonuj projekt i wejdź do katalogu. Jeśli git nie jest zainstalowany, zainstaluj go najpierw (np. sudo apt install git).",
+    s2t:"Uruchom kreatora instalacji",s2d:"Zapyta o kilka rzeczy (konto admina, sposób dostępu) i wygeneruje hasła oraz plik .env za Ciebie — bez ręcznej edycji. Wszystko pozostaje prywatne na serwerze.",
+    httpsQ:"Przy pytaniu „Jak będzie dostępny?” masz opcje:",o1:"Lokalnie / zwykły HTTP",o1d:"localhost lub IP. Najprostsze.",o2:"Własna domena",o2d:"automatyczny HTTPS przez Let's Encrypt — wpisujesz tylko domenę.",o3:"Za Cloudflare",o3d:"kreator objaśnia certyfikat; wklejasz go, a on zapisuje pliki.",
+    s3t:"Uruchom",s3d:"Kreator pokaże dokładne polecenie — jedno z tych, zależnie od wyboru:",cm1:"# lokalnie / zwykły HTTP",cm2:"# za Cloudflare",
+    s4t:"Odczytaj hasło admina",s4d:"Jeśli nie ustawiłeś własnego, konto admina utworzone przy pierwszym starcie jest w logach — poszukaj wiersza „Owner account created”.",
+    s5t:"Otwórz w przeglądarce i zakończ",s5d:"Wejdź na https://twoja-domena (lub http://ip-serwera). Na ekranie startowym podaj nazwę firmy i konto Owner. Gotowe.",
+    doneT:"Instalacja zakończona.",doneD:"Aplikacja działa. Wersja jest na dole lewego paska bocznego.",
+    updateT:"Aktualizacja",updateD:"Gdy pojawi się nowa wersja, jedno polecenie robi wszystko — kopia zapasowa, najnowszy kod, restart z właściwymi ustawieniami. Bez flag do zapamiętania.",
+    troubleT:"Jeśli utkniesz",
+    t1q:"„Web server is down” / błąd 521",t1a:"Tryb SSL Cloudflare nie pasuje do origin. Ustaw Cloudflare → SSL/TLS → Full (strict) (albo Flexible na szybko).",
+    t2q:"Nowy przycisk/funkcja nie działa",t2a:"Backend jest nieaktualny. Uruchom npm run update — przebuduje obraz.",
+    t3q:"Zablokowany / zapomniane hasło admina",t3a:"Zresetuj je z serwera (wymusza nowe przy następnym logowaniu):",
+    footer:"Wszystkie szczegóły i opcje zaawansowane znajdziesz w repozytorium.",readme:"README →"},
+
+  ru:{eyebrow:"Руководство по установке",title:"Установите ITACM на свой сервер",lede:"Самостоятельно размещаемая система учёта IT-активов, полностью ваша — без облака и подписки. Выполняйте шаги по порядку; достаточно копировать и вставлять команды.",
+    prereqTitle:"Перед началом",p1t:"Публично доступный сервер",p1d:"Машина с Docker и Node.js — ваш собственный VPS (Hetzner, DigitalOcean и т. п.). Подойдёт чистый Ubuntu.",p2t:"Доменное имя",p2tag:"необязательно",p2d:"Нужно только для HTTPS (зелёный замок). Без него работает по обычному HTTP на IP сервера.",
+    stepsLabel:"Шаги",
+    s1t:"Скачать код на сервер",s1d:"Подключитесь к серверу, клонируйте проект и войдите в папку. Если git не установлен, установите его сначала (напр. sudo apt install git).",
+    s2t:"Запустить мастер установки",s2d:"Он задаст пару вопросов (учётка администратора, способ доступа) и создаст пароли и файл .env за вас — без ручного редактирования. Всё остаётся приватным на сервере.",
+    httpsQ:"На вопрос «Как будет доступен?» варианты:",o1:"Локально / простой HTTP",o1d:"localhost или IP-адрес. Самое простое.",o2:"Свой домен",o2d:"автоматический HTTPS через Let's Encrypt — вы просто вводите домен.",o3:"За Cloudflare",o3d:"мастер объяснит сертификат; вы вставляете его, он сохраняет файлы.",
+    s3t:"Запустить",s3d:"Мастер покажет точную команду — одну из этих, в зависимости от выбора:",cm1:"# локально / простой HTTP",cm2:"# за Cloudflare",
+    s4t:"Получить пароль администратора",s4d:"Если вы не задали свой, созданная при первом запуске учётка администратора есть в логах — найдите строку «Owner account created».",
+    s5t:"Открыть в браузере и завершить",s5d:"Откройте https://ваш-домен (или http://ip-сервера). На стартовом экране укажите название компании и учётку Owner. Готово.",
+    doneT:"Установка завершена.",doneD:"Приложение работает. Версия показана внизу левой боковой панели.",
+    updateT:"Обновление",updateD:"Когда выходит новая версия, одна команда делает всё — резервная копия, свежий код, перезапуск с правильными настройками. Флаги запоминать не нужно.",
+    troubleT:"Если застряли",
+    t1q:"«Web server is down» / ошибка 521",t1a:"Режим SSL в Cloudflare не совпадает с origin. Установите Cloudflare → SSL/TLS → Full (strict) (или Flexible как быстрое решение).",
+    t2q:"Новая кнопка/функция не работает",t2a:"Бэкенд устарел. Выполните npm run update — он пересоберёт образ.",
+    t3q:"Заблокированы / забыли пароль администратора",t3a:"Сбросьте его с сервера (потребует новый при следующем входе):",
+    footer:"Все подробности и расширенные опции — в репозитории.",readme:"README →"},
+
+  ar:{eyebrow:"دليل التثبيت",title:"ثبّت ITACM على خادمك",lede:"نظام إدارة أصول تقنية المعلومات مُستضاف ذاتيًا ومِلكٌ لك بالكامل — دون سحابة ودون اشتراك. اتبع الخطوات بالترتيب؛ يكفي نسخ الأوامر ولصقها.",
+    prereqTitle:"قبل أن تبدأ",p1t:"خادم يمكن الوصول إليه علنًا",p1d:"جهاز مثبَّت عليه Docker وNode.js — خادمك الخاص (Hetzner، DigitalOcean، إلخ). يكفي Ubuntu جديد.",p2t:"اسم نطاق",p2tag:"اختياري",p2d:"مطلوب فقط لـ HTTPS (القفل الأخضر). بدونه يعمل عبر HTTP عادي على عنوان IP للخادم.",
+    stepsLabel:"الخطوات",
+    s1t:"نزّل الكود إلى الخادم",s1d:"اتصل بخادمك، استنسخ المشروع وادخل المجلد. إن لم يكن git مثبتًا، ثبّته أولًا (مثل sudo apt install git).",
+    s2t:"شغّل معالج الإعداد",s2d:"يسألك بضعة أشياء (حساب المسؤول، طريقة الوصول) ويولّد كلمات المرور وملف .env نيابةً عنك — دون تحرير يدوي. كل ما يكتبه يبقى خاصًا على الخادم.",
+    httpsQ:"عند سؤال «كيف سيتم الوصول؟» خياراتك:",o1:"محلي / HTTP عادي",o1d:"localhost أو عنوان IP. الأبسط.",o2:"نطاقك الخاص",o2d:"HTTPS تلقائي عبر Let's Encrypt — تكتب النطاق فقط.",o3:"خلف Cloudflare",o3d:"يشرح المعالج كيفية الحصول على الشهادة؛ تلصقها ويحفظ الملفات نيابةً عنك.",
+    s3t:"التشغيل",s3d:"يعرض المعالج الأمر الدقيق — أحد هذه حسب اختيارك:",cm1:"# محلي / HTTP عادي",cm2:"# خلف Cloudflare",
+    s4t:"احصل على كلمة مرور المسؤول",s4d:"إن لم تحدد واحدة، يظهر حساب المسؤول المُنشأ عند أول تشغيل في السجلات — ابحث عن سطر «Owner account created».",
+    s5t:"افتحه في المتصفح وأكمِل",s5d:"اذهب إلى https://نطاقك (أو http://عنوان-الخادم). في الشاشة الأولى أدخل اسم الشركة وحساب Owner. تم.",
+    doneT:"اكتمل التثبيت.",doneD:"التطبيق يعمل. يظهر رقم الإصدار أسفل الشريط الجانبي الأيسر.",
+    updateT:"التحديث",updateD:"عند صدور إصدار جديد، أمر واحد يفعل كل شيء — نسخة احتياطية، أحدث كود، وإعادة تشغيل بالإعدادات الصحيحة. لا رايات لتتذكرها.",
+    troubleT:"إذا واجهت مشكلة",
+    t1q:"«Web server is down» / خطأ 521",t1a:"وضع SSL في Cloudflare لا يطابق الخادم الأصلي. اضبط Cloudflare ← SSL/TLS ← Full (strict) (أو Flexible كحل سريع).",
+    t2q:"زر/ميزة جديدة لا تعمل",t2a:"الخلفية قديمة. شغّل npm run update — يعيد بناء الصورة.",
+    t3q:"محظور / نسيت كلمة مرور المسؤول",t3a:"أعد تعيينها من الخادم (تفرض كلمة جديدة عند الدخول التالي):",
+    footer:"لكل التفاصيل والخيارات المتقدمة، راجع المستودع.",readme:"README ←"},
+
+  ja:{eyebrow:"インストールガイド",title:"サーバーに ITACM を設置",lede:"完全にあなたのものになる、自己ホスト型の IT 資産管理システム — クラウド不要、サブスク不要。手順を順に進めてください。コマンドはコピー＆ペーストするだけです。",
+    prereqTitle:"始める前に",p1t:"公開アクセス可能なサーバー",p1d:"Docker と Node.js が入ったマシン — 自分の VPS（Hetzner、DigitalOcean など）。まっさらな Ubuntu で十分です。",p2t:"ドメイン名",p2tag:"任意",p2d:"HTTPS（緑の鍵）に必要なだけです。なくてもサーバーの IP 上で通常の HTTP で動きます。",
+    stepsLabel:"手順",
+    s1t:"コードをサーバーに取得",s1d:"サーバーに接続し、プロジェクトをクローンしてフォルダに入ります。git が未インストールなら先に入れてください（例: sudo apt install git）。",
+    s2t:"セットアップウィザードを実行",s2d:"いくつか質問（管理者アカウント、アクセス方法）を行い、パスワードと .env ファイルを自動生成します — 手動編集は不要。書き込む内容はサーバー上で非公開のままです。",
+    httpsQ:"「どうアクセスしますか？」の選択肢:",o1:"ローカル / 素の HTTP",o1d:"localhost または IP。最も簡単。",o2:"自分のドメイン",o2d:"Let's Encrypt による自動 HTTPS — ドメインを入力するだけ。",o3:"Cloudflare の背後",o3d:"証明書の取得方法を案内。貼り付けるとファイルを保存してくれます。",
+    s3t:"起動",s3d:"ウィザードが正確なコマンドを表示します — 選択に応じて次のいずれか:",cm1:"# ローカル / 素の HTTP",cm2:"# Cloudflare の背後",
+    s4t:"管理者パスワードを取得",s4d:"自分で設定しなかった場合、初回起動時に作られた管理者アカウントはログに表示されます —「Owner account created」の行を探してください。",
+    s5t:"ブラウザで開いて完了",s5d:"https://あなたのドメイン（または http://サーバーIP）を開きます。初回画面で会社名と Owner アカウントを入力。以上です。",
+    doneT:"セットアップ完了。",doneD:"アプリが稼働中です。バージョンは左サイドバー下部に表示されます。",
+    updateT:"アップデート",updateD:"新しいバージョンが出たら、1 つのコマンドで完了 — バックアップ、最新コード、正しい設定で再起動。覚えるフラグはありません。",
+    troubleT:"うまくいかないとき",
+    t1q:"「Web server is down」/ エラー 521",t1a:"Cloudflare の SSL モードがオリジンと不一致です。Cloudflare → SSL/TLS → Full (strict)（または応急的に Flexible）に。",
+    t2q:"新しいボタン/機能が動かない",t2a:"バックエンドが古いままです。npm run update を実行 — イメージを再ビルドします。",
+    t3q:"ロックアウト / 管理者パスワードを忘れた",t3a:"サーバーからリセット（次回サインイン時に新しいパスワードを要求）:",
+    footer:"すべての詳細と高度なオプションはリポジトリを参照。",readme:"README →"}
+  };
+
+  var esc = function(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");};
+  var term = function(cmd, copy, comment){
+    var body = cmd.split("\n").map(function(l){ return '<span class="p">$</span>'+esc(l); }).join("\n");
+    if(comment){ body = comment.replace(/\n/g,"\n") + "\n" + body; }
+    return '<div class="term"><div class="term-bar"><i></i><i></i><i></i></div>'+
+      '<pre><code>'+body+'</code></pre>'+
+      '<button class="copy" type="button" data-copy="'+esc(copy).replace(/"/g,"&quot;")+'">'+"⧉"+'</button></div>';
+  };
+
+  function render(lang){
+    var d = T[lang] || T.en;
+    document.documentElement.lang = lang;
+    document.documentElement.dir = (lang==="ar") ? "rtl" : "ltr";
+    var startCmd =
+      '<div class="term"><div class="term-bar"><i></i><i></i><i></i></div>'+
+      '<pre><code><span class="cm">'+esc(d.cm1)+'</span>\n<span class="p">$</span>docker compose up -d\n\n'+
+      '<span class="cm">'+esc(d.cm2)+'</span>\n<span class="p">$</span>docker compose --profile cloudflare up -d</code></pre>'+
+      '<button class="copy" type="button" data-copy="docker compose up -d">⧉</button></div>';
+
+    document.getElementById("content").innerHTML =
+      '<header class="hero">'+
+        '<p class="eyebrow">'+esc(d.eyebrow)+'</p>'+
+        '<h1>'+esc(d.title)+'</h1>'+
+        '<p class="lede">'+esc(d.lede)+'</p>'+
+      '</header>'+
+
+      '<section class="prereq card">'+
+        '<h2>'+esc(d.prereqTitle)+'</h2>'+
+        '<ul>'+
+          '<li><span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg></span>'+
+            '<div><b>'+esc(d.p1t)+'</b><p>'+esc(d.p1d)+'</p></div></li>'+
+          '<li><span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20"/></svg></span>'+
+            '<div><b>'+esc(d.p2t)+'<span class="tag">'+esc(d.p2tag)+'</span></b><p>'+esc(d.p2d)+'</p></div></li>'+
+        '</ul>'+
+      '</section>'+
+
+      '<p class="sec-title">'+esc(d.stepsLabel)+'</p>'+
+      '<ol class="steps">'+
+        '<li class="step"><div class="num">1</div><div class="body"><h3>'+esc(d.s1t)+'</h3><p>'+esc(d.s1d)+'</p>'+term(C.clone,C.clone)+'</div></li>'+
+        '<li class="step"><div class="num">2</div><div class="body"><h3>'+esc(d.s2t)+'</h3><p>'+esc(d.s2d)+'</p>'+term(C.setup,C.setup)+
+          '<p class="ninote"><span aria-hidden="true">ℹ</span> '+esc(NI[lang]||NI.en)+'</p>'+
+          '<div class="callout"><h4>'+esc(d.httpsQ)+'</h4><ul>'+
+            '<li><span class="d">1</span><span><b>'+esc(d.o1)+'</b> — '+esc(d.o1d)+'</span></li>'+
+            '<li><span class="d">2</span><span><b>'+esc(d.o2)+'</b> — '+esc(d.o2d)+'</span></li>'+
+            '<li><span class="d">3</span><span><b>'+esc(d.o3)+'</b> — '+esc(d.o3d)+'</span></li>'+
+          '</ul></div></div></li>'+
+        '<li class="step"><div class="num">3</div><div class="body"><h3>'+esc(d.s3t)+'</h3><p>'+esc(d.s3d)+'</p>'+startCmd+'</div></li>'+
+        '<li class="step"><div class="num">4</div><div class="body"><h3>'+esc(d.s4t)+'</h3><p>'+esc(d.s4d)+'</p>'+term(C.logs,C.logs)+'</div></li>'+
+        '<li class="step"><div class="num">5</div><div class="body"><h3>'+esc(d.s5t)+'</h3><p>'+esc(d.s5d)+'</p></div></li>'+
+      '</ol>'+
+
+      '<div class="done"><span class="chk" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>'+
+        '<div><b>'+esc(d.doneT)+'</b><p>'+esc(d.doneD)+'</p></div></div>'+
+
+      '<div class="grid2">'+
+        '<section class="update card"><h2>'+esc(d.updateT)+'</h2><p>'+esc(d.updateD)+'</p>'+term(C.update,C.update)+'</section>'+
+        '<section class="trouble card"><h2>'+esc(d.troubleT)+'</h2><dl>'+
+          '<div><dt>'+esc(d.t1q)+'</dt><dd>'+esc(d.t1a)+'</dd></div>'+
+          '<div><dt>'+esc(d.t2q)+'</dt><dd>'+esc(d.t2a)+'</dd></div>'+
+          '<div><dt>'+esc(d.t3q)+'</dt><dd>'+esc(d.t3a)+'</dd>'+term(C.reset,C.reset)+'</div>'+
+        '</dl></section>'+
+      '</div>'+
+
+      '<footer><span>'+esc(d.footer)+'</span><a href="https://github.com/enesyaks/ITACM#readme" target="_blank" rel="noopener">'+esc(d.readme)+'</a></footer>';
+  }
+
+  // language selector
+  var sel = document.getElementById("lang");
+  ORDER.forEach(function(code){
+    var o = document.createElement("option"); o.value = code; o.textContent = NAMES[code]; sel.appendChild(o);
+  });
+  var initial = (function(){
+    try{ var s = localStorage.getItem("itacm_guide_lang"); if(s && T[s]) return s; }catch(e){}
+    var b = (navigator.language||"en").slice(0,2).toLowerCase();
+    return T[b] ? b : "en";
+  })();
+  sel.value = initial;
+  render(initial);
+  sel.addEventListener("change", function(){
+    render(sel.value);
+    try{ localStorage.setItem("itacm_guide_lang", sel.value); }catch(e){}
+  });
+
+  // copy (delegated)
+  document.getElementById("content").addEventListener("click", function(e){
+    var btn = e.target.closest(".copy"); if(!btn) return;
+    var text = btn.getAttribute("data-copy")||"";
+    if(navigator.clipboard) navigator.clipboard.writeText(text).then(function(){
+      btn.textContent = "✓"; btn.classList.add("ok");
+      setTimeout(function(){ btn.textContent = "⧉"; btn.classList.remove("ok"); }, 1300);
+    });
+  });
+})();
+</script>

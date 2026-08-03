@@ -24,6 +24,10 @@ Donanım ve ağ envanteri · yazdırılabilir PDF tutanaklı personel zimmetleri
 
 <br />
 
+📘 **Yeni misin?** Basit, kopyala-yapıştır [**görsel kurulum rehberini**](docs/install-guide.html) izle — 12 dilde.
+
+<br />
+
 ![Panel](docs/screenshots/dashboard.png)
 
 </div>
