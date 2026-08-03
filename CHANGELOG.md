@@ -4,6 +4,15 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.15] — 2026-08-03
+
+### Fixed
+- **Localized the New IT User and Transfer Ownership dialogs.** Their field labels,
+  hints and buttons were hardcoded in English regardless of the selected UI
+  language; they now use the 12-language i18n. The New IT User dialog also notes
+  that if the person already has web (self-service) access it must be removed first
+  (one login per person).
+
 ## [1.3.14] — 2026-08-03
 
 ### Fixed

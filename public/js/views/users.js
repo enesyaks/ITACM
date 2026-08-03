@@ -997,28 +997,27 @@ Views.users = async function (el) {
         {
           type: 'html',
           full: true,
-          html: `<p class="onb-hint" style="margin:0">${esc(
-            'Search for an existing employee to give them a login, or leave it empty and fill in the name and email to add someone new. Leave the password blank to generate one — it is emailed when SMTP works, otherwise shown here once.'
-          )}</p>`,
+          html: `<p class="onb-hint" style="margin:0">${esc(t('usr.nu.hint'))}</p>
+            <p class="onb-hint" style="margin:8px 0 0"><span class="ms ms-sm" style="vertical-align:-2px">info</span> ${esc(t('usr.nu.webNote'))}</p>`,
         },
         {
           // Server-side search over people who do NOT already hold a login, so
           // the list stays usable at any headcount and can never offer someone
           // the backend would reject as a duplicate.
           name: 'employeeId',
-          label: 'Existing employee',
+          label: t('usr.nu.existing'),
           type: 'employeeSearch',
           full: true,
           searchUrl: '/auth/users/employee-candidates',
-          placeholder: 'Search employees without a login — name, email or department…',
+          placeholder: t('usr.nu.existingPh'),
         },
-        { name: 'username', label: 'Display name (new person only)' },
-        { name: 'email', label: 'Email (new person only)', type: 'email' },
-        { name: 'password', label: 'Password (blank = auto-generate)', type: 'password' },
-        { name: 'role', label: 'Role *', type: 'select', value: 'Helpdesk', options: roleOptions },
+        { name: 'username', label: t('usr.nu.name') },
+        { name: 'email', label: t('usr.nu.email'), type: 'email' },
+        { name: 'password', label: t('usr.nu.pass'), type: 'password' },
+        { name: 'role', label: t('usr.nu.role') + ' *', type: 'select', value: 'Helpdesk', options: roleOptions },
         {
           name: 'permissionGroupId',
-          label: 'Permission group',
+          label: t('usr.nu.group'),
           type: 'select',
           value: groupList.find((g) => g.name === 'Helpdesk')?.id || '',
           options: [
@@ -1027,7 +1026,7 @@ Views.users = async function (el) {
           ],
         },
       ],
-      submitLabel: 'Create user',
+      submitLabel: t('usr.nu.create'),
       async onSubmit(d) {
         const body = d.employeeId
           ? { employeeId: d.employeeId, role: d.role }
@@ -1065,19 +1064,19 @@ Views.users = async function (el) {
     if (candidates.length > 0) {
       fields.push({
         type: 'html', full: true,
-        html: `<p class="onb-hint" style="margin:0">${esc('Select an existing IT user. They become Owner; you become Admin and must sign in again. The selected user must already have MFA enabled.')}</p>`,
+        html: `<p class="onb-hint" style="margin:0">${esc(t('usr.ot.hint'))}</p>`,
       });
       fields.push({
         name: 'targetUserId',
-        label: 'Transfer to *',
+        label: t('usr.ot.to') + ' *',
         type: 'select',
         required: true,
         options: candidates.map((c) => ({
           value: c.uid,
-          label: `${c.username || c.email} (${c.email}) — ${c.role}${c.mfaEnabled ? '' : ' — MFA required'}`,
+          label: `${c.username || c.email} (${c.email}) — ${c.role}${c.mfaEnabled ? '' : ' — ' + t('usr.ot.mfaReq')}`,
         })),
       });
-      fields.push({ name: 'code', label: 'Your MFA code (6 digits) *', required: true });
+      fields.push({ name: 'code', label: t('usr.ot.mfa') + ' *', required: true });
     } else {
       const note = pre.smtpConfigured
         ? 'The new account becomes Owner and an invite with a temporary password is emailed to it. You drop to Admin and must sign in again.'
@@ -1088,12 +1087,12 @@ Views.users = async function (el) {
       if (!pre.smtpConfigured) {
         fields.push({ name: 'password', label: 'Temporary password * (min 8)', type: 'password', required: true });
       }
-      fields.push({ name: 'code', label: 'Your MFA code (6 digits) *', required: true });
+      fields.push({ name: 'code', label: t('usr.ot.mfa') + ' *', required: true });
     }
     formModal({
-      title: 'Transfer ownership',
+      title: t('usr.ot.title'),
       fields,
-      submitLabel: 'Transfer ownership',
+      submitLabel: t('usr.ot.title'),
       async onSubmit(d) {
         const res = await api('/auth/owner/transfer', { method: 'POST', body: d });
         let msg = `Ownership transferred to ${res.newOwner.email}. You are now Admin — sign in again.`;
