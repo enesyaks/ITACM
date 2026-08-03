@@ -24,7 +24,7 @@ Hardware & network inventory · employee handovers with printable PDF receipts �
 
 <br />
 
-📘 **New here?** Follow the simple, copy-paste [**visual install guide**](docs/install-guide.html) — available in 12 languages.
+📘 **New here?** Follow the simple, copy-paste [**visual install guide**](https://enesyaks.github.io/ITACM/install-guide.html) — available in 12 languages.
 
 <br />
 
