@@ -258,11 +258,21 @@ function renderMobileNav() {
       <span class="mnav-label">${esc(t('nav.m.more'))}</span>
     </button>`;
 
+  // The scan FAB needs inventory access — it looks an asset up by its tag. Hide it
+  // for users without asset:read (Portal self-service, HR, restricted staff); the
+  // grid keeps its 1fr / auto / 1fr columns with an empty center so nothing shifts.
+  const canScan = (typeof Auth !== 'undefined' && typeof Auth.canIam === 'function')
+    ? Auth.canIam('asset', 'read')
+    : !((typeof isPortalUser === 'function' && isPortalUser()) || (typeof isHrUser === 'function' && isHrUser()));
+  const centerHtml = canScan
+    ? `<button type="button" class="mnav-fab" id="mobile-scan-fab" aria-label="${esc(t('qs.scan'))}">
+      <span class="ms">qr_code_scanner</span>
+    </button>`
+    : '<div class="mnav-center-empty" aria-hidden="true"></div>';
+
   nav.innerHTML = `
     <div class="mnav-cluster mnav-left">${left}</div>
-    <button type="button" class="mnav-fab" id="mobile-scan-fab" aria-label="${esc(t('qs.scan'))}">
-      <span class="ms">qr_code_scanner</span>
-    </button>
+    ${centerHtml}
     <div class="mnav-cluster mnav-right">${right}</div>`;
 
   const fab = $('#mobile-scan-fab', nav);

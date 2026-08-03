@@ -4,6 +4,16 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.14] — 2026-08-03
+
+### Fixed
+- **Barcode/QR scanner no longer offered to users without inventory access.** The
+  mobile center scan FAB (and the desktop topbar scan button) showed for Portal
+  self-service and HR accounts even though they can't read assets — the scan looks
+  an asset up by its tag, so it was useless (and would prompt for the camera) for
+  them. Both are now gated on `asset:read`; the mobile nav keeps its layout with an
+  empty center when the scanner is hidden.
+
 ## [1.3.13] — 2026-08-03
 
 ### Added
