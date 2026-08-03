@@ -4,6 +4,15 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.4] — 2026-08-03
+
+### Added
+- **Loading states.** A first-load **boot splash** (centered spinner + product
+  name) now covers the brief gap before the app picks onboarding / login /
+  dashboard — no more blank flash on startup, with a failsafe so it can never
+  stick. Page navigation shows a proper **spinner** in the content area instead
+  of plain "Loading…" text, matching the 404 / 403 / error screens.
+
 ## [1.3.3] — 2026-08-03
 
 ### Added
