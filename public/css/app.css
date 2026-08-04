@@ -1300,6 +1300,18 @@ textarea { resize: vertical; min-height: 60px; }
   .skel::after { background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .12), transparent); }
 }
 
+/* Small inline copy button (e.g. next to the serial number in asset detail). */
+.ad-copy {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; margin-left: 6px; padding: 0; vertical-align: middle;
+  border: 1px solid var(--surface-container); border-radius: 6px;
+  background: var(--surface-low); color: var(--on-surface-variant); cursor: pointer;
+  transition: background .15s, color .15s, border-color .15s;
+}
+.ad-copy:hover { background: var(--indigo-50, #eef); color: var(--indigo-700, #3525cd); border-color: var(--indigo-200, #ccd); }
+.ad-copy.ok { background: var(--success, #12a150); border-color: var(--success, #12a150); color: #fff; }
+.ad-copy .ms { font-size: 15px; }
+
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .form-grid .full { grid-column: 1 / -1; }
 .form-field label { display: block; font-size: 12px; font-weight: 600; color: var(--on-surface-variant); margin-bottom: 4px; }

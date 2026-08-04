@@ -4,6 +4,20 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.23] — 2026-08-04
+
+### Fixed
+- **Hardware search keeps the keyboard open on mobile.** Each keystroke used to
+  re-render the whole hardware view, which rebuilt the search box and — on phones —
+  closed the on-screen keyboard (a programmatic re-focus can't reopen it), so you
+  could barely type. Search now refetches and repaints **only the results region**,
+  leaving the search box mounted: the keyboard stays up, focus is kept and no
+  character is dropped. Filters/sort/pagination still do a full navigation as before.
+
+### Added
+- **Copy button next to the serial number** in the asset detail. A small button
+  beside "Serial No" copies the value to the clipboard (with a checkmark + toast).
+
 ## [1.3.22] — 2026-08-04
 
 ### Fixed

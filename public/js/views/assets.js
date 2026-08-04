@@ -107,7 +107,7 @@ Views.assets = async function (el, params = {}) {
     ? params.order
     : (params.sort ? 'asc' : pref.order);
   const useLifecycle = params.lifecycle === 'overdue' || params.lifecycle === 'soon';
-  const page = Math.max(1, Number(params.page) || 1);
+  let page = Math.max(1, Number(params.page) || 1);
   const HW_CATS = ['Laptop', 'Desktop', 'Monitor', 'Television', 'Phone', 'Tablet', 'Printer', 'Keyboard', 'Mouse', 'Headset', 'Docking Station', 'Webcam', 'Peripheral', 'Accessory', 'Other'];
   const STATUSES = ['In Stock', 'Assigned', 'In Repair', 'Reserved', 'Scrap', 'Sold'];
   const selectedStatus = forcedStatuses
@@ -174,11 +174,10 @@ Views.assets = async function (el, params = {}) {
     items = sortHwItems(items, sortKey, sortOrder);
   }
 
-  const pages = Math.max(1, Math.ceil((useLifecycle ? items.length : total) / PAGE_SIZE));
-  const safePage = Math.min(page, pages);
-  const pageItems = useLifecycle
-    ? items.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
-    : items;
+  // Paging is recomputed on every results render (initial + in-place search
+  // refresh) inside resultsCardHTML(); safePage is kept here because cur() reads
+  // it to build the hash for filter/sort/pagination navigation.
+  let safePage = Math.min(page, Math.max(1, Math.ceil((useLifecycle ? items.length : total) / PAGE_SIZE)));
   const chips = [];
   selectedStatus.forEach((s) => chips.push({ key: 'status', value: s, label: `${t('common.status')}: ${statusLabel(s)}` }));
   selectedCats.forEach((c) => chips.push({ key: 'category', value: c, label: `Category: ${c}` }));
@@ -204,6 +203,120 @@ Views.assets = async function (el, params = {}) {
   });
   const sortTh = (key, label, extraClass = '') =>
     sortThHtml(key, label, sortKey, sortOrder, extraClass);
+
+  // The results card (mobile list + table + pagination) is built by this closure
+  // so it can be re-rendered in place on an in-view search — keeping the search
+  // box mounted so the mobile keyboard never closes and no keystroke is lost.
+  // It recomputes paging from the current items/total/page on every call.
+  const resultsCardHTML = () => {
+    const pages = Math.max(1, Math.ceil((useLifecycle ? items.length : total) / PAGE_SIZE));
+    safePage = Math.min(page, pages);
+    const pageItems = useLifecycle
+      ? items.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
+      : items;
+    const lifePills = (x) => {
+      const l = lifecycleInfo(x);
+      if (x.status === 'Scrap' || x.status === 'Sold') return '';
+      if (l.overdue) return `<span class="pill pill-rose" title="${esc(t('asset.eolTitle'))}">${esc(t('asset.eol'))}</span>`;
+      if (l.pct != null && l.pct >= 90) return `<span class="pill pill-amber" title="${esc(t('asset.eolSoonTitle'))}">${esc(t('asset.eolSoon'))}</span>`;
+      return '';
+    };
+    const rowActions = (x, { mobile = false } = {}) => `<div class="hw-actions${mobile ? ' hw-actions-mobile' : ''}">
+        <button type="button" class="hw-icon-btn" data-view="${esc(x.id)}" title="${esc(t('common.view'))}" aria-label="${esc(t('common.view'))}">
+          <span class="ms">visibility</span>
+        </button>
+        ${canUpdate ? `<button type="button" class="hw-icon-btn" data-edit="${esc(x.id)}" title="${esc(t('common.edit'))}" aria-label="${esc(t('common.edit'))}">
+          <span class="ms">edit</span>
+        </button>` : ''}
+        ${canCreate ? `<button type="button" class="hw-icon-btn" data-duplicate="${esc(x.id)}" title="${esc(t('common.duplicate'))}" aria-label="${esc(t('common.duplicate'))}">
+          <span class="ms">content_copy</span>
+        </button>` : ''}
+        ${canUnassign && x.status === 'Assigned' ? `<button type="button" class="hw-icon-btn" data-return="${esc(x.id)}" title="${esc(t('common.return'))}" aria-label="${esc(t('common.return'))}">
+          <span class="ms">undo</span>
+        </button>` : ''}
+        ${canRepair && (x.status === 'In Stock' || x.status === 'Assigned') ? `<button type="button" class="hw-icon-btn" data-repair="${esc(x.id)}" title="${esc(t('common.repair'))}" aria-label="${esc(t('common.repair'))}">
+          <span class="ms">build</span>
+        </button>` : ''}
+      </div>`;
+    return `
+    <div class="card hw-card">
+    <div class="m-asset-list">
+      ${pageItems.length === 0 ? `<div class="table-empty" style="padding:24px">No assets found.</div>` :
+        pageItems.map((x) => {
+          const specsBits = x.specs ? [x.specs.cpu, x.specs.ram].filter(Boolean).join(', ') : '';
+          return `
+          <div class="m-asset-card ${x.status === 'Scrap' || x.status === 'Sold' ? 'row-scrap' : ''} ${x.status === 'Reserved' ? 'row-reserved' : ''}" data-open-asset="${esc(x.id)}">
+            <div class="m-asset-top">
+              <span class="icon-chip chip-indigo"><span class="ms">${esc(catIcon(x.category))}</span></span>
+              <div style="flex:1;min-width:0">
+                <div class="mono">${esc(x.assetTag)}</div>
+                <div class="cell-title">${esc(x.brand)} ${esc(x.model)}</div>
+                <div class="cell-sub">${esc(x.category)}${specsBits ? ' · ' + esc(specsBits) : ''}</div>
+              </div>
+              <div class="hw-status">${badge(x.status)}${lifePills(x)}</div>
+            </div>
+            <div class="cell-sub">${esc(x.location || '—')} · <span class="mono">${esc(x.serialNumber)}</span></div>
+            ${rowActions(x, { mobile: true })}
+          </div>`;
+        }).join('')}
+    </div>
+    <div class="table-wrap"><table class="data hw-table">
+      <thead><tr>
+        <th class="hw-col-check"><input type="checkbox" id="sel-all" ${!(canUpdate || canUnassign || canRepair) ? 'disabled' : ''}></th>
+        ${sortTh('assetTag', t('hw.colAssetId') || 'Asset ID', 'hw-col-id')}
+        ${sortTh('brand', t('hw.colBrandModel') || 'Brand & Model')}
+        ${sortTh('serialNumber', t('hw.colSerial') || 'Serial No')}
+        ${sortTh('mac', t('hw.colMac') || 'MAC', 'hw-col-mac')}
+        ${sortTh('location', t('network.colLocation') || 'Location')}
+        ${sortTh('status', t('common.status'))}
+        <th class="hw-col-actions"></th>
+      </tr></thead>
+      <tbody>
+        ${pageItems.length === 0 ? '<tr><td colspan="8" class="table-empty">No assets found.</td></tr>' :
+          pageItems.map((x) => {
+            const specsBits = x.specs ? [x.specs.cpu, x.specs.ram].filter(Boolean).join(', ') : '';
+            const mac = x.macEthernet || x.macWifi;
+            return `
+            <tr class="hw-row asset-row ${x.status === 'Scrap' || x.status === 'Sold' ? 'row-scrap' : ''}" data-open-asset="${esc(x.id)}">
+              <td class="hw-col-check">
+                <input type="checkbox" data-sel="${esc(x.id)}" ${!(canUpdate || canUnassign || canRepair) ? 'disabled' : ''}>
+              </td>
+              <td class="hw-col-id">
+                <div class="hw-id-cell">
+                  <button type="button" class="hw-qr" data-qr="${esc(x.id)}" title="${esc('Show QR code')}" aria-label="${esc('Show QR code')}">
+                    <span class="ms">qr_code_2</span>
+                  </button>
+                  <span class="mono hw-tag">${esc(x.assetTag)}</span>
+                </div>
+              </td>
+              <td>
+                <div class="hw-product">
+                  <span class="hw-cat" title="${esc(x.category)}"><span class="ms">${esc(catIcon(x.category))}</span></span>
+                  <div class="hw-product-text">
+                    <div class="cell-title">${esc(x.brand)} ${esc(x.model)}</div>
+                    <div class="cell-sub">${esc(x.category)}${specsBits ? ' · ' + esc(specsBits) : ''}</div>
+                  </div>
+                </div>
+              </td>
+              <td class="mono hw-serial">${esc(x.serialNumber)}</td>
+              <td class="mono hw-mac">${mac ? esc(mac) : '<span class="hw-na">—</span>'}</td>
+              <td class="hw-loc">${esc(x.location || '—')}</td>
+              <td><div class="hw-status">${badge(x.status)}${lifePills(x)}</div></td>
+              <td class="actions">${rowActions(x)}</td>
+            </tr>`;
+          }).join('')}
+      </tbody>
+    </table></div>
+    <div class="table-foot">
+      Showing ${pageItems.length === 0 ? 0 : (safePage - 1) * PAGE_SIZE + 1} to ${Math.min(safePage * PAGE_SIZE, useLifecycle ? items.length : total)}
+      of ${total != null ? total : pageItems.length} assets
+      <span class="spacer"></span>
+      <button class="btn btn-outline btn-sm" data-page="${safePage - 1}" ${safePage <= 1 ? 'disabled' : ''}>‹ Prev</button>
+      <span style="padding:0 6px">Page ${safePage} / ${pages}</span>
+      <button class="btn btn-outline btn-sm" data-page="${safePage + 1}" ${safePage >= pages ? 'disabled' : ''}>Next ›</button>
+    </div>
+    </div>`;
+  };
 
   el.innerHTML = `
     ${pageHead(
@@ -276,110 +389,7 @@ Views.assets = async function (el, params = {}) {
 
     <div id="bulk-bar-slot"></div>
 
-    ${(() => {
-      const lifePills = (x) => {
-        const l = lifecycleInfo(x);
-        if (x.status === 'Scrap' || x.status === 'Sold') return '';
-        if (l.overdue) return `<span class="pill pill-rose" title="${esc(t('asset.eolTitle'))}">${esc(t('asset.eol'))}</span>`;
-        if (l.pct != null && l.pct >= 90) return `<span class="pill pill-amber" title="${esc(t('asset.eolSoonTitle'))}">${esc(t('asset.eolSoon'))}</span>`;
-        return '';
-      };
-      const rowActions = (x, { mobile = false } = {}) => `<div class="hw-actions${mobile ? ' hw-actions-mobile' : ''}">
-          <button type="button" class="hw-icon-btn" data-view="${esc(x.id)}" title="${esc(t('common.view'))}" aria-label="${esc(t('common.view'))}">
-            <span class="ms">visibility</span>
-          </button>
-          ${canUpdate ? `<button type="button" class="hw-icon-btn" data-edit="${esc(x.id)}" title="${esc(t('common.edit'))}" aria-label="${esc(t('common.edit'))}">
-            <span class="ms">edit</span>
-          </button>` : ''}
-          ${canCreate ? `<button type="button" class="hw-icon-btn" data-duplicate="${esc(x.id)}" title="${esc(t('common.duplicate'))}" aria-label="${esc(t('common.duplicate'))}">
-            <span class="ms">content_copy</span>
-          </button>` : ''}
-          ${canUnassign && x.status === 'Assigned' ? `<button type="button" class="hw-icon-btn" data-return="${esc(x.id)}" title="${esc(t('common.return'))}" aria-label="${esc(t('common.return'))}">
-            <span class="ms">undo</span>
-          </button>` : ''}
-          ${canRepair && (x.status === 'In Stock' || x.status === 'Assigned') ? `<button type="button" class="hw-icon-btn" data-repair="${esc(x.id)}" title="${esc(t('common.repair'))}" aria-label="${esc(t('common.repair'))}">
-            <span class="ms">build</span>
-          </button>` : ''}
-        </div>`;
-      return `
-    <div class="card hw-card">
-    <div class="m-asset-list">
-      ${pageItems.length === 0 ? `<div class="table-empty" style="padding:24px">No assets found.</div>` :
-        pageItems.map((x) => {
-          const specsBits = x.specs ? [x.specs.cpu, x.specs.ram].filter(Boolean).join(', ') : '';
-          return `
-          <div class="m-asset-card ${x.status === 'Scrap' || x.status === 'Sold' ? 'row-scrap' : ''} ${x.status === 'Reserved' ? 'row-reserved' : ''}" data-open-asset="${esc(x.id)}">
-            <div class="m-asset-top">
-              <span class="icon-chip chip-indigo"><span class="ms">${esc(catIcon(x.category))}</span></span>
-              <div style="flex:1;min-width:0">
-                <div class="mono">${esc(x.assetTag)}</div>
-                <div class="cell-title">${esc(x.brand)} ${esc(x.model)}</div>
-                <div class="cell-sub">${esc(x.category)}${specsBits ? ' · ' + esc(specsBits) : ''}</div>
-              </div>
-              <div class="hw-status">${badge(x.status)}${lifePills(x)}</div>
-            </div>
-            <div class="cell-sub">${esc(x.location || '—')} · <span class="mono">${esc(x.serialNumber)}</span></div>
-            ${rowActions(x, { mobile: true })}
-          </div>`;
-        }).join('')}
-    </div>
-    <div class="table-wrap"><table class="data hw-table">
-      <thead><tr>
-        <th class="hw-col-check"><input type="checkbox" id="sel-all" ${!(canUpdate || canUnassign || canRepair) ? 'disabled' : ''}></th>
-        ${sortTh('assetTag', t('hw.colAssetId') || 'Asset ID', 'hw-col-id')}
-        ${sortTh('brand', t('hw.colBrandModel') || 'Brand & Model')}
-        ${sortTh('serialNumber', t('hw.colSerial') || 'Serial No')}
-        ${sortTh('mac', t('hw.colMac') || 'MAC', 'hw-col-mac')}
-        ${sortTh('location', t('network.colLocation') || 'Location')}
-        ${sortTh('status', t('common.status'))}
-        <th class="hw-col-actions"></th>
-      </tr></thead>
-      <tbody>
-        ${pageItems.length === 0 ? '<tr><td colspan="8" class="table-empty">No assets found.</td></tr>' :
-          pageItems.map((x) => {
-            const specsBits = x.specs ? [x.specs.cpu, x.specs.ram].filter(Boolean).join(', ') : '';
-            const mac = x.macEthernet || x.macWifi;
-            return `
-            <tr class="hw-row asset-row ${x.status === 'Scrap' || x.status === 'Sold' ? 'row-scrap' : ''}" data-open-asset="${esc(x.id)}">
-              <td class="hw-col-check">
-                <input type="checkbox" data-sel="${esc(x.id)}" ${!(canUpdate || canUnassign || canRepair) ? 'disabled' : ''}>
-              </td>
-              <td class="hw-col-id">
-                <div class="hw-id-cell">
-                  <button type="button" class="hw-qr" data-qr="${esc(x.id)}" title="${esc('Show QR code')}" aria-label="${esc('Show QR code')}">
-                    <span class="ms">qr_code_2</span>
-                  </button>
-                  <span class="mono hw-tag">${esc(x.assetTag)}</span>
-                </div>
-              </td>
-              <td>
-                <div class="hw-product">
-                  <span class="hw-cat" title="${esc(x.category)}"><span class="ms">${esc(catIcon(x.category))}</span></span>
-                  <div class="hw-product-text">
-                    <div class="cell-title">${esc(x.brand)} ${esc(x.model)}</div>
-                    <div class="cell-sub">${esc(x.category)}${specsBits ? ' · ' + esc(specsBits) : ''}</div>
-                  </div>
-                </div>
-              </td>
-              <td class="mono hw-serial">${esc(x.serialNumber)}</td>
-              <td class="mono hw-mac">${mac ? esc(mac) : '<span class="hw-na">—</span>'}</td>
-              <td class="hw-loc">${esc(x.location || '—')}</td>
-              <td><div class="hw-status">${badge(x.status)}${lifePills(x)}</div></td>
-              <td class="actions">${rowActions(x)}</td>
-            </tr>`;
-          }).join('')}
-      </tbody>
-    </table></div>`;
-    })()}
-    <div class="table-foot">
-      Showing ${pageItems.length === 0 ? 0 : (safePage - 1) * PAGE_SIZE + 1} to ${Math.min(safePage * PAGE_SIZE, useLifecycle ? items.length : total)}
-      of ${total != null ? total : pageItems.length} assets
-      <span class="spacer"></span>
-      <button class="btn btn-outline btn-sm" data-page="${safePage - 1}" ${safePage <= 1 ? 'disabled' : ''}>‹ Prev</button>
-      <span style="padding:0 6px">Page ${safePage} / ${pages}</span>
-      <button class="btn btn-outline btn-sm" data-page="${safePage + 1}" ${safePage >= pages ? 'disabled' : ''}>Next ›</button>
-    </div>
-    </div>`;
+    <div id="asset-results">${resultsCardHTML()}</div>`;
 
   /* ---- multi-select bulk actions ---- */
   const selected = new Set();
@@ -469,18 +479,23 @@ Views.assets = async function (el, params = {}) {
     });
   }
 
-  const selAll = $('#sel-all', el);
-  if (selAll) selAll.addEventListener('change', () => {
-    el.querySelectorAll('input[data-sel]').forEach((c) => {
-      c.checked = selAll.checked;
-      if (selAll.checked) selected.add(c.dataset.sel); else selected.delete(c.dataset.sel);
+  // The select-all + row checkboxes live inside #asset-results, so they must be
+  // re-bound after an in-place search refresh replaces that region.
+  function bindResultsSelection() {
+    const selAll = $('#sel-all', el);
+    if (selAll) selAll.addEventListener('change', () => {
+      el.querySelectorAll('input[data-sel]').forEach((c) => {
+        c.checked = selAll.checked;
+        if (selAll.checked) selected.add(c.dataset.sel); else selected.delete(c.dataset.sel);
+      });
+      renderBulkBar();
     });
-    renderBulkBar();
-  });
-  el.querySelectorAll('input[data-sel]').forEach((c) => c.addEventListener('change', () => {
-    if (c.checked) selected.add(c.dataset.sel); else selected.delete(c.dataset.sel);
-    renderBulkBar();
-  }));
+    el.querySelectorAll('input[data-sel]').forEach((c) => c.addEventListener('change', () => {
+      if (c.checked) selected.add(c.dataset.sel); else selected.delete(c.dataset.sel);
+      renderBulkBar();
+    }));
+  }
+  bindResultsSelection();
 
   const rerender = (p) => {
     if (isStaleView(el)) return;
@@ -495,9 +510,57 @@ Views.assets = async function (el, params = {}) {
     // with fresh data (this also makes the mutation's result actually show).
     if (location.hash === before && typeof navigate === 'function') navigate();
   };
+
+  // In-place search: refetch and repaint ONLY the results region, leaving the
+  // search box mounted. A full re-render would rebuild the input and — on mobile —
+  // close the keyboard on every keystroke (programmatic focus can't reopen it).
+  async function refreshResults(searchVal) {
+    const nextSearch = String(searchVal || '').trim();
+    params.search = nextSearch; // keep cur() in sync for later filter/sort nav
+    page = 1;                    // a new search starts at page 1
+    // Update the URL in place (shareable / back button) WITHOUT navigating.
+    try {
+      const sp = new URLSearchParams(location.hash.split('?')[1] || '');
+      if (nextSearch) sp.set('search', nextSearch); else sp.delete('search');
+      sp.set('page', '1');
+      const qs = sp.toString();
+      history.replaceState(null, '', '#/assets' + (qs ? '?' + qs : ''));
+    } catch { /* ignore */ }
+
+    showAssetsSkeleton(el);
+    const rq = new URLSearchParams();
+    if (selectedStatus.length) rq.set('status', selectedStatus.join(','));
+    if (selectedCats.length) rq.set('categories', selectedCats.join(',')); else rq.set('categories', HW_CATS.join(','));
+    if (selectedLocs.length) rq.set('location', selectedLocs.join(','));
+    if (nextSearch) rq.set('search', nextSearch);
+    rq.set('sort', sortKey);
+    rq.set('order', sortOrder);
+    if (useLifecycle) { rq.set('limit', '2000'); } else { rq.set('limit', String(PAGE_SIZE)); rq.set('offset', '0'); }
+
+    let res;
+    try { res = await api('/assets?' + rq.toString()); } catch (err) { toast((err && err.message) || 'Search failed', 'error'); return; }
+    if (isStaleView(el)) return;
+    items = res.items || [];
+    total = res.total;
+    if (useLifecycle) {
+      if (params.lifecycle === 'overdue') {
+        items = items.filter((x) => lifecycleInfo(x).overdue && x.status !== 'Scrap' && x.status !== 'Sold');
+      } else {
+        items = items.filter((x) => { const l = lifecycleInfo(x); return !l.overdue && l.pct != null && l.pct >= 90 && x.status !== 'Scrap' && x.status !== 'Sold'; });
+      }
+      total = items.length;
+      items = sortHwItems(items, sortKey, sortOrder);
+    }
+    selected.clear();
+    const slot = $('#asset-results', el);
+    if (slot) slot.innerHTML = resultsCardHTML();
+    bindResultsSelection();
+    renderBulkBar();
+  }
+
   bindDebouncedSearch($('#asset-search', el), {
     getValue: () => params.search || '',
-    apply: (search) => rerender({ search, page: 1 }),
+    apply: (search) => { refreshResults(search); },
   });
   mountMultiSelects($('#asset-filters', el), {
     status: scopedView ? undefined : (vals) => rerender({ status: vals.join(','), page: 1 }),
@@ -1638,8 +1701,11 @@ async function showAssetDetail(id, onChange) {
     </div>`;
   })();
 
+  const serialCopyBtn = (val) => `<button type="button" class="ad-copy" data-copy="${esc(val)}" title="${esc(t('common.copy'))}" aria-label="${esc(t('common.copy'))}"><span class="ms ms-sm">content_copy</span></button>`;
   const overviewHtml = [
-    kvText(t('hw.d.serial'), x.serialNumber, { mono: true }),
+    (x.serialNumber && String(x.serialNumber).trim() && String(x.serialNumber).trim() !== '—')
+      ? kv(t('hw.d.serial'), `<span class="mono">${esc(String(x.serialNumber).trim())}</span>${serialCopyBtn(String(x.serialNumber).trim())}`)
+      : kvText(t('hw.d.serial'), x.serialNumber, { mono: true }),
     kvText(t('asset.f.category'), x.category),
     kvText(t('asset.f.location'), x.location),
     kv(t('asset.f.purchaseDate'), x.purchaseDate ? esc(fmtDate(x.purchaseDate)) : ''),
@@ -1793,6 +1859,19 @@ async function showAssetDetail(id, onChange) {
         ? `<button class="btn btn-primary" id="ad-handover"><span class="ms">assignment_turned_in</span> ${esc(t('hw.d.handover'))}</button>`
         : ''}`,
     onMount(overlay) {
+      // Small copy buttons (e.g. next to the serial number) → copy to clipboard.
+      overlay.querySelectorAll('.ad-copy[data-copy]').forEach((btn) => btn.addEventListener('click', async (ev) => {
+        ev.stopPropagation();
+        const val = btn.getAttribute('data-copy') || '';
+        try {
+          await navigator.clipboard.writeText(val);
+          const prev = btn.innerHTML;
+          btn.classList.add('ok');
+          btn.innerHTML = '<span class="ms ms-sm">check</span>';
+          toast(t('common.copied'), 'success');
+          setTimeout(() => { btn.innerHTML = prev; btn.classList.remove('ok'); }, 1200);
+        } catch { toast(t('common.copy') + ' ✗', 'error'); }
+      }));
       $('#ad-qr', overlay).addEventListener('click', () => showQrModal(x));
       $('#ad-label', overlay).addEventListener('click', () => printAssetLabels([x]));
       // Attached repair paperwork: click → view inline in a new tab.
