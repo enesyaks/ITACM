@@ -1074,6 +1074,8 @@
     'common.actions': L('Actions', 'İşlemler', 'Aktionen', 'Actions', 'Acciones', 'Azioni', 'Ações', 'Acties', 'Akcje', 'Действия', 'الإجراءات', '操作'),
     'common.status': L('Status', 'Durum', 'Status', 'Statut', 'Estado', 'Stato', 'Status', 'Status', 'Status', 'Статус', 'الحالة', 'ステータス'),
     'common.filter': L('Filter', 'Filtrele', 'Filtern', 'Filtrer', 'Filtrar', 'Filtra', 'Filtrar', 'Filteren', 'Filtruj', 'Фильтр', 'تصفية', 'フィルター'),
+    'common.copy': L('Copy', 'Kopyala', 'Kopieren', 'Copier', 'Copiar', 'Copia', 'Copiar', 'Kopiëren', 'Kopiuj', 'Копировать', 'نسخ', 'コピー'),
+    'common.copied': L('Copied', 'Kopyalandı', 'Kopiert', 'Copié', 'Copiado', 'Copiato', 'Copiado', 'Gekopieerd', 'Skopiowano', 'Скопировано', 'تم النسخ', 'コピーしました'),
     'common.export': L('Export', 'Dışa Aktar', 'Exportieren', 'Exporter', 'Exportar', 'Esporta', 'Exportar', 'Exporteren', 'Eksportuj', 'Экспорт', 'تصدير', 'エクスポート'),
     'common.import': L('Import', 'İçe Aktar', 'Importieren', 'Importer', 'Importar', 'Importa', 'Importar', 'Importeren', 'Importuj', 'Импорт', 'استيراد', 'インポート'),
     'common.refresh': L('Refresh', 'Yenile', 'Aktualisieren', 'Actualiser', 'Actualizar', 'Aggiorna', 'Atualizar', 'Vernieuwen', 'Odśwież', 'Обновить', 'تحديث', '更新'),
