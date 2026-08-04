@@ -4,6 +4,18 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.20] — 2026-08-04
+
+### Fixed
+- **Front-end updates now reach browsers on a normal refresh — no hard-refresh
+  needed.** The JS/CSS in `index.html` are cache-busted with manual `?v=` query
+  strings that had not been bumped for the files changed in 1.3.14–1.3.19, so a
+  cached browser kept running the old scripts after `git pull` (this is why the
+  search fix, the scanner gate and the localisations appeared not to take). Bumped
+  the `?v=` on every changed asset (app.css, i18n.js, ui.js, mobile-shell.js and
+  the assets/onboarding/hr/dashboard/catalog/users views) so the browser fetches
+  the new versions automatically.
+
 ## [1.3.19] — 2026-08-04
 
 ### Fixed
