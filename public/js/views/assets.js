@@ -35,8 +35,38 @@ function showAssetsSkeleton(el) {
   el.querySelector('.hw-card')?.classList.add('is-loading');
 }
 
+/* Full-page skeleton shown on the FIRST paint of the hardware view (opening the
+ * page or coming from another view), before any data has arrived. In-view
+ * search/filter re-renders use showAssetsSkeleton instead, which keeps the search
+ * box mounted so keystrokes are never lost. */
+function renderAssetsSkeletonShell(el) {
+  const bar = (w, h = '14px', r = '6px') =>
+    `<span class="skel" style="display:inline-block;height:${h};width:${w};border-radius:${r}"></span>`;
+  el.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:10px">
+      ${bar('190px', '24px')}${bar('150px', '36px', '9px')}
+    </div>
+    <div style="margin:0 0 18px">${bar('55%', '12px')}</div>
+    <div class="grid grid-4" style="margin-bottom:20px">
+      ${Array.from({ length: 4 }, () => `<div class="card card-pad">
+        <div style="display:flex;flex-direction:column;gap:12px">${bar('60%', '12px')}${bar('42%', '26px')}</div>
+      </div>`).join('')}
+    </div>
+    <div class="toolbar" style="margin-bottom:14px;display:flex;gap:8px;flex-wrap:wrap">
+      ${bar('240px', '40px', '9px')}${bar('150px', '40px', '9px')}${bar('150px', '40px', '9px')}
+    </div>
+    <div class="card hw-card is-loading">
+      <div class="m-asset-list">${assetsSkeletonCards()}</div>
+      <div class="table-wrap"><table class="data hw-table"><tbody>${assetsSkeletonRows()}</tbody></table></div>
+    </div>`;
+}
+
 Views.assets = async function (el, params = {}) {
   if (isStaleView(el)) return;
+  // First paint (page opened / arrived from another view): show a full skeleton
+  // immediately so the load is visible rather than a blank gap. A re-render of
+  // the already-mounted view keeps its search box and only ghosts the rows.
+  if (!el.querySelector('#asset-search')) renderAssetsSkeletonShell(el);
   const canCreate = Auth.canIam('asset', 'create');
   const canUpdate = Auth.canIam('asset', 'update') || Auth.canIam('asset', 'manage');
   const canUnassign = Auth.canIam('asset', 'unassign') || Auth.canIam('asset', 'manage');
