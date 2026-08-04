@@ -487,7 +487,13 @@ Views.assets = async function (el, params = {}) {
     // Paint ghost rows over the current results before the (async) refetch so
     // the change reads as a deliberate load, not a full-page refresh flash.
     showAssetsSkeleton(el);
+    const before = location.hash;
     setHash({ ...cur(), ...p, page: p.page != null ? String(p.page) : '1' });
+    // A post-mutation refresh (return / repair / scrap / edit) keeps the same
+    // filters, so the hash is unchanged and no `hashchange` fires — the skeleton
+    // would then be stuck forever. Re-run navigation explicitly so it is replaced
+    // with fresh data (this also makes the mutation's result actually show).
+    if (location.hash === before && typeof navigate === 'function') navigate();
   };
   bindDebouncedSearch($('#asset-search', el), {
     getValue: () => params.search || '',

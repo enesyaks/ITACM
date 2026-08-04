@@ -4,6 +4,17 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.22] — 2026-08-04
+
+### Fixed
+- **Hardware list no longer gets stuck on empty/ghost rows after a return, repair
+  or scrap.** After such an action the list refreshes with the same filters, so
+  the URL hash is unchanged and the browser fires no `hashchange` — the freshly
+  painted skeleton was then never replaced and the table looked permanently empty.
+  The refresh now re-runs the view explicitly when the hash does not change, so the
+  skeleton is always replaced with fresh data (and the action's result actually
+  shows without a manual reload).
+
 ## [1.3.21] — 2026-08-04
 
 ### Added
