@@ -4,6 +4,29 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.25] — 2026-08-04
+
+### Fixed
+- **"My zimmet" (self-service) table headers now translate.** The Devices,
+  Software and Mobile-lines table headers on the employee self-service page were
+  passed to `t()` as English literals (`t('Category')`…), so — since those keys
+  do not exist — they showed English in every language. Moved them to real
+  12-language keys. (Found by an app-wide i18n coverage sweep.)
+- **AI assistant code blocks no longer double-escape.** `renderMarkdown` escaped
+  fenced-code content twice (so `<` showed as `&lt;`); it now uses private-use
+  placeholders to escape exactly once, and the old brittle un-escaping of
+  `&lt;code…&gt;` markers is gone (a small hardening too).
+
+### Added
+- **Guard test** asserting every `ai.*` view is mapped in
+  `sqlGuard.VIEW_PERMISSIONS`, so a future view can't become readable through
+  `advanced_query` with only `ai:use` (bypassing per-resource RBAC).
+
+### Security
+- Completed a deep security/pentest pass (AI SQL guard + curated views, SSRF with
+  DNS pinning, JWT/session handling, SQL injection, command injection, uploads,
+  IDOR, XSS). No exploitable High/Medium findings; see the audit notes.
+
 ## [1.3.24] — 2026-08-04
 
 ### Fixed

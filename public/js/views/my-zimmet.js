@@ -32,9 +32,9 @@
       <div class="card-head"><h3>${esc(t('myz.assets'))}</h3></div>
       <div class="table-wrap"><table class="data">
         <thead><tr>
-          <th>${esc(t('Asset Tag'))}</th><th>${esc(t('Category'))}</th>
-          <th>${esc(t('Model'))}</th><th>${esc(t('Serial'))}</th>
-          <th>${esc(t('Status'))}</th><th>${esc(t('Warranty'))}</th>
+          <th>${esc(t('myz.colTag'))}</th><th>${esc(t('myz.colCategory'))}</th>
+          <th>${esc(t('myz.colModel'))}</th><th>${esc(t('myz.colSerial'))}</th>
+          <th>${esc(t('common.status'))}</th><th>${esc(t('myz.colWarranty'))}</th>
         </tr></thead>
         <tbody>${rows}</tbody>
       </table></div>
@@ -51,7 +51,7 @@
     return `<div class="card" style="margin-bottom:20px">
       <div class="card-head"><h3>${esc(t('myz.licenses'))}</h3></div>
       <div class="table-wrap"><table class="data">
-        <thead><tr><th>${esc(t('Software'))}</th><th>${esc(t('Assigned'))}</th></tr></thead>
+        <thead><tr><th>${esc(t('myz.colSoftware'))}</th><th>${esc(t('myz.colAssignedDate'))}</th></tr></thead>
         <tbody>${rows}</tbody>
       </table></div>
     </div>`;
@@ -70,8 +70,8 @@
       <div class="card-head"><h3>${esc(t('myz.lines'))}</h3></div>
       <div class="table-wrap"><table class="data">
         <thead><tr>
-          <th>${esc(t('Number'))}</th><th>${esc(t('Operator'))}</th>
-          <th>${esc(t('Plan'))}</th><th>${esc(t('Status'))}</th>
+          <th>${esc(t('myz.colNumber'))}</th><th>${esc(t('myz.colOperator'))}</th>
+          <th>${esc(t('myz.colPlan'))}</th><th>${esc(t('common.status'))}</th>
         </tr></thead>
         <tbody>${rows}</tbody>
       </table></div>

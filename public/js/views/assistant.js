@@ -72,7 +72,15 @@
     if (!raw) return '';
     let s = String(raw);
     s = s.replace(/(^|\n)\s*\|.+\|(\s*\n\|?[\s\-:|]+\|)*(\s*\n\s*\|.+\|)*/g, '\n');
-    s = s.replace(/```(?:\w+)?\n?([\s\S]*?)```/g, (_, code) => `<code class="ai-code-block">${esc(code.trim())}</code>`);
+    // Pull fenced code blocks out to private-use placeholders BEFORE the global
+    // esc() so their content is escaped exactly once (never double-escaped), then
+    // restore the pre-escaped HTML at the end. Sentinels are private-use chars so
+    // they cannot collide with real text (numbers etc.) or be touched by esc().
+    const blocks = [];
+    s = s.replace(/```(?:\w+)?\n?([\s\S]*?)```/g, (_, code) => {
+      blocks.push(`<code class="ai-code-block">${esc(code.trim())}</code>`);
+      return `\uE000${blocks.length - 1}\uE001`;
+    });
     s = esc(s);
     s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
     s = s.replace(/\*(.+?)\*/g, '<em>$1</em>');
@@ -80,9 +88,7 @@
     s = s.replace(/(^|\n)[ \t]*[-•][ \t]+(.+)/g, '$1<li>$2</li>');
     s = s.replace(/(<li>[\s\S]*?<\/li>)+/g, (m) => `<ul>${m}</ul>`);
     s = s.replace(/\n/g, '<br>');
-    s = s.replace(/&lt;code class=&quot;/g, '<code class="')
-         .replace(/&lt;\/code&gt;/g, '</code>')
-         .replace(/&quot;&gt;/g, '">');
+    s = s.replace(/\uE000(\d+)\uE001/g, (_, i) => blocks[Number(i)] || '');
     return s;
   }
 
