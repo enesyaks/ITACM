@@ -4,6 +4,15 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.24] — 2026-08-04
+
+### Fixed
+- **Failed hardware search no longer leaves the list stuck on skeleton rows.**
+  When the in-place search refetch (added in 1.3.23) errored — e.g. a dropped
+  connection — it returned early and left the ghost rows painted. It now repaints
+  the current rows before showing the error, so the list stays usable. (Found in a
+  security/bug audit.)
+
 ## [1.3.23] — 2026-08-04
 
 ### Fixed

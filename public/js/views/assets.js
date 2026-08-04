@@ -538,7 +538,19 @@ Views.assets = async function (el, params = {}) {
     if (useLifecycle) { rq.set('limit', '2000'); } else { rq.set('limit', String(PAGE_SIZE)); rq.set('offset', '0'); }
 
     let res;
-    try { res = await api('/assets?' + rq.toString()); } catch (err) { toast((err && err.message) || 'Search failed', 'error'); return; }
+    try {
+      res = await api('/assets?' + rq.toString());
+    } catch (err) {
+      // Never leave the skeleton stuck on a failed search — repaint the current
+      // (unchanged) rows so the list stays usable, then surface the error.
+      if (!isStaleView(el)) {
+        const slotEl = $('#asset-results', el);
+        if (slotEl) slotEl.innerHTML = resultsCardHTML();
+        bindResultsSelection();
+      }
+      toast((err && err.message) || 'Search failed', 'error');
+      return;
+    }
     if (isStaleView(el)) return;
     items = res.items || [];
     total = res.total;
