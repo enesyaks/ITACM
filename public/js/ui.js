@@ -916,17 +916,44 @@ function multiSelectHtml({ id, allLabel, selected, options }) {
  */
 function bindDebouncedSearch(input, { getValue, apply, delay = 400 } = {}) {
   if (!input) return;
-  const st = window.__itacmSearchFocus;
-  if (st && st.id === input.id) {
+  const foc = window.__itacmSearchFocus;
+  const live = window.__itacmSearchLive;
+  if (foc && foc.id === input.id) {
     window.__itacmSearchFocus = null;
+    // The re-render rebuilt this input from the committed search value. If the
+    // user kept typing while the results were being fetched, those keystrokes
+    // live only in __itacmSearchLive — restore them so nothing is lost (this is
+    // why "1337" used to drop the last char: the input was replaced mid-typing).
+    let caret = foc.pos;
+    if (live && live.id === input.id && String(live.value) !== String(input.value || '')) {
+      input.value = live.value;
+      caret = live.pos;
+    }
+    window.__itacmSearchLive = null;
     requestAnimationFrame(() => {
       input.focus();
-      const pos = Math.min(Number(st.pos) || 0, input.value.length);
+      const pos = Math.min(Number(caret) || 0, input.value.length);
       try { input.setSelectionRange(pos, pos); } catch { /* ignore */ }
     });
+    // If the restored value is newer than what was actually applied, catch the
+    // results up to it (converges: after this apply, live === committed).
+    const liveTrim = String(input.value || '').trim();
+    const committed = String(typeof getValue === 'function' ? (getValue() || '') : '').trim();
+    if (liveTrim !== committed && typeof apply === 'function') {
+      setTimeout(() => {
+        if (String(input.value || '').trim() === liveTrim) apply(liveTrim);
+      }, delay);
+    }
   }
   let timer;
   input.addEventListener('input', () => {
+    // Mirror the live value on every keystroke so a re-render triggered mid-typing
+    // can restore exactly what is in the box, not the older committed value.
+    window.__itacmSearchLive = {
+      id: input.id,
+      value: input.value,
+      pos: input.selectionStart ?? input.value.length,
+    };
     clearTimeout(timer);
     timer = setTimeout(() => {
       const next = String(input.value || '').trim();

@@ -4,6 +4,21 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.19] — 2026-08-04
+
+### Fixed
+- **Search no longer drops the last character you type.** Typing e.g. `1337` in
+  the hardware search could lose the final digit: the debounced search re-renders
+  the list, and any keystroke entered while the results were being fetched landed
+  in an input that was about to be replaced. The debounced search now mirrors the
+  live value and restores it (and re-applies it) after the re-render, so fast
+  typing survives. This applies to every debounced search box in the app.
+
+### Added
+- **Skeleton loading for the hardware list.** When a search, filter, sort or page
+  change refetches, the list now shows shimmering ghost rows instead of feeling
+  like a full-page refresh.
+
 ## [1.3.18] — 2026-08-03
 
 ### Fixed
