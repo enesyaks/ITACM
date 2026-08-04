@@ -1,3 +1,40 @@
+/* Ghost/skeleton rows shown in place of the hardware list while a search,
+ * filter, sort or page change refetches — so the update reads as a load rather
+ * than a jarring full-page refresh. Pure presentation; no data attributes, so
+ * the delegated row handlers on the view ignore these rows. */
+function assetsSkeletonRows(rows = 8) {
+  const bar = (w) => `<span class="skel" style="display:block;height:12px;width:${w}"></span>`;
+  return Array.from({ length: rows }, () => `
+    <tr class="hw-skel-row" aria-hidden="true">
+      <td class="hw-col-check">${bar('16px')}</td>
+      <td class="hw-col-id">${bar('72px')}</td>
+      <td>${bar('80%')}</td>
+      <td>${bar('64%')}</td>
+      <td>${bar('56%')}</td>
+      <td>${bar('50%')}</td>
+      <td>${bar('58px')}</td>
+      <td>${bar('36px')}</td>
+    </tr>`).join('');
+}
+function assetsSkeletonCards(rows = 6) {
+  const bar = (w, h = '12px') => `<span class="skel" style="display:block;height:${h};width:${w};margin:5px 0"></span>`;
+  return Array.from({ length: rows }, () => `
+    <div class="m-asset-card hw-skel-row" aria-hidden="true">
+      <div class="m-asset-top">
+        <span class="skel" style="width:34px;height:34px;border-radius:9px;flex:none"></span>
+        <div style="flex:1;min-width:0">${bar('45%')}${bar('72%')}${bar('38%')}</div>
+      </div>
+    </div>`).join('');
+}
+function showAssetsSkeleton(el) {
+  if (!el) return;
+  const tbody = el.querySelector('table.hw-table tbody');
+  if (tbody) tbody.innerHTML = assetsSkeletonRows();
+  const mlist = el.querySelector('.m-asset-list');
+  if (mlist) mlist.innerHTML = assetsSkeletonCards();
+  el.querySelector('.hw-card')?.classList.add('is-loading');
+}
+
 Views.assets = async function (el, params = {}) {
   if (isStaleView(el)) return;
   const canCreate = Auth.canIam('asset', 'create');
@@ -417,6 +454,9 @@ Views.assets = async function (el, params = {}) {
 
   const rerender = (p) => {
     if (isStaleView(el)) return;
+    // Paint ghost rows over the current results before the (async) refetch so
+    // the change reads as a deliberate load, not a full-page refresh flash.
+    showAssetsSkeleton(el);
     setHash({ ...cur(), ...p, page: p.page != null ? String(p.page) : '1' });
   };
   bindDebouncedSearch($('#asset-search', el), {

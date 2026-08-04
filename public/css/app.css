@@ -1280,6 +1280,26 @@ textarea { resize: vertical; min-height: 60px; }
   background: var(--surface-low); border-radius: 0 0 var(--radius-xl) var(--radius-xl);
   flex: none;
 }
+/* Skeleton / ghost loading placeholder (shimmer bar). */
+.skel {
+  position: relative; overflow: hidden;
+  background: var(--surface-container, #e7e3f2);
+  border-radius: 6px; opacity: .9;
+}
+.skel::after {
+  content: ""; position: absolute; inset: 0; transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .5), transparent);
+  animation: skel-shimmer 1.2s ease-in-out infinite;
+}
+.hw-skel-row td { vertical-align: middle; }
+.hw-card.is-loading { pointer-events: none; }
+@keyframes skel-shimmer { 100% { transform: translateX(100%); } }
+@media (prefers-reduced-motion: reduce) { .skel::after { animation: none; } }
+@media (prefers-color-scheme: dark) {
+  .skel { background: rgba(255, 255, 255, .08); }
+  .skel::after { background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .12), transparent); }
+}
+
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .form-grid .full { grid-column: 1 / -1; }
 .form-field label { display: block; font-size: 12px; font-weight: 600; color: var(--on-surface-variant); margin-bottom: 4px; }
