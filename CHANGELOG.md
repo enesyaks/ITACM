@@ -4,6 +4,16 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.21] — 2026-08-04
+
+### Added
+- **Skeleton on the first paint of the hardware list too.** 1.3.19 ghosted the
+  rows only on in-view search/filter refetches, which flash by when the API is
+  fast. Opening the hardware page (or arriving from another view) now shows a full
+  skeleton — header, metric cards, toolbar and ghost rows — while the first load
+  is in flight, so the loading state is actually visible. In-view search still
+  ghosts just the rows and keeps the search box mounted.
+
 ## [1.3.20] — 2026-08-04
 
 ### Fixed
