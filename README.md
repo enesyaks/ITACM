@@ -219,7 +219,7 @@ The entire app is responsive — no separate mobile build:
 Everything is automatic: the database container is created, the schema + migrations are applied, and the first Admin (Owner) account is seeded.
 
 ```bash
-git clone https://github.com/<you>/itacm.git
+git clone https://github.com/enesyaks/ITACM.git
 cd itacm
 
 npm install
