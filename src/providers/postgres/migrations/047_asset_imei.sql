@@ -27,11 +27,14 @@ BEGIN
 END $$;
 
 -- Refresh AI read surface when the schema already exists from an earlier migration.
+-- Must DROP first: CREATE OR REPLACE cannot insert a column in the middle of an
+-- existing view (Postgres error: cannot change name of view column "brand" to "imei").
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'ai') THEN
+    EXECUTE 'DROP VIEW IF EXISTS ai.assets';
     EXECUTE $v$
-      CREATE OR REPLACE VIEW ai.assets AS
+      CREATE VIEW ai.assets AS
         SELECT id, asset_tag, serial_number, imei, brand, model, category, status,
                current_employee_id, current_employee_name, responsible_employee_name,
                location, mac_ethernet, mac_wifi, specs, notes, firmware_version,
@@ -39,5 +42,8 @@ BEGIN
                infra_role, rack, mgmt_ip, created_at, updated_at
         FROM public.assets
     $v$;
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'itacm_ai_ro') THEN
+      EXECUTE 'GRANT SELECT ON ai.assets TO itacm_ai_ro';
+    END IF;
   END IF;
 END $$;
