@@ -18,26 +18,44 @@ Views.employees = async function (el, params = {}) {
   const deptCatalog = AppConfig.departments || [];
   const selectedDepts = csvList(params.department).filter((d) => deptCatalog.includes(d));
 
-  const q = new URLSearchParams();
-  if (params.search) q.set('search', params.search);
-  if (selectedStatus.length) q.set('status', selectedStatus.join(','));
-  if (selectedDepts.length) q.set('department', selectedDepts.join(','));
-  q.set('sort', sortKey);
-  q.set('order', sortOrder);
-  q.set('limit', String(PAGE));
-  q.set('offset', String((page - 1) * PAGE));
-  const { items, total, summary } = employeeList(await api('/employees?' + q.toString()));
+  // View state is mutable so a search can repaint results IN PLACE, without a
+  // hash-driven full re-render. A full re-render rebuilds the search <input>,
+  // and on mobile a freshly created input cannot reopen the soft keyboard from
+  // script — so every debounced search dropped the keyboard mid-typing.
+  const state = {
+    search: params.search || '',
+    status: selectedStatus.join(','),
+    department: selectedDepts.join(','),
+    sort: sortKey,
+    order: sortOrder,
+    page,
+  };
+
+  function buildQuery() {
+    const q = new URLSearchParams();
+    if (state.search) q.set('search', state.search);
+    if (state.status) q.set('status', state.status);
+    if (state.department) q.set('department', state.department);
+    q.set('sort', state.sort);
+    q.set('order', state.order);
+    q.set('limit', String(PAGE));
+    q.set('offset', String((state.page - 1) * PAGE));
+    return q;
+  }
+
+  let items = [];
+  let total = 0;
+  let summary = null;
+  let pages = 1;
+  async function loadData() {
+    const res = employeeList(await api('/employees?' + buildQuery().toString()));
+    items = res.items;
+    total = res.total;
+    summary = res.summary;
+    pages = Math.max(1, Math.ceil(total / PAGE));
+  }
+  await loadData();
   if (isStaleView(el)) return;
-
-  const withAssets = summary ? summary.withAssets : items.filter((x) => x.activeAssetCount > 0).length;
-  const coverage = total ? Math.round((withAssets / total) * 1000) / 10 : 0;
-  const inactive = summary ? summary.inactive : items.filter((x) => x.status === 'Inactive').length;
-  const activeCount = summary ? summary.active : (total - inactive);
-
-  const chips = [];
-  selectedStatus.forEach((s) => chips.push({ key: 'status', value: s, label: `${t('common.status')}: ${s}` }));
-  selectedDepts.forEach((d) => chips.push({ key: 'department', value: d, label: `${t('emp.colDepartment')}: ${d}` }));
-  if (params.search) chips.push({ key: 'search', label: `${t('common.search')}: ${params.search}` });
 
   const setHash = (next) => {
     const p = new URLSearchParams();
@@ -46,12 +64,12 @@ Views.employees = async function (el, params = {}) {
     location.hash = '#/employees' + (qs ? '?' + qs : '');
   };
   const cur = () => ({
-    search: params.search || '',
-    status: selectedStatus.join(','),
-    department: selectedDepts.join(','),
-    sort: sortKey,
-    order: sortOrder,
-    page: String(page),
+    search: state.search,
+    status: state.status,
+    department: state.department,
+    sort: state.sort,
+    order: state.order,
+    page: String(state.page),
   });
   const empTh = (key, label) => tableSortTh(key, label, { sort: sortKey, order: sortOrder });
 
@@ -61,26 +79,7 @@ Views.employees = async function (el, params = {}) {
       ${canCreate ? `<button class="btn btn-primary" id="emp-new"><span class="ms">person_add</span> ${esc(t('common.addNewEmployee'))}</button>` : ''}
     `)}
 
-    <div class="grid grid-4" style="margin-bottom:20px">
-      <div class="card card-pad metric">
-        <div class="metric-top"><h3 class="card-title">${esc(t('common.totalEmployees'))}</h3>${iconChip('group', 'indigo')}</div>
-        <div class="metric-value">${total.toLocaleString()}</div>
-      </div>
-      <div class="card card-pad metric">
-        <div class="metric-top"><h3 class="card-title">${esc(t('common.withActiveAssets'))}</h3>${iconChip('devices', 'blue')}</div>
-        <div class="metric-value">${withAssets.toLocaleString()}</div>
-        <div class="metric-trend trend-flat">${coverage}% ${esc(t('common.coverage'))}</div>
-      </div>
-      <div class="card card-pad metric">
-        <div class="metric-top"><h3 class="card-title">${esc(t('common.active'))}</h3>${iconChip('how_to_reg', 'emerald')}</div>
-        <div class="metric-value">${activeCount.toLocaleString()}</div>
-      </div>
-      <div class="card card-pad metric">
-        <div class="metric-top"><h3 class="card-title">${esc(t('common.inactive'))}</h3>${iconChip('person_off', 'rose')}</div>
-        <div class="metric-value">${inactive.toLocaleString()}</div>
-        <div class="metric-trend ${inactive ? 'trend-down' : 'trend-flat'}">${inactive ? esc(t('common.assetsToRecover')) : '—'}</div>
-      </div>
-    </div>
+    <div id="emp-metrics"></div>
 
     <div class="toolbar" id="emp-filters">
       <div class="search-box"><span class="ms">search</span>
@@ -98,10 +97,7 @@ Views.employees = async function (el, params = {}) {
         options: deptCatalog.map((d) => ({ value: d, label: d })),
       })}
     </div>
-    ${chips.length ? `<div class="filter-chips"><strong>${esc(t('emp.activeFilters'))}</strong>
-      ${chips.map((c) => `<span class="chip">${esc(c.label)}
-        <button type="button" data-clear="${esc(c.key)}" ${c.value != null ? `data-clear-val="${esc(c.value)}"` : ''}><span class="ms">close</span></button></span>`).join('')}
-      <a href="#/employees">${esc(t('emp.clearAll'))}</a></div>` : ''}
+    <div id="emp-chips"></div>
 
     <div class="card">
       <div class="m-emp-list" id="emp-mlist"></div>
@@ -119,8 +115,7 @@ Views.employees = async function (el, params = {}) {
       <div class="table-foot" id="emp-foot"></div>
     </div>`;
 
-  /* Server-side pagination (50 rows per page). */
-  const pages = Math.max(1, Math.ceil(total / PAGE));
+  /* Server-side pagination (50 rows per page). `pages` is kept current by loadData. */
   function renderPage() {
     const slice = items;
     const empty = total === 0
@@ -164,10 +159,10 @@ Views.employees = async function (el, params = {}) {
             </div>
           </div>`).join('');
     }
-    const from = total ? (page - 1) * PAGE + 1 : 0;
-    const to = Math.min(page * PAGE, total);
+    const from = total ? (state.page - 1) * PAGE + 1 : 0;
+    const to = Math.min(state.page * PAGE, total);
     const btns = [];
-    for (let p = Math.max(1, page - 2); p <= Math.min(pages, Math.max(1, page - 2) + 4); p++) btns.push(p);
+    for (let p = Math.max(1, state.page - 2); p <= Math.min(pages, Math.max(1, state.page - 2) + 4); p++) btns.push(p);
     const showing = t('common.showingOf')
       .replace('{from}', String(from))
       .replace('{to}', String(to))
@@ -175,9 +170,9 @@ Views.employees = async function (el, params = {}) {
     $('#emp-foot', el).innerHTML = `${esc(showing)}
       <span class="spacer"></span>
       <div class="pager">
-        <button data-pg="${page - 1}" ${page <= 1 ? 'disabled' : ''}>${esc(t('common.prev'))}</button>
-        ${btns.map((p) => `<button data-pg="${p}" class="${p === page ? 'on' : ''}">${p}</button>`).join('')}
-        <button data-pg="${page + 1}" ${page >= pages ? 'disabled' : ''}>${esc(t('common.next'))}</button>
+        <button data-pg="${state.page - 1}" ${state.page <= 1 ? 'disabled' : ''}>${esc(t('common.prev'))}</button>
+        ${btns.map((p) => `<button data-pg="${p}" class="${p === state.page ? 'on' : ''}">${p}</button>`).join('')}
+        <button data-pg="${state.page + 1}" ${state.page >= pages ? 'disabled' : ''}>${esc(t('common.next'))}</button>
       </div>`;
     $('#emp-foot', el).querySelectorAll('[data-pg]').forEach((b) =>
       b.addEventListener('click', () => {
@@ -185,28 +180,102 @@ Views.employees = async function (el, params = {}) {
         setHash({ ...cur(), page: b.dataset.pg });
       }));
   }
+  // Repaint the metric cards from the current (possibly re-fetched) data.
+  function paintMetrics() {
+    const host = $('#emp-metrics', el);
+    if (!host) return;
+    const withAssets = summary ? summary.withAssets : items.filter((x) => x.activeAssetCount > 0).length;
+    const coverage = total ? Math.round((withAssets / total) * 1000) / 10 : 0;
+    const inactive = summary ? summary.inactive : items.filter((x) => x.status === 'Inactive').length;
+    const activeCount = summary ? summary.active : (total - inactive);
+    host.innerHTML = `
+      <div class="grid grid-4" style="margin-bottom:20px">
+        <div class="card card-pad metric">
+          <div class="metric-top"><h3 class="card-title">${esc(t('common.totalEmployees'))}</h3>${iconChip('group', 'indigo')}</div>
+          <div class="metric-value">${total.toLocaleString()}</div>
+        </div>
+        <div class="card card-pad metric">
+          <div class="metric-top"><h3 class="card-title">${esc(t('common.withActiveAssets'))}</h3>${iconChip('devices', 'blue')}</div>
+          <div class="metric-value">${withAssets.toLocaleString()}</div>
+          <div class="metric-trend trend-flat">${coverage}% ${esc(t('common.coverage'))}</div>
+        </div>
+        <div class="card card-pad metric">
+          <div class="metric-top"><h3 class="card-title">${esc(t('common.active'))}</h3>${iconChip('how_to_reg', 'emerald')}</div>
+          <div class="metric-value">${activeCount.toLocaleString()}</div>
+        </div>
+        <div class="card card-pad metric">
+          <div class="metric-top"><h3 class="card-title">${esc(t('common.inactive'))}</h3>${iconChip('person_off', 'rose')}</div>
+          <div class="metric-value">${inactive.toLocaleString()}</div>
+          <div class="metric-trend ${inactive ? 'trend-down' : 'trend-flat'}">${inactive ? esc(t('common.assetsToRecover')) : '—'}</div>
+        </div>
+      </div>`;
+  }
+
+  // Repaint the active-filter chips (its clear buttons are re-bound here because
+  // an in-place search rebuilds this region).
+  function paintChips() {
+    const host = $('#emp-chips', el);
+    if (!host) return;
+    const chips = [];
+    csvList(state.status).forEach((s) => chips.push({ key: 'status', value: s, label: `${t('common.status')}: ${s}` }));
+    csvList(state.department).forEach((d) => chips.push({ key: 'department', value: d, label: `${t('emp.colDepartment')}: ${d}` }));
+    if (state.search) chips.push({ key: 'search', label: `${t('common.search')}: ${state.search}` });
+    host.innerHTML = chips.length ? `<div class="filter-chips"><strong>${esc(t('emp.activeFilters'))}</strong>
+      ${chips.map((c) => `<span class="chip">${esc(c.label)}
+        <button type="button" data-clear="${esc(c.key)}" ${c.value != null ? `data-clear-val="${esc(c.value)}"` : ''}><span class="ms">close</span></button></span>`).join('')}
+      <a href="#/employees">${esc(t('emp.clearAll'))}</a></div>` : '';
+    host.querySelectorAll('[data-clear]').forEach((b) => b.addEventListener('click', () => {
+      const next = cur();
+      const key = b.dataset.clear;
+      const val = b.dataset.clearVal;
+      if (val != null && ['status', 'department'].includes(key)) {
+        next[key] = csvList(next[key]).filter((x) => x !== val).join(',');
+      } else {
+        next[key] = '';
+      }
+      next.page = 1;
+      setHash(next);
+    }));
+  }
+
+  paintMetrics();
+  paintChips();
   renderPage();
 
-  bindDebouncedSearch($('#emp-search', el), {
-    getValue: () => params.search || '',
-    apply: (search) => setHash({ ...cur(), search, page: 1 }),
-  });
+  // Search updates results IN PLACE — the <input> is never re-created, so the
+  // mobile keyboard stays up. The URL is synced with replaceState (no routing).
+  async function applySearchInPlace(term) {
+    if (term === state.search) return;
+    state.search = term;
+    state.page = 1;
+    try {
+      await loadData();
+    } catch {
+      return; // leave the previous results on a failed fetch
+    }
+    if (isStaleView(el)) return;
+    const p = new URLSearchParams();
+    Object.entries(cur()).forEach(([k, v]) => {
+      if (v && !(k === 'page' && v === '1')) p.set(k, v);
+    });
+    history.replaceState(null, '', '#/employees' + (p.toString() ? '?' + p.toString() : ''));
+    paintMetrics();
+    paintChips();
+    renderPage();
+  }
+  const searchInput = $('#emp-search', el);
+  if (searchInput) {
+    let searchTimer;
+    searchInput.addEventListener('input', () => {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => applySearchInPlace(searchInput.value.trim()), 400);
+    });
+  }
+
   mountMultiSelects($('#emp-filters', el), {
     status: (vals) => setHash({ ...cur(), status: vals.join(','), page: 1 }),
     department: (vals) => setHash({ ...cur(), department: vals.join(','), page: 1 }),
   });
-  el.querySelectorAll('[data-clear]').forEach((b) => b.addEventListener('click', () => {
-    const next = cur();
-    const key = b.dataset.clear;
-    const val = b.dataset.clearVal;
-    if (val != null && ['status', 'department'].includes(key)) {
-      next[key] = csvList(next[key]).filter((x) => x !== val).join(',');
-    } else {
-      next[key] = '';
-    }
-    next.page = 1;
-    setHash(next);
-  }));
   if (canCreate) {
     $('#emp-new', el)?.addEventListener('click', () => employeeForm(null, () => setHash(cur())));
   }
