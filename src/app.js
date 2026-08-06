@@ -2,6 +2,7 @@
 const path = require('path');
 const express = require('express');
 const cors = require('cors');
+const compression = require('compression');
 const config = require('./config');
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
 
@@ -103,8 +104,29 @@ function createApp() {
     return jsonSmall(req, res, next);
   });
 
+  // Gzip text responses. The SPA ships ~1.7MB of uncompressed JS/CSS, which
+  // compresses to ~0.5MB, and only the optional Caddy "tls" profile was doing
+  // any encoding — a plain `docker compose up` served it raw.
+  app.use(compression({
+    filter(req, res) {
+      // NEVER compress SSE: the AI assistant streams tokens over
+      // text/event-stream and a compression buffer would hold every token back
+      // until the stream closed, turning live output into one late dump.
+      if (String(res.getHeader('Content-Type') || '').includes('text/event-stream')) return false;
+      return compression.filter(req, res);
+    },
+  }));
+
   // Built-in web UI (public/) — served by the same process, no build step.
-  app.use(express.static(PUBLIC_DIR));
+  // Long max-age is safe because every script/style is loaded with a ?v=
+  // cache-buster that is bumped on release; index.html holds those pointers and
+  // must therefore always be revalidated, or clients pin an old bundle forever.
+  app.use(express.static(PUBLIC_DIR, {
+    maxAge: '30d',
+    setHeaders(res, filePath) {
+      if (filePath.endsWith('.html')) res.setHeader('Cache-Control', 'no-cache');
+    },
+  }));
 
   // Capture successful mutating API calls into system_audit_log (fire-and-forget).
   // Must be registered BEFORE routes so res.on('finish') is attached in time.
@@ -216,6 +238,8 @@ function createApp() {
     if (/\.(js|css|map|png|jpe?g|gif|svg|webp|ico|mp4|webm|pdf|woff2?)$/i.test(req.path)) {
       return notFoundHandler(req, res);
     }
+    // SPA shell — same rule as the static handler: never let a client pin it.
+    res.setHeader('Cache-Control', 'no-cache');
     return res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
   });
   app.use(errorHandler);

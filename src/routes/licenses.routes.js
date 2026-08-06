@@ -137,7 +137,7 @@ router.post('/:id/cancel', requirePermission('license', 'update'), asyncHandler(
 /** PATCH /api/licenses/:id — İzin: license:update */
 router.patch('/:id', requirePermission('license', 'update'), asyncHandler(async (req, res) => {
   await gateCostWrite(req.user, 'license', req.body || {});
-  const lic = await licenseService.updateLicense(req.params.id, req.body || {});
+  const lic = await licenseService.updateLicense(req.params.id, req.body || {}, { privileged: privileged(req) });
   if (!privileged(req)) lic.licenseKey = licenseService.maskLicenseKey(lic.licenseKey, false);
   res.json({ success: true, data: await redactCosts(req.user, 'license', lic) });
 }));

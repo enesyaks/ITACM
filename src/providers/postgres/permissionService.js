@@ -112,8 +112,11 @@ async function evaluateConstraint(entry, user, context) {
   const { constraint_type, constraint_value } = entry;
   if (!constraint_type || !constraint_value) return true;
 
-  // Kullanıcıya özel custom_constraints varsa, bunlar constraint değerlerini geçersiz kılabilir
-  const effectiveConstraints = mergeConstraints(constraint_value, user.customConstraints);
+  // Kullanıcıya özel custom_constraints varsa, bunlar constraint değerlerini genişletir.
+  const effectiveConstraints = mergeConstraints(
+    constraint_value,
+    customConstraintFor(user, constraint_type)
+  );
 
   switch (constraint_type) {
     case 'department': {
@@ -174,6 +177,19 @@ async function evaluateConstraint(entry, user, context) {
     default:
       return false;
   }
+}
+
+/**
+ * users.custom_constraints is stored keyed BY constraint type — e.g.
+ * `{ department: ['IT','Finance'], cost_limit: 5000 }` (see
+ * setUserCustomConstraints). Pull out the slice for one constraint type;
+ * handing mergeConstraints the whole object would match none of its shape
+ * checks and silently drop the user's extra scope.
+ */
+function customConstraintFor(user, constraintType) {
+  const cc = user && user.customConstraints;
+  if (!cc || typeof cc !== 'object' || Array.isArray(cc)) return null;
+  return cc[constraintType] === undefined ? null : cc[constraintType];
 }
 
 /**
@@ -857,6 +873,14 @@ async function getConstraintScope(user, resource, action, constraintType = 'depa
     }
     if (Array.isArray(raw)) values.push(...raw.map(String));
     else if (raw != null && raw !== '') values.push(String(raw));
+  }
+  // Mirror evaluateConstraint: the user's own custom_constraints widen a group's
+  // scope for this type. Without this the list would hide rows the detail/write
+  // check would happily allow. Only widen a scope that exists — never create one.
+  if (values.length) {
+    const custom = customConstraintFor(user, constraintType);
+    if (Array.isArray(custom)) values.push(...custom.map(String));
+    else if (custom != null && custom !== '') values.push(String(custom));
   }
   return [...new Set(values.map((v) => v.trim()).filter(Boolean))];
 }

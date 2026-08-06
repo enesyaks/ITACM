@@ -65,8 +65,10 @@ function parseRow(r, knownLocations = []) {
   const canonical = CATEGORIES.find((c) => c.toLowerCase() === data.category.toLowerCase());
   if (!canonical) return { ok: false, error: `unknown category "${data.category}" — use one of: ${CATEGORIES.join(', ')}` };
   data.category = canonical;
+  // Always returns a result object — a bare `null` here would make the
+  // `.error` reads below throw on every row that has no IMEI (most of them).
   const parseImei = (raw, label) => {
-    if (!raw) return null;
+    if (!raw) return { value: null };
     const digits = raw.replace(/[\s\-]/g, '');
     if (!/^\d{14,16}$/.test(digits)) {
       return { error: `invalid ${label} "${raw}" — use 14–16 digits` };
@@ -104,17 +106,25 @@ async function analyse(rows) {
   const valid = [];
   const seenSerials = new Set();
   const seenTags = new Set();
+  const seenImeis = new Set();
   rows.forEach((raw, i) => {
     const rowNo = i + 2; // +1 for header, +1 for 1-based
     const p = parseRow(raw || {}, knownLocations);
     if (!p.ok) return errors.push({ row: rowNo, error: p.error });
     const snKey = String(p.data.serialNumber || '').trim().toLowerCase();
     if (seenSerials.has(snKey)) return errors.push({ row: rowNo, error: `duplicate serialNumber "${p.data.serialNumber}" in the file` });
-    seenSerials.add(snKey);
-    if (p.data.assetTag) {
-      if (seenTags.has(p.data.assetTag)) return errors.push({ row: rowNo, error: `duplicate assetTag "${p.data.assetTag}" in the file` });
-      seenTags.add(p.data.assetTag);
+    if (p.data.assetTag && seenTags.has(p.data.assetTag)) {
+      return errors.push({ row: rowNo, error: `duplicate assetTag "${p.data.assetTag}" in the file` });
     }
+    // IMEI is uniquely indexed across both columns, so a repeat inside the file
+    // would abort the whole commit transaction with a raw constraint error.
+    const rowImeis = [p.data.imei, p.data.imei2].filter(Boolean);
+    const dupImei = rowImeis.find((v) => seenImeis.has(v));
+    if (dupImei) return errors.push({ row: rowNo, error: `duplicate IMEI "${dupImei}" in the file` });
+
+    seenSerials.add(snKey);
+    if (p.data.assetTag) seenTags.add(p.data.assetTag);
+    rowImeis.forEach((v) => seenImeis.add(v));
     valid.push({ rowNo, ...p.data });
   });
 
@@ -148,6 +158,28 @@ async function analyse(rows) {
           });
           valid.splice(i, 1);
         }
+      }
+    }
+  }
+
+  // Collisions with IMEIs already stored — matched against both columns, the
+  // same way migrations 047/048 index them.
+  const remainingImeis = [...new Set(valid.flatMap((v) => [v.imei, v.imei2].filter(Boolean)))];
+  if (remainingImeis.length) {
+    const { rows: hitImei } = await query(
+      `SELECT lower(btrim(imei)) AS v FROM assets
+        WHERE imei IS NOT NULL AND lower(btrim(imei)) = ANY($1::text[])
+       UNION
+       SELECT lower(btrim(imei2)) AS v FROM assets
+        WHERE imei2 IS NOT NULL AND lower(btrim(imei2)) = ANY($1::text[])`,
+      [remainingImeis]
+    );
+    const takenImei = new Set(hitImei.map((h) => h.v));
+    for (let i = valid.length - 1; i >= 0; i--) {
+      const hit = [valid[i].imei, valid[i].imei2].filter(Boolean).find((v) => takenImei.has(v));
+      if (hit) {
+        errors.push({ row: valid[i].rowNo, error: `IMEI "${hit}" already exists in the system` });
+        valid.splice(i, 1);
       }
     }
   }
@@ -244,18 +276,40 @@ async function importInventory(rows, { dryRun = false } = {}, itUser) {
     );
     let nextNo = mx.rows[0].mx;
     for (const v of valid) {
-      const tag = v.assetTag || `${tagPrefix}-${String(++nextNo).padStart(4, '0')}`;
-      const specs = { cpu: v.cpu || null, ram: v.ram || null, storage: v.storage || null, os: v.os || null };
-      const ins = await t.query(
-        `INSERT INTO assets (asset_tag, serial_number, brand, model, category, mac_ethernet,
-                             imei, imei2, specs, status, purchase_date, qr_code_string, location)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,'In Stock',$10,$11,$12) RETURNING id`,
-        [tag, v.serialNumber, v.brand, v.model, v.category, v.mac || null,
-         v.imei || null, v.imei2 || null, JSON.stringify(specs), v.purchaseDate, `ITACPRO|ASSET|${tag}`, v.location || null]
-      );
-      v._assetId = ins.rows[0].id;
-      v._tag = tag;
+      v._tag = v.assetTag || `${tagPrefix}-${String(++nextNo).padStart(4, '0')}`;
     }
+    // One round trip for the whole batch. A per-row INSERT meant up to MAX_ROWS
+    // (5000) round trips with the import transaction held open the whole time.
+    const insAssets = await t.query(
+      `INSERT INTO assets (asset_tag, serial_number, brand, model, category, mac_ethernet,
+                           imei, imei2, specs, status, purchase_date, qr_code_string, location)
+       SELECT u.tag, u.serial, u.brand, u.model, u.category, u.mac,
+              u.imei, u.imei2, u.specs::jsonb, 'In Stock', u.purchase_date,
+              'ITACPRO|ASSET|' || u.tag, u.location
+         FROM UNNEST($1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[],
+                     $7::text[], $8::text[], $9::text[], $10::timestamptz[], $11::text[])
+           AS u(tag, serial, brand, model, category, mac, imei, imei2, specs, purchase_date, location)
+       RETURNING id, asset_tag`,
+      [
+        valid.map((v) => v._tag),
+        valid.map((v) => v.serialNumber),
+        valid.map((v) => v.brand),
+        valid.map((v) => v.model),
+        valid.map((v) => v.category),
+        valid.map((v) => v.mac || null),
+        valid.map((v) => v.imei || null),
+        valid.map((v) => v.imei2 || null),
+        valid.map((v) => JSON.stringify({
+          cpu: v.cpu || null, ram: v.ram || null, storage: v.storage || null, os: v.os || null,
+        })),
+        valid.map((v) => v.purchaseDate),
+        valid.map((v) => v.location || null),
+      ]
+    );
+    // Asset tags are unique across the batch (analyse rejects repeats), so they
+    // key generated ids back onto their rows without trusting RETURNING order.
+    const idByTag = new Map(insAssets.rows.map((r) => [r.asset_tag, r.id]));
+    for (const v of valid) v._assetId = idByTag.get(v._tag);
 
     // 4) one handover per employee covering all their rows (+ history + counts)
     const byEmp = new Map();
@@ -263,6 +317,9 @@ async function importInventory(rows, { dryRun = false } = {}, itUser) {
       (byEmp.get(v.employeeEmail) || byEmp.set(v.employeeEmail, []).get(v.employeeEmail)).push(v);
     });
     let handovers = 0;
+    // Collected across every employee so the asset flips and the history rows
+    // each cost one round trip for the whole import, not one per asset.
+    const assign = { assetIds: [], tags: [], empIds: [], empNames: [] };
     for (const [email, items] of byEmp) {
       const eid = empId[email];
       const name = items[0].employeeName || email;
@@ -277,18 +334,33 @@ async function importInventory(rows, { dryRun = false } = {}, itUser) {
         [eid, name, by[0], by[1], JSON.stringify(receiptItems)]
       );
       for (const v of items) {
-        await t.query(
-          `UPDATE assets SET status='Assigned', current_employee_id=$2, current_employee_name=$3 WHERE id=$1`,
-          [v._assetId, eid, name]
-        );
-        await t.query(
-          `INSERT INTO asset_history (asset_id, asset_tag, employee_id, employee_name, action_type, notes, changed_by, changed_by_name)
-           VALUES ($1,$2,$3,$4,'assigned','Migrated from Excel import',$5,$6)`,
-          [v._assetId, v._tag, eid, name, by[0], by[1]]
-        );
+        assign.assetIds.push(v._assetId);
+        assign.tags.push(v._tag);
+        assign.empIds.push(eid);
+        assign.empNames.push(name);
       }
       await t.query('UPDATE employees SET active_asset_count = active_asset_count + $2 WHERE id = $1', [eid, items.length]);
       handovers++;
+    }
+
+    if (assign.assetIds.length) {
+      await t.query(
+        `UPDATE assets a
+            SET status = 'Assigned', current_employee_id = u.emp_id,
+                current_employee_name = u.emp_name, updated_at = now()
+           FROM UNNEST($1::uuid[], $2::uuid[], $3::text[]) AS u(asset_id, emp_id, emp_name)
+          WHERE a.id = u.asset_id`,
+        [assign.assetIds, assign.empIds, assign.empNames]
+      );
+      await t.query(
+        `INSERT INTO asset_history
+           (asset_id, asset_tag, employee_id, employee_name, action_type, notes, changed_by, changed_by_name)
+         SELECT u.asset_id, u.tag, u.emp_id, u.emp_name,
+                'assigned', 'Migrated from Excel import', $5, $6
+           FROM UNNEST($1::uuid[], $2::text[], $3::uuid[], $4::text[])
+             AS u(asset_id, tag, emp_id, emp_name)`,
+        [assign.assetIds, assign.tags, assign.empIds, assign.empNames, by[0], by[1]]
+      );
     }
 
     return { imported: valid.length, handovers, employees: Object.keys(empId).length };

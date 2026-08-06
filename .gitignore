@@ -34,4 +34,5 @@ docker-compose.override.yml
 ITACM-Guvenlik-Raporu.html
 *Guvenlik-Raporu*
 docs/SECURITY-TESTING-PLAN.md
+docs/TESTING.md
 scripts/qa-report-*.json

@@ -350,6 +350,10 @@ function openLicenseForm({ license = null, seed = null, providers = [], contract
   // `src` only prefills fields; edit mode (PATCH, title, button) keys off `license`.
   // A duplicate passes `seed` so the form opens filled but saves as a new license.
   const src = license || seed;
+  // Non-privileged users are served the key masked (••••-••••-••••-1234). Never
+  // prefill the input with it — submitting the mask back would overwrite the
+  // real key. Show it as a placeholder and only send a key the user actually typed.
+  const keyMasked = !!src?.licenseKey && String(src.licenseKey).includes('•');
   let providerList = providers.filter((p) => (p.status || 'Active') === 'Active' || p.id === src?.providerId);
   const toDate = (v) => (v ? String(v).slice(0, 10) : '');
   const canCosts = Auth.canIam('license', 'view_confidential') || Auth.can('canViewLicenseCosts');
@@ -377,8 +381,8 @@ function openLicenseForm({ license = null, seed = null, providers = [], contract
               value="${esc(src?.softwareName || '')}"></div>
           <div class="form-field full"><label>${esc(t('lic.f.licenseKey'))} <span class="ob-hint">${esc(t('lic.f.optional'))}</span></label>
             <input name="licenseKey" class="mono" autocomplete="off" spellcheck="false"
-              placeholder="${esc(t('lic.f.keyPh'))}"
-              value="${esc(src?.licenseKey || '')}">
+              placeholder="${esc(keyMasked ? src.licenseKey : t('lic.f.keyPh'))}"
+              value="${esc(keyMasked ? '' : (src?.licenseKey || ''))}">
             <div class="cell-sub" style="margin-top:4px">${esc(t('lic.f.keyHint'))}</div>
           </div>
           <div class="form-field"><label>${esc(t('lic.f.totalSeats'))} *</label>
@@ -523,9 +527,9 @@ function openLicenseForm({ license = null, seed = null, providers = [], contract
           toast('Select a linked contract, or switch purchase type to Invoice.', 'error');
           return;
         }
+        const typedKey = String(fd.get('licenseKey') || '').trim();
         const body = {
           softwareName: String(fd.get('softwareName') || '').trim(),
-          licenseKey: String(fd.get('licenseKey') || '').trim(),
           totalSeats: Number(fd.get('totalSeats')),
           expirationDate: fd.get('expirationDate'),
           providerId: !providerId || providerId === OTHER_PROVIDER ? null : providerId,
@@ -536,6 +540,9 @@ function openLicenseForm({ license = null, seed = null, providers = [], contract
           purchaseAmount: fd.get('purchaseAmount') === '' ? null : fd.get('purchaseAmount'),
           purchaseCurrency: fd.get('purchaseCurrency') || null,
         };
+        // Masked + untouched → leave the stored key alone. Otherwise send what
+        // was typed (including '' to deliberately clear it).
+        if (!(keyMasked && !typedKey)) body.licenseKey = typedKey;
         const btn = $('#lic-save', overlay);
         btn.disabled = true;
         try {

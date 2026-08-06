@@ -231,8 +231,13 @@ async function verifyToken(token) {
   }
   await assertJtiNotDenied(payload.jti);
 
+  // permission_group_id / custom_constraints come along for the ride: the auth
+  // middleware needs them on every request and used to re-SELECT the same row
+  // straight after this one, doubling the per-request user lookup.
   const { rows } = await query(
-    'SELECT id, email, role, username, status, mfa_enabled, must_change_password, sessions_revoked_at FROM users WHERE id = $1',
+    `SELECT id, email, role, username, status, mfa_enabled, must_change_password, sessions_revoked_at,
+            permission_group_id AS "permissionGroupId", custom_constraints AS "customConstraints"
+       FROM users WHERE id = $1`,
     [payload.sub]
   );
   if (!rows[0]) throw HttpError.unauthorized('Account no longer exists');
@@ -255,6 +260,8 @@ async function verifyToken(token) {
     username: rows[0].username,
     mfaEnabled: !!rows[0].mfa_enabled,
     mustChangePassword: !!rows[0].must_change_password,
+    permissionGroupId: rows[0].permissionGroupId || null,
+    customConstraints: rows[0].customConstraints || null,
     jti: payload.jti || null,
     tokenExp: payload.exp ? new Date(payload.exp * 1000) : parseExpiryToDate(config.jwtExpiresIn),
   };

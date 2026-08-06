@@ -86,18 +86,9 @@ async function authenticate(req, res, next) {
       throw HttpError.unauthorized('Missing Authorization: Bearer <TOKEN> header');
     }
 
-    const verified = await authProvider.verifyToken(token);
-    // Enrich user with IAM info (permissionGroupId, customConstraints)
-    const { query } = require('../providers/postgres/pool');
-    const { rows } = await query(
-      'SELECT permission_group_id AS "permissionGroupId", custom_constraints AS "customConstraints" FROM users WHERE id = $1',
-      [verified.uid]
-    );
-    req.user = {
-      ...verified,
-      permissionGroupId: rows[0]?.permissionGroupId || null,
-      customConstraints: rows[0]?.customConstraints || null,
-    };
+    // verifyToken already returns the IAM fields (permissionGroupId,
+    // customConstraints) from the users row it has to read anyway.
+    req.user = await authProvider.verifyToken(token);
 
     applyPostAuthGates(req);
 

@@ -4,6 +4,25 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.29] — 2026-08-06
+
+### Fixed
+- **CSV/Excel import** no longer errors on rows without an IMEI, and now flags
+  duplicate/existing IMEIs per row instead of aborting the whole import.
+- **License key** is no longer overwritten with its masked form when a
+  non-privileged user edits a license.
+- Per-user `custom_constraints` are now actually applied (list and detail).
+- Handover acknowledgement page labels mobile lines correctly.
+
+### Changed
+- Text responses are gzip-compressed and static assets are cache-headed
+  (~70% smaller first load); one duplicate per-request user lookup removed;
+  large inventory imports batched into set-based inserts.
+
+### Security
+- Assets can no longer be created directly with `Assigned`/`In Repair` status,
+  which bypassed the handover and maintenance flows.
+
 ## [1.3.28] — 2026-08-06
 
 ### Added

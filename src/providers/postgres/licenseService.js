@@ -273,7 +273,15 @@ async function createLicense(body) {
   return getLicense(rows[0].id, { privileged: true });
 }
 
-async function updateLicense(licenseId, body = {}) {
+/**
+ * @param {object} [opts]
+ * @param {boolean} [opts.privileged=false] — only a privileged caller (Owner /
+ *   Admin) ever SAW the real license key; everyone else was served the masked
+ *   form by mapLicenseRow. Accepting `licenseKey` back from them would persist
+ *   the mask and destroy the real key, so it is ignored unless privileged.
+ *   Non-privileged users set a new key through renewLicense instead.
+ */
+async function updateLicense(licenseId, body = {}, { privileged = false } = {}) {
   if (!isUuid(licenseId)) throw HttpError.notFound(`License ${licenseId} not found`);
   const { rows: cur } = await query('SELECT * FROM licenses WHERE id = $1', [licenseId]);
   if (!cur[0]) throw HttpError.notFound(`License ${licenseId} not found`);
@@ -290,7 +298,9 @@ async function updateLicense(licenseId, body = {}) {
   });
 
   const softwareName = body.softwareName != null ? String(body.softwareName).trim() : cur[0].software_name;
-  const licenseKey = body.licenseKey != null ? String(body.licenseKey).trim() : cur[0].license_key;
+  const licenseKey = (privileged && body.licenseKey != null)
+    ? String(body.licenseKey).trim()
+    : cur[0].license_key;
   let totalSeats = cur[0].total_seats;
   if (body.totalSeats !== undefined) {
     totalSeats = Number(body.totalSeats);

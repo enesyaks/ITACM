@@ -17,6 +17,12 @@ async function loadLifecycles() {
 }
 
 const STATUSES = ['In Stock', 'Assigned', 'In Repair', 'Scrap', 'Sold', 'Reserved'];
+// Statuses a brand-new asset may be created with. 'Assigned' and 'In Repair'
+// are excluded because each requires a companion record the create path does
+// not produce — a handover receipt (+ employee + counter) or a maintenance log.
+// Creating them directly leaves a holder-less "Assigned" / repair-less
+// "In Repair" row that bypasses those flows, their audit trail, and approvals.
+const CREATE_STATUSES = new Set(['In Stock', 'Reserved', 'Scrap', 'Sold']);
 const INFRA_CATEGORIES = new Set(['Network', 'Server']);
 const INFRA_ROLES = new Set([
   'Switch', 'Firewall', 'Access Point', 'Router', 'Load Balancer',
@@ -430,6 +436,15 @@ async function nextAssetTag() {
 
 async function createAsset(body, itUser) {
   const data = sanitize(body);
+  // A caller cannot mint an "Assigned"/"In Repair" asset out of thin air —
+  // those states must go through POST /api/handovers and the maintenance flow
+  // so the receipt/history/counter (or repair log) always exist.
+  if (data.status !== undefined && !CREATE_STATUSES.has(data.status)) {
+    throw HttpError.badRequest(
+      `Assets cannot be created with status "${data.status}". `
+      + `Create it as "In Stock" and use the handover / maintenance flow instead.`
+    );
+  }
   const isInfra = INFRA_CATEGORIES.has(data.category);
   if (isInfra) {
     if (!data.asset_tag || !String(data.asset_tag).trim()) {

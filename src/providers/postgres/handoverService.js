@@ -323,7 +323,9 @@ async function getByAckToken(token) {
     documentType: h.documentType,
     itemCount: Array.isArray(h.items) ? h.items.length : 0,
     items: (h.items || []).map((it) => ({
-      type: it.type || (it.assetTag ? 'asset' : 'line'),
+      // Receipt items carry `kind`; mobile lines also carry an assetTag alias for
+      // older renderers, so `assetTag ? 'asset' : 'line'` would mislabel them all.
+      type: it.kind || it.type || (it.lineId ? 'line' : 'asset'),
       label: it.assetTag || it.phoneNumber || it.brand || 'item',
       detail: [it.brand, it.model].filter(Boolean).join(' '),
     })),
