@@ -4,6 +4,14 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.27] — 2026-08-06
+
+### Fixed
+- **Startup migration for IMEI.** Refreshing `ai.assets` after adding `imei`
+  failed on existing databases (`cannot change name of view column "brand" to
+  "imei"`). The migration now drops and recreates the view (and re-grants
+  `itacm_ai_ro`).
+
 ## [1.3.26] — 2026-08-06
 
 ### Added
