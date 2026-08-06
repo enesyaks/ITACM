@@ -10,7 +10,7 @@
 CREATE SCHEMA IF NOT EXISTS ai;
 
 CREATE OR REPLACE VIEW ai.assets AS
-  SELECT id, asset_tag, serial_number, imei, brand, model, category, status,
+  SELECT id, asset_tag, serial_number, imei, imei2, brand, model, category, status,
          current_employee_id, current_employee_name, responsible_employee_name,
          location, mac_ethernet, mac_wifi, specs, notes, firmware_version,
          warranty_end_date, purchase_date, cost, salvage_value, lifecycle_months,

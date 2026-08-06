@@ -86,6 +86,8 @@
     'asset.f.serial': L('Serial number', 'Seri numarası', 'Seriennummer', 'Numéro de série', 'Número de serie', 'Numero di serie', 'Número de série', 'Serienummer', 'Numer seryjny', 'Серийный номер', 'الرقم التسلسلي', 'シリアル番号'),
     'asset.f.imei': L('IMEI', 'IMEI', 'IMEI', 'IMEI', 'IMEI', 'IMEI', 'IMEI', 'IMEI', 'IMEI', 'IMEI', 'IMEI', 'IMEI'),
     'asset.f.imeiHint': L('primary / first IMEI', 'birincil / ilk IMEI', 'primäre / erste IMEI', 'IMEI principal / premier', 'IMEI principal / primero', 'IMEI primario / primo', 'IMEI principal / primeiro', 'primaire / eerste IMEI', 'główny / pierwszy IMEI', 'основной / первый IMEI', 'IMEI الأساسي / الأول', 'プライマリ / 第1 IMEI'),
+    'asset.f.imei2': L('IMEI 2', 'IMEI 2', 'IMEI 2', 'IMEI 2', 'IMEI 2', 'IMEI 2', 'IMEI 2', 'IMEI 2', 'IMEI 2', 'IMEI 2', 'IMEI 2', 'IMEI 2'),
+    'asset.f.imei2Hint': L('secondary / second IMEI', 'ikincil / ikinci IMEI', 'sekundäre / zweite IMEI', 'IMEI secondaire / second', 'IMEI secundario / segundo', 'IMEI secondario / secondo', 'IMEI secundário / segundo', 'secundaire / tweede IMEI', 'drugi IMEI', 'вторичный / второй IMEI', 'IMEI الثانوي / الثاني', 'セカンダリ / 第2 IMEI'),
     'asset.f.imeiPh': L('15-digit IMEI', '15 haneli IMEI', '15-stellige IMEI', 'IMEI à 15 chiffres', 'IMEI de 15 dígitos', 'IMEI a 15 cifre', 'IMEI de 15 dígitos', '15-cijferige IMEI', '15-cyfrowy IMEI', '15-значный IMEI', 'IMEI من 15 رقمًا', '15桁のIMEI'),
     'asset.f.category': L('Category', 'Kategori', 'Kategorie', 'Catégorie', 'Categoría', 'Categoria', 'Categoria', 'Categorie', 'Kategoria', 'Категория', 'الفئة', 'カテゴリ'),
     'asset.f.customCatPh': L('Custom category — e.g. Projector, UPS', 'Özel kategori — örn. Projektör, UPS', 'Eigene Kategorie – z. B. Projektor, USV', 'Catégorie personnalisée — ex. Projecteur, onduleur', 'Categoría personalizada — p. ej. Proyector, SAI', 'Categoria personalizzata — es. Proiettore, UPS', 'Categoria personalizada — ex. Projetor, UPS', 'Aangepaste categorie — bijv. Projector, UPS', 'Kategoria własna — np. Projektor, UPS', 'Своя категория — напр. проектор, ИБП', 'فئة مخصصة — مثل جهاز عرض، UPS', 'カスタムカテゴリ — 例: プロジェクター、UPS'),
@@ -1476,6 +1478,7 @@
     /* ---- Hardware detail modal ---- */
     'hw.d.serial': L('Serial', 'Seri No', 'Seriennr.', 'Série', 'Serie', 'Seriale', 'Série', 'Serie', 'Nr ser.', 'Серийный', 'التسلسلي', 'シリアル'),
     'hw.d.imei': L('IMEI', 'IMEI', 'IMEI', 'IMEI', 'IMEI', 'IMEI', 'IMEI', 'IMEI', 'IMEI', 'IMEI', 'IMEI', 'IMEI'),
+    'hw.d.imei2': L('IMEI 2', 'IMEI 2', 'IMEI 2', 'IMEI 2', 'IMEI 2', 'IMEI 2', 'IMEI 2', 'IMEI 2', 'IMEI 2', 'IMEI 2', 'IMEI 2', 'IMEI 2'),
     'hw.d.bookValue': L('Book value', 'Defter değeri', 'Buchwert', 'Valeur comptable', 'Valor contable', 'Valore contabile', 'Valor contábil', 'Boekwaarde', 'Wartość księgowa', 'Балансовая стоимость', 'القيمة الدفترية', '簿価'),
     'hw.d.deprSuffix': L('({pct}% depreciated)', '(%{pct} amorti)', '({pct} % abgeschrieben)', '({pct} % amorti)', '({pct}% depreciado)', '({pct}% ammortizzato)', '({pct}% depreciado)', '({pct}% afgeschreven)', '(zamortyzowano {pct}%)', '(износ {pct}%)', '(مُستهلَك {pct}٪)', '(減価償却 {pct}%)'),
     'hw.d.assignedTo': L('Assigned to', 'Zimmetli', 'Zugewiesen an', 'Attribué à', 'Asignado a', 'Assegnato a', 'Atribuído a', 'Toegewezen aan', 'Przypisane do', 'Назначено', 'مُسند إلى', '割当先'),

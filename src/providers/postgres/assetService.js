@@ -4,7 +4,7 @@ const { mapAsset, mapRows, isUuid } = require('./rowMapper');
 const { parseParentIdsFromBody, syncAssetParents } = require('./assetParentLinks');
 const {
   normalizeSerial, assertSerialAvailable,
-  assertImeiFormat, assertImeiAvailable, conflictFromUniqueViolation,
+  assertImeiFormat, assertImeiAvailable, assertImeiPairDistinct, conflictFromUniqueViolation,
 } = require('./assetSerial');
 const { HttpError } = require('../../utils/httpError');
 const { normalizeSale, formatSaleSummary, appendSaleToNotes } = require('../../utils/saleNote');
@@ -275,7 +275,7 @@ const ASSET_SELECT = `SELECT a.*,
 function sanitize(body, { partial = false } = {}) {
   const {
     assetTag, serialNumber, brand, model, category,
-    macEthernet, macWifi, imei, specs, status, warrantyEndDate, location,
+    macEthernet, macWifi, imei, imei2, specs, status, warrantyEndDate, location,
   } = body;
 
   if (!partial) {
@@ -301,6 +301,7 @@ function sanitize(body, { partial = false } = {}) {
   if (macEthernet !== undefined) data.mac_ethernet = macEthernet;
   if (macWifi !== undefined) data.mac_wifi = macWifi;
   if (imei !== undefined) data.imei = assertImeiFormat(imei);
+  if (imei2 !== undefined) data.imei2 = assertImeiFormat(imei2);
   if (status !== undefined) data.status = status;
   if (warrantyEndDate !== undefined) {
     data.warranty_end_date = warrantyEndDate ? new Date(warrantyEndDate) : null;
@@ -469,7 +470,9 @@ async function createAsset(body, itUser) {
   data.license_id = licenseIds[0] || null;
 
   await assertSerialAvailable(data.serial_number);
+  assertImeiPairDistinct(data.imei, data.imei2);
   if (data.imei) await assertImeiAvailable(data.imei);
+  if (data.imei2) await assertImeiAvailable(data.imei2);
 
   for (let attempt = 0; attempt < 3; attempt++) {
     if (autoTag) data.asset_tag = await nextAssetTag();
@@ -477,18 +480,18 @@ async function createAsset(body, itUser) {
       return await withTransaction(async (t) => {
         const { rows } = await t.query(
           `INSERT INTO assets (asset_tag, serial_number, brand, model, category,
-                               mac_ethernet, mac_wifi, imei, specs, status, warranty_end_date, purchase_date, qr_code_string,
+                               mac_ethernet, mac_wifi, imei, imei2, specs, status, warranty_end_date, purchase_date, qr_code_string,
                                location, lifecycle_months, notes, license_id,
                                responsible_employee_id, responsible_employee_name,
                                infra_role, rack, rack_unit, rack_u_start, rack_u_size,
                                firmware_version, firmware_updated_at, mgmt_ip, parent_asset_id,
                                cost, salvage_value)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,COALESCE($9,'{}'::jsonb),COALESCE($10,'In Stock'),$11,$12,$13,$14,$15,COALESCE($16,''),$17,$18,$19,
-                   $20,$21,$22,$23,$24,$25,$26,$27,$28,COALESCE($29,0),$30)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,COALESCE($10,'{}'::jsonb),COALESCE($11,'In Stock'),$12,$13,$14,$15,$16,COALESCE($17,''),$18,$19,$20,
+                   $21,$22,$23,$24,$25,$26,$27,$28,$29,COALESCE($30,0),$31)
            RETURNING id, asset_tag`,
           [
             data.asset_tag, data.serial_number, data.brand, data.model, data.category,
-            data.mac_ethernet || null, data.mac_wifi || null, data.imei || null, data.specs || null,
+            data.mac_ethernet || null, data.mac_wifi || null, data.imei || null, data.imei2 || null, data.specs || null,
             data.status || null, data.warranty_end_date || null, data.purchase_date || null,
             buildQrCodeString(data.asset_tag), data.location || null, data.lifecycle_months ?? null,
             data.notes || '', data.license_id || null,
@@ -632,8 +635,16 @@ async function updateAsset(assetId, body, itUser) {
     if (data.serial_number !== undefined) {
       await assertSerialAvailable(data.serial_number, { excludeId: assetId, client: t });
     }
+    const nextImei = data.imei !== undefined ? data.imei : current.imei;
+    const nextImei2 = data.imei2 !== undefined ? data.imei2 : current.imei2;
+    if (data.imei !== undefined || data.imei2 !== undefined) {
+      assertImeiPairDistinct(nextImei, nextImei2);
+    }
     if (data.imei !== undefined && data.imei) {
       await assertImeiAvailable(data.imei, { excludeId: assetId, client: t });
+    }
+    if (data.imei2 !== undefined && data.imei2) {
+      await assertImeiAvailable(data.imei2, { excludeId: assetId, client: t });
     }
 
     let updatedRow = current;
@@ -772,6 +783,7 @@ async function writeUpdateHistory(t, before, after, patch, licenseIds, itUser, s
     { key: 'model', label: 'model' },
     { key: 'serial_number', label: 'serial' },
     { key: 'imei', label: 'IMEI' },
+    { key: 'imei2', label: 'IMEI 2' },
     { key: 'category', label: 'category' },
     { key: 'infra_role', label: 'role' },
     { key: 'rack', label: 'rack' },
@@ -890,6 +902,7 @@ async function listAssets({
     where.push(
       `(a.asset_tag ILIKE $${params.length} OR a.serial_number ILIKE $${params.length} ` +
       `OR COALESCE(a.imei,'') ILIKE $${params.length} ` +
+      `OR COALESCE(a.imei2,'') ILIKE $${params.length} ` +
       `OR a.brand ILIKE $${params.length} OR a.model ILIKE $${params.length} ` +
       `OR a.mac_ethernet ILIKE $${params.length} OR a.mac_wifi ILIKE $${params.length} ` +
       `OR COALESCE(a.mgmt_ip,'') ILIKE $${params.length} ` +

@@ -128,16 +128,19 @@ async function suggestAssets(countId, q, { limit = 8 } = {}) {
         AND (a.asset_tag ILIKE $2 ESCAPE '\\'
              OR COALESCE(a.serial_number, '') ILIKE $2 ESCAPE '\\'
              OR COALESCE(a.imei, '') ILIKE $2 ESCAPE '\\'
+             OR COALESCE(a.imei2, '') ILIKE $2 ESCAPE '\\'
              OR COALESCE(a.brand, '') ILIKE $2 ESCAPE '\\'
              OR COALESCE(a.model, '') ILIKE $2 ESCAPE '\\')
       -- Codes the operator is actually typing rank first: starts-with, then any
       -- tag/serial hit, and only then a brand/model coincidence.
       ORDER BY (a.asset_tag ILIKE $3 ESCAPE '\\'
                 OR COALESCE(a.serial_number, '') ILIKE $3 ESCAPE '\\'
-                OR COALESCE(a.imei, '') ILIKE $3 ESCAPE '\\') DESC,
+                OR COALESCE(a.imei, '') ILIKE $3 ESCAPE '\\'
+                OR COALESCE(a.imei2, '') ILIKE $3 ESCAPE '\\') DESC,
                (a.asset_tag ILIKE $2 ESCAPE '\\'
                 OR COALESCE(a.serial_number, '') ILIKE $2 ESCAPE '\\'
-                OR COALESCE(a.imei, '') ILIKE $2 ESCAPE '\\') DESC,
+                OR COALESCE(a.imei, '') ILIKE $2 ESCAPE '\\'
+                OR COALESCE(a.imei2, '') ILIKE $2 ESCAPE '\\') DESC,
                LENGTH(a.asset_tag), a.asset_tag
       LIMIT $${params.length}`,
     params
@@ -163,7 +166,8 @@ async function scanTag(countId, raw, itUser) {
        FROM assets
        WHERE UPPER(TRIM(asset_tag)) = $1
           OR UPPER(TRIM(serial_number)) = $1
-          OR UPPER(TRIM(imei)) = $1`,
+          OR UPPER(TRIM(imei)) = $1
+          OR UPPER(TRIM(imei2)) = $1`,
       [tag]
     );
     const asset = a.rows[0] || null;

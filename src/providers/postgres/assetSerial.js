@@ -8,7 +8,7 @@ function normalizeSerial(value) {
   return trimmed === "" ? null : trimmed;
 }
 
-/** Primary IMEI — strip spaces/dashes; empty → null. Digits-only when provided. */
+/** IMEI — strip spaces/dashes; empty → null. Digits-only when provided. */
 function normalizeImei(value) {
   if (value === undefined || value === null) return null;
   if (typeof value !== "string" && typeof value !== "number") return null;
@@ -51,13 +51,15 @@ async function assertSerialAvailable(serialNumber, opts = {}) {
   });
 }
 
+/** Match against primary or secondary IMEI on any asset. */
 async function findImeiOwner(imei, { excludeId, client } = {}) {
   const v = normalizeImei(imei);
   if (!v) return null;
   const run = client ? client.query.bind(client) : query;
   const params = [v];
   let sql =
-    "SELECT id, asset_tag FROM assets WHERE lower(btrim(imei)) = lower(btrim($1::text))";
+    "SELECT id, asset_tag FROM assets WHERE lower(btrim(imei)) = lower(btrim($1::text)) "
+    + "OR lower(btrim(imei2)) = lower(btrim($1::text))";
   if (excludeId) {
     sql += " AND id <> $2";
     params.push(excludeId);
@@ -77,12 +79,23 @@ async function assertImeiAvailable(imei, opts = {}) {
   });
 }
 
+/** Reject when primary and secondary IMEI on the same payload are identical. */
+function assertImeiPairDistinct(imei, imei2) {
+  const a = normalizeImei(imei);
+  const b = normalizeImei(imei2);
+  if (a && b && a === b) {
+    throw HttpError.badRequest("Primary and secondary IMEI must be different", {
+      code: "DUPLICATE_IMEI_PAIR",
+    });
+  }
+}
+
 function conflictFromUniqueViolation(err, data) {
   const hay = (String(err.constraint || "") + " " + String(err.detail || "")).toLowerCase();
   if (hay.includes("imei")) {
     throw HttpError.conflict("This IMEI is already registered", {
       code: "DUPLICATE_IMEI",
-      imei: data.imei ?? null,
+      imei: data.imei ?? data.imei2 ?? null,
       assetTag: data.asset_tag ?? null,
     });
   }
@@ -101,6 +114,7 @@ module.exports = {
   normalizeSerial,
   normalizeImei,
   assertImeiFormat,
+  assertImeiPairDistinct,
   assertSerialAvailable,
   assertImeiAvailable,
   conflictFromUniqueViolation,

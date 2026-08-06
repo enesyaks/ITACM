@@ -672,9 +672,9 @@ Views.assets = async function (el, params = {}) {
 };
 
 function exportCsv(items) {
-  const head = ['assetTag', 'brand', 'model', 'category', 'serialNumber', 'imei', 'macEthernet', 'macWifi', 'status', 'employee'];
+  const head = ['assetTag', 'brand', 'model', 'category', 'serialNumber', 'imei', 'imei2', 'macEthernet', 'macWifi', 'status', 'employee'];
   const rows = items.map((x) => [
-    x.assetTag, x.brand, x.model, x.category, x.serialNumber, x.imei || '',
+    x.assetTag, x.brand, x.model, x.category, x.serialNumber, x.imei || '', x.imei2 || '',
     x.macEthernet || '', x.macWifi || '', x.status, x.currentEmployee ? x.currentEmployee.fullName : '',
   ]);
   const csvEsc = (v) => `"${csvCell(v).replace(/"/g, '""')}"`;
@@ -697,6 +697,7 @@ function duplicateAssetSeed(x) {
   delete clone.assetTag;
   delete clone.serialNumber;
   delete clone.imei;
+  delete clone.imei2;
   delete clone.macEthernet;
   delete clone.macWifi;
   delete clone.rackUStart;
@@ -784,6 +785,10 @@ async function assetForm(asset, done) {
             <span class="ob-hint">${esc(t('asset.f.imeiHint'))}</span></label>
             <input name="imei" inputmode="numeric" autocomplete="off" maxlength="20"
               placeholder="${esc(t('asset.f.imeiPh'))}" value="${esc((asset && asset.imei) || '')}"></div>
+          <div class="form-field" data-f="imei2"><label>${esc(t('asset.f.imei2'))}
+            <span class="ob-hint">${esc(t('asset.f.imei2Hint'))}</span></label>
+            <input name="imei2" inputmode="numeric" autocomplete="off" maxlength="20"
+              placeholder="${esc(t('asset.f.imeiPh'))}" value="${esc((asset && asset.imei2) || '')}"></div>
           <div class="form-field"><label>${esc(t('asset.f.category'))} *</label>
             <select id="af-cat">${CATS.map((c) => `<option ${state.category === c ? 'selected' : ''}>${c}</option>`).join('')}</select>
             ${infraMode ? '' : `<input id="af-cat-other" class="${state.category === 'Other' ? '' : 'hidden'}" style="margin-top:6px"
@@ -898,8 +903,8 @@ async function assetForm(asset, done) {
       const FIELD_RULES = {
         Laptop: ['macEthernet', 'macWifi', 'cpu', 'ram', 'storage', 'os'],
         Desktop: ['macEthernet', 'macWifi', 'cpu', 'ram', 'storage', 'os'],
-        Tablet: ['imei', 'macWifi', 'storage', 'os'],
-        Phone: ['imei', 'macWifi', 'storage', 'os'],
+        Tablet: ['imei', 'imei2', 'macWifi', 'storage', 'os'],
+        Phone: ['imei', 'imei2', 'macWifi', 'storage', 'os'],
         Monitor: [],
         Television: ['macEthernet', 'macWifi'],
         Printer: ['macEthernet', 'macWifi'],
@@ -1464,6 +1469,7 @@ async function assetForm(asset, done) {
           macEthernet: take('macEthernet'),
           macWifi: take('macWifi'),
           imei: take('imei'),
+          imei2: take('imei2'),
           specs: {
             cpu: take('cpu'), ram: take('ram'), storage: take('storage'), os: take('os'),
             hostname: take('hostname'), ipAddress: take('ipAddress'),
@@ -1729,6 +1735,9 @@ async function showAssetDetail(id, onChange) {
       : kvText(t('hw.d.serial'), x.serialNumber, { mono: true }),
     (x.imei && String(x.imei).trim())
       ? kv(t('hw.d.imei'), `<span class="mono">${esc(String(x.imei).trim())}</span>${serialCopyBtn(String(x.imei).trim())}`)
+      : '',
+    (x.imei2 && String(x.imei2).trim())
+      ? kv(t('hw.d.imei2'), `<span class="mono">${esc(String(x.imei2).trim())}</span>${serialCopyBtn(String(x.imei2).trim())}`)
       : '',
     kvText(t('asset.f.category'), x.category),
     kvText(t('asset.f.location'), x.location),

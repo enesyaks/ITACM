@@ -4,6 +4,13 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.28] — 2026-08-06
+
+### Added
+- **Secondary IMEI (IMEI 2)** on Phone/Tablet forms for dual-SIM devices.
+  Search, detail, CSV, import, and stock-count scan cover both IMEIs; values
+  must be unique across primary/secondary and across assets.
+
 ## [1.3.27] — 2026-08-06
 
 ### Fixed

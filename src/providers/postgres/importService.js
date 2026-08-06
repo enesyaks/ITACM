@@ -55,7 +55,7 @@ function parseRow(r, knownLocations = []) {
     employeeName: s(r.employeeName), employeeEmail: s(r.employeeEmail).toLowerCase(),
     department: s(r.department), title: s(r.title),
     assetTag: s(r.assetTag).toUpperCase(), category: s(r.category), brand: s(r.brand),
-    model: s(r.model), serialNumber: s(r.serialNumber), imei: s(r.imei), mac: s(r.mac),
+    model: s(r.model), serialNumber: s(r.serialNumber), imei: s(r.imei), imei2: s(r.imei2), mac: s(r.mac),
     cpu: s(r.cpu), ram: s(r.ram), storage: s(r.storage), os: s(r.os),
     location: s(r.location), purchaseDate: s(r.purchaseDate),
   };
@@ -65,14 +65,22 @@ function parseRow(r, knownLocations = []) {
   const canonical = CATEGORIES.find((c) => c.toLowerCase() === data.category.toLowerCase());
   if (!canonical) return { ok: false, error: `unknown category "${data.category}" — use one of: ${CATEGORIES.join(', ')}` };
   data.category = canonical;
-  if (data.imei) {
-    const digits = data.imei.replace(/[\s\-]/g, '');
+  const parseImei = (raw, label) => {
+    if (!raw) return null;
+    const digits = raw.replace(/[\s\-]/g, '');
     if (!/^\d{14,16}$/.test(digits)) {
-      return { ok: false, error: `invalid IMEI "${data.imei}" — use 14–16 digits` };
+      return { error: `invalid ${label} "${raw}" — use 14–16 digits` };
     }
-    data.imei = digits;
-  } else {
-    data.imei = null;
+    return { value: digits };
+  };
+  const i1 = parseImei(data.imei, 'IMEI');
+  if (i1.error) return { ok: false, error: i1.error };
+  data.imei = i1.value;
+  const i2 = parseImei(data.imei2, 'IMEI 2');
+  if (i2.error) return { ok: false, error: i2.error };
+  data.imei2 = i2.value;
+  if (data.imei && data.imei2 && data.imei === data.imei2) {
+    return { ok: false, error: 'IMEI and IMEI 2 must be different' };
   }
   const loc = resolveLocation(data.location, knownLocations);
   if (!loc.ok) return loc;
@@ -240,10 +248,10 @@ async function importInventory(rows, { dryRun = false } = {}, itUser) {
       const specs = { cpu: v.cpu || null, ram: v.ram || null, storage: v.storage || null, os: v.os || null };
       const ins = await t.query(
         `INSERT INTO assets (asset_tag, serial_number, brand, model, category, mac_ethernet,
-                             imei, specs, status, purchase_date, qr_code_string, location)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,'In Stock',$9,$10,$11) RETURNING id`,
+                             imei, imei2, specs, status, purchase_date, qr_code_string, location)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,'In Stock',$10,$11,$12) RETURNING id`,
         [tag, v.serialNumber, v.brand, v.model, v.category, v.mac || null,
-         v.imei || null, JSON.stringify(specs), v.purchaseDate, `ITACPRO|ASSET|${tag}`, v.location || null]
+         v.imei || null, v.imei2 || null, JSON.stringify(specs), v.purchaseDate, `ITACPRO|ASSET|${tag}`, v.location || null]
       );
       v._assetId = ins.rows[0].id;
       v._tag = tag;

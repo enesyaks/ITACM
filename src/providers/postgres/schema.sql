@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS assets (
   mac_ethernet          TEXT,
   mac_wifi              TEXT,
   imei                  TEXT,
+  imei2                 TEXT,
   specs                 JSONB NOT NULL DEFAULT '{}'::jsonb,
   status                TEXT NOT NULL DEFAULT 'In Stock'
                         CHECK (status IN ('In Stock', 'Assigned', 'In Repair', 'Scrap', 'Sold', 'Reserved')),
@@ -51,6 +52,7 @@ CREATE INDEX IF NOT EXISTS idx_assets_category ON assets (category);
 -- Serial uniqueness: see migrations/034_asset_serial_unique.sql
 -- Primary IMEI (phones/tablets): see migrations/047_asset_imei.sql
 ALTER TABLE assets ADD COLUMN IF NOT EXISTS imei TEXT;
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS imei2 TEXT;
 
 CREATE TABLE IF NOT EXISTS licenses (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
