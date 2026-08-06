@@ -4,6 +4,20 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.26] — 2026-08-06
+
+### Added
+- **Primary IMEI on phones and tablets.** Hardware add/edit shows an IMEI field
+  for Phone/Tablet (first / primary IMEI). Stored as a first-class column with
+  uniqueness when set; included in hardware search, detail view, CSV export,
+  stock-count scan/match, and optional CSV import.
+
+### Fixed
+- **Owner recovery after `reset-password --clear-mfa`.** Changing the temporary
+  password was blocked with "Owners must enable MFA before using the app"
+  because `/api/auth/password` was not allowlisted while MFA was cleared.
+  Password change now completes first; MFA re-enrolment follows.
+
 ## [1.3.25] — 2026-08-04
 
 ### Fixed

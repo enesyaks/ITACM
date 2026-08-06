@@ -672,9 +672,9 @@ Views.assets = async function (el, params = {}) {
 };
 
 function exportCsv(items) {
-  const head = ['assetTag', 'brand', 'model', 'category', 'serialNumber', 'macEthernet', 'macWifi', 'status', 'employee'];
+  const head = ['assetTag', 'brand', 'model', 'category', 'serialNumber', 'imei', 'macEthernet', 'macWifi', 'status', 'employee'];
   const rows = items.map((x) => [
-    x.assetTag, x.brand, x.model, x.category, x.serialNumber,
+    x.assetTag, x.brand, x.model, x.category, x.serialNumber, x.imei || '',
     x.macEthernet || '', x.macWifi || '', x.status, x.currentEmployee ? x.currentEmployee.fullName : '',
   ]);
   const csvEsc = (v) => `"${csvCell(v).replace(/"/g, '""')}"`;
@@ -696,6 +696,7 @@ function duplicateAssetSeed(x) {
   delete clone.id;
   delete clone.assetTag;
   delete clone.serialNumber;
+  delete clone.imei;
   delete clone.macEthernet;
   delete clone.macWifi;
   delete clone.rackUStart;
@@ -779,6 +780,10 @@ async function assetForm(asset, done) {
           ${tagField}
           <div class="form-field"><label>${esc(t('asset.f.serial'))} *</label>
             <input name="serialNumber" required autocomplete="off" value="${esc((asset && asset.serialNumber) || '')}"></div>
+          <div class="form-field" data-f="imei"><label>${esc(t('asset.f.imei'))}
+            <span class="ob-hint">${esc(t('asset.f.imeiHint'))}</span></label>
+            <input name="imei" inputmode="numeric" autocomplete="off" maxlength="20"
+              placeholder="${esc(t('asset.f.imeiPh'))}" value="${esc((asset && asset.imei) || '')}"></div>
           <div class="form-field"><label>${esc(t('asset.f.category'))} *</label>
             <select id="af-cat">${CATS.map((c) => `<option ${state.category === c ? 'selected' : ''}>${c}</option>`).join('')}</select>
             ${infraMode ? '' : `<input id="af-cat-other" class="${state.category === 'Other' ? '' : 'hidden'}" style="margin-top:6px"
@@ -893,8 +898,8 @@ async function assetForm(asset, done) {
       const FIELD_RULES = {
         Laptop: ['macEthernet', 'macWifi', 'cpu', 'ram', 'storage', 'os'],
         Desktop: ['macEthernet', 'macWifi', 'cpu', 'ram', 'storage', 'os'],
-        Tablet: ['macWifi', 'storage', 'os'],
-        Phone: ['macWifi', 'storage', 'os'],
+        Tablet: ['imei', 'macWifi', 'storage', 'os'],
+        Phone: ['imei', 'macWifi', 'storage', 'os'],
         Monitor: [],
         Television: ['macEthernet', 'macWifi'],
         Printer: ['macEthernet', 'macWifi'],
@@ -1458,6 +1463,7 @@ async function assetForm(asset, done) {
           location: f.location.value || null,
           macEthernet: take('macEthernet'),
           macWifi: take('macWifi'),
+          imei: take('imei'),
           specs: {
             cpu: take('cpu'), ram: take('ram'), storage: take('storage'), os: take('os'),
             hostname: take('hostname'), ipAddress: take('ipAddress'),
@@ -1586,6 +1592,9 @@ async function assetForm(asset, done) {
           let msg = err.message;
           if (err.details && err.details.code === 'DUPLICATE_SERIAL') {
             msg = (typeof t === 'function' && t('assets.serialTaken')) || msg;
+            if (err.details.assetTag) msg += ` (${err.details.assetTag})`;
+          } else if (err.details && err.details.code === 'DUPLICATE_IMEI') {
+            msg = (typeof t === 'function' && t('assets.imeiTaken')) || msg;
             if (err.details.assetTag) msg += ` (${err.details.assetTag})`;
           }
           toast(msg, 'error');
@@ -1718,6 +1727,9 @@ async function showAssetDetail(id, onChange) {
     (x.serialNumber && String(x.serialNumber).trim() && String(x.serialNumber).trim() !== '—')
       ? kv(t('hw.d.serial'), `<span class="mono">${esc(String(x.serialNumber).trim())}</span>${serialCopyBtn(String(x.serialNumber).trim())}`)
       : kvText(t('hw.d.serial'), x.serialNumber, { mono: true }),
+    (x.imei && String(x.imei).trim())
+      ? kv(t('hw.d.imei'), `<span class="mono">${esc(String(x.imei).trim())}</span>${serialCopyBtn(String(x.imei).trim())}`)
+      : '',
     kvText(t('asset.f.category'), x.category),
     kvText(t('asset.f.location'), x.location),
     kv(t('asset.f.purchaseDate'), x.purchaseDate ? esc(fmtDate(x.purchaseDate)) : ''),

@@ -356,7 +356,7 @@ const TOOL_DEFS = [
     parameters: {
       type: 'object',
       properties: {
-        search: { type: 'string', description: 'Free-text: tag, serial, brand, model, hostname, MAC' },
+        search: { type: 'string', description: 'Free-text: tag, serial, IMEI, brand, model, hostname, MAC' },
         category: { type: 'string', description: 'Exact category, e.g. Laptop' },
         status: { type: 'string', description: 'CSV statuses, e.g. Assigned,In Stock' },
         location: { type: 'string', description: 'Location filter' },
@@ -551,7 +551,7 @@ const TOOL_DEFS = [
     description:
       'Advanced analytical query. Write ONE read-only PostgreSQL SELECT (aggregations, JOINs, GROUP BY, AVG/SUM/COUNT, cross-domain math) when the specific tools cannot express the question — e.g. "hangi departmanda ortalama cihaz yaşı en yüksek", "markaya göre toplam bakım maliyeti", "en çok lisansı olan 5 çalışan". For simple lists/counts prefer the dedicated tools. SELECT only, read-only; search_path is already "ai" so use unqualified view names. '
       + 'Available ai views: '
-      + 'assets(asset_tag, serial_number, brand, model, category, status[In Stock|Assigned|Reserved|Repair|Sold], current_employee_name, responsible_employee_name, location, warranty_end_date, purchase_date, cost, salvage_value, lifecycle_months, infra_role, created_at); '
+      + 'assets(asset_tag, serial_number, imei, brand, model, category, status[In Stock|Assigned|Reserved|Repair|Sold], current_employee_name, responsible_employee_name, location, warranty_end_date, purchase_date, cost, salvage_value, lifecycle_months, infra_role, created_at); '
       + 'asset_history(asset_tag, employee_name, action_type, notes, at); '
       + 'employees(full_name, email, department, title, status[Active|Inactive], active_asset_count, start_date, team_id, manager_employee_id); '
       + 'departments(name); teams(name, department_id, lead_employee_id); '

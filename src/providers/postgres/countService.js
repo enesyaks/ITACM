@@ -127,14 +127,17 @@ async function suggestAssets(countId, q, { limit = 8 } = {}) {
       WHERE a.status <> 'Scrap'${locationSql}
         AND (a.asset_tag ILIKE $2 ESCAPE '\\'
              OR COALESCE(a.serial_number, '') ILIKE $2 ESCAPE '\\'
+             OR COALESCE(a.imei, '') ILIKE $2 ESCAPE '\\'
              OR COALESCE(a.brand, '') ILIKE $2 ESCAPE '\\'
              OR COALESCE(a.model, '') ILIKE $2 ESCAPE '\\')
       -- Codes the operator is actually typing rank first: starts-with, then any
       -- tag/serial hit, and only then a brand/model coincidence.
       ORDER BY (a.asset_tag ILIKE $3 ESCAPE '\\'
-                OR COALESCE(a.serial_number, '') ILIKE $3 ESCAPE '\\') DESC,
+                OR COALESCE(a.serial_number, '') ILIKE $3 ESCAPE '\\'
+                OR COALESCE(a.imei, '') ILIKE $3 ESCAPE '\\') DESC,
                (a.asset_tag ILIKE $2 ESCAPE '\\'
-                OR COALESCE(a.serial_number, '') ILIKE $2 ESCAPE '\\') DESC,
+                OR COALESCE(a.serial_number, '') ILIKE $2 ESCAPE '\\'
+                OR COALESCE(a.imei, '') ILIKE $2 ESCAPE '\\') DESC,
                LENGTH(a.asset_tag), a.asset_tag
       LIMIT $${params.length}`,
     params
@@ -153,13 +156,14 @@ async function scanTag(countId, raw, itUser) {
     if (!c.rows[0]) throw HttpError.notFound('Count not found');
     if (c.rows[0].status !== 'open') throw HttpError.conflict('This count is closed');
 
-    // Match by asset tag OR serial number (trimmed, case-insensitive), so typing
-    // either during a manual count — or scanning a serial barcode — finds the device.
+    // Match by asset tag, serial, or IMEI (trimmed, case-insensitive), so typing
+    // either during a manual count — or scanning a serial/IMEI barcode — finds the device.
     const a = await t.query(
       `SELECT id, asset_tag, brand, model, category, status, current_employee_name
        FROM assets
        WHERE UPPER(TRIM(asset_tag)) = $1
-          OR UPPER(TRIM(serial_number)) = $1`,
+          OR UPPER(TRIM(serial_number)) = $1
+          OR UPPER(TRIM(imei)) = $1`,
       [tag]
     );
     const asset = a.rows[0] || null;

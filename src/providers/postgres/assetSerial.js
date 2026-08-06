@@ -8,6 +8,23 @@ function normalizeSerial(value) {
   return trimmed === "" ? null : trimmed;
 }
 
+/** Primary IMEI — strip spaces/dashes; empty → null. Digits-only when provided. */
+function normalizeImei(value) {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== "string" && typeof value !== "number") return null;
+  const digits = String(value).replace(/[\s\-]/g, "").trim();
+  return digits === "" ? null : digits;
+}
+
+function assertImeiFormat(imei) {
+  const v = normalizeImei(imei);
+  if (v == null) return null;
+  if (!/^\d{14,16}$/.test(v)) {
+    throw HttpError.badRequest("IMEI must be 14–16 digits", { code: "INVALID_IMEI" });
+  }
+  return v;
+}
+
 async function findSerialOwner(serialNumber, { excludeId, client } = {}) {
   const sn = normalizeSerial(serialNumber);
   if (!sn) return null;
@@ -34,8 +51,41 @@ async function assertSerialAvailable(serialNumber, opts = {}) {
   });
 }
 
+async function findImeiOwner(imei, { excludeId, client } = {}) {
+  const v = normalizeImei(imei);
+  if (!v) return null;
+  const run = client ? client.query.bind(client) : query;
+  const params = [v];
+  let sql =
+    "SELECT id, asset_tag FROM assets WHERE lower(btrim(imei)) = lower(btrim($1::text))";
+  if (excludeId) {
+    sql += " AND id <> $2";
+    params.push(excludeId);
+  }
+  sql += " LIMIT 1";
+  const { rows } = await run(sql, params);
+  return rows[0] || null;
+}
+
+async function assertImeiAvailable(imei, opts = {}) {
+  const owner = await findImeiOwner(imei, opts);
+  if (!owner) return;
+  throw HttpError.conflict("This IMEI is already registered", {
+    code: "DUPLICATE_IMEI",
+    assetId: owner.id,
+    assetTag: owner.asset_tag,
+  });
+}
+
 function conflictFromUniqueViolation(err, data) {
   const hay = (String(err.constraint || "") + " " + String(err.detail || "")).toLowerCase();
+  if (hay.includes("imei")) {
+    throw HttpError.conflict("This IMEI is already registered", {
+      code: "DUPLICATE_IMEI",
+      imei: data.imei ?? null,
+      assetTag: data.asset_tag ?? null,
+    });
+  }
   if (hay.includes("serial")) {
     throw HttpError.conflict("This serial number is already registered", {
       code: "DUPLICATE_SERIAL",
@@ -49,6 +99,9 @@ function conflictFromUniqueViolation(err, data) {
 
 module.exports = {
   normalizeSerial,
+  normalizeImei,
+  assertImeiFormat,
   assertSerialAvailable,
+  assertImeiAvailable,
   conflictFromUniqueViolation,
 };

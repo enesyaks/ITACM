@@ -32,11 +32,16 @@ function needsMfaEnrollment(user) {
 /**
  * Paths Owners may hit while MFA is still off (relative to host, with /api prefix).
  * Anything else returns 403 MFA_ENROLLMENT_REQUIRED.
+ *
+ * `/api/auth/password` is included so recovery after `reset-password --clear-mfa`
+ * can finish the forced password change before MFA re-enrolment (UI order:
+ * temp password → new password → MFA setup).
  */
 function isMfaEnrollmentAllowedPath(originalUrl) {
   const path = String(originalUrl || '').split('?')[0];
   return (
-    path === '/api/auth/mfa'
+    path === '/api/auth/password'
+    || path === '/api/auth/mfa'
     || path === '/api/auth/mfa/setup'
     || path === '/api/auth/mfa/enable'
     || path === '/api/auth/logout'

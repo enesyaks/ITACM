@@ -27,20 +27,22 @@ const { isHrAllowedPath } = require('../utils/hrPolicy');
  * be wired into the JWT path alone and be silently skipped by API keys.
  */
 function applyPostAuthGates(req) {
-  // Owners without MFA may only hit enrollment / logout / verify-token.
+  // Forced password change first — matches the UI (temp password → new password
+  // → Owner MFA enrol). Otherwise --clear-mfa recovery blocks /api/auth/password
+  // behind MFA_ENROLLMENT_REQUIRED and the user cannot finish either step.
+  if (needsPasswordChange(req.user) && !isPasswordChangeAllowedPath(req.originalUrl)) {
+    throw HttpError.forbidden(
+      'You must set a new password before continuing',
+      { code: 'PASSWORD_CHANGE_REQUIRED' }
+    );
+  }
+
+  // Owners without MFA may only hit enrollment / logout / verify-token / password.
   // Service actors are exempt inside needsMfaEnrollment().
   if (needsMfaEnrollment(req.user) && !isMfaEnrollmentAllowedPath(req.originalUrl)) {
     throw HttpError.forbidden(
       'Owners must enable MFA before using the app',
       { code: 'MFA_ENROLLMENT_REQUIRED' }
-    );
-  }
-
-  // Users with a one-time/temp password must set a new one before normal API use.
-  if (needsPasswordChange(req.user) && !isPasswordChangeAllowedPath(req.originalUrl)) {
-    throw HttpError.forbidden(
-      'You must set a new password before continuing',
-      { code: 'PASSWORD_CHANGE_REQUIRED' }
     );
   }
 
