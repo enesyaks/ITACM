@@ -56,8 +56,13 @@ function applyPostAuthGates(req) {
     );
   }
 
-  // HR = confined to request APIs + self zimmet + filtered dashboard.
-  if (req.user.role === 'HR' && !isHrAllowedPath(req.originalUrl)) {
+  // HR = confined to request APIs + self zimmet + filtered dashboard — UNLESS an
+  // admin has deliberately placed the account in a permission group. A group is
+  // an explicit "govern this user by these permissions" choice (like Admin /
+  // Helpdesk / Viewer): the path confinement then lifts and every route's own
+  // requirePermission gate decides. The HR baseline (hr_request / dashboard)
+  // stays granted on top of the group, so the HR screens never disappear.
+  if (req.user.role === 'HR' && !req.user.permissionGroupId && !isHrAllowedPath(req.originalUrl)) {
     throw HttpError.forbidden(
       'HR accounts can only access onboarding/offboarding requests and their own zimmet',
       { code: 'HR_CONFINED' }

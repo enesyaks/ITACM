@@ -38,6 +38,13 @@ function isPortalUser() {
 function isHrUser() {
   return !!(Auth.profile && Auth.profile.role === 'HR');
 }
+// An HR account is UI-confined to the HR screens only while it has no permission
+// group. Once an admin places it in a group (to broaden it, e.g. + Employees),
+// the group's permissions drive the nav like any other role — the backend
+// enforces each route, and the HR screens stay available via the HR baseline.
+function isHrConfined() {
+  return isHrUser() && !(Auth.profile && Auth.profile.permissionGroupId);
+}
 const PORTAL_HASH = '#/zimmetlerim';
 const HR_HOME_HASH = '#/hr';
 const HR_ALLOWED_HASHES = new Set(['#/hr', '#/zimmetlerim']);
@@ -64,8 +71,8 @@ function renderNav() {
   $('#nav').innerHTML = Object.entries(ROUTES)
     .filter(([hash, r]) => {
       if (isPortalUser()) return hash === PORTAL_HASH;
-      if (isHrUser()) return HR_ALLOWED_HASHES.has(hash);
-      if (r.hrOnly) return false;
+      if (isHrConfined()) return HR_ALLOWED_HASHES.has(hash);
+      if (r.hrOnly) return isHrUser(); // HR screen: any HR account, grouped or not
       return !r.perm || Auth.can(r.perm);
     })
     .map(([hash, r]) =>
@@ -100,7 +107,7 @@ async function navigate() {
   const gen = bumpNavGen();
   // Support query params in the hash, e.g. #/assets?lifecycle=overdue
   const [rawHash, rawQuery] = location.hash.split('?');
-  const homeHash = isPortalUser() ? PORTAL_HASH : (isHrUser() ? HR_HOME_HASH : '#/dashboard');
+  const homeHash = isPortalUser() ? PORTAL_HASH : (isHrConfined() ? HR_HOME_HASH : '#/dashboard');
   const params = Object.fromEntries(new URLSearchParams(rawQuery || ''));
   const view = $('#view');
   const goHome = { label: t('error.goHome'), icon: 'home', primary: true, onClick: () => { location.hash = homeHash; } };
@@ -120,7 +127,7 @@ async function navigate() {
   const route = ROUTES[hash];
   // Portal accounts are confined to their own zimmet page.
   if (isPortalUser() && hash !== PORTAL_HASH) { location.hash = PORTAL_HASH; return; }
-  if (isHrUser() && !HR_ALLOWED_HASHES.has(hash)) { location.hash = HR_HOME_HASH; return; }
+  if (isHrConfined() && !HR_ALLOWED_HASHES.has(hash)) { location.hash = HR_HOME_HASH; return; }
   // Typing #/hr by hand must not work for IT either — approving happens on the
   // Dashboard, and this page is scoped to the people who file the tickets.
   if (route.hrOnly && !isHrUser()) { location.hash = homeHash; return; }

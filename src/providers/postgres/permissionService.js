@@ -65,9 +65,20 @@ function isOwner(user) {
  * @param {Object} [context] - İsteğe bağlı bağlam bilgisi { department, location, category, cost }
  * @returns {Promise<boolean>}
  */
+// The HR role's built-in access. It stays granted even after an admin assigns a
+// permission group to broaden an HR account (e.g. + employee:read), so the
+// onboarding/offboarding request screens never disappear from under the user.
+function isHrBaseline(resource, action) {
+  return (resource === 'hr_request' && (action === 'read' || action === 'create'))
+    || (resource === 'dashboard' && action === 'read');
+}
+
 async function checkPermission(user, resource, action, context = {}) {
   if (!user) return false;
   if (isOwner(user)) return true;
+
+  // HR baseline is additive — granted with or without a group.
+  if (user.role === 'HR' && isHrBaseline(resource, action)) return true;
 
   const groupId = user.permissionGroupId;
 
@@ -815,13 +826,24 @@ async function getUserPermissions(user) {
     [groupId]
   );
 
-  return rows.map(r => ({
+  const perms = rows.map(r => ({
     resource: r.resource,
     action: r.action,
     allowed: true,
     constraintType: r.constraint_type,
     constraintValue: r.constraint_value,
   }));
+
+  // Keep the HR baseline visible to the frontend (nav + screens) for a grouped
+  // HR account, mirroring the additive grant in checkPermission.
+  if (user.role === 'HR') {
+    const has = (res, act) => perms.some((p) => p.resource === res && p.action === act);
+    for (const [res, act] of [['hr_request', 'read'], ['hr_request', 'create'], ['dashboard', 'read']]) {
+      if (!has(res, act)) perms.push({ resource: res, action: act, allowed: true });
+    }
+  }
+
+  return perms;
 }
 
 function generateFallbackPermissions(user) {
