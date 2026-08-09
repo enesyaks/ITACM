@@ -44,17 +44,40 @@ Views.catalog = async function (el) {
       }).join('')}`;
 
   if (canCreate) {
+    // Existing brands per category — the brand field lists them so you reuse a
+    // known brand (no "Dell" vs "dell" duplicates) and only type a new one via
+    // "Other", which the POST below saves into the catalog for next time.
+    const brandsByCat = {};
+    items.forEach((c) => { (brandsByCat[c.category] = brandsByCat[c.category] || new Set()).add(c.brand); });
+    const brandOpts = (cat) => [...(brandsByCat[cat] || [])].sort((a, b) => a.localeCompare(b)).map((b) => ({ value: b, label: b }));
+    const otherLbl = t('cat.brandOther') || 'Other (type a new brand)…';
+
     $('#cat-new', el)?.addEventListener('click', () => formModal({
       title: t('cat.addModelTitle'),
       fields: [
         { name: 'category', label: t('cat.fCategory') + ' *', type: 'select', required: true, value: 'Laptop',
           options: ['Laptop', 'Desktop', 'Monitor', 'Television', 'Phone', 'Tablet', 'Printer', 'Network', 'Server', 'Keyboard', 'Mouse', 'Headset', 'Docking Station', 'Webcam', 'Peripheral', 'Accessory', 'Other'] },
-        { name: 'brand', label: t('cat.fBrand') + ' *', required: true },
+        { name: 'brand', label: t('cat.fBrand') + ' *', type: 'selectOther', required: true,
+          options: brandOpts('Laptop'), otherLabel: otherLbl, otherPlaceholder: t('cat.fBrand') },
         { name: 'model', label: t('cat.fModel') + ' *', required: true, full: true },
         { name: 'lifecycleMonths', label: t('cat.fLifecycle'), type: 'number', full: true,
           placeholder: t('cat.fLifecyclePh') },
       ],
       submitLabel: t('cat.addModelSubmit'),
+      onMount(overlay) {
+        const catSel = overlay.querySelector('select[name="category"]');
+        const brandSel = overlay.querySelector('select[data-select-other="brand"]');
+        const brandOther = overlay.querySelector('input[data-other-for="brand"]');
+        if (!catSel || !brandSel) return;
+        catSel.addEventListener('change', () => {
+          const opts = brandOpts(catSel.value);
+          brandSel.innerHTML = opts.map((o) => `<option value="${esc(o.value)}">${esc(o.label)}</option>`).join('')
+            + `<option value="__other__">${esc(otherLbl)}</option>`;
+          if (brandOther) brandOther.value = '';
+          // Re-sync the "other" text box visibility (formModal listens on change).
+          brandSel.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+      },
       async onSubmit(d) {
         await api('/catalog', { method: 'POST', body: d });
         toast(t('cat.addedToast').replace('{brand}', d.brand).replace('{model}', d.model), 'success');
@@ -99,7 +122,7 @@ Views.catalog = async function (el) {
             <td><div style="display:flex;align-items:center;gap:10px"><span class="ms" style="color:var(--on-surface-variant)">location_on</span>
               <span class="cell-title">${esc(l)}</span></div></td>
             <td>${locData.defaultLocation === l
-              ? '<span class="pill pill-indigo">Default</span>'
+              ? `<span class="pill pill-indigo">Default</span>${canEdit ? ` <button class="btn btn-outline btn-sm" data-cleardef="1" title="${esc(t('common.clear') || 'Clear')}"><span class="ms ms-sm">close</span></button>` : ''}`
               : (canEdit ? `<button class="btn btn-outline btn-sm" data-setdef="${esc(l)}">Set default</button>` : '—')}</td>
             <td class="actions">${canEdit ? `<button class="btn btn-outline btn-sm" data-delloc="${esc(l)}">Delete</button>` : ''}</td>
           </tr>`).join('')}
@@ -303,11 +326,41 @@ Views.catalog = async function (el) {
         AppConfig.defaultLocation = r.defaultLocation;
         toast(`Default location set to ${b.dataset.setdef}`, 'success');
         Views.catalog(el);
-      } else if (b.dataset.deldept) {
-        const r = await api('/catalog/departments/' + encodeURIComponent(b.dataset.deldept), { method: 'DELETE' });
-        AppConfig.departments = r;
-        toast(`Department "${b.dataset.deldept}" removed`, 'success');
+      } else if (b.dataset.cleardef) {
+        const r = await api('/catalog/locations/default', { method: 'PUT', body: { name: null } });
+        AppConfig.defaultLocation = r.defaultLocation;
+        toast(t('catalog.defaultCleared') || 'Default location cleared', 'success');
         Views.catalog(el);
+      } else if (b.dataset.deldept) {
+        const name = b.dataset.deldept;
+        // How many employees are in this department? If any, offer to move them.
+        let empTotal = 0;
+        try {
+          const res = await api('/employees?department=' + encodeURIComponent(name) + '&limit=1');
+          empTotal = res.total ?? (res.items ? res.items.length : 0);
+        } catch { /* fall through — backend still guards */ }
+        const others = (AppConfig.departments || []).filter((d) => d !== name);
+        formModal({
+          title: 'catalog.delDeptTitle',
+          submitLabel: 'common.delete',
+          fields: [
+            { type: 'html', full: true, html: `<p class="cell-sub">${esc((t('catalog.delDeptConfirm') || 'Delete department “{name}”?').replace('{name}', name))}</p>` },
+            ...(empTotal > 0 ? [
+              { type: 'html', full: true, html: `<div class="banner banner-amber">${esc((t('catalog.delDeptEmp') || '{n} employee(s) are in this department — choose where to move them.').replace('{n}', empTotal))}</div>` },
+              { name: 'reassignTo', label: t('catalog.delDeptMoveTo'), type: 'select', required: true, options: others.map((d) => ({ value: d, label: d })) },
+            ] : []),
+          ],
+          async onSubmit(d) {
+            const r = await api('/catalog/departments/' + encodeURIComponent(name), {
+              method: 'DELETE',
+              body: empTotal > 0 ? { reassignTo: d.reassignTo } : undefined,
+            });
+            AppConfig.departments = r;
+            toast(`Department "${name}" removed`, 'success');
+            Views.catalog(el);
+          },
+        });
+        return;
       } else if (b.dataset.delpcat) {
         const r = await api('/catalog/provider-categories/' + encodeURIComponent(b.dataset.delpcat), { method: 'DELETE' });
         AppConfig.providerCategories = r;

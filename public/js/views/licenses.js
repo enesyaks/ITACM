@@ -219,14 +219,30 @@ Views.licenses = async function (el) {
 
     if (b.dataset.cancelLic && canEdit) {
       const l = lic(b.dataset.cancelLic);
+      const assigned = Number(l.assignedUsers) || 0;
       formModal({
         title: (t('lic.f.cancelTitle') || 'Cancel {name}').replace('{name}', l.softwareName),
         fields: [
+          ...(assigned > 0 ? [
+            { type: 'html', full: true, html:
+              `<div class="banner banner-amber">${esc((t('lic.cancelAssignedWarn') || '{n} user(s) currently hold this license.').replace('{n}', assigned))}</div>` },
+            { name: 'revokeFirst', type: 'checkbox', full: true, value: true, label: 'lic.cancelRevokeFirst' },
+          ] : []),
           { name: 'note', label: t('lic.cancelReason'), full: true,
             placeholder: t('lic.cancelReasonPh') },
         ],
         submitLabel: t('lic.markCancelled'),
         async onSubmit(d) {
+          // Optionally free the seats first, so cancelling doesn't leave the
+          // license "held" by users who can no longer use it.
+          if (assigned > 0 && d.revokeFirst) {
+            const holders = await api(`/licenses/${l.id}/assignments`).catch(() => []);
+            for (const a of (Array.isArray(holders) ? holders : [])) {
+              if (a && a.id && !a.revokedAt) {
+                await api(`/licenses/assignments/${a.id}/revoke`, { method: 'POST' }).catch(() => {});
+              }
+            }
+          }
           await api(`/licenses/${l.id}/cancel`, { method: 'POST', body: { note: d.note || '' } });
           toast((t('lic.cancelledToast') || '{name} cancelled').replace('{name}', l.softwareName), 'success');
           Views.licenses(el);

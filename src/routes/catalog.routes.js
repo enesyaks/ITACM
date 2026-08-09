@@ -1,7 +1,7 @@
 const router = require('express').Router();
 const { authenticate, requireRole, requirePermission } = require('../middleware/auth');
 const { asyncHandler } = require('../utils/asyncHandler');
-const { catalogService, settingsService, orgService } = require('../services');
+const { catalogService, settingsService, orgService, providerService } = require('../services');
 const { HttpError } = require('../utils/httpError');
 
 router.use(authenticate);
@@ -134,17 +134,33 @@ router.post('/departments', requirePermission('catalog', 'create'), asyncHandler
 
 /** DELETE /api/catalog/departments/:name — remove a department. İzin: catalog:delete */
 router.delete('/departments/:name', requirePermission('catalog', 'delete'), asyncHandler(async (req, res) => {
-  const names = await orgService.removeDepartment(req.params.name);
+  const names = await orgService.removeDepartment(req.params.name, { reassignTo: (req.body || {}).reassignTo });
   res.json({ success: true, data: names });
 }));
 
 /* ---- Provider / contract categories (Providers & Contracts forms) ---- */
 
-function listCrud(key, label) {
+// `usedKey` ('provider'|'contract') unions the stored list with categories that
+// records actually use, so deleting one that is still in use self-heals: it
+// reappears in the list until nothing references it any more.
+async function effectiveCategoryList(key, usedKey) {
+  const s = await settingsService.getSettings();
+  const stored = Array.isArray(s[key]) ? s[key] : [];
+  if (!usedKey) return stored;
+  let inUse = [];
+  try { inUse = (await providerService.categoriesInUse())[usedKey] || []; } catch { /* keep stored */ }
+  const seen = new Set(stored.map((x) => String(x).toLowerCase()));
+  const merged = [...stored];
+  for (const u of inUse) {
+    if (u && !seen.has(String(u).toLowerCase())) { merged.push(u); seen.add(String(u).toLowerCase()); }
+  }
+  return merged;
+}
+
+function listCrud(key, label, usedKey) {
   return {
     async get(_req, res) {
-      const s = await settingsService.getSettings();
-      res.json({ success: true, data: s[key] });
+      res.json({ success: true, data: await effectiveCategoryList(key, usedKey) });
     },
     async post(req, res) {
       const name = String((req.body || {}).name || '').trim();
@@ -167,8 +183,8 @@ function listCrud(key, label) {
   };
 }
 
-const providerCats = listCrud('providerCategories', 'Provider category');
-const contractCats = listCrud('contractCategories', 'Contract category');
+const providerCats = listCrud('providerCategories', 'Provider category', 'provider');
+const contractCats = listCrud('contractCategories', 'Contract category', 'contract');
 
 router.get('/provider-categories', requirePermission('catalog', 'read'), asyncHandler(providerCats.get));
 router.post('/provider-categories', requirePermission('catalog', 'create'), asyncHandler(providerCats.post));

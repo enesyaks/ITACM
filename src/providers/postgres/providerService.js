@@ -678,6 +678,22 @@ async function summary({ user } = {}) {
   };
 }
 
+/**
+ * Distinct provider/contract categories that are actually in use. The managed
+ * category lists (app_settings) are UNIONed with these so a category can never
+ * silently vanish from the dropdowns while a record still uses it.
+ */
+async function categoriesInUse() {
+  const [p, c] = await Promise.all([
+    query("SELECT DISTINCT category FROM providers WHERE category IS NOT NULL AND btrim(category) <> ''"),
+    query("SELECT DISTINCT category FROM contracts WHERE category IS NOT NULL AND btrim(category) <> ''"),
+  ]);
+  return {
+    provider: p.rows.map((r) => r.category),
+    contract: c.rows.map((r) => r.category),
+  };
+}
+
 module.exports = {
   listProviders,
   getProvider,
@@ -689,5 +705,6 @@ module.exports = {
   createContract,
   updateContract,
   deleteContract,
+  categoriesInUse,
   summary,
 };

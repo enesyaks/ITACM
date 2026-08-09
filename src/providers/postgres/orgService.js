@@ -32,7 +32,7 @@ async function addDepartment(name) {
 }
 
 /** Delete by name. Refuses if any team or employee still references it. */
-async function removeDepartment(name) {
+async function removeDepartment(name, { reassignTo } = {}) {
   const clean = String(name || '').trim();
   const { rows } = await query('SELECT id FROM departments WHERE name = $1', [clean]);
   if (!rows[0]) throw HttpError.notFound(`Department "${clean}" not found`);
@@ -41,12 +41,23 @@ async function removeDepartment(name) {
   if (teamCount.rows[0].n > 0) {
     throw HttpError.badRequest('Remove or move the teams in this department first');
   }
-  const empCount = await query('SELECT COUNT(*)::int AS n FROM employees WHERE department = $1', [clean]);
-  if (empCount.rows[0].n > 0) {
-    throw HttpError.badRequest(`${empCount.rows[0].n} employee(s) are still in "${clean}" — reassign them first`);
-  }
   const total = await query('SELECT COUNT(*)::int AS n FROM departments');
   if (total.rows[0].n <= 1) throw HttpError.badRequest('At least one department must remain');
+
+  const empCount = await query('SELECT COUNT(*)::int AS n FROM employees WHERE department = $1', [clean]);
+  if (empCount.rows[0].n > 0) {
+    // Move the employees to another department first when the caller picked one;
+    // otherwise refuse (keeps the old behaviour for callers that don't).
+    const target = String(reassignTo || '').trim();
+    if (!target) {
+      throw HttpError.badRequest(`${empCount.rows[0].n} employee(s) are still in "${clean}" — reassign them first`);
+    }
+    if (target === clean) throw HttpError.badRequest('Pick a different department to move employees to');
+    const dest = await query('SELECT 1 FROM departments WHERE name = $1', [target]);
+    if (!dest.rows[0]) throw HttpError.badRequest(`Target department "${target}" not found`);
+    await query('UPDATE employees SET department = $2 WHERE department = $1', [clean, target]);
+  }
+
   await query('DELETE FROM departments WHERE id = $1', [deptId]);
   return listDepartmentNames();
 }

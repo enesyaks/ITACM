@@ -361,6 +361,15 @@ async function main() {
     }
     console.log(`[seed] IT users: Admin/Helpdesk/Viewer/HR + ${portalEmps.length} Portal (password ${DEMO_PASSWORD})`);
 
+    // Purchase cost per category so the depreciation / book-value report has
+    // real numbers to work with (assets without a cost show no book value).
+    const COST_RANGE = {
+      Laptop: [18000, 48000], Desktop: [12000, 32000], Monitor: [2500, 9000],
+      Phone: [15000, 65000], Tablet: [8000, 28000], Server: [90000, 350000],
+      Network: [8000, 140000], Printer: [4000, 22000], Television: [10000, 40000],
+    };
+    const costFor = (cat) => { const r = COST_RANGE[cat] || [3000, 15000]; return money(r[0], r[1]); };
+
     let tagNo = 1000;
     let snSeq = 1;
     const assetRows = [];
@@ -369,6 +378,7 @@ async function main() {
         const [brand, models] = pick(def.brands);
         const bought = daysAgo(rnd(1800) + 20);
         const tag = `${TAG_PREFIX}-${pad(tagNo++)}`;
+        const cost = costFor(cat);
         assetRows.push({
           asset_tag: tag,
           serial_number: `${def.sn}-DEMO-${pad(snSeq++, 6)}`,
@@ -380,13 +390,15 @@ async function main() {
           warranty_end_date: chance(0.75) ? addDays(bought, 365 * (1 + rnd(3))) : null,
           qr_code_string: `ITACPRO|ASSET|${tag}`,
           created_at: bought, purchase_date: bought,
+          cost,
+          salvage_value: chance(0.3) ? Math.round(cost * 0.1) : null,
           location: pick(DEFAULT_LOCATIONS), notes: 'SEED demo asset',
         });
       }
     }
     const assetIds = await insertMany(t, 'assets',
       ['asset_tag', 'serial_number', 'brand', 'model', 'category', 'mac_ethernet', 'mac_wifi', 'specs',
-        'status', 'warranty_end_date', 'qr_code_string', 'created_at', 'purchase_date', 'location', 'notes'],
+        'status', 'warranty_end_date', 'qr_code_string', 'created_at', 'purchase_date', 'cost', 'salvage_value', 'location', 'notes'],
       assetRows, 'id');
     assetRows.forEach((a, i) => { a.id = assetIds[i].id; });
     console.log(`[seed] ${assetRows.length} assets`);
