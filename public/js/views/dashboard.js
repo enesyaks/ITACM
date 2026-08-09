@@ -310,13 +310,13 @@ Views.dashboard = async function (el) {
     if (e.target.closest('#dist-card')) { showLocationBreakdown(); return; }
     if (e.target.closest('[data-open-onboard-due]')) {
       if (typeof openOnboardingDueModal === 'function') {
-        openOnboardingDueModal({ force: true }).catch((err) => toast(err.message, 'error'));
+        openOnboardingDueModal({ force: true, onDone: () => Views.dashboard(el) }).catch((err) => toast(err.message, 'error'));
       }
       return;
     }
     const ob = e.target.closest('[data-open-onboard]');
     if (ob && typeof openOnboardingDueModal === 'function') {
-      openOnboardingDueModal({ force: true, focusId: ob.dataset.openOnboard }).catch((err) => toast(err.message, 'error'));
+      openOnboardingDueModal({ force: true, focusId: ob.dataset.openOnboard, onDone: () => Views.dashboard(el) }).catch((err) => toast(err.message, 'error'));
       return;
     }
     const hrRow = e.target.closest('[data-hr-detail]');

@@ -353,8 +353,9 @@ function hrRequestPanel(hrRequest, reservedItems) {
     : ''}`;
 }
 
-async function openOnboardingDueModal({ force = false, focusId = null } = {}) {
+async function openOnboardingDueModal({ force = false, focusId = null, onDone = null } = {}) {
   if (!Auth.canIamOp('onboarding', 'read') && !Auth.canIam('handover', 'create')) return;
+  const canCancelOnboard = Auth.canIamOp('onboarding', 'update');
   const key = onboardModalStorageKey();
   if (!force && localStorage.getItem(key) === '1') return;
 
@@ -478,6 +479,7 @@ async function openOnboardingDueModal({ force = false, focusId = null } = {}) {
     body: `<div id="obn-due-body"></div>`,
     foot: `
       <button class="btn btn-outline" id="obn-due-later">${esc(t('emp.onboardRemindLater'))}</button>
+      ${canCancelOnboard ? `<button class="btn btn-outline" id="obn-due-cancel"><span class="ms">cancel</span> ${esc(t('emp.onboardCancel'))}</button>` : ''}
       <button class="btn btn-outline" id="obn-due-email"><span class="ms">mail</span> ${esc(t('emp.onboardSendEmail'))}</button>
       <button class="btn btn-outline" id="obn-due-add"><span class="ms">add</span> ${esc(t('emp.onboardAddDevices'))}</button>
       <button class="btn btn-primary" id="obn-due-complete"><span class="ms">print</span> ${esc(t('emp.onboardComplete'))}</button>`,
@@ -599,6 +601,7 @@ async function openOnboardingDueModal({ force = false, focusId = null } = {}) {
           toast(t('emp.onboardCompleted'), 'success');
           closeModal();
           refreshOnboardingBell().catch(() => {});
+          if (typeof onDone === 'function') { try { onDone(); } catch { /* ignore */ } }
           const handoverId = res?.handover?.handoverId || res?.handover?.id;
           if (handoverId && typeof printHandover === 'function') {
             try {
@@ -614,6 +617,27 @@ async function openOnboardingDueModal({ force = false, focusId = null } = {}) {
           } else toast(e.message || String(e), 'error');
         }
       });
+
+      // Cancel onboarding: releases reserved devices back to stock. Styled
+      // confirmation (not a browser dialog).
+      const cancelBtn = $('#obn-due-cancel', overlay);
+      if (cancelBtn) {
+        cancelBtn.addEventListener('click', () => {
+          formModal({
+            title: 'emp.onboardCancel',
+            submitLabel: 'emp.onboardCancel',
+            stack: true,
+            fields: [{ type: 'html', full: true, html: `<p class="cell-sub">${esc(t('emp.onboardCancelConfirm'))}</p>` }],
+            async onSubmit() {
+              await api(`/onboardings/${encodeURIComponent(detail.id)}/cancel`, { method: 'POST', body: {} });
+              toast(t('emp.onboardCancelled'), 'success');
+              closeModal();
+              refreshOnboardingBell().catch(() => {});
+              if (typeof onDone === 'function') { try { onDone(); } catch { /* ignore */ } }
+            },
+          });
+        });
+      }
     },
   });
 }

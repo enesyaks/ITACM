@@ -163,21 +163,24 @@ Views.hr = async function (el) {
   }
 
   el.querySelectorAll('[data-cancel]').forEach((b) => {
-    b.addEventListener('click', async () => {
-      const reason = prompt(t('hr.cancelReason'), '');
-      if (reason === null) return;
-      b.disabled = true;
-      try {
-        await api('/hr/requests/' + encodeURIComponent(b.dataset.cancel) + '/cancel', {
-          method: 'POST',
-          body: { reason: reason },
-        });
-        toast(t('hr.cancelOk'), 'success');
-        Views.hr(el);
-      } catch (e) {
-        b.disabled = false;
-        toast(e.message, 'error');
-      }
+    b.addEventListener('click', () => {
+      const id = b.dataset.cancel;
+      // Styled in-app modal instead of the browser's native prompt().
+      formModal({
+        title: 'hr.cancelTitle',
+        submitLabel: 'hr.cancel',
+        fields: [
+          { name: 'reason', label: 'hr.cancelReason', type: 'textarea', full: true, placeholder: t('hr.cancelReasonPh') },
+        ],
+        async onSubmit(d) {
+          await api('/hr/requests/' + encodeURIComponent(id) + '/cancel', {
+            method: 'POST',
+            body: { reason: (d.reason || '').trim() },
+          });
+          toast(t('hr.cancelOk'), 'success');
+          Views.hr(el);
+        },
+      });
     });
   });
 
