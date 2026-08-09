@@ -119,7 +119,17 @@ async function api(path, { method = 'GET', body } = {}) {
   let json = {};
   try { json = await res.json(); } catch { /* non-JSON */ }
 
-  if (res.status === 401 && !path.startsWith('/auth/login')) {
+  // A 401 normally means the session expired → clear it and bounce to login.
+  // BUT the credential-verification endpoints below return 401 for a wrong
+  // password/MFA code, which is NOT a session problem. Auto-logging out there
+  // dumped the user on the login screen instead of showing "wrong code" — e.g.
+  // a failed "disable MFA" attempt looked like a logout. Let the caller show the
+  // error; a genuinely expired session still surfaces on the next request.
+  const credentialCheck401 = [
+    '/auth/login', '/auth/mfa/verify', '/auth/mfa/disable',
+    '/auth/mfa/enable', '/auth/mfa/setup', '/auth/password',
+  ].some((p) => path.startsWith(p));
+  if (res.status === 401 && !credentialCheck401) {
     Auth.clear();
     window.dispatchEvent(new Event('itacm:logout'));
     throw new ApiError(401, json.error || 'Session expired');
