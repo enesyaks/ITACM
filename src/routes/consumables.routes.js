@@ -20,4 +20,14 @@ router.post('/:id/stock', requirePermission('consumable', 'update'), asyncHandle
   res.json({ success: true, data: await consumableService.adjustStock(req.params.id, req.body.delta) });
 }));
 
+/** PATCH /api/consumables/:id — edit name / min-alert / absolute stock. İzin: consumable:update */
+router.patch('/:id', requirePermission('consumable', 'update'), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await consumableService.updateConsumable(req.params.id, req.body || {}) });
+}));
+
+/** DELETE /api/consumables/:id — remove an item. İzin: consumable:delete */
+router.delete('/:id', requirePermission('consumable', 'delete'), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await consumableService.deleteConsumable(req.params.id) });
+}));
+
 module.exports = router;

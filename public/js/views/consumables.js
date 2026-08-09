@@ -1,6 +1,7 @@
 Views.consumables = async function (el) {
   const canCreate = Auth.canIam('consumable', 'create') || Auth.canIam('consumable', 'manage');
   const canUpdate = Auth.canIam('consumable', 'update') || Auth.canIam('consumable', 'manage');
+  const canDelete = Auth.canIam('consumable', 'delete') || Auth.canIam('consumable', 'manage');
   const items = await api('/consumables');
 
   el.innerHTML = `
@@ -20,7 +21,9 @@ Views.consumables = async function (el) {
             <td class="actions">${canUpdate ? `
               <button class="btn btn-outline btn-sm" data-stock="${esc(c.id)}" data-delta="-1">−1</button>
               <button class="btn btn-outline btn-sm" data-stock="${esc(c.id)}" data-delta="1">+1</button>
-              <button class="btn btn-outline btn-sm" data-adjust="${esc(c.id)}">${esc(t('con.adjust'))}</button>` : ''}</td>
+              <button class="btn btn-outline btn-sm" data-adjust="${esc(c.id)}">${esc(t('con.adjust'))}</button>
+              <button class="btn btn-outline btn-sm" data-edit="${esc(c.id)}" title="${esc(t('common.edit'))}"><span class="ms">edit</span></button>` : ''}${canDelete ? `
+              <button class="btn btn-outline btn-sm" data-del="${esc(c.id)}" title="${esc(t('common.delete'))}"><span class="ms">delete</span></button>` : ''}</td>
           </tr>`).join('')}
       </tbody>
     </table></div></div>`;
@@ -40,9 +43,49 @@ Views.consumables = async function (el) {
       },
     }));
   }
-  if (canUpdate) {
+  if (canUpdate || canDelete) {
     bindView(el, async (e) => {
       const b = e.target.closest('button'); if (!b) return;
+      if (b.dataset.edit) {
+        const c = items.find((x) => x.id === b.dataset.edit);
+        if (!c) return;
+        formModal({
+          title: 'con.editTitle',
+          fields: [
+            { name: 'itemName', label: `${t('con.itemName')} *`, required: true, full: true, value: c.itemName },
+            { name: 'totalStock', label: t('con.colStock'), type: 'number', value: c.totalStock },
+            { name: 'minimumStockAlertLevel', label: t('con.minAlert'), type: 'number', value: c.minimumStockAlertLevel },
+          ],
+          async onSubmit(d) {
+            await api(`/consumables/${c.id}`, {
+              method: 'PATCH',
+              body: {
+                itemName: d.itemName,
+                totalStock: Number(d.totalStock),
+                minimumStockAlertLevel: Number(d.minimumStockAlertLevel),
+              },
+            });
+            toast(t('con.updated'), 'success');
+            Views.consumables(el);
+          },
+        });
+        return;
+      }
+      if (b.dataset.del) {
+        const c = items.find((x) => x.id === b.dataset.del);
+        if (!c) return;
+        formModal({
+          title: 'common.delete',
+          submitLabel: 'common.delete',
+          fields: [{ type: 'html', full: true, html: `<p class="cell-sub">${esc((t('con.deleteConfirm') || 'Delete “{name}”?').replace('{name}', c.itemName))}</p>` }],
+          async onSubmit() {
+            await api(`/consumables/${c.id}`, { method: 'DELETE' });
+            toast(t('con.deleted'), 'success');
+            Views.consumables(el);
+          },
+        });
+        return;
+      }
       if (b.dataset.stock) {
         try {
           const r = await api(`/consumables/${b.dataset.stock}/stock`, { method: 'POST', body: { delta: Number(b.dataset.delta) } });

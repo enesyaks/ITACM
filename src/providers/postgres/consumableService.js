@@ -50,4 +50,47 @@ async function adjustStock(consumableId, delta) {
   });
 }
 
-module.exports = { listConsumables, createConsumable, adjustStock };
+/** Edit an item's name, minimum-alert level, and/or set its absolute stock. */
+async function updateConsumable(consumableId, body = {}) {
+  if (!isUuid(consumableId)) throw HttpError.notFound(`Consumable ${consumableId} not found`);
+  const set = [];
+  const params = [consumableId];
+  if (body.itemName !== undefined) {
+    const name = String(body.itemName || '').trim();
+    if (!name) throw HttpError.badRequest('itemName cannot be empty');
+    params.push(name); set.push(`item_name = $${params.length}`);
+  }
+  if (body.minimumStockAlertLevel !== undefined) {
+    const min = Number(body.minimumStockAlertLevel);
+    if (!Number.isInteger(min) || min < 0) throw HttpError.badRequest('minimumStockAlertLevel must be a non-negative integer');
+    params.push(min); set.push(`minimum_stock_alert_level = $${params.length}`);
+  }
+  if (body.totalStock !== undefined) {
+    const total = Number(body.totalStock);
+    if (!Number.isInteger(total) || total < 0) throw HttpError.badRequest('totalStock must be a non-negative integer');
+    params.push(total); set.push(`total_stock = $${params.length}`);
+  }
+  if (!set.length) throw HttpError.badRequest('No updatable fields provided');
+
+  const { rows } = await query(
+    `UPDATE consumables SET ${set.join(', ')} WHERE id = $1
+     RETURNING id, item_name AS "itemName", total_stock AS "totalStock",
+               minimum_stock_alert_level AS "minimumStockAlertLevel"`,
+    params
+  );
+  if (!rows[0]) throw HttpError.notFound(`Consumable ${consumableId} not found`);
+  rows[0].lowStock = rows[0].totalStock <= rows[0].minimumStockAlertLevel;
+  return rows[0];
+}
+
+async function deleteConsumable(consumableId) {
+  if (!isUuid(consumableId)) throw HttpError.notFound(`Consumable ${consumableId} not found`);
+  const { rows } = await query(
+    'DELETE FROM consumables WHERE id = $1 RETURNING id, item_name AS "itemName"',
+    [consumableId]
+  );
+  if (!rows[0]) throw HttpError.notFound(`Consumable ${consumableId} not found`);
+  return { ...rows[0], deleted: true };
+}
+
+module.exports = { listConsumables, createConsumable, adjustStock, updateConsumable, deleteConsumable };
