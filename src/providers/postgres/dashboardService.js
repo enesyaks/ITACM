@@ -98,7 +98,7 @@ function mapOnboardingRow(r) {
   };
 }
 
-async function getDashboardStats() {
+async function getDashboardStats(user) {
   const hrCountsP = (async () => {
     try {
       return await require('./hrRequestService').pendingCounts();
@@ -177,6 +177,15 @@ async function getDashboardStats() {
     )
     .slice(0, 5);
 
+  // The dashboard aggregates across domains but is gated only by dashboard:read.
+  // Scope the two genuinely sensitive payloads to the caller's finer permissions
+  // so a hand-crafted group with dashboard:read (but not handover:read /
+  // financial access) can't see handover names or fleet financials through it.
+  // Summary COUNTS stay — that is what a dashboard is for.
+  const permissionService = require('./permissionService');
+  const canSeeHandovers = user ? await permissionService.checkPermission(user, 'handover', 'read') : true;
+  const canSeeFinancials = user ? await permissionService.checkPermission(user, 'asset', 'view_confidential') : true;
+
   return {
     assets: {
       total,
@@ -187,7 +196,7 @@ async function getDashboardStats() {
       reserved: byStatus.Reserved || 0,
       sold: byStatus.Sold || 0,
     },
-    fleetValue: eol.fleet,
+    fleetValue: canSeeFinancials ? eol.fleet : null,
     alerts: {
       lowStockConsumables,
       lowStockCount: lowStockConsumables.length,
@@ -206,7 +215,7 @@ async function getDashboardStats() {
       hrOffboardPending: (hrCounts && hrCounts.hrOffboardPending) || 0,
     },
     locationDistribution: locDist.rows.map((r) => ({ location: r.loc, count: r.n })),
-    recentHandovers,
+    recentHandovers: canSeeHandovers ? recentHandovers : [],
     generatedAt: new Date().toISOString(),
   };
 }

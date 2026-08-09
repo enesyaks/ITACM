@@ -9,7 +9,7 @@ router.get(
   authenticate,
   requirePermission('dashboard', 'read'),
   asyncHandler(async (req, res) => {
-    res.json({ success: true, data: await dashboardService.getDashboardStats() });
+    res.json({ success: true, data: await dashboardService.getDashboardStats(req.user) });
   })
 );
 
