@@ -1886,6 +1886,7 @@ async function showAssetDetail(id, onChange) {
       ${canUpdate ? `<button class="btn btn-outline" id="ad-edit"><span class="ms">edit</span> ${esc(t('common.edit'))}</button>` : ''}
       ${canCreate ? `<button class="btn btn-outline" id="ad-duplicate"><span class="ms">content_copy</span> ${esc(t('common.duplicate'))}</button>` : ''}
       ${canUnassign && !isInfra && x.status === 'Assigned' ? `<button class="btn btn-outline" id="ad-return"><span class="ms">undo</span> ${esc(t('common.return'))}</button>` : ''}
+      ${canUpdate && !isInfra && (x.status === 'In Stock' || x.status === 'Assigned') ? `<button class="btn btn-outline" id="ad-sell"><span class="ms">sell</span> ${esc(t('hw.d.sell'))}</button>` : ''}
       ${canRepair && (x.status === 'In Stock' || x.status === 'Assigned') ? `<button class="btn btn-primary" id="ad-repair"><span class="ms">build</span> ${esc(t('common.repair'))}</button>` : ''}
       ${canUpdate && isInfra
         ? `<button class="btn btn-primary" id="ad-responsible"><span class="ms">person_search</span> ${esc(t('network.setResponsible') || 'Set responsible')}</button>`
@@ -1970,6 +1971,38 @@ async function showAssetDetail(id, onChange) {
         async onSubmit(d) {
           await api('/maintenance', { method: 'POST', body: { ...d, assetId: x.id } });
           toast(`${x.assetTag} sent to repair`, 'success');
+          refresh();
+          showAssetDetail(id, onChange);
+        },
+      }));
+      // Sell → status Sold (+ sale note). Backend clears an existing assignment
+      // and routes through the approval workflow when the sale policy requires it.
+      const adSell = $('#ad-sell', overlay);
+      if (adSell) adSell.addEventListener('click', () => formModal({
+        title: 'hw.sellTitle',
+        fields: [
+          ...(x.status === 'Assigned'
+            ? [{ type: 'html', full: true, html: `<p class="cell-sub">${esc(t('hw.sellHintAssigned'))}</p>` }]
+            : []),
+          { name: 'buyer', label: t('hw.saleBuyer'), full: true },
+          { name: 'price', label: t('hw.salePrice') },
+          { name: 'date', label: t('hw.saleDate'), type: 'date' },
+          { name: 'note', label: t('hw.saleNote'), type: 'textarea', full: true },
+        ],
+        submitLabel: 'hw.d.sell',
+        async onSubmit(d) {
+          const sale = {
+            buyer: (d.buyer || '').trim(),
+            price: (d.price || '').trim(),
+            date: d.date || '',
+            note: (d.note || '').trim(),
+          };
+          const result = await api(`/assets/${x.id}`, { method: 'PUT', body: { status: 'Sold', sale } });
+          if (result && result.pendingApproval) {
+            toast(t('hw.soldPending'), 'success');
+          } else {
+            toast(t('hw.soldOk'), 'success');
+          }
           refresh();
           showAssetDetail(id, onChange);
         },
