@@ -37,7 +37,10 @@ Views.network = async function (el, params = {}) {
   // When Unplaced is selected alone (or with real sites), fetch all locations and filter client-side.
   // Only push location to API when Unplaced is NOT part of the selection.
   if (apiLocs.length && !selectedLocs.includes(UNPLACED_LOC)) q.set('location', apiLocs.join(','));
-  if (params.search) q.set('search', params.search);
+  // Text search is applied client-side (see computeItems) so typing repaints
+  // only the list — a server round-trip via the hash rebuilt the search input
+  // and dropped the mobile keyboard on every keystroke. All infra is already
+  // loaded (limit 2000), so client-side matching is complete.
   if (selectedRoles.length) q.set('infraRole', selectedRoles.join(','));
 
   const [{ items: raw }, empsRes] = await Promise.all([
@@ -52,28 +55,45 @@ Views.network = async function (el, params = {}) {
   const validOwnerIds = new Set(ownerOptions.map((o) => o.value));
   const selectedOwners = csvList(params.responsible).filter((id) => validOwnerIds.has(id));
 
-  let items = assetItems;
-  items = filterByLocation(items, selectedLocs);
-  items = filterByOwner(items, selectedOwners);
-
-  if (params.alert === 'eol') {
-    items = items.filter((x) => lifecycleInfo(x).overdue && x.status !== 'Scrap');
-  } else if (params.alert === 'eolSoon') {
-    items = items.filter((x) => {
-      const l = lifecycleInfo(x);
-      return !l.overdue && l.pct != null && l.pct >= 90 && x.status !== 'Scrap';
-    });
-  } else if (params.alert === 'licSoon') {
-    items = items.filter((x) => assetLicenses(x).some((l) => {
-      const exp = licenseExpInfo(l);
-      return exp && exp.days <= 60;
-    }));
-  } else if (params.alert === 'warrantySoon') {
-    items = items.filter((x) => {
-      const w = dateDaysInfo(x.warrantyEndDate);
-      return w && w.days <= 90;
-    });
+  // Whole-word-ish substring match over the same fields the server search covers,
+  // so the client-side search behaves like the old server one for infra devices.
+  const matchesText = (x, term) => {
+    if (!term) return true;
+    const fields = [
+      x.assetTag, x.serialNumber, x.imei, x.imei2, x.brand, x.model,
+      x.macEthernet, x.macWifi, x.mgmtIp, x.rack, x.infraRole,
+      x.specs && x.specs.hostname, x.specs && x.specs.ipAddress,
+    ];
+    return fields.some((v) => v && String(v).toLowerCase().includes(term));
+  };
+  // Derive the visible list from the loaded infra set + the active filters and
+  // the (client-side) text search. Re-runnable so a search can repaint in place.
+  function computeItems() {
+    let list = filterByLocation(assetItems, selectedLocs);
+    list = filterByOwner(list, selectedOwners);
+    if (params.alert === 'eol') {
+      list = list.filter((x) => lifecycleInfo(x).overdue && x.status !== 'Scrap');
+    } else if (params.alert === 'eolSoon') {
+      list = list.filter((x) => {
+        const l = lifecycleInfo(x);
+        return !l.overdue && l.pct != null && l.pct >= 90 && x.status !== 'Scrap';
+      });
+    } else if (params.alert === 'licSoon') {
+      list = list.filter((x) => assetLicenses(x).some((l) => {
+        const exp = licenseExpInfo(l);
+        return exp && exp.days <= 60;
+      }));
+    } else if (params.alert === 'warrantySoon') {
+      list = list.filter((x) => {
+        const w = dateDaysInfo(x.warrantyEndDate);
+        return w && w.days <= 90;
+      });
+    }
+    const term = String(params.search || '').trim().toLowerCase();
+    if (term) list = list.filter((x) => matchesText(x, term));
+    return list;
   }
+  let items = computeItems();
 
   const pastEol = assetItems.filter((x) => lifecycleInfo(x).overdue && x.status !== 'Scrap').length;
   const warrantySoon = assetItems.filter((x) => {
@@ -94,23 +114,26 @@ Views.network = async function (el, params = {}) {
     ? { label: t('network.unracked'), value: unracked, icon: 'view_column', tone: unracked ? 'amber' : 'emerald' }
     : { label: t('network.needsPlacement'), value: unplaced, icon: 'location_off', tone: unplaced ? 'amber' : 'emerald' };
 
-  const chips = [];
-  selectedStatus.forEach((s) => chips.push({ key: 'status', value: s, label: `Status: ${s}` }));
-  selectedCats.forEach((c) => chips.push({ key: 'category', value: c, label: `Type: ${c}` }));
-  selectedRoles.forEach((r) => chips.push({ key: 'role', value: r, label: `Role: ${r}` }));
-  selectedLocs.forEach((l) => chips.push({
-    key: 'location',
-    value: l,
-    label: l === UNPLACED_LOC ? t('network.unplaced') : `Location: ${l}`,
-  }));
-  selectedOwners.forEach((id) => {
-    chips.push({ key: 'responsible', value: id, label: `Owner: ${ownerLabel(id, ownerOptions)}` });
-  });
-  if (params.alert === 'eol') chips.push({ key: 'alert', label: 'Past EOL' });
-  if (params.alert === 'eolSoon') chips.push({ key: 'alert', label: 'EOL soon' });
-  if (params.alert === 'licSoon') chips.push({ key: 'alert', label: 'License ≤60d' });
-  if (params.alert === 'warrantySoon') chips.push({ key: 'alert', label: t('network.warrantySoon') });
-  if (params.search) chips.push({ key: 'search', label: `Search: ${params.search}` });
+  function buildChips() {
+    const chips = [];
+    selectedStatus.forEach((s) => chips.push({ key: 'status', value: s, label: `Status: ${s}` }));
+    selectedCats.forEach((c) => chips.push({ key: 'category', value: c, label: `Type: ${c}` }));
+    selectedRoles.forEach((r) => chips.push({ key: 'role', value: r, label: `Role: ${r}` }));
+    selectedLocs.forEach((l) => chips.push({
+      key: 'location',
+      value: l,
+      label: l === UNPLACED_LOC ? t('network.unplaced') : `Location: ${l}`,
+    }));
+    selectedOwners.forEach((id) => {
+      chips.push({ key: 'responsible', value: id, label: `Owner: ${ownerLabel(id, ownerOptions)}` });
+    });
+    if (params.alert === 'eol') chips.push({ key: 'alert', label: 'Past EOL' });
+    if (params.alert === 'eolSoon') chips.push({ key: 'alert', label: 'EOL soon' });
+    if (params.alert === 'licSoon') chips.push({ key: 'alert', label: 'License ≤60d' });
+    if (params.alert === 'warrantySoon') chips.push({ key: 'alert', label: t('network.warrantySoon') });
+    if (params.search) chips.push({ key: 'search', label: `Search: ${params.search}` });
+    return chips;
+  }
 
   const setHash = (next) => {
     const p = new URLSearchParams();
@@ -204,10 +227,7 @@ Views.network = async function (el, params = {}) {
         options: ownerOptions,
       })}
     </div>
-    ${chips.length ? `<div class="filter-chips"><strong>Active Filters:</strong>
-      ${chips.map((c) => `<span class="chip">${esc(c.label)}
-        <button type="button" data-clear="${esc(c.key)}" ${c.value != null ? `data-clear-val="${esc(c.value)}"` : ''}><span class="ms">close</span></button></span>`).join('')}
-      <a href="#/network">Clear All</a></div>` : ''}
+    <div id="net-chips"></div>
 
     <div id="bulk-bar-slot"></div>
     <div id="net-panel"></div>`;
@@ -221,18 +241,58 @@ Views.network = async function (el, params = {}) {
     });
   };
 
-  if (view === 'topo') {
-    NetViz.renderTopology(panel, items, { onSelect: openDevice });
-  } else if (view === 'racks') {
-    NetViz.renderRacks(panel, items, { onSelect: openDevice });
-  } else {
-    panel.innerHTML = renderListTable(items, canEdit);
-    mountNetworkBulk(el, items, refresh, canEdit);
+  // Repaint the active-filter chips (+ rebind their clear buttons, which are
+  // recreated whenever an in-place search rebuilds this region).
+  function paintChips() {
+    const host = $('#net-chips', el);
+    if (!host) return;
+    const chips = buildChips();
+    host.innerHTML = chips.length ? `<div class="filter-chips"><strong>Active Filters:</strong>
+      ${chips.map((c) => `<span class="chip">${esc(c.label)}
+        <button type="button" data-clear="${esc(c.key)}" ${c.value != null ? `data-clear-val="${esc(c.value)}"` : ''}><span class="ms">close</span></button></span>`).join('')}
+      <a href="#/network">Clear All</a></div>` : '';
+    host.querySelectorAll('[data-clear]').forEach((b) => b.addEventListener('click', () => {
+      const next = cur();
+      const key = b.dataset.clear;
+      const val = b.dataset.clearVal;
+      if (val != null && ['status', 'category', 'role', 'location', 'responsible'].includes(key)) {
+        next[key] = csvList(next[key]).filter((x) => x !== val).join(',');
+      } else {
+        next[key] = '';
+      }
+      setHash(next);
+    }));
   }
 
+  function repaintPanel() {
+    if (view === 'topo') {
+      NetViz.renderTopology(panel, items, { onSelect: openDevice });
+    } else if (view === 'racks') {
+      NetViz.renderRacks(panel, items, { onSelect: openDevice });
+    } else {
+      panel.innerHTML = renderListTable(items, canEdit);
+      mountNetworkBulk(el, items, refresh, canEdit);
+    }
+  }
+
+  paintChips();
+  repaintPanel();
+
+  // Text search filters the loaded infra set client-side and repaints ONLY the
+  // list + chips — the search <input> is never rebuilt, so the mobile keyboard
+  // stays up. URL is synced with replaceState (no routing).
   bindDebouncedSearch($('#net-search', el), {
     getValue: () => params.search || '',
-    apply: (search) => setHash({ ...cur(), search }),
+    apply: (search) => {
+      params.search = String(search || '').trim();
+      const p = new URLSearchParams();
+      Object.entries(cur()).forEach(([k, v]) => { if (v) p.set(k, v); });
+      const qs = p.toString();
+      history.replaceState(null, '', '#/network' + (qs ? '?' + qs : ''));
+      items = computeItems();
+      paintChips();
+      repaintPanel();
+    },
   });
 
   mountMultiSelects($('#net-filters', el), {
@@ -271,17 +331,7 @@ Views.network = async function (el, params = {}) {
     b.addEventListener('click', () => setHash({ ...cur(), view: b.dataset.netView }));
   });
 
-  el.querySelectorAll('[data-clear]').forEach((b) => b.addEventListener('click', () => {
-    const next = cur();
-    const key = b.dataset.clear;
-    const val = b.dataset.clearVal;
-    if (val != null && ['status', 'category', 'role', 'location', 'responsible'].includes(key)) {
-      next[key] = csvList(next[key]).filter((x) => x !== val).join(',');
-    } else {
-      next[key] = '';
-    }
-    setHash(next);
-  }));
+  // (clear-filter chips are wired in paintChips so they survive an in-place search)
 
   if (canCreate) {
     $('#net-new', el).addEventListener('click', () => {

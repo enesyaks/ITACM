@@ -111,13 +111,9 @@ Views.providers = async function (el, params = {}) {
   if (statusFilter) {
     visibleContracts = visibleContracts.filter((c) => c.status === statusFilter);
   }
-  if (searchQ) {
-    const s = searchQ.toLowerCase();
-    visibleContracts = visibleContracts.filter((c) =>
-      [c.title, c.contractNumber, c.providerName, c.category, c.notes]
-        .filter(Boolean)
-        .some((v) => String(v).toLowerCase().includes(s)));
-  }
+  // NOTE: the text search is NOT applied here. All provider/status rows are
+  // rendered and the search hides/shows them client-side (see wireContractFilters),
+  // so typing never re-renders the page — on mobile that dropped the keyboard.
 
   const filtersActive = !!(providerFilterId || statusFilter || searchQ);
   const headActions = [
@@ -473,7 +469,7 @@ function renderContractsTab(el, contracts, providers, opts = {}) {
         </button>` : ''}
       </div>
       <div class="cell-sub" style="margin-top:10px">
-        ${esc(resultLabel)}
+        <span id="pc-c-count">${esc(resultLabel)}</span>
         ${filterProvider ? ` · ${esc(filterProvider.name)} — ${esc(t('providers.linkedContracts') || 'linked contract(s)')}` : ''}
       </div>
     </div>`;
@@ -517,8 +513,10 @@ function renderContractsTab(el, contracts, providers, opts = {}) {
             else if (days <= 30) endExtra = `<span class="pill pill-rose">${days}d</span>`;
             else if (days <= 60) endExtra = `<span class="pill pill-amber">${days}d</span>`;
           }
+          const cSearch = [c.title, c.contractNumber, c.providerName, c.category, c.notes]
+            .filter(Boolean).join(' ').toLowerCase();
           return `
-          <tr>
+          <tr data-c-search="${esc(cSearch)}">
             <td>
               <div class="cell-title">${esc(c.title)}</div>
               <div class="cell-sub">
@@ -561,7 +559,10 @@ function renderContractsTab(el, contracts, providers, opts = {}) {
           </tr>`;
         }).join('')}
       </tbody>
-    </table></div></div>`;
+    </table></div>
+    <div id="pc-c-nomatch" class="table-empty hidden" style="padding:24px;text-align:center">
+      ${esc(t('providers.searchNoMatch') || 'No contracts match your search.')}
+    </div></div>`;
 
   wireContractFilters(el, { setContractFilters, clearFilter, searchQ });
 
@@ -609,22 +610,44 @@ function wireContractFilters(el, { setContractFilters, clearFilter, searchQ }) {
     setContractFilters({ status: statusSel.value || '' });
   });
 
+  // The text search filters the already-rendered rows client-side (show/hide),
+  // so typing never re-renders the tab — on mobile a re-render rebuilt this input
+  // and dropped the soft keyboard. The URL is kept in step with replaceState.
+  const rows = () => Array.from(el.querySelectorAll('tr[data-c-search]'));
+  const countEl = $('#pc-c-count', el);
+  const noMatchEl = $('#pc-c-nomatch', el);
+  const applySearch = (raw) => {
+    const term = String(raw || '').trim().toLowerCase();
+    let shown = 0;
+    const all = rows();
+    all.forEach((tr) => {
+      const match = !term || (tr.dataset.cSearch || '').includes(term);
+      tr.classList.toggle('hidden', !match);
+      if (match) shown += 1;
+    });
+    if (noMatchEl) noMatchEl.classList.toggle('hidden', shown !== 0 || all.length === 0);
+    if (countEl) {
+      countEl.textContent = (t('providers.filterResult') || '{n} of {total}')
+        .replace('{n}', String(shown)).replace('{total}', String(all.length));
+    }
+    try {
+      const sp = new URLSearchParams(location.hash.split('?')[1] || '');
+      sp.set('tab', 'contracts');
+      if (term) sp.set('q', qInput.value.trim()); else sp.delete('q');
+      const qs = sp.toString();
+      history.replaceState(null, '', '#/providers' + (qs ? '?' + qs : ''));
+    } catch { /* ignore */ }
+  };
   let timer = null;
   qInput?.addEventListener('input', () => {
     clearTimeout(timer);
-    timer = setTimeout(() => {
-      const next = (qInput.value || '').trim();
-      if (next === (searchQ || '')) return;
-      setContractFilters({ q: next });
-    }, 350);
+    timer = setTimeout(() => applySearch(qInput.value), 200);
   });
   qInput?.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      clearTimeout(timer);
-      setContractFilters({ q: (qInput.value || '').trim() });
-    }
+    if (e.key === 'Enter') { e.preventDefault(); clearTimeout(timer); applySearch(qInput.value); }
   });
+  // Apply any search coming from the URL (shared link / back button) on mount.
+  if (qInput && (searchQ || qInput.value)) applySearch(qInput.value || searchQ);
 
   $('#pc-clear-provider-filter', el)?.addEventListener('click', () => {
     if (clearFilter) clearFilter();
