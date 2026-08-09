@@ -4,6 +4,34 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.30] — 2026-08-09
+
+### Fixed
+- **Mobile keyboard** no longer drops while searching Employees, Network and
+  the Providers contract list (search updates results in place).
+- **Editing a phone** no longer reports its own IMEI as a duplicate.
+- **CSV export** keeps Turkish (and other non-ASCII) characters intact.
+- A wrong password / MFA code no longer logs you out to the sign-in screen.
+- HR onboarding/offboarding cancel uses a styled dialog; the onboarding due
+  modal can cancel a scheduled onboarding and refreshes the list on complete.
+
+### Added
+- **Sell** action on the device detail (buyer / price / date), so a device can
+  be sold without going through offboarding.
+- **Consumables** can be edited and deleted, not just stock-adjusted.
+- Mobile lines reject a duplicate SIM serial; the import template ships IMEI
+  columns.
+- License cancel warns (and can revoke seats) when the license is still held;
+  deleting a department offers to move its employees first; the default location
+  can be cleared; the catalog brand field lists existing brands per category.
+- An **HR account placed in a permission group** is broadened by that group
+  (e.g. + Employees) while keeping its HR screens.
+
+### Security
+- Assets can no longer be created directly with `Assigned`/`In Repair` status.
+- `/dashboard/stats` scopes recent-handover names and fleet financials to the
+  caller's permissions instead of `dashboard:read` alone.
+
 ## [1.3.29] — 2026-08-06
 
 ### Fixed
