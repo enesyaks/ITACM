@@ -57,9 +57,13 @@ async function findImeiOwner(imei, { excludeId, client } = {}) {
   if (!v) return null;
   const run = client ? client.query.bind(client) : query;
   const params = [v];
+  // The OR MUST be parenthesised: `a OR b AND id <> $2` binds as
+  // `a OR (b AND id <> $2)`, so without the parens the imei branch never
+  // excluded the asset itself — editing a phone reported its own IMEI as a
+  // duplicate.
   let sql =
-    "SELECT id, asset_tag FROM assets WHERE lower(btrim(imei)) = lower(btrim($1::text)) "
-    + "OR lower(btrim(imei2)) = lower(btrim($1::text))";
+    "SELECT id, asset_tag FROM assets WHERE (lower(btrim(imei)) = lower(btrim($1::text)) "
+    + "OR lower(btrim(imei2)) = lower(btrim($1::text)))";
   if (excludeId) {
     sql += " AND id <> $2";
     params.push(excludeId);

@@ -678,9 +678,11 @@ function exportCsv(items) {
     x.macEthernet || '', x.macWifi || '', x.status, x.currentEmployee ? x.currentEmployee.fullName : '',
   ]);
   const csvEsc = (v) => `"${csvCell(v).replace(/"/g, '""')}"`;
-  const csv = [head, ...rows].map((r) => r.map(csvEsc).join(',')).join('\n');
+  // ﻿ BOM + charset so Excel reads UTF-8 (Turkish ğ/ş/ı/ö/ç/ü and every
+  // other non-ASCII language) instead of the system ANSI codepage.
+  const csv = '﻿' + [head, ...rows].map((r) => r.map(csvEsc).join(',')).join('\n');
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
   a.download = 'hardware-inventory.csv';
   a.click();
 }

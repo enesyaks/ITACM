@@ -533,7 +533,8 @@ Views.lines = async function (el, params = {}) {
 
 /* ========================== EXCEL/CSV MIGRATION ========================== */
 const IMPORT_COLUMNS = ['employeeName', 'employeeEmail', 'department', 'title', 'assetTag',
-  'category', 'brand', 'model', 'serialNumber', 'mac', 'cpu', 'ram', 'storage', 'os', 'location', 'purchaseDate'];
+  'category', 'brand', 'model', 'serialNumber', 'mac', 'imei', 'imei2',
+  'cpu', 'ram', 'storage', 'os', 'location', 'purchaseDate'];
 
 /** Turkish + informal aliases → canonical template keys (after space/case strip). */
 const IMPORT_ALIASES = {
@@ -547,6 +548,8 @@ const IMPORT_ALIASES = {
   model: ['model'],
   serialNumber: ['serialnumber', 'serino', 'serinumarasi', 'serinumara', 'sn'],
   mac: ['mac', 'macaddress', 'macethernet'],
+  imei: ['imei', 'imei1'],
+  imei2: ['imei2', 'ikinciimei', 'imeiiki'],
   cpu: ['cpu', 'islemci', 'işlemci'],
   ram: ['ram', 'bellek'],
   storage: ['storage', 'disk', 'depolama', 'hdd', 'ssd'],
@@ -557,9 +560,15 @@ const IMPORT_ALIASES = {
 
 function downloadImportTemplate() {
   const sample1 = ['Ahmet Yılmaz', 'ahmet.yilmaz@firma.com', 'Bilgi Teknolojileri', 'Sistem Uzmanı', '',
-    'Laptop', 'Dell', 'Latitude 5540', 'SN-ORNEK-1', 'AA:BB:CC:DD:EE:FF', 'Intel i5-1235U', '16GB', '512GB SSD', 'Windows 11 Pro', 'Main Office', '2024-03-15'];
-  const sample2 = ['', '', '', '', '', 'Monitor', 'LG', '27UP850', 'SN-ORNEK-2', '', '', '', '', '', 'Warehouse', '2023-11-02'];
-  csvDownload('itacm-import-template.csv', IMPORT_COLUMNS, [sample1, sample2]);
+    'Laptop', 'Dell', 'Latitude 5540', 'SN-ORNEK-1', 'AA:BB:CC:DD:EE:FF', '', '',
+    'Intel i5-1235U', '16GB', '512GB SSD', 'Windows 11 Pro', 'Main Office', '2024-03-15'];
+  const sample2 = ['', '', '', '', '', 'Monitor', 'LG', '27UP850', 'SN-ORNEK-2', '', '', '',
+    '', '', '', '', 'Warehouse', '2023-11-02'];
+  // Phone row shows the IMEI columns in use (dual-SIM: imei + imei2).
+  const sample3 = ['Ayşe Demir', 'ayse.demir@firma.com', 'Satış', 'Satış Uzmanı', '',
+    'Phone', 'Apple', 'iPhone 15', 'SN-ORNEK-3', '', '359123456789012', '359123456789013',
+    '', '', '256GB', 'iOS 18', 'Main Office', '2024-05-10'];
+  csvDownload('itacm-import-template.csv', IMPORT_COLUMNS, [sample1, sample2, sample3]);
   toast(t('imp.templateToast') || 'Template downloaded — fill in Excel, save as CSV, then upload', 'success');
 }
 

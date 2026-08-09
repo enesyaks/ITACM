@@ -28,6 +28,21 @@ function sanitize(body, { partial = false } = {}) {
   return data;
 }
 
+// SIM serial is optional but must be unique when set. Enforced in the app
+// (not a DB index) because existing rows may hold blanks/legacy duplicates.
+async function assertSimSerialAvailable(simSerial, { excludeId } = {}) {
+  const s = simSerial ? String(simSerial).trim() : '';
+  if (!s) return;
+  const params = [s];
+  let sql = 'SELECT phone_number FROM mobile_lines WHERE lower(btrim(sim_serial)) = lower(btrim($1::text))';
+  if (excludeId) { params.push(excludeId); sql += ' AND id <> $2'; }
+  sql += ' LIMIT 1';
+  const { rows } = await query(sql, params);
+  if (rows[0]) {
+    throw HttpError.conflict(`This SIM serial is already registered on line ${rows[0].phone_number}`);
+  }
+}
+
 async function listLines({ status, employeeId, search, limit = 500 } = {}) {
   const where = [];
   const params = [];
@@ -52,6 +67,7 @@ async function listLines({ status, employeeId, search, limit = 500 } = {}) {
 
 async function createLine(body) {
   const d = sanitize(body);
+  await assertSimSerialAvailable(d.sim_serial);
   try {
     const { rows } = await query(
       `INSERT INTO mobile_lines (phone_number, operator, plan, sim_serial, monthly_cost, status, notes)
@@ -70,6 +86,7 @@ async function updateLine(id, body) {
   if (!isUuid(id)) throw HttpError.notFound('Line not found');
   const d = sanitize(body, { partial: true });
   if (!Object.keys(d).length) throw HttpError.badRequest('No updatable fields provided');
+  if (d.sim_serial !== undefined) await assertSimSerialAvailable(d.sim_serial, { excludeId: id });
   const cols = Object.keys(d);
   const sets = cols.map((c, i) => `${c} = $${i + 2}`).join(', ');
   try {
