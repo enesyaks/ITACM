@@ -1703,7 +1703,10 @@ async function showAssetDetail(id, onChange) {
   const canUpdate = Auth.canIam('asset', 'update') || Auth.canIam('asset', 'manage');
   const canCreate = Auth.canIam('asset', 'create');
   const canUnassign = Auth.canIam('asset', 'unassign') || Auth.canIam('asset', 'manage');
-  const canSell = Auth.canIam('asset', 'sell') || Auth.canIam('asset', 'manage');
+  // Selling is a dedicated, sensitive grant — NOT covered by manage (like
+  // export / view_confidential). Owner and role-based Admin/Helpdesk still get
+  // it via fallback; custom groups must be given asset:sell explicitly.
+  const canSell = Auth.canIam('asset', 'sell');
   const canRepair = Auth.canIam('maintenance', 'create');
   const canDownloadDocs = Auth.canIam('document', 'download') || Auth.can('canDownloadDocuments');
   const refresh = () => { if (onChange) onChange(); };

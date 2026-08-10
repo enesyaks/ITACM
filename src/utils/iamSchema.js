@@ -93,7 +93,7 @@ const ACTIONS_BY_RESOURCE = Object.freeze({
  * Explicit toggles remain for export/import/view_confidential/view_*.
  */
 const MANAGE_EXPAND = Object.freeze({
-  asset: Object.freeze(['read', 'update', 'delete', 'assign', 'unassign', 'sell']),
+  asset: Object.freeze(['read', 'update', 'delete', 'assign', 'unassign']),
   license: Object.freeze(['read', 'update', 'delete', 'assign', 'unassign']),
   line: Object.freeze(['read', 'update', 'delete', 'assign', 'unassign']),
   employee: Object.freeze(['read', 'update', 'delete']),

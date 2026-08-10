@@ -184,8 +184,8 @@ router.put('/:id', requireAnyPermission([['asset', 'update'], ['asset', 'manage'
   // in the permission matrix; role-based Admin/Helpdesk get it via fallback.
   if (req.body && req.body.status === 'Sold') {
     const ctx = await getAssetContext(req);
-    const canSell = await permissionService.checkPermission(req.user, 'asset', 'sell', ctx)
-      || await permissionService.checkPermission(req.user, 'asset', 'manage', ctx);
+    // Dedicated grant — manage does NOT imply sell (Owner + role fallback do).
+    const canSell = await permissionService.checkPermission(req.user, 'asset', 'sell', ctx);
     if (!canSell) throw HttpError.forbidden('You do not have permission to sell (mark as Sold) assets');
   }
   const pending = await disposalApprovalGate(req);
