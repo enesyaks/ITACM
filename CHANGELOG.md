@@ -4,6 +4,20 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.33] — 2026-08-10
+
+### Fixed
+- **Sell permission now stands alone.** The sale button appeared (and the server
+  allowed selling) for a permission group that had `asset:manage` but not
+  `asset:sell`, because both checks fell back to manage. Selling is a sensitive
+  action that must not come from manage (like export / view_confidential): the
+  button and the Sold transition now require `asset:sell` specifically. Owner and
+  role-based Admin/Helpdesk still get it via fallback.
+
+### Docs
+- README lists all six roles (adds HR and Portal) and the custom permission
+  matrix; corrects the document upload cap to 8 MB.
+
 ## [1.3.32] — 2026-08-10
 
 ### Added
