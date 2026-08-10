@@ -830,7 +830,8 @@ async function assetForm(asset, done) {
               value="${asset && Number(asset.cost) > 0 ? esc(asset.cost) : ''}"></div>
           <div class="form-field"><label>${esc(t('asset.f.salvage'))} <span class="ob-hint">${esc(t('asset.f.salvageHint'))}</span></label>
             <input type="number" name="salvageValue" min="0" step="0.01" placeholder="0.00"
-              value="${asset && asset.salvageValue != null ? esc(asset.salvageValue) : ''}"></div>
+              value="${asset && asset.salvageValue != null ? esc(asset.salvageValue) : ''}">
+            <div class="cell-sub hidden" id="af-salvage-suggest" style="margin-top:6px"></div></div>
           <div class="form-field" id="af-location-wrap"><label id="af-location-label">${esc(t('asset.f.location'))}</label>
             <select name="location" id="af-location">
               <option value="">${esc(t('asset.f.noLocation'))}</option>
@@ -1293,6 +1294,36 @@ async function assetForm(asset, done) {
       }
       renderPickers();
       applyFieldRules();
+
+      // Suggest a salvage value from purchase cost + the category's EOL window.
+      // Longer-life gear keeps more residual value; fast-cycling gear little.
+      // Auto-fills only until the user types their own salvage — always editable.
+      (function wireSalvageSuggest() {
+        const costInput = overlay.querySelector('input[name="cost"]');
+        const salvageInput = overlay.querySelector('input[name="salvageValue"]');
+        const hintEl = $('#af-salvage-suggest', overlay);
+        if (!costInput || !salvageInput || !hintEl) return;
+        let auto = !(asset && asset.salvageValue != null && asset.salvageValue !== '');
+        salvageInput.addEventListener('input', () => { auto = false; });
+        const suggest = () => {
+          const cost = Number(costInput.value) || 0;
+          const cat = state.category === 'Other' ? (state.customCategory || '') : state.category;
+          const eol = (AppConfig.lifecycles && Number(AppConfig.lifecycles[cat])) || 0;
+          if (!(cost > 0)) { hintEl.classList.add('hidden'); return; }
+          const pct = !eol ? 10 : eol <= 24 ? 5 : eol <= 48 ? 10 : eol <= 72 ? 15 : 20;
+          const value = Math.round((cost * pct) / 100);
+          if (auto) salvageInput.value = value;
+          hintEl.textContent = t('asset.f.salvageSuggest')
+            .replace('{v}', fmtMoney(value)).replace('{p}', pct).replace('{n}', eol || '—');
+          hintEl.classList.remove('hidden');
+        };
+        costInput.addEventListener('input', suggest);
+        const catSel = $('#af-cat', overlay);
+        if (catSel) catSel.addEventListener('change', suggest);
+        const catOtherInp = $('#af-cat-other', overlay);
+        if (catOtherInp) catOtherInp.addEventListener('input', suggest);
+        suggest();
+      }());
 
       api('/licenses').then((lics) => {
         const box = $('#af-licenses', overlay);
