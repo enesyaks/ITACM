@@ -204,6 +204,59 @@ Views.assets = async function (el, params = {}) {
   const sortTh = (key, label, extraClass = '') =>
     sortThHtml(key, label, sortKey, sortOrder, extraClass);
 
+  const lifePills = (x) => {
+    const l = lifecycleInfo(x);
+    if (x.status === 'Scrap' || x.status === 'Sold') return '';
+    if (l.overdue) return `<span class="pill pill-rose" title="${esc(t('asset.eolTitle'))}">${esc(t('asset.eol'))}</span>`;
+    if (l.pct != null && l.pct >= 90) return `<span class="pill pill-amber" title="${esc(t('asset.eolSoonTitle'))}">${esc(t('asset.eolSoon'))}</span>`;
+    return '';
+  };
+  const canViewAssetCosts = Auth.canIam('asset', 'view_confidential') || Auth.can('canViewAssetCosts');
+  const money = (v) => esc(fmtMoney(v, (typeof AppConfig !== 'undefined' && AppConfig.currency) || undefined));
+
+  // Customizable columns. Cihaz No + Durum are mandatory; the rest can be toggled
+  // from the ⚙ Sütunlar popover and the choice persists per browser. The check
+  // and action columns are structural (rendered outside this list).
+  const cols = columnPicker({
+    storageKey: 'itacm_cols_assets',
+    onChange: () => {
+      const slot = $('#asset-results', el);
+      if (slot) { slot.innerHTML = resultsCardHTML(); bindResultsSelection(); renderBulkBar(); }
+    },
+    columns: [
+      { key: 'assetTag', label: t('hw.colAssetId') || 'Asset ID', mandatory: true, sortKey: 'assetTag', thClass: 'hw-col-id', tdClass: 'hw-col-id',
+        render: (x) => `<div class="hw-id-cell"><button type="button" class="hw-qr" data-qr="${esc(x.id)}" title="Show QR code" aria-label="Show QR code"><span class="ms">qr_code_2</span></button><span class="mono hw-tag">${esc(x.assetTag)}</span></div>`,
+        csv: (x) => x.assetTag },
+      { key: 'brandModel', label: t('hw.colBrandModel') || 'Brand & Model', sortKey: 'brand',
+        render: (x) => { const s = x.specs ? [x.specs.cpu, x.specs.ram].filter(Boolean).join(', ') : ''; return `<div class="hw-product"><span class="hw-cat" title="${esc(x.category)}"><span class="ms">${esc(catIcon(x.category))}</span></span><div class="hw-product-text"><div class="cell-title">${esc(x.brand)} ${esc(x.model)}</div><div class="cell-sub">${esc(x.category)}${s ? ' · ' + esc(s) : ''}</div></div></div>`; },
+        csv: (x) => `${x.brand} ${x.model}` },
+      { key: 'serialNumber', label: t('hw.colSerial') || 'Serial No', sortKey: 'serialNumber', tdClass: 'mono hw-serial',
+        render: (x) => esc(x.serialNumber || '—'), csv: (x) => x.serialNumber || '' },
+      { key: 'mac', label: t('hw.colMac') || 'MAC', sortKey: 'mac', tdClass: 'mono hw-mac',
+        render: (x) => { const m = x.macEthernet || x.macWifi; return m ? esc(m) : '<span class="hw-na">—</span>'; }, csv: (x) => x.macEthernet || x.macWifi || '' },
+      { key: 'location', label: t('network.colLocation') || 'Location', sortKey: 'location', tdClass: 'hw-loc',
+        render: (x) => esc(x.location || '—'), csv: (x) => x.location || '' },
+      { key: 'status', label: t('common.status'), mandatory: true, sortKey: 'status',
+        render: (x) => `<div class="hw-status">${badge(x.status)}${lifePills(x)}</div>`, csv: (x) => x.status },
+      { key: 'category', label: t('cols.category'), default: false, render: (x) => esc(x.category || '—'), csv: (x) => x.category || '' },
+      { key: 'imei', label: t('asset.f.imei') || 'IMEI', default: false, tdClass: 'mono', render: (x) => esc(x.imei || '—'), csv: (x) => x.imei || '' },
+      { key: 'imei2', label: t('asset.f.imei2') || 'IMEI 2', default: false, tdClass: 'mono', render: (x) => esc(x.imei2 || '—'), csv: (x) => x.imei2 || '' },
+      { key: 'cpu', label: t('cols.cpu'), default: false, render: (x) => esc((x.specs && x.specs.cpu) || '—'), csv: (x) => (x.specs && x.specs.cpu) || '' },
+      { key: 'ram', label: t('cols.ram'), default: false, render: (x) => esc((x.specs && x.specs.ram) || '—'), csv: (x) => (x.specs && x.specs.ram) || '' },
+      { key: 'storage', label: t('cols.storage'), default: false, render: (x) => esc((x.specs && x.specs.storage) || '—'), csv: (x) => (x.specs && x.specs.storage) || '' },
+      { key: 'os', label: t('cols.os'), default: false, render: (x) => esc((x.specs && x.specs.os) || '—'), csv: (x) => (x.specs && x.specs.os) || '' },
+      { key: 'hostname', label: t('cols.hostname'), default: false, render: (x) => esc((x.specs && x.specs.hostname) || '—'), csv: (x) => (x.specs && x.specs.hostname) || '' },
+      { key: 'ip', label: t('cols.ip'), default: false, tdClass: 'mono', render: (x) => esc((x.specs && x.specs.ipAddress) || '—'), csv: (x) => (x.specs && x.specs.ipAddress) || '' },
+      { key: 'holder', label: t('cols.holder'), default: false, render: (x) => esc((x.currentEmployee && x.currentEmployee.fullName) || x.currentEmployeeName || '—'), csv: (x) => (x.currentEmployee && x.currentEmployee.fullName) || x.currentEmployeeName || '' },
+      { key: 'purchaseDate', label: t('cols.purchase'), default: false, render: (x) => esc(x.purchaseDate ? fmtDate(x.purchaseDate) : '—'), csv: (x) => (x.purchaseDate ? fmtDate(x.purchaseDate) : '') },
+      { key: 'warranty', label: t('cols.warranty'), default: false, render: (x) => esc(x.warrantyEndDate ? fmtDate(x.warrantyEndDate) : '—'), csv: (x) => (x.warrantyEndDate ? fmtDate(x.warrantyEndDate) : '') },
+      { key: 'life', label: t('cols.life'), default: false, render: (x) => (x.lifecycleMonths != null ? esc(String(x.lifecycleMonths)) : '—'), csv: (x) => (x.lifecycleMonths != null ? String(x.lifecycleMonths) : '') },
+      { key: 'cost', label: t('cols.cost'), default: false, render: (x) => (canViewAssetCosts ? (x.cost ? money(x.cost) : '—') : '—'), csv: (x) => (canViewAssetCosts && x.cost ? String(x.cost) : '') },
+      { key: 'bookValue', label: t('cols.bookValue'), default: false, render: (x) => (canViewAssetCosts ? (x.bookValue != null ? money(x.bookValue) : '—') : '—'), csv: (x) => (canViewAssetCosts && x.bookValue != null ? String(x.bookValue) : '') },
+      { key: 'notes', label: t('cols.notes'), default: false, render: (x) => esc(x.notes || '—'), csv: (x) => x.notes || '' },
+    ],
+  });
+
   // The results card (mobile list + table + pagination) is built by this closure
   // so it can be re-rendered in place on an in-view search — keeping the search
   // box mounted so the mobile keyboard never closes and no keystroke is lost.
@@ -214,13 +267,7 @@ Views.assets = async function (el, params = {}) {
     const pageItems = useLifecycle
       ? items.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
       : items;
-    const lifePills = (x) => {
-      const l = lifecycleInfo(x);
-      if (x.status === 'Scrap' || x.status === 'Sold') return '';
-      if (l.overdue) return `<span class="pill pill-rose" title="${esc(t('asset.eolTitle'))}">${esc(t('asset.eol'))}</span>`;
-      if (l.pct != null && l.pct >= 90) return `<span class="pill pill-amber" title="${esc(t('asset.eolSoonTitle'))}">${esc(t('asset.eolSoon'))}</span>`;
-      return '';
-    };
+    const colCount = cols.visibleColumns().length + 2; // + check + actions
     const rowActions = (x, { mobile = false } = {}) => `<div class="hw-actions${mobile ? ' hw-actions-mobile' : ''}">
         <button type="button" class="hw-icon-btn" data-view="${esc(x.id)}" title="${esc(t('common.view'))}" aria-label="${esc(t('common.view'))}">
           <span class="ms">visibility</span>
@@ -263,48 +310,19 @@ Views.assets = async function (el, params = {}) {
     <div class="table-wrap"><table class="data hw-table">
       <thead><tr>
         <th class="hw-col-check"><input type="checkbox" id="sel-all" ${!(canUpdate || canUnassign || canRepair) ? 'disabled' : ''}></th>
-        ${sortTh('assetTag', t('hw.colAssetId') || 'Asset ID', 'hw-col-id')}
-        ${sortTh('brand', t('hw.colBrandModel') || 'Brand & Model')}
-        ${sortTh('serialNumber', t('hw.colSerial') || 'Serial No')}
-        ${sortTh('mac', t('hw.colMac') || 'MAC', 'hw-col-mac')}
-        ${sortTh('location', t('network.colLocation') || 'Location')}
-        ${sortTh('status', t('common.status'))}
+        ${cols.headerCells({ sort: sortKey, order: sortOrder })}
         <th class="hw-col-actions"></th>
       </tr></thead>
       <tbody>
-        ${pageItems.length === 0 ? '<tr><td colspan="8" class="table-empty">No assets found.</td></tr>' :
-          pageItems.map((x) => {
-            const specsBits = x.specs ? [x.specs.cpu, x.specs.ram].filter(Boolean).join(', ') : '';
-            const mac = x.macEthernet || x.macWifi;
-            return `
+        ${pageItems.length === 0 ? `<tr><td colspan="${colCount}" class="table-empty">No assets found.</td></tr>` :
+          pageItems.map((x) => `
             <tr class="hw-row asset-row ${x.status === 'Scrap' || x.status === 'Sold' ? 'row-scrap' : ''}" data-open-asset="${esc(x.id)}">
               <td class="hw-col-check">
                 <input type="checkbox" data-sel="${esc(x.id)}" ${!(canUpdate || canUnassign || canRepair) ? 'disabled' : ''}>
               </td>
-              <td class="hw-col-id">
-                <div class="hw-id-cell">
-                  <button type="button" class="hw-qr" data-qr="${esc(x.id)}" title="${esc('Show QR code')}" aria-label="${esc('Show QR code')}">
-                    <span class="ms">qr_code_2</span>
-                  </button>
-                  <span class="mono hw-tag">${esc(x.assetTag)}</span>
-                </div>
-              </td>
-              <td>
-                <div class="hw-product">
-                  <span class="hw-cat" title="${esc(x.category)}"><span class="ms">${esc(catIcon(x.category))}</span></span>
-                  <div class="hw-product-text">
-                    <div class="cell-title">${esc(x.brand)} ${esc(x.model)}</div>
-                    <div class="cell-sub">${esc(x.category)}${specsBits ? ' · ' + esc(specsBits) : ''}</div>
-                  </div>
-                </div>
-              </td>
-              <td class="mono hw-serial">${esc(x.serialNumber)}</td>
-              <td class="mono hw-mac">${mac ? esc(mac) : '<span class="hw-na">—</span>'}</td>
-              <td class="hw-loc">${esc(x.location || '—')}</td>
-              <td><div class="hw-status">${badge(x.status)}${lifePills(x)}</div></td>
+              ${cols.bodyCells(x)}
               <td class="actions">${rowActions(x)}</td>
-            </tr>`;
-          }).join('')}
+            </tr>`).join('')}
       </tbody>
     </table></div>
     <div class="table-foot">
@@ -381,6 +399,7 @@ Views.assets = async function (el, params = {}) {
         selected: selectedLocs,
         options: (AppConfig.locations || []).map((l) => ({ value: l, label: l })),
       })}
+      <div style="margin-left:auto">${cols.gearHtml()}</div>
     </div>
     ${chips.length ? `<div class="filter-chips"><strong>Active Filters:</strong>
       ${chips.map((c) => `<span class="chip">${esc(c.label)}
@@ -579,6 +598,7 @@ Views.assets = async function (el, params = {}) {
     category: (vals) => rerender({ category: vals.join(','), page: 1 }),
     location: (vals) => rerender({ location: vals.join(','), page: 1 }),
   });
+  cols.mountGear($('#asset-filters', el));
   if (canCreate) {
     $('#asset-new', el)?.addEventListener('click', () => assetForm(null, () => rerender({})));
   }
@@ -592,7 +612,7 @@ Views.assets = async function (el, params = {}) {
         toast(t('common.forbidden') || 'You do not have permission to export', 'error');
         return;
       }
-      exportCsv(items);
+      exportCsv(items, cols);
     });
   }
   const clearAll = $('#clear-all', el);
@@ -671,16 +691,22 @@ Views.assets = async function (el, params = {}) {
   });
 };
 
-function exportCsv(items) {
-  const head = ['assetTag', 'brand', 'model', 'category', 'serialNumber', 'imei', 'imei2', 'macEthernet', 'macWifi', 'status', 'employee'];
-  const rows = items.map((x) => [
-    x.assetTag, x.brand, x.model, x.category, x.serialNumber, x.imei || '', x.imei2 || '',
-    x.macEthernet || '', x.macWifi || '', x.status, x.currentEmployee ? x.currentEmployee.fullName : '',
-  ]);
+function exportCsv(items, cols) {
+  // Export mirrors the visible columns (chosen from the ⚙ picker); fall back to
+  // a fixed set if no column config was passed.
+  const table = cols && typeof cols.csv === 'function'
+    ? cols.csv(items)
+    : {
+      head: ['assetTag', 'brand', 'model', 'category', 'serialNumber', 'imei', 'imei2', 'macEthernet', 'macWifi', 'status', 'employee'],
+      rows: items.map((x) => [
+        x.assetTag, x.brand, x.model, x.category, x.serialNumber, x.imei || '', x.imei2 || '',
+        x.macEthernet || '', x.macWifi || '', x.status, x.currentEmployee ? x.currentEmployee.fullName : '',
+      ]),
+    };
   const csvEsc = (v) => `"${csvCell(v).replace(/"/g, '""')}"`;
   // ﻿ BOM + charset so Excel reads UTF-8 (Turkish ğ/ş/ı/ö/ç/ü and every
   // other non-ASCII language) instead of the system ANSI codepage.
-  const csv = '﻿' + [head, ...rows].map((r) => r.map(csvEsc).join(',')).join('\n');
+  const csv = '﻿' + [table.head, ...table.rows].map((r) => r.map(csvEsc).join(',')).join('\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
   a.download = 'hardware-inventory.csv';

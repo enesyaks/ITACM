@@ -1314,6 +1314,103 @@ function tableSortTh(key, label, { sort, order, extraClass = '', scope = '' } = 
   </th>`;
 }
 
+/**
+ * Reusable customizable columns for any list table.
+ *
+ *   const cols = columnPicker({
+ *     storageKey: 'itacm_cols_assets',
+ *     columns: [
+ *       { key:'assetTag', label:'Asset ID', mandatory:true, sortKey:'assetTag', render:(x)=>… },
+ *       { key:'cpu', label:'CPU', default:false, render:(x)=>esc(x.specs?.cpu||'—'), csv:(x)=>x.specs?.cpu||'' },
+ *       …
+ *     ],
+ *     onChange: () => repaintTable(),
+ *   });
+ *
+ * The view calls cols.gearHtml() in its toolbar, cols.mountGear(root) once, then
+ * cols.headerCells({sort,order}) / cols.bodyCells(row) inside the (re-rendered)
+ * table, and cols.csv(rows) for export. Mandatory columns are always shown.
+ */
+function columnPicker({ storageKey, columns, onChange } = {}) {
+  const all = Array.isArray(columns) ? columns : [];
+  const toggleable = all.filter((c) => !c.mandatory);
+  const defaults = () => new Set(all.filter((c) => c.mandatory || c.default !== false).map((c) => c.key));
+  let visible;
+  try {
+    const saved = JSON.parse(localStorage.getItem(storageKey) || 'null');
+    visible = Array.isArray(saved) ? new Set(saved) : defaults();
+  } catch { visible = defaults(); }
+  all.forEach((c) => { if (c.mandatory) visible.add(c.key); }); // mandatory can't be off
+  const save = () => { try { localStorage.setItem(storageKey, JSON.stringify([...visible])); } catch { /* private mode */ } };
+
+  const visibleColumns = () => all.filter((c) => visible.has(c.key));
+  const stripTags = (html) => String(html == null ? '' : html).replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+
+  return {
+    visibleColumns,
+    isVisible: (key) => visible.has(key),
+
+    /** ⚙ button + hidden popover (drop into the toolbar). */
+    gearHtml() {
+      return `<div class="col-picker">
+        <button type="button" class="btn btn-outline" data-colgear title="${esc(t('cols.customize') || 'Columns')}" aria-label="${esc(t('cols.customize') || 'Columns')}"><span class="ms">tune</span></button>
+        <div class="col-picker-pop hidden" data-colpop role="menu">
+          <div class="col-picker-head">${esc(t('cols.title') || 'Columns')}</div>
+          <div class="col-picker-list">
+            ${toggleable.map((c) => `<label class="col-picker-row"><input type="checkbox" data-colkey="${esc(c.key)}" ${visible.has(c.key) ? 'checked' : ''}><span>${esc(c.label)}</span></label>`).join('')}
+          </div>
+          <button type="button" class="col-picker-reset" data-colreset>${esc(t('cols.reset') || 'Reset to default')}</button>
+        </div>
+      </div>`;
+    },
+
+    /** Wire the popover open/close + toggles. Call once after the toolbar mounts. */
+    mountGear(root) {
+      const gear = root.querySelector('[data-colgear]');
+      const pop = root.querySelector('[data-colpop]');
+      if (!gear || !pop) return;
+      gear.addEventListener('click', (e) => { e.stopPropagation(); pop.classList.toggle('hidden'); });
+      pop.addEventListener('click', (e) => e.stopPropagation());
+      document.addEventListener('click', () => pop.classList.add('hidden'));
+      pop.querySelectorAll('[data-colkey]').forEach((cb) => {
+        cb.addEventListener('change', () => {
+          if (cb.checked) visible.add(cb.dataset.colkey); else visible.delete(cb.dataset.colkey);
+          save();
+          if (typeof onChange === 'function') onChange();
+        });
+      });
+      const reset = pop.querySelector('[data-colreset]');
+      if (reset) reset.addEventListener('click', () => {
+        visible = defaults();
+        pop.querySelectorAll('[data-colkey]').forEach((cb) => { cb.checked = visible.has(cb.dataset.colkey); });
+        save();
+        if (typeof onChange === 'function') onChange();
+      });
+    },
+
+    /** <th> cells for the visible columns (sortable ones use the sort header). */
+    headerCells(sortState = {}) {
+      return visibleColumns().map((c) => (c.sortKey
+        ? tableSortTh(c.sortKey, c.label, { sort: sortState.sort, order: sortState.order, extraClass: c.thClass || '' })
+        : `<th class="${esc(c.thClass || '')}">${esc(c.label)}</th>`)).join('');
+    },
+
+    /** <td> cells for one row. */
+    bodyCells(row) {
+      return visibleColumns().map((c) => `<td class="${esc(c.tdClass || '')}">${c.render ? c.render(row) : ''}</td>`).join('');
+    },
+
+    /** { head:[labels], rows:[[cell,…]] } for CSV export of the visible columns. */
+    csv(rows) {
+      const cols = visibleColumns();
+      return {
+        head: cols.map((c) => c.label),
+        rows: (rows || []).map((r) => cols.map((c) => (c.csv ? c.csv(r) : stripTags(c.render ? c.render(r) : '')))),
+      };
+    },
+  };
+}
+
 function tableSortCmp(va, vb, type) {
   if (type === 'number') {
     const na = Number(va); const nb = Number(vb);
