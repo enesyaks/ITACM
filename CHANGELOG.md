@@ -4,6 +4,20 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.31] — 2026-08-10
+
+### Added
+- **Customizable table columns.** A gear button on every listing table
+  (Hardware, Employees, Licenses, Consumables, Mobile Lines, Network,
+  Contracts, Maintenance) opens a small panel to show/hide columns and
+  drag to reorder them. The layout is remembered per browser until reset,
+  and CSV exports follow the visible columns (Network keeps its full export).
+
+### Fixed
+- Column panel header showed the wrong label ("Ünvan") — now "Görünecek sütunlar".
+- On narrow layouts the column panel was drawn under the table's sticky action
+  column; it now renders above the table.
+
 ## [1.3.30] — 2026-08-09
 
 ### Fixed
