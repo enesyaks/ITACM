@@ -103,7 +103,7 @@ Most asset trackers are either a spreadsheet that rots or a heavyweight SaaS you
 <td width="50%" valign="top">
 
 ### 🖥 Built-in, mobile-ready web UI
-Served by the backend itself — no build step, strict same-origin CSP. 16 modules, global search (Cmd/Ctrl+K), QR codes, dark-mode aware, and a responsive shell with mobile bottom-nav + camera scanner. Just open `http://localhost:8000`.
+Served by the backend itself — no build step, strict same-origin CSP. 16 modules, global search (Cmd/Ctrl+K), QR codes, dark-mode aware, **per-user customizable table columns** (show/hide + drag-to-reorder, remembered per browser), and a responsive shell with mobile bottom-nav + camera scanner. Just open `http://localhost:8000`.
 
 ### 🤝 Atomic handover basket
 Assign multiple assets to an employee in one all-or-nothing transaction, producing a printable handover receipt (Zimmet Tutanağı). Row locks make double-assignment impossible; reprints preserve the original issuer's name.
@@ -132,8 +132,8 @@ Departments (with a **manager**), teams (with a **lead**) and their members draw
 ### 🤖 AI assistant (natural-language queries)
 Ask about your inventory in plain language and get grounded answers — **provider-agnostic**: a local **Ollama** model or a cloud API (OpenAI, DeepSeek, Anthropic, Groq, Mistral, Together, OpenRouter, or a custom endpoint). Streaming replies, result tables, CSV export, auto charts and a collapsible "show SQL". Analytical questions run a **guarded read-only** query against a curated view schema — never the base tables — under a low-privilege role, honouring each user's RBAC (a user can't surface data the UI denies them), with SSRF-safe outbound and a per-user rate limit. **Off by default** — enable under **Integrations → AI**.
 
-### 🔐 Role-based access control
-`Owner`, `Admin`, `Helpdesk`, `Viewer` roles enforced on **every** endpoint, re-checked on each request so changes apply instantly. Owners can disable or delete accounts — every disable/enable/delete/role change is recorded. Sign-in is local email/password with **TOTP MFA** — optional for every role and **mandatory for `Owner` accounts**: an Owner must enrol MFA before using the app, cannot disable it, and no one can be promoted to Owner until they have it enabled. Plus password change and server-side logout (JWT revoke). There is no SSO / Entra login.
+### 🔐 Role-based access control + permission matrix
+Six built-in roles — `Owner`, `Admin`, `Helpdesk`, `Viewer`, plus **`HR`** (files onboarding/offboarding requests, sees only its own zimmet) and **`Portal`** (self-service employee login, sees only its own assets) — enforced on **every** endpoint and re-checked on each request so changes apply instantly. Need finer control than a role? Build a **custom permission group** in the IAM matrix: grant any `resource:action` (e.g. `asset:sell`, `license:assign`) and scope it by department / location / category / cost limit. Owners can disable or delete accounts — every disable/enable/delete/role change is recorded. Sign-in is local email/password with **TOTP MFA** — optional for every role and **mandatory for `Owner` accounts**: an Owner must enrol MFA before using the app, cannot disable it, and no one can be promoted to Owner until they have it enabled. Plus password change and server-side logout (JWT revoke). There is no SSO / Entra login.
 
 ### 🧾 System-wide audit log
 A unified, filterable timeline of **all** instance activity — assets, users, documents, handovers, logins, settings and more — merging the append-only audit table with legacy domain history. Search by source, actor and date; secrets are redacted before storage.
@@ -185,7 +185,7 @@ The sidebar maps 1:1 to the feature set, plus a floating **AI assistant** (⌘/C
 | **Stock Count** | Physical count sessions with camera scanning and reconciliation |
 | **Reports** | 20 preset reports + a builder (data sources × columns × filters), CSV / letterhead print |
 | **Audit Log** | Unified, filterable activity timeline (Owner/Admin) |
-| **IT Users** | RBAC user management — create, role, disable/enable, delete (audited) |
+| **IT Users** | RBAC user management + **custom permission groups** (granular `resource:action` matrix with scoping) — create, role, disable/enable, delete (audited) |
 
 ---
 
@@ -455,7 +455,7 @@ If **any** asset is locked, the API returns `409` with a per-asset conflict list
 - **Secrets never live in the repo.** `.env` is git-ignored; the setup wizard writes it with `0600` permissions and generates a strong `JWT_SECRET` and DB password for you. Database backups (`backups/`) are git-ignored too.
 - **Auth:** passwords are bcrypt-hashed (cost 12); JWTs are signed HS256 with the algorithm **pinned** on verify; login uses a single error message and a constant-time compare (dummy hash for unknown emails) so it can't be used to enumerate accounts; every request re-checks the user row so role changes / disables / deletes apply instantly; **`Owner` accounts must have TOTP MFA enabled** — until they do, the middleware blocks every route except MFA enrolment, token verification and logout.
 - **Access control:** every API router mounts `authenticate`, and mutating routes add `requireRole(...)`. The audit log **redacts** sensitive keys (passwords, tokens, keys) before persisting.
-- **Uploads:** document routes validate the real file type by **magic bytes** (not the client's claim) and cap the body at 12 MB; downloads set a sanitized `Content-Disposition`. All SQL is parameterized; all rendered values are HTML-escaped.
+- **Uploads:** document routes validate the real file type by **magic bytes** (not the client's claim) and cap each file at 8 MB; downloads set a sanitized `Content-Disposition`. All SQL is parameterized; all rendered values are HTML-escaped.
 - **Hardening:** strict Content-Security-Policy (no inline scripts, self-only), HSTS, nosniff / frame-deny / referrer / permissions-policy headers, login rate-limiting (20 / 15 min / IP), global API rate limit (1000 / 5 min / IP), same-origin-only CORS by default, 1 MB default body limit, `x-powered-by` disabled, a one-shot onboarding endpoint that locks itself after first use, and an `npm audit`-clean dependency tree.
 - **Transport:** front the API with HTTPS (Caddy / Nginx / Traefik). Set `CORS_ORIGINS` to your exact frontend origin if it differs.
 

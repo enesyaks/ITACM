@@ -103,7 +103,7 @@ Donanım ve ağ envanteri · yazdırılabilir PDF tutanaklı personel zimmetleri
 <td width="50%" valign="top">
 
 ### 🖥 Dahili, mobil uyumlu web arayüzü
-Backend'in kendisi sunar — build adımı yok, katı same-origin CSP. 16 modül, global arama (Cmd/Ctrl+K), QR kodlar, koyu tema uyumu ve mobil alt menü + kamera tarayıcılı duyarlı kabuk. Sadece `http://localhost:8000` adresini açın.
+Backend'in kendisi sunar — build adımı yok, katı same-origin CSP. 16 modül, global arama (Cmd/Ctrl+K), QR kodlar, koyu tema uyumu, **kullanıcıya özel özelleştirilebilir tablo sütunları** (göster/gizle + sürükle-sırala, tarayıcıda kalıcı) ve mobil alt menü + kamera tarayıcılı duyarlı kabuk. Sadece `http://localhost:8000` adresini açın.
 
 ### 🤝 Atomik zimmet sepeti
 Birden çok cihazı tek "ya hep ya hiç" işlemle bir personele atayın; yazdırılabilir Zimmet Tutanağı üretir. Satır kilitleri çift atamayı imkânsız kılar; yeniden yazdırmada orijinal teslim edenin adı korunur.
@@ -129,8 +129,8 @@ Yeni çalışanın setini planlayın (cihaz + hat rezerve edin), sonra tek zimme
 </td>
 <td width="50%" valign="top">
 
-### 🔐 Rol bazlı erişim kontrolü
-`Owner`, `Admin`, `Helpdesk`, `Viewer` rolleri **her** uç noktada uygulanır ve her istekte yeniden denetlenir; değişiklikler anında geçerli olur. Sahipler hesapları devre dışı bırakabilir veya silebilir — her pasifleştirme/aktifleştirme/silme/rol değişikliği kaydedilir. Giriş yerel e-posta/parola ile; **TOTP MFA** her rol için opsiyonel, **`Owner` hesapları için zorunludur**: bir Owner uygulamayı kullanmadan önce MFA'yı etkinleştirmek zorundadır, kapatamaz ve MFA'sı olmayan hiç kimse Owner'a yükseltilemez. Ayrıca parola değişikliği ve sunucu taraflı çıkış (JWT iptali). SSO / Entra girişi yoktur.
+### 🔐 Rol bazlı erişim kontrolü + izin matrisi
+Altı yerleşik rol — `Owner`, `Admin`, `Helpdesk`, `Viewer`, ayrıca **`HR`** (onboarding/offboarding *talebi* oluşturur, yalnızca kendi zimmetini görür) ve **`Portal`** (self-service çalışan girişi, yalnızca kendi cihazlarını görür) — **her** uç noktada uygulanır ve her istekte yeniden denetlenir; değişiklikler anında geçerli olur. Rolden daha ince kontrol mü lazım? IAM matrisinde **özel izin grubu** oluşturun: herhangi bir `resource:action` (ör. `asset:sell`, `license:assign`) verin ve departman / lokasyon / kategori / maliyet limiti ile kısıtlayın. Sahipler hesapları devre dışı bırakabilir veya silebilir — her pasifleştirme/aktifleştirme/silme/rol değişikliği kaydedilir. Giriş yerel e-posta/parola ile; **TOTP MFA** her rol için opsiyonel, **`Owner` hesapları için zorunludur**: bir Owner uygulamayı kullanmadan önce MFA'yı etkinleştirmek zorundadır, kapatamaz ve MFA'sı olmayan hiç kimse Owner'a yükseltilemez. Ayrıca parola değişikliği ve sunucu taraflı çıkış (JWT iptali). SSO / Entra girişi yoktur.
 
 ### 🧾 Sistem geneli denetim kaydı
 Cihaz, kullanıcı, belge, zimmet, giriş, ayar ve dahasını kapsayan; append-only denetim tablosunu eski alan geçmişleriyle birleştiren birleşik, filtrelenebilir zaman çizelgesi. Kaynağa, aktöre ve tarihe göre arama; sırlar saklanmadan önce maskelenir.
@@ -181,7 +181,7 @@ Kenar menü, özellik setiyle bire bir eşleşir:
 | **Sayım** | Kamera taramalı fiziksel sayım oturumları ve mutabakat |
 | **Raporlar** | 20 hazır rapor + oluşturucu (kaynak × sütun × filtre), CSV / antetli yazdırma |
 | **Denetim Kaydı** | Birleşik, filtrelenebilir hareket zaman çizelgesi (Owner/Admin) |
-| **BT Kullanıcıları** | RBAC kullanıcı yönetimi — oluştur, rol, pasifleştir/aktifleştir, sil (kayıtlı) |
+| **BT Kullanıcıları** | RBAC kullanıcı yönetimi + **özel izin grupları** (kısıtlanabilir, granular `resource:action` matrisi) — oluştur, rol, pasifleştir/aktifleştir, sil (kayıtlı) |
 
 ---
 
@@ -395,7 +395,7 @@ POST /api/handovers
 - **Sırlar depoda tutulmaz.** `.env` git tarafından yok sayılır; kurulum sihirbazı onu `0600` izinle yazar ve sizin için güçlü bir `JWT_SECRET` ve DB parolası üretir. Veritabanı yedekleri (`backups/`) da git dışındadır.
 - **Kimlik doğrulama:** parolalar bcrypt ile hash'lenir (maliyet 12); JWT'ler HS256 ile imzalanır ve doğrulamada algoritma **sabitlenir**; giriş tek bir hata mesajı ve sabit-zamanlı karşılaştırma kullanır (bilinmeyen e-postalar için sahte hash) — böylece hesap sayımı için kullanılamaz; her istek kullanıcı satırını yeniden denetler, rol/pasifleştirme/silme anında geçerli olur; **`Owner` hesapları TOTP MFA etkinleştirmek zorundadır** — etkinleştirene kadar middleware, MFA kaydı / token doğrulama / çıkış dışındaki tüm yolları engeller.
 - **Erişim kontrolü:** her API router'ı `authenticate` uygular, değiştiren rotalar `requireRole(...)` ekler. Denetim kaydı, saklamadan önce hassas anahtarları (parola, token, key) **maskeler**.
-- **Yüklemeler:** belge rotaları gerçek dosya türünü **magic byte** ile doğrular (istemcinin iddiasına değil) ve gövdeyi 12 MB ile sınırlar; indirmeler temizlenmiş bir `Content-Disposition` ayarlar. Tüm SQL parametrelidir; tüm gösterilen değerler HTML olarak kaçışlanır.
+- **Yüklemeler:** belge rotaları gerçek dosya türünü **magic byte** ile doğrular (istemcinin iddiasına değil) ve her dosyayı 8 MB ile sınırlar; indirmeler temizlenmiş bir `Content-Disposition` ayarlar. Tüm SQL parametrelidir; tüm gösterilen değerler HTML olarak kaçışlanır.
 - **Sıkılaştırma:** katı Content-Security-Policy (satır içi script yok, self-only), HSTS, nosniff / frame-deny / referrer / permissions-policy başlıkları, giriş hız sınırı (20 / 15 dk / IP), global API hız sınırı (1000 / 5 dk / IP), varsayılan same-origin CORS, 1 MB varsayılan gövde limiti, `x-powered-by` kapalı, ilk kullanımdan sonra kendini kilitleyen tek seferlik onboarding uç noktası ve `npm audit`-temiz bağımlılık ağacı.
 - **Taşıma:** API'nin önüne HTTPS koyun (Caddy / Nginx / Traefik). Frontend origin'iniz farklıysa `CORS_ORIGINS` değerini tam origin'inize ayarlayın.
 
