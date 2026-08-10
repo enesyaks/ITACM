@@ -437,6 +437,94 @@ function renderContractsTab(el, contracts, providers, opts = {}) {
     .replace('{n}', String(contracts.length))
     .replace('{total}', String(allCount));
 
+  const contractRowActions = (c) => `${canReadDocs || canUploadDocs ? `
+    <button class="btn btn-outline btn-sm" data-contract-docs="${esc(c.id)}" title="${esc(t('common.documents') || 'Documents')}">
+      <span class="ms">attach_file</span>${canReadDocs && (c.documentCount || 0) ? ` ${c.documentCount}` : ''}
+    </button>` : ''}${canEditContract ? `
+    <button class="btn btn-outline btn-sm" data-edit-contract="${esc(c.id)}"><span class="ms">edit</span></button>` : ''}${canDeleteContract ? `
+    <button class="btn btn-outline btn-sm" data-del-contract="${esc(c.id)}"><span class="ms">delete</span></button>` : ''}`;
+
+  const contractCols = columnPicker({
+    storageKey: 'itacm_cols_contracts',
+    onChange: () => { const s = $('#pc-c-table', el); if (s) { s.innerHTML = contractsTableHtml(); wireContractRows(); } },
+    columns: [
+      { key: 'contract',
+        label: t('providers.colContract') || 'Contract',
+        mandatory: true,
+        render: (c) => `<div class="cell-title">${esc(c.title)}</div><div class="cell-sub">${esc(c.category)}${c.contractNumber ? ` · <span class="mono">${esc(c.contractNumber)}</span>` : ''}${c.autoRenew ? ` · ${esc(t('providers.autoRenew') || 'Auto-renew')}` : ''}${canReadDocs && (c.documentCount || 0) > 0 ? ` · ${c.documentCount} doc` : ''}</div>`,
+        csv: (c) => `${c.title || ''} ${c.contractNumber || ''}`.trim() },
+      { key: 'provider',
+        label: t('providers.colProvider') || 'Provider',
+        render: (c) => `<div>${esc(c.providerName || '—')}</div><div class="cell-sub">${esc(c.providerCategory || '')}</div>`,
+        csv: (c) => c.providerName || '' },
+      { key: 'term',
+        label: t('providers.colTerm') || 'Term',
+        render: (c) => {
+          const days = contractDaysLeft(c.endDate);
+          let endExtra = '';
+          if (days != null && (c.status === 'Active' || c.status === 'Draft')) {
+            if (days < 0) endExtra = `<span class="pill pill-rose">${esc(t('providers.overdue') || 'Overdue')}</span>`;
+            else if (days <= 30) endExtra = `<span class="pill pill-rose">${days}d</span>`;
+            else if (days <= 60) endExtra = `<span class="pill pill-amber">${days}d</span>`;
+          }
+          return `<div class="cell-sub">${fmtDate(c.startDate) || '—'} → ${fmtDate(c.endDate) || '—'}</div>${c.renewalDate ? `<div class="cell-sub">Renew ${fmtDate(c.renewalDate)}</div>` : ''}${endExtra ? `<div style="margin-top:4px">${endExtra}</div>` : ''}`;
+        },
+        csv: (c) => `${fmtDate(c.startDate) || ''} - ${fmtDate(c.endDate) || ''}` },
+      ...(canViewCosts ? [{ key: 'cost',
+        label: t('providers.colCost') || 'Cost',
+        render: (c) => `<div>${c.costAmount != null ? fmtMoney(c.costAmount, c.costCurrency) : '—'}</div><div class="cell-sub">${esc(c.billingCycle || '')}</div>`,
+        csv: (c) => (c.costAmount != null ? c.costAmount : '') }] : []),
+      { key: 'owner',
+        label: t('providers.colOwner') || 'Owner',
+        render: (c) => esc((c.ownerEmployee && c.ownerEmployee.fullName) || '—'),
+        csv: (c) => (c.ownerEmployee && c.ownerEmployee.fullName) || '' },
+      { key: 'status',
+        label: t('providers.colStatus') || 'Status',
+        mandatory: true,
+        render: (c) => `${statusPill(c.status)}${c.visibility === 'Confidential' ? `<div style="margin-top:4px"><span class="pill pill-indigo">${esc(t('providers.visibilityConfidential') || 'Confidential')}</span></div>` : ''}`,
+        csv: (c) => c.status || '' },
+    ],
+  });
+
+  function contractsTableHtml() {
+    return `<table class="data">
+      <thead><tr>${contractCols.headerCells({})}<th style="text-align:right"></th></tr></thead>
+      <tbody>
+        ${contracts.map((c) => {
+    const cSearch = [c.title, c.contractNumber, c.providerName, c.category, c.notes].filter(Boolean).join(' ').toLowerCase();
+    return `<tr data-c-search="${esc(cSearch)}">${contractCols.bodyCells(c)}<td class="actions">${contractRowActions(c)}</td></tr>`;
+  }).join('')}
+      </tbody>
+    </table>`;
+  }
+
+  function wireContractRows() {
+    el.querySelectorAll('[data-edit-contract]').forEach((b) => {
+      b.addEventListener('click', () => {
+        const c = contracts.find((x) => x.id === b.dataset.editContract);
+        if (c) openContractForm(c, providers, refresh);
+      });
+    });
+    el.querySelectorAll('[data-contract-docs]').forEach((b) => {
+      b.addEventListener('click', () => {
+        const c = contracts.find((x) => x.id === b.dataset.contractDocs);
+        if (c) openEntityDocs({ kind: 'contract', id: c.id, title: c.title, onDone: refresh });
+      });
+    });
+    el.querySelectorAll('[data-del-contract]').forEach((b) => {
+      b.addEventListener('click', async () => {
+        const c = contracts.find((x) => x.id === b.dataset.delContract);
+        if (!c) return;
+        if (!confirm(`Delete contract “${c.title}”?`)) return;
+        try {
+          await api(`/contracts/${c.id}`, { method: 'DELETE' });
+          toast('Contract deleted', 'success');
+          refresh();
+        } catch (err) { toast(err.message, 'error'); }
+      });
+    });
+  }
+
   const filterBar = `
     <div class="card card-pad" style="margin-bottom:12px">
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
@@ -467,6 +555,7 @@ function renderContractsTab(el, contracts, providers, opts = {}) {
         <button type="button" class="btn btn-outline btn-sm" id="pc-clear-provider-filter" style="margin-bottom:2px">
           <span class="ms">filter_alt_off</span> ${esc(t('providers.filterClear') || 'Clear filters')}
         </button>` : ''}
+        <div style="margin-left:auto;margin-bottom:2px">${contractCols.gearHtml()}</div>
       </div>
       <div class="cell-sub" style="margin-top:10px">
         <span id="pc-c-count">${esc(resultLabel)}</span>
@@ -494,107 +583,14 @@ function renderContractsTab(el, contracts, providers, opts = {}) {
 
   el.innerHTML = `
     ${filterBar}
-    <div class="card"><div class="table-wrap"><table class="data">
-      <thead><tr>
-        <th>${esc(t('providers.colContract') || 'Contract')}</th>
-        <th>${esc(t('providers.colProvider') || 'Provider')}</th>
-        <th>${esc(t('providers.colTerm') || 'Term')}</th>
-        <th>${esc(t('providers.colCost') || 'Cost')}</th>
-        <th>${esc(t('providers.colOwner') || 'Owner')}</th>
-        <th>${esc(t('providers.colStatus') || 'Status')}</th>
-        <th style="text-align:right"></th>
-      </tr></thead>
-      <tbody>
-        ${contracts.map((c) => {
-          const days = contractDaysLeft(c.endDate);
-          let endExtra = '';
-          if (days != null && (c.status === 'Active' || c.status === 'Draft')) {
-            if (days < 0) endExtra = `<span class="pill pill-rose">${esc(t('providers.overdue') || 'Overdue')}</span>`;
-            else if (days <= 30) endExtra = `<span class="pill pill-rose">${days}d</span>`;
-            else if (days <= 60) endExtra = `<span class="pill pill-amber">${days}d</span>`;
-          }
-          const cSearch = [c.title, c.contractNumber, c.providerName, c.category, c.notes]
-            .filter(Boolean).join(' ').toLowerCase();
-          return `
-          <tr data-c-search="${esc(cSearch)}">
-            <td>
-              <div class="cell-title">${esc(c.title)}</div>
-              <div class="cell-sub">
-                ${esc(c.category)}
-                ${c.contractNumber ? ` · <span class="mono">${esc(c.contractNumber)}</span>` : ''}
-                ${c.autoRenew ? ` · ${esc(t('providers.autoRenew') || 'Auto-renew')}` : ''}
-                ${canReadDocs && (c.documentCount || 0) > 0 ? ` · ${c.documentCount} doc` : ''}
-              </div>
-            </td>
-            <td>
-              <div>${esc(c.providerName || '—')}</div>
-              <div class="cell-sub">${esc(c.providerCategory || '')}</div>
-            </td>
-            <td>
-              <div class="cell-sub">${fmtDate(c.startDate) || '—'} → ${fmtDate(c.endDate) || '—'}</div>
-              ${c.renewalDate ? `<div class="cell-sub">Renew ${fmtDate(c.renewalDate)}</div>` : ''}
-              ${endExtra ? `<div style="margin-top:4px">${endExtra}</div>` : ''}
-            </td>
-            <td>
-              <div>${canViewCosts && c.costAmount != null ? fmtMoney(c.costAmount, c.costCurrency) : '—'}</div>
-              <div class="cell-sub">${canViewCosts ? esc(c.billingCycle || '') : ''}</div>
-            </td>
-            <td>${esc((c.ownerEmployee && c.ownerEmployee.fullName) || '—')}</td>
-            <td>
-              ${statusPill(c.status)}
-              ${c.visibility === 'Confidential'
-                ? `<div style="margin-top:4px"><span class="pill pill-indigo">${esc(t('providers.visibilityConfidential') || 'Confidential')}</span></div>`
-                : ''}
-            </td>
-            <td class="actions">
-              ${canReadDocs || canUploadDocs ? `
-              <button class="btn btn-outline btn-sm" data-contract-docs="${esc(c.id)}" title="${esc(t('common.documents') || 'Documents')}">
-                <span class="ms">attach_file</span>${canReadDocs && (c.documentCount || 0) ? ` ${c.documentCount}` : ''}
-              </button>` : ''}
-              ${canEditContract ? `
-              <button class="btn btn-outline btn-sm" data-edit-contract="${esc(c.id)}"><span class="ms">edit</span></button>` : ''}
-              ${canDeleteContract ? `
-              <button class="btn btn-outline btn-sm" data-del-contract="${esc(c.id)}"><span class="ms">delete</span></button>` : ''}
-            </td>
-          </tr>`;
-        }).join('')}
-      </tbody>
-    </table></div>
+    <div class="card"><div class="table-wrap" id="pc-c-table">${contractsTableHtml()}</div>
     <div id="pc-c-nomatch" class="table-empty hidden" style="padding:24px;text-align:center">
       ${esc(t('providers.searchNoMatch') || 'No contracts match your search.')}
     </div></div>`;
 
+  contractCols.mountGear(el);
   wireContractFilters(el, { setContractFilters, clearFilter, searchQ });
-
-  el.querySelectorAll('[data-edit-contract]').forEach((b) => {
-    b.addEventListener('click', () => {
-      const c = contracts.find((x) => x.id === b.dataset.editContract);
-      if (c) openContractForm(c, providers, refresh);
-    });
-  });
-  el.querySelectorAll('[data-contract-docs]').forEach((b) => {
-    b.addEventListener('click', () => {
-      const c = contracts.find((x) => x.id === b.dataset.contractDocs);
-      if (c) openEntityDocs({
-        kind: 'contract',
-        id: c.id,
-        title: c.title,
-        onDone: refresh,
-      });
-    });
-  });
-  el.querySelectorAll('[data-del-contract]').forEach((b) => {
-    b.addEventListener('click', async () => {
-      const c = contracts.find((x) => x.id === b.dataset.delContract);
-      if (!c) return;
-      if (!confirm(`Delete contract “${c.title}”?`)) return;
-      try {
-        await api(`/contracts/${c.id}`, { method: 'DELETE' });
-        toast('Contract deleted', 'success');
-        refresh();
-      } catch (err) { toast(err.message, 'error'); }
-    });
-  });
+  wireContractRows();
 }
 
 function wireContractFilters(el, { setContractFilters, clearFilter, searchQ }) {

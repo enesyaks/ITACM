@@ -434,6 +434,36 @@ Views.lines = async function (el, params = {}) {
     ? items.filter((l) => l.status === 'Active').reduce((s2, l) => s2 + Number(l.monthlyCost || 0), 0)
     : null;
 
+  const lineStatusPill = (l) => (l.status === 'Active' ? `<span class="pill pill-emerald">${esc(t('lines.stActive'))}</span>`
+    : l.status === 'Suspended' ? `<span class="pill pill-amber">${esc(t('lines.stSuspended'))}</span>`
+      : `<span class="pill pill-rose">${esc(t('lines.stCancelled'))}</span>`);
+  const lineRowActions = (l) => `${l.currentEmployeeId
+    ? (canUnassign ? `<button class="btn btn-outline btn-sm" data-line-unassign="${esc(l.id)}"><span class="ms">undo</span> ${esc(t('lines.takeBack'))}</button>` : '')
+    : (canAssign && l.status === 'Active' ? `<button class="btn btn-primary btn-sm" data-line-assign="${esc(l.id)}" data-num="${esc(l.phoneNumber)}"><span class="ms">person_add</span> ${esc(t('lines.assignBtn'))}</button>` : '')}
+    ${canEdit ? `<button class="btn btn-outline btn-sm" data-line-edit="${esc(l.id)}">${esc(t('common.edit'))}</button>` : ''}`;
+
+  const lineCols = columnPicker({
+    storageKey: 'itacm_cols_lines',
+    onChange: () => { const s = $('#line-table', el); if (s) s.innerHTML = lineTableHtml(); },
+    columns: [
+      { key: 'number', label: t('lines.colNumber'), mandatory: true, tdClass: 'mono cell-title', render: (l) => esc(l.phoneNumber), csv: (l) => l.phoneNumber || '' },
+      { key: 'operator', label: t('lines.colOperatorPlan'), render: (l) => `${esc(l.operator || '—')}<div class="cell-sub">${esc(l.plan || '')}</div>`, csv: (l) => `${l.operator || ''} ${l.plan || ''}`.trim() },
+      { key: 'sim', label: t('lines.colSim'), tdClass: 'mono cell-sub', render: (l) => esc(l.simSerial || '—'), csv: (l) => l.simSerial || '' },
+      ...(canViewCosts ? [{ key: 'monthly', label: t('lines.colMonthly'), render: (l) => (l.monthlyCost != null ? fmtMoney(l.monthlyCost) : '—'), csv: (l) => (l.monthlyCost != null ? l.monthlyCost : '') }] : []),
+      { key: 'status', label: t('common.status'), mandatory: true, render: (l) => lineStatusPill(l), csv: (l) => l.status || '' },
+      { key: 'assignedTo', label: t('lines.colAssignedTo'), render: (l) => (l.currentEmployeeName ? esc(l.currentEmployeeName) : '<span class="cell-sub">—</span>'), csv: (l) => l.currentEmployeeName || '' },
+    ],
+  });
+  function lineTableHtml() {
+    return `<table class="data">
+      <thead><tr>${lineCols.headerCells({})}<th style="text-align:right"></th></tr></thead>
+      <tbody>
+        ${items.length === 0 ? `<tr><td colspan="${lineCols.visibleColumns().length + 1}" class="table-empty">${esc(t('lines.noLinesYet'))}</td></tr>` :
+    items.map((l) => `<tr>${lineCols.bodyCells(l)}<td class="actions">${lineRowActions(l)}</td></tr>`).join('')}
+      </tbody>
+    </table>`;
+  }
+
   el.innerHTML = `
     ${pageHead('Mobile Lines', 'Company SIM cards & phone numbers — who holds which line.', canEdit
       ? `<button class="btn btn-primary" id="line-new"><span class="ms">sim_card</span> ${esc(t('lines.newLine'))}</button>` : '')}
@@ -455,33 +485,13 @@ Views.lines = async function (el, params = {}) {
           <option value="">${esc(t('lines.allStatuses'))}</option>
           ${[['Active', t('lines.stActive')], ['Suspended', t('lines.stSuspended')], ['Cancelled', t('lines.stCancelled')]].map(([st, lbl]) => `<option value="${st}" ${params.status === st ? 'selected' : ''}>${esc(lbl)}</option>`).join('')}
         </select>
+        <div style="margin-left:auto">${lineCols.gearHtml()}</div>
       </div>
-      <div class="table-wrap"><table class="data">
-        <thead><tr><th>${esc(t('lines.colNumber'))}</th><th>${esc(t('lines.colOperatorPlan'))}</th><th>${esc(t('lines.colSim'))}</th><th>${esc(t('lines.colMonthly'))}</th><th>${esc(t('common.status'))}</th><th>${esc(t('lines.colAssignedTo'))}</th><th style="text-align:right"></th></tr></thead>
-        <tbody>
-          ${items.length === 0 ? `<tr><td colspan="7" class="table-empty">${esc(t('lines.noLinesYet'))}</td></tr>` :
-            items.map((l) => `
-            <tr>
-              <td class="mono cell-title">${esc(l.phoneNumber)}</td>
-              <td>${esc(l.operator || '—')}<div class="cell-sub">${esc(l.plan || '')}</div></td>
-              <td class="mono cell-sub">${esc(l.simSerial || '—')}</td>
-              <td>${canViewCosts && l.monthlyCost != null ? fmtMoney(l.monthlyCost) : '—'}</td>
-              <td>${l.status === 'Active' ? `<span class="pill pill-emerald">${esc(t('lines.stActive'))}</span>`
-                : l.status === 'Suspended' ? `<span class="pill pill-amber">${esc(t('lines.stSuspended'))}</span>`
-                : `<span class="pill pill-rose">${esc(t('lines.stCancelled'))}</span>`}</td>
-              <td>${l.currentEmployeeName ? esc(l.currentEmployeeName) : '<span class="cell-sub">—</span>'}</td>
-              <td class="actions">
-                ${l.currentEmployeeId
-                  ? (canUnassign ? `<button class="btn btn-outline btn-sm" data-line-unassign="${esc(l.id)}"><span class="ms">undo</span> ${esc(t('lines.takeBack'))}</button>` : '')
-                  : (canAssign && l.status === 'Active' ? `<button class="btn btn-primary btn-sm" data-line-assign="${esc(l.id)}" data-num="${esc(l.phoneNumber)}"><span class="ms">person_add</span> ${esc(t('lines.assignBtn'))}</button>` : '')}
-                ${canEdit ? `<button class="btn btn-outline btn-sm" data-line-edit="${esc(l.id)}">${esc(t('common.edit'))}</button>` : ''}
-              </td>
-            </tr>`).join('')}
-        </tbody>
-      </table></div>
+      <div class="table-wrap" id="line-table">${lineTableHtml()}</div>
       <div class="table-foot">${(t('lines.nLines') || '{n} line(s)').replace('{n}', items.length)}</div>
     </div>`;
 
+  lineCols.mountGear(el);
   const rerender = (p) => Views.lines(el, { ...params, ...p });
   $('#line-search', el).addEventListener('change', (e) => rerender({ search: e.target.value }));
   $('#line-status', el).addEventListener('change', (e) => rerender({ status: e.target.value }));

@@ -153,6 +153,54 @@ Views.network = async function (el, params = {}) {
     view,
   });
 
+  const netCols = columnPicker({
+    storageKey: 'itacm_cols_network',
+    onChange: () => repaintPanel(),
+    columns: [
+      { key: 'device',
+        label: t('network.colDevice'),
+        mandatory: true,
+        render: (x) => {
+          const metaBits = [
+            parentBitHtml(x),
+            x.firmwareVersion ? `<div class="cell-sub">FW ${esc(x.firmwareVersion)}</div>` : '',
+            eolBadgeHtml(lifecycleInfo(x)),
+            warBadgeHtml(dateDaysInfo(x.warrantyEndDate)),
+            licBadgeHtml(assetLicenses(x)),
+          ].filter(Boolean).join('');
+          return `<div class="net-device"><span class="ms net-device-ico">${catIcon(x.category)}</span>`
+            + `<div class="net-device-body"><div class="cell-title">${esc(x.brand)} ${esc(x.model)}</div>`
+            + `<div class="cell-sub mono">${esc(x.assetTag)}</div>${metaBits}</div></div>`;
+        },
+        csv: (x) => `${x.brand || ''} ${x.model || ''} (${x.assetTag || ''})`.trim() },
+      { key: 'role', label: t('network.colRole'), render: (x) => (x.infraRole ? esc(x.infraRole) : '<span class="cell-sub">—</span>'), csv: (x) => x.infraRole || '' },
+      { key: 'network',
+        label: t('network.colNetwork'),
+        tdClass: 'net-col-net',
+        render: (x) => {
+          const s = x.specs || {};
+          const netBits = [
+            s.hostname ? `<div class="mono">${esc(s.hostname)}</div>` : '',
+            s.ipAddress ? `<div class="mono">${esc(s.ipAddress)}</div>` : '',
+            x.mgmtIp ? `<div class="cell-sub mono">mgmt ${esc(x.mgmtIp)}</div>` : '',
+          ].filter(Boolean).join('');
+          return netBits || '<span class="cell-sub">—</span>';
+        },
+        csv: (x) => { const s = x.specs || {}; return [s.hostname, s.ipAddress, x.mgmtIp].filter(Boolean).join(' '); } },
+      { key: 'rack', label: t('network.colRack'), render: (x) => (rackLabel(x) ? `<span class="mono">${esc(rackLabel(x))}</span>` : '<span class="cell-sub">—</span>'), csv: (x) => rackLabel(x) || '' },
+      { key: 'location', label: t('network.colLocation'), render: (x) => (x.location ? esc(x.location) : `<span class="pill pill-amber">${esc(t('network.noLocation'))}</span>`), csv: (x) => x.location || '' },
+      { key: 'owner', label: t('network.colOwner'), render: (x) => (x.responsibleEmployee ? esc(x.responsibleEmployee.fullName) : `<span class="pill pill-amber">${esc(t('network.noOwner'))}</span>`), csv: (x) => (x.responsibleEmployee ? x.responsibleEmployee.fullName : '') },
+      { key: 'status',
+        label: t('common.status'),
+        mandatory: true,
+        render: (x) => {
+          const placed = !!(x.location && x.responsibleEmployee);
+          return `${placed ? `<span class="pill pill-emerald">${esc(t('network.atSite'))}</span>` : `<span class="pill pill-amber">${esc(t('network.unplaced'))}</span>`}<div class="cell-sub">${esc(x.status)}</div>`;
+        },
+        csv: (x) => x.status || '' },
+    ],
+  });
+
   el.innerHTML = `
     ${pageHead('nav.network', 'network.sub', `
       ${Auth.canIam('asset', 'export')
@@ -226,6 +274,7 @@ Views.network = async function (el, params = {}) {
         selected: selectedOwners,
         options: ownerOptions,
       })}
+      ${view === 'list' ? `<div style="margin-left:auto">${netCols.gearHtml()}</div>` : ''}
     </div>
     <div id="net-chips"></div>
 
@@ -270,13 +319,14 @@ Views.network = async function (el, params = {}) {
     } else if (view === 'racks') {
       NetViz.renderRacks(panel, items, { onSelect: openDevice });
     } else {
-      panel.innerHTML = renderListTable(items, canEdit);
+      panel.innerHTML = renderListTable(items, canEdit, netCols);
       mountNetworkBulk(el, items, refresh, canEdit);
     }
   }
 
   paintChips();
   repaintPanel();
+  if (view === 'list') netCols.mountGear($('#net-filters', el));
 
   // Text search filters the loaded infra set client-side and repaints ONLY the
   // list + chips — the search <input> is never rebuilt, so the mobile keyboard
@@ -468,77 +518,31 @@ function rackLabel(x) {
   return [x.rack, u].filter(Boolean).join(' · ');
 }
 
-function renderListTable(items, canEdit) {
+function renderListTable(items, canEdit, cols) {
   /* Dense list: warranty / EOL / license live on the detail page so STATUS +
-     actions stay on-screen without horizontal scrolling. */
+     actions stay on-screen without horizontal scrolling. Visible columns are
+     user-configurable via the gear (see columnPicker). */
   return `<div class="card"><div class="table-wrap"><table class="data net-list">
     <thead><tr>
       <th class="net-col-check"><input type="checkbox" id="sel-all" style="width:15px;height:15px" ${!canEdit ? 'disabled' : ''}></th>
-      <th>${esc(t('network.colDevice'))}</th>
-      <th>${esc(t('network.colRole'))}</th>
-      <th>${esc(t('network.colNetwork'))}</th>
-      <th>${esc(t('network.colRack'))}</th>
-      <th>${esc(t('network.colLocation'))}</th>
-      <th>${esc(t('network.colOwner'))}</th>
-      <th>Status</th>
+      ${cols.headerCells({})}
       <th class="net-col-actions"></th>
     </tr></thead>
     <tbody>
       ${items.length === 0
-        ? `<tr><td colspan="9" class="table-empty">${esc(t('network.empty'))}</td></tr>`
-        : items.map((x) => {
-          const s = x.specs || {};
-          const lc = lifecycleInfo(x);
-          const lics = assetLicenses(x);
-          const war = dateDaysInfo(x.warrantyEndDate);
-          const placed = !!(x.location && x.responsibleEmployee);
-          const netBits = [
-            s.hostname ? `<div class="mono">${esc(s.hostname)}</div>` : '',
-            s.ipAddress ? `<div class="mono">${esc(s.ipAddress)}</div>` : '',
-            x.mgmtIp ? `<div class="cell-sub mono">mgmt ${esc(x.mgmtIp)}</div>` : '',
-          ].filter(Boolean).join('');
-          const metaBits = [
-            parentBitHtml(x),
-            x.firmwareVersion ? `<div class="cell-sub">FW ${esc(x.firmwareVersion)}</div>` : '',
-            eolBadgeHtml(lc),
-            warBadgeHtml(war),
-            licBadgeHtml(lics),
-          ].filter(Boolean).join('');
-          return `<tr class="net-row" data-open="${esc(x.id)}">
+        ? `<tr><td colspan="${cols.visibleColumns().length + 2}" class="table-empty">${esc(t('network.empty'))}</td></tr>`
+        : items.map((x) => `<tr class="net-row" data-open="${esc(x.id)}">
             <td class="net-col-check" onclick="event.stopPropagation()">
               <input type="checkbox" data-sel="${esc(x.id)}" style="width:15px;height:15px" ${!canEdit ? 'disabled' : ''}>
             </td>
-            <td>
-              <div class="net-device">
-                <span class="ms net-device-ico">${catIcon(x.category)}</span>
-                <div class="net-device-body">
-                  <div class="cell-title">${esc(x.brand)} ${esc(x.model)}</div>
-                  <div class="cell-sub mono">${esc(x.assetTag)}</div>
-                  ${metaBits}
-                </div>
-              </div>
-            </td>
-            <td>${x.infraRole ? esc(x.infraRole) : '<span class="cell-sub">—</span>'}</td>
-            <td class="net-col-net">${netBits || '<span class="cell-sub">—</span>'}</td>
-            <td>${rackLabel(x) ? `<span class="mono">${esc(rackLabel(x))}</span>` : '<span class="cell-sub">—</span>'}</td>
-            <td>${x.location
-              ? esc(x.location)
-              : `<span class="pill pill-amber">${esc(t('network.noLocation'))}</span>`}</td>
-            <td>${x.responsibleEmployee
-              ? esc(x.responsibleEmployee.fullName)
-              : `<span class="pill pill-amber">${esc(t('network.noOwner'))}</span>`}</td>
-            <td>${placed
-              ? `<span class="pill pill-emerald">${esc(t('network.atSite'))}</span>`
-              : `<span class="pill pill-amber">${esc(t('network.unplaced'))}</span>`}
-              <div class="cell-sub">${esc(x.status)}</div></td>
+            ${cols.bodyCells(x)}
             <td class="actions net-col-actions" onclick="event.stopPropagation()">
               ${canEdit ? `<button class="btn btn-primary btn-sm" data-place="${esc(x.id)}" title="${esc(t('network.setPlacement'))}">
                 <span class="ms">location_on</span></button>` : ''}
               <button class="btn btn-outline btn-sm" data-view="${esc(x.id)}"><span class="ms">visibility</span></button>
               ${canEdit ? `<button class="btn btn-outline btn-sm" data-edit="${esc(x.id)}"><span class="ms">edit</span></button>` : ''}
             </td>
-          </tr>`;
-        }).join('')}
+          </tr>`).join('')}
     </tbody>
   </table></div></div>`;
 }

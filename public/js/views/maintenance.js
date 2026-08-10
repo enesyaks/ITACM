@@ -4,6 +4,32 @@ Views.maintenance = async function (el, params = {}) {
   const canViewCosts = Auth.canIam('maintenance', 'view_confidential') || Auth.can('canViewMaintenanceCosts');
   const logs = await api('/maintenance' + (openOnly ? '?open=true' : ''));
 
+  const mntRowActions = (m) => `<button class="btn btn-outline btn-sm" data-notes="${esc(m.id)}">
+      <span class="ms">chat</span> ${esc(t('mnt.notes'))} (${(m.progressNotes || []).length})</button>
+    ${canEdit && !m.returnDate ? `<button class="btn btn-outline btn-sm" data-closelog="${esc(m.id)}">${esc(t('common.close'))}</button>` : ''}`;
+
+  const mntCols = columnPicker({
+    storageKey: 'itacm_cols_maintenance',
+    onChange: () => { const s = $('#mnt-table', el); if (s) s.innerHTML = mntTableHtml(); },
+    columns: [
+      { key: 'asset', label: t('dash.colAsset'), mandatory: true, tdClass: 'mono', render: (m) => esc(m.assetTag), csv: (m) => m.assetTag || '' },
+      { key: 'service', label: t('mnt.colServiceCompany'), mandatory: true, tdClass: 'cell-title', render: (m) => esc(m.serviceCompany), csv: (m) => m.serviceCompany || '' },
+      { key: 'issue', label: t('mnt.colIssue'), render: (m) => esc(m.issueDescription), csv: (m) => m.issueDescription || '' },
+      ...(canViewCosts ? [{ key: 'cost', label: t('hw.d.cost'), render: (m) => (m.cost != null ? fmtMoney(m.cost) : '—'), csv: (m) => (m.cost != null ? m.cost : '') }] : []),
+      { key: 'sent', label: t('mnt.colSent'), render: (m) => fmtDate(m.sentDate), csv: (m) => fmtDate(m.sentDate) || '' },
+      { key: 'returned', label: t('mnt.colReturned'), render: (m) => (m.returnDate ? fmtDate(m.returnDate) : badge('In Repair')), csv: (m) => (m.returnDate ? fmtDate(m.returnDate) : 'In Repair') },
+    ],
+  });
+  function mntTableHtml() {
+    return `<table class="data">
+      <thead><tr>${mntCols.headerCells({})}<th style="text-align:right"></th></tr></thead>
+      <tbody>
+        ${logs.length === 0 ? `<tr><td colspan="${mntCols.visibleColumns().length + 1}" class="table-empty">${esc(t('mnt.noLogs'))}</td></tr>` :
+    logs.map((m) => `<tr>${mntCols.bodyCells(m)}<td class="actions">${mntRowActions(m)}</td></tr>`).join('')}
+      </tbody>
+    </table>`;
+  }
+
   el.innerHTML = `
     ${pageHead('Maintenance & Repair', 'Track devices in service and repair costs.')}
     <div class="toolbar">
@@ -13,26 +39,11 @@ Views.maintenance = async function (el, params = {}) {
       </select>
       <div class="spacer"></div>
       <span class="cell-sub">${esc(t('mnt.sendHint'))}</span>
+      <div style="margin-left:auto">${mntCols.gearHtml()}</div>
     </div>
-    <div class="card"><div class="table-wrap"><table class="data">
-      <thead><tr><th>${esc(t('dash.colAsset'))}</th><th>${esc(t('mnt.colServiceCompany'))}</th><th>${esc(t('mnt.colIssue'))}</th><th>${esc(t('hw.d.cost'))}</th><th>${esc(t('mnt.colSent'))}</th><th>${esc(t('mnt.colReturned'))}</th><th style="text-align:right"></th></tr></thead>
-      <tbody>
-        ${logs.length === 0 ? `<tr><td colspan="7" class="table-empty">${esc(t('mnt.noLogs'))}</td></tr>` :
-          logs.map((m) => `
-          <tr>
-            <td class="mono">${esc(m.assetTag)}</td>
-            <td class="cell-title">${esc(m.serviceCompany)}</td>
-            <td>${esc(m.issueDescription)}</td>
-            <td>${canViewCosts && m.cost != null ? fmtMoney(m.cost) : '—'}</td>
-            <td>${fmtDate(m.sentDate)}</td>
-            <td>${m.returnDate ? fmtDate(m.returnDate) : badge('In Repair')}</td>
-            <td class="actions">
-              <button class="btn btn-outline btn-sm" data-notes="${esc(m.id)}">
-                <span class="ms">chat</span> ${esc(t('mnt.notes'))} (${(m.progressNotes || []).length})</button>
-              ${canEdit && !m.returnDate ? `<button class="btn btn-outline btn-sm" data-closelog="${esc(m.id)}">${esc(t('common.close'))}</button>` : ''}</td>
-          </tr>`).join('')}
-      </tbody>
-    </table></div></div>`;
+    <div class="card"><div class="table-wrap" id="mnt-table">${mntTableHtml()}</div></div>`;
+
+  mntCols.mountGear(el);
 
   $('#mn-filter', el).addEventListener('change', (e) => Views.maintenance(el, { open: e.target.value }));
   bindView(el, (e) => {

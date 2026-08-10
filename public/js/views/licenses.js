@@ -39,80 +39,66 @@ Views.licenses = async function (el) {
     return bits.length ? `<div class="cell-sub">${esc(bits.join(' · '))}</div>` : '';
   }
 
+  const licRowActions = (l) => {
+    const cancelled = l.lifecycle === 'cancelled';
+    return `<div class="actions" style="display:flex;justify-content:flex-end;gap:6px;flex-wrap:wrap">
+      <button class="btn btn-outline btn-sm" data-holders="${esc(l.id)}" title="${esc(t('lic.tHolders'))}"><span class="ms">group</span></button>
+      ${Number(l.discoveredInstalls) > 0
+        ? `<button class="btn btn-outline btn-sm" data-sam="${esc(l.id)}" title="SAM — discovered installs (${Number(l.discoveredInstalls)})"><span class="ms">analytics</span></button>` : ''}
+      ${(canReadDocs || canUploadDocs) ? `<button class="btn btn-outline btn-sm" data-docs="${esc(l.id)}" title="${esc(t('common.documents'))}"><span class="ms">attach_file</span>${canReadDocs && l.documentCount ? ` ${l.documentCount}` : ''}</button>` : ''}
+      ${canEdit ? `<button class="btn btn-outline btn-sm" data-edit="${esc(l.id)}" title="${esc(t('common.edit'))}"><span class="ms">edit</span></button>
+        ${canCreateLic ? `<button class="btn btn-outline btn-sm" data-duplicate="${esc(l.id)}" title="${esc(t('common.duplicate'))}"><span class="ms">content_copy</span></button>` : ''}
+        ${!cancelled ? `<button class="btn btn-outline btn-sm" data-renew="${esc(l.id)}" title="${esc(t('lic.tRenew'))}"><span class="ms">autorenew</span></button>
+          <button class="btn btn-outline btn-sm" data-cancel-lic="${esc(l.id)}" title="${esc(t('common.cancel'))}"><span class="ms">cancel</span></button>`
+          : `<button class="btn btn-primary btn-sm" data-renew="${esc(l.id)}"><span class="ms">autorenew</span> ${esc(t('lic.tRenew'))}</button>`}` : ''}
+      ${canAssign && !cancelled ? `<button class="btn btn-primary btn-sm" data-assign="${esc(l.id)}" title="${esc(t('lic.tAssign'))}"><span class="ms">person_add</span></button>` : ''}
+    </div>`;
+  };
+
+  const licCols = columnPicker({
+    storageKey: 'itacm_cols_licenses',
+    onChange: () => { const s = $('#lic-table', el); if (s) s.innerHTML = tableHtml(); },
+    columns: [
+      { key: 'software', label: t('lic.f.software'), mandatory: true,
+        render: (l) => `<div style="display:flex;align-items:center;gap:12px">${iconChip('vpn_key', chipTone(l))}<div><span class="cell-title">${esc(l.softwareName)}</span>${l.licenseKey ? `<div class="cell-sub mono">${esc(l.licenseKey)}</div>` : `<div class="cell-sub">${esc(t('lic.noKey'))}</div>`}${l.renewedAt ? `<div class="cell-sub">${esc((t('lic.renewedOn') || 'Renewed {date}').replace('{date}', fmtDate(l.renewedAt)))}</div>` : ''}${l.lifecycle === 'cancelled' && l.cancelledAt ? `<div class="cell-sub">${esc((t('lic.cancelledOn') || 'Cancelled {date}').replace('{date}', fmtDate(l.cancelledAt)))}</div>` : ''}</div></div>`,
+        csv: (l) => l.softwareName },
+      { key: 'provider', label: t('lic.f.provider'), render: (l) => `${esc(l.providerName || l.vendor || '—')}${purchaseHint(l)}`, csv: (l) => l.providerName || l.vendor || '' },
+      { key: 'purchase', label: t('lic.colPurchase'), render: (l) => {
+        const pl = l.purchaseType === 'contract' ? (l.contractTitle || t('lic.contract'))
+          : l.purchaseType === 'invoice' ? (l.invoiceNumber ? `${t('lic.invoice')} ${l.invoiceNumber}` : t('lic.invoice')) : '—';
+        return `<div class="cell-title" style="font-size:13px">${esc(pl)}</div>${l.purchaseAmount != null ? `<div class="cell-sub">${canViewCosts ? esc(fmtMoney(l.purchaseAmount, l.purchaseCurrency)) : '—'}</div>` : ''}`;
+      }, csv: (l) => l.purchaseType || '' },
+      { key: 'seats', label: t('lic.colSeats'), mandatory: true, render: (l) => {
+        const used = l.usedSeats || 0;
+        const pct = Math.min(100, Math.round((used / l.totalSeats) * 100));
+        const parts = [];
+        if (l.assignedUsers) parts.push((t('lic.nUsers') || '{n} user(s)').replace('{n}', l.assignedUsers));
+        if (l.linkedAssets) parts.push((t('lic.nDevices') || '{n} device(s)').replace('{n}', l.linkedAssets));
+        return `<div style="display:flex;align-items:center;gap:8px"><div class="seat-bar"><i style="width:${pct}%"></i></div><span class="cell-sub">${used}/${l.totalSeats}</span></div>${parts.length ? `<div class="cell-sub">${esc(parts.join(' · '))}</div>` : ''}`;
+      }, csv: (l) => `${l.usedSeats || 0}/${l.totalSeats}` },
+      { key: 'status', label: t('common.status'), mandatory: true, render: (l) => lifecyclePill(l), csv: (l) => l.lifecycle || '' },
+      { key: 'expires', label: t('lic.colExpires'), render: (l) => esc(fmtDate(l.expirationDate)), csv: (l) => fmtDate(l.expirationDate) },
+      { key: 'users', label: t('cols.users'), default: false, render: (l) => String(l.assignedUsers || 0), csv: (l) => String(l.assignedUsers || 0) },
+      { key: 'devices', label: t('cols.devices'), default: false, render: (l) => String(l.linkedAssets || 0), csv: (l) => String(l.linkedAssets || 0) },
+      { key: 'installs', label: t('cols.installs'), default: false, render: (l) => String(l.discoveredInstalls || 0), csv: (l) => String(l.discoveredInstalls || 0) },
+    ],
+  });
+
+  const tableHtml = () => `<div class="table-wrap"><table class="data">
+    <thead><tr>${licCols.headerCells()}<th style="text-align:right"></th></tr></thead>
+    <tbody>
+      ${items.length === 0 ? `<tr><td colspan="${licCols.visibleColumns().length + 1}" class="table-empty">${esc(t('lic.noLicenses'))}</td></tr>` :
+        items.map((l) => `<tr style="${l.lifecycle === 'cancelled' ? 'opacity:.72' : ''}">${licCols.bodyCells(l)}<td class="actions">${licRowActions(l)}</td></tr>`).join('')}
+    </tbody>
+  </table></div>`;
+
   el.innerHTML = `
-    ${pageHead(t('lic.pageTitle'), t('lic.pageSub'), canEdit ?
-      `<button class="btn btn-primary" id="lic-new"><span class="ms">add</span> ${esc(t('lic.f.newTitle'))}</button>` : '')}
-    <div class="card"><div class="table-wrap"><table class="data">
-      <thead><tr>
-        <th>${esc(t('lic.f.software'))}</th><th>${esc(t('lic.f.provider'))}</th><th>${esc(t('lic.colPurchase'))}</th><th>${esc(t('lic.colSeats'))}</th><th>${esc(t('common.status'))}</th><th>${esc(t('lic.colExpires'))}</th>
-        <th style="text-align:right"></th>
-      </tr></thead>
-      <tbody>
-        ${items.length === 0 ? `<tr><td colspan="7" class="table-empty">${esc(t('lic.noLicenses'))}</td></tr>` :
-          items.map((l) => {
-            const used = l.usedSeats || 0;
-            const pct = Math.min(100, Math.round((used / l.totalSeats) * 100));
-            const parts = [];
-            if (l.assignedUsers) parts.push((t('lic.nUsers') || '{n} user(s)').replace('{n}', l.assignedUsers));
-            if (l.linkedAssets) parts.push((t('lic.nDevices') || '{n} device(s)').replace('{n}', l.linkedAssets));
-            const seatHint = parts.length ? `<div class="cell-sub">${esc(parts.join(' · '))}</div>` : '';
-            const cancelled = l.lifecycle === 'cancelled';
-            const purchaseLabel = l.purchaseType === 'contract'
-              ? (l.contractTitle || t('lic.contract'))
-              : l.purchaseType === 'invoice'
-                ? (l.invoiceNumber ? `${t('lic.invoice')} ${l.invoiceNumber}` : t('lic.invoice'))
-                : '—';
-            return `
-            <tr style="${cancelled ? 'opacity:.72' : ''}">
-              <td><div style="display:flex;align-items:center;gap:12px">${iconChip('vpn_key', chipTone(l))}
-                <div>
-                  <span class="cell-title">${esc(l.softwareName)}</span>
-                  ${l.licenseKey
-                    ? `<div class="cell-sub mono">${esc(l.licenseKey)}</div>`
-                    : `<div class="cell-sub">${esc(t('lic.noKey'))}</div>`}
-                  ${l.renewedAt ? `<div class="cell-sub">${esc((t('lic.renewedOn') || 'Renewed {date}').replace('{date}', fmtDate(l.renewedAt)))}</div>` : ''}
-                  ${cancelled && l.cancelledAt ? `<div class="cell-sub">${esc((t('lic.cancelledOn') || 'Cancelled {date}').replace('{date}', fmtDate(l.cancelledAt)))}</div>` : ''}
-                </div></div></td>
-              <td>${esc(l.providerName || l.vendor || '—')}${purchaseHint(l)}</td>
-              <td>
-                <div class="cell-title" style="font-size:13px">${esc(purchaseLabel)}</div>
-                ${l.purchaseAmount != null
-                  ? `<div class="cell-sub">${canViewCosts ? esc(fmtMoney(l.purchaseAmount, l.purchaseCurrency)) : '—'}</div>` : ''}
-              </td>
-              <td>
-                <div style="display:flex;align-items:center;gap:8px">
-                  <div class="seat-bar"><i style="width:${pct}%"></i></div>
-                  <span class="cell-sub">${used}/${l.totalSeats}</span>
-                </div>
-                ${seatHint}
-              </td>
-              <td>${lifecyclePill(l)}</td>
-              <td>${fmtDate(l.expirationDate)}</td>
-              <td class="actions">
-                <button class="btn btn-outline btn-sm" data-holders="${esc(l.id)}" title="${esc(t('lic.tHolders'))}"><span class="ms">group</span></button>
-                ${Number(l.discoveredInstalls) > 0
-                  ? `<button class="btn btn-outline btn-sm" data-sam="${esc(l.id)}" title="SAM — discovered installs (${Number(l.discoveredInstalls)})"><span class="ms">analytics</span></button>`
-                  : ''}
-                ${(canReadDocs || canUploadDocs) ? `
-                <button class="btn btn-outline btn-sm" data-docs="${esc(l.id)}" title="${esc(t('common.documents'))}">
-                  <span class="ms">attach_file</span>${canReadDocs && l.documentCount ? ` ${l.documentCount}` : ''}
-                </button>` : ''}
-                ${canEdit ? `
-                <button class="btn btn-outline btn-sm" data-edit="${esc(l.id)}" title="${esc(t('common.edit'))}"><span class="ms">edit</span></button>
-                ${canCreateLic ? `
-                <button class="btn btn-outline btn-sm" data-duplicate="${esc(l.id)}" title="${esc(t('common.duplicate'))}"><span class="ms">content_copy</span></button>` : ''}
-                ${!cancelled ? `
-                <button class="btn btn-outline btn-sm" data-renew="${esc(l.id)}" title="${esc(t('lic.tRenew'))}"><span class="ms">autorenew</span></button>
-                <button class="btn btn-outline btn-sm" data-cancel-lic="${esc(l.id)}" title="${esc(t('common.cancel'))}"><span class="ms">cancel</span></button>` : `
-                <button class="btn btn-primary btn-sm" data-renew="${esc(l.id)}"><span class="ms">autorenew</span> ${esc(t('lic.tRenew'))}</button>`}
-                ` : ''}
-                ${canAssign && !cancelled ? `
-                <button class="btn btn-primary btn-sm" data-assign="${esc(l.id)}" title="${esc(t('lic.tAssign'))}"><span class="ms">person_add</span></button>` : ''}
-              </td>
-            </tr>`;
-          }).join('')}
-      </tbody>
-    </table></div></div>`;
+    ${pageHead(t('lic.pageTitle'), t('lic.pageSub'), `
+      <div style="display:flex;gap:10px;align-items:center">${licCols.gearHtml()}
+      ${canEdit ? `<button class="btn btn-primary" id="lic-new"><span class="ms">add</span> ${esc(t('lic.f.newTitle'))}</button>` : ''}</div>`)}
+    <div class="card"><div id="lic-table">${tableHtml()}</div></div>`;
+
+  licCols.mountGear(el);
 
   if (canEdit) {
     $('#lic-new', el).addEventListener('click', () => openLicenseForm({
