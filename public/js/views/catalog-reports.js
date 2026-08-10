@@ -7,18 +7,17 @@ Views.catalog = async function (el) {
   const cats = [...new Set(items.map((c) => c.category))];
 
   el.innerHTML = `
-    ${pageHead('Product Catalog', 'Brand & model lists that power the asset form dropdowns.', (canCreate || canUpdate) ? `
-      ${canCreate || canUpdate ? `<button class="btn btn-outline" id="cat-import"><span class="ms">sync</span> Import from existing assets</button>` : ''}
-      ${canCreate ? `<button class="btn btn-primary" id="cat-new"><span class="ms">add</span> Add Model</button>` : ''}
+    ${pageHead('cat.pageTitle', 'cat.pageSub', (canCreate || canUpdate) ? `
+      ${canCreate || canUpdate ? `<button class="btn btn-outline" id="cat-import"><span class="ms">sync</span> ${esc(t('cat.importExisting'))}</button>` : ''}
+      ${canCreate ? `<button class="btn btn-primary" id="cat-new"><span class="ms">add</span> ${esc(t('cat.addModel'))}</button>` : ''}
     ` : '')}
     ${items.length === 0 ? `
       <div class="card card-pad" style="text-align:center;padding:48px">
-        <div class="cell-sub" style="margin-bottom:14px">The catalog is empty. Import every brand/model already in your
-        inventory with one click, or add models manually.</div>
+        <div class="cell-sub" style="margin-bottom:14px">${esc(t('cat.emptyHint'))}</div>
       </div>` :
       cats.map((cat) => {
         const catDef = (AppConfig.lifecycles && AppConfig.lifecycles[cat] != null) ? AppConfig.lifecycles[cat] : null;
-        const catHint = catDef != null ? `${catDef} mo` : 'app default';
+        const catHint = catDef != null ? `${catDef} ${t('cat.mo')}` : t('cat.appDefault');
         return `
       <div class="card" style="margin-bottom:16px">
         <div class="card-head"><h3>${esc(cat)} (${items.filter((c) => c.category === cat).length})</h3></div>
@@ -33,9 +32,9 @@ Views.catalog = async function (el) {
                 ? `<input type="number" class="lc-input" data-lc="${esc(c.id)}" min="1" max="240"
                      value="${c.lifecycleMonths != null ? esc(String(c.lifecycleMonths)) : ''}"
                      placeholder="${catDef != null ? esc(String(catDef)) : ''}"
-                     title="Months until EOL. Leave blank to inherit the ${esc(cat)} category default (${catHint})."
+                     title="${esc(t('cat.lcInputTitle').replace('{cat}', cat).replace('{hint}', catHint))}"
                      style="width:82px;padding:6px 8px"> <span class="cell-sub">${esc(t('cat.mo'))}</span>`
-                : (c.lifecycleMonths != null ? `${esc(String(c.lifecycleMonths))} ${esc(t('cat.mo'))}` : `<span class="cell-sub">category default (${catHint})</span>`)}</td>
+                : (c.lifecycleMonths != null ? `${esc(String(c.lifecycleMonths))} ${esc(t('cat.mo'))}` : `<span class="cell-sub">${esc(t('cat.categoryDefault').replace('{hint}', catHint))}</span>`)}</td>
               <td class="actions">${canDelete ? `<button class="btn btn-outline btn-sm" data-del="${esc(c.id)}">${esc(t('cat.delete'))}</button>` : ''}</td>
             </tr>`).join('')}
           </tbody>
@@ -111,32 +110,32 @@ Views.catalog = async function (el) {
   el.insertAdjacentHTML('beforeend', `
     <div class="card" style="margin-top:4px">
       <div class="card-head">
-        <h3>Office Locations (${locData.locations.length})</h3>
-        ${canEdit ? '<button class="btn btn-primary btn-sm" id="loc-add"><span class="ms">add_location_alt</span> Add Location</button>' : ''}
+        <h3>${esc(t('cat.locations'))} (${locData.locations.length})</h3>
+        ${canEdit ? `<button class="btn btn-primary btn-sm" id="loc-add"><span class="ms">add_location_alt</span> ${esc(t('cat.addLocation'))}</button>` : ''}
       </div>
       <div class="table-wrap"><table class="data">
-        <thead><tr><th>Location</th><th>Default</th><th style="text-align:right"></th></tr></thead>
+        <thead><tr><th>${esc(t('cat.colLocation'))}</th><th>${esc(t('cat.colDefault'))}</th><th style="text-align:right"></th></tr></thead>
         <tbody>
           ${locData.locations.map((l) => `
           <tr>
             <td><div style="display:flex;align-items:center;gap:10px"><span class="ms" style="color:var(--on-surface-variant)">location_on</span>
               <span class="cell-title">${esc(l)}</span></div></td>
             <td>${locData.defaultLocation === l
-              ? `<span class="pill pill-indigo">Default</span>${canEdit ? ` <button class="btn btn-outline btn-sm" data-cleardef="1" title="${esc(t('common.clear') || 'Clear')}"><span class="ms ms-sm">close</span></button>` : ''}`
-              : (canEdit ? `<button class="btn btn-outline btn-sm" data-setdef="${esc(l)}">Set default</button>` : '—')}</td>
-            <td class="actions">${canEdit ? `<button class="btn btn-outline btn-sm" data-delloc="${esc(l)}">Delete</button>` : ''}</td>
+              ? `<span class="loc-default"><span class="pill pill-indigo">${esc(t('cat.defaultPill'))}</span>${canEdit ? ` <button class="icon-btn loc-default-clear" data-cleardef="1" title="${esc(t('common.clear') || 'Clear')}" aria-label="${esc(t('common.clear') || 'Clear')}"><span class="ms ms-sm">close</span></button>` : ''}</span>`
+              : (canEdit ? `<button class="btn btn-outline btn-sm" data-setdef="${esc(l)}">${esc(t('cat.setDefault'))}</button>` : '—')}</td>
+            <td class="actions">${canEdit ? `<button class="btn btn-outline btn-sm" data-delloc="${esc(l)}">${esc(t('cat.delete'))}</button>` : ''}</td>
           </tr>`).join('')}
         </tbody>
       </table></div>
-      <div class="table-foot">New assets default to the location marked as Default; each asset's location can be changed on its form.</div>
+      <div class="table-foot">${esc(t('cat.locationsFoot'))}</div>
     </div>`);
 
   /* ---- Hardware spec lists (cpu / ram / storage) ---- */
   const specs = await api('/catalog/specs').catch(() => ({ cpu: [], ram: [], storage: [] }));
   el.insertAdjacentHTML('beforeend', `
     <div class="card" style="margin-top:16px">
-      <div class="card-head"><h3>Hardware Spec Lists</h3>
-        <span class="cell-sub">These lists feed the CPU / RAM / Storage dropdowns on the asset form and the report filters.</span></div>
+      <div class="card-head"><h3>${esc(t('cat.specLists'))}</h3>
+        <span class="cell-sub">${esc(t('cat.specListsSub'))}</span></div>
       <div class="card-pad" style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px">
         ${['cpu', 'ram', 'storage'].map((type) => `
         <div>
@@ -147,7 +146,7 @@ Views.catalog = async function (el) {
           ${specs[type].map((v) => `
           <div class="history-item" style="justify-content:space-between">
             <span>${esc(v)}</span>
-            ${canEdit ? `<button class="icon-btn" style="width:26px;height:26px" data-delspec="${type}" data-val="${esc(v)}" title="Delete"><span class="ms ms-sm">close</span></button>` : ''}
+            ${canEdit ? `<button class="icon-btn" style="width:26px;height:26px" data-delspec="${type}" data-val="${esc(v)}" title="${esc(t('cat.delete'))}"><span class="ms ms-sm">close</span></button>` : ''}
           </div>`).join('')}
         </div>`).join('')}
       </div>
@@ -160,8 +159,8 @@ Views.catalog = async function (el) {
   el.insertAdjacentHTML('beforeend', `
     <div class="card lc-card" style="margin-top:16px">
       <div class="card-head">
-        <h3>Product Lifecycle Durations</h3>
-        <span class="cell-sub">Category defaults in months. Untick EOL to skip end-of-life tracking (e.g. accessories). Per-model overrides live in the tables above.</span>
+        <h3>${esc(t('cat.lifecycleTitle'))}</h3>
+        <span class="cell-sub">${esc(t('cat.lifecycleSub'))}</span>
       </div>
       <div class="card-pad">
         <div class="lc-grid">
@@ -185,7 +184,7 @@ Views.catalog = async function (el) {
             </div>`;
           }).join('')}
         </div>
-        ${canEdit ? '<button class="btn btn-primary btn-sm" id="lc-save" style="margin-top:14px"><span class="ms">save</span> Save lifecycles</button>' : ''}
+        ${canEdit ? `<button class="btn btn-primary btn-sm" id="lc-save" style="margin-top:14px"><span class="ms">save</span> ${esc(t('cat.saveLifecycles'))}</button>` : ''}
       </div>
     </div>`);
 
@@ -205,7 +204,7 @@ Views.catalog = async function (el) {
         }));
         const saved = await api('/catalog/lifecycles', { method: 'PUT', body });
         AppConfig.lifecycles = saved;
-        toast('Lifecycle settings saved', 'success');
+        toast(t('cat.lifecycleSaved'), 'success');
         Views.catalog(el);
       } catch (err) { toast(err.message, 'error'); }
     });
@@ -216,17 +215,17 @@ Views.catalog = async function (el) {
   el.insertAdjacentHTML('beforeend', `
     <div class="card" style="margin-top:16px">
       <div class="card-head">
-        <h3>Departments (${departments.length})</h3>
-        ${canEdit ? '<button class="btn btn-primary btn-sm" id="dept-add"><span class="ms">add</span> Add Department</button>' : ''}
+        <h3>${esc(t('cat.departments'))} (${departments.length})</h3>
+        ${canEdit ? `<button class="btn btn-primary btn-sm" id="dept-add"><span class="ms">add</span> ${esc(t('cat.addDepartment'))}</button>` : ''}
       </div>
       <div class="card-pad" style="display:flex;flex-wrap:wrap;gap:8px">
-        ${departments.length === 0 ? '<span class="cell-sub">No departments yet.</span>' :
+        ${departments.length === 0 ? `<span class="cell-sub">${esc(t('cat.noDepartments'))}</span>` :
           departments.map((d) => `
           <span class="chip" style="display:inline-flex;align-items:center;gap:6px">${esc(d)}
-            ${canEdit ? `<button class="icon-btn" style="width:20px;height:20px" data-deldept="${esc(d)}" title="Delete"><span class="ms ms-sm">close</span></button>` : ''}
+            ${canEdit ? `<button class="icon-btn" style="width:20px;height:20px" data-deldept="${esc(d)}" title="${esc(t('cat.delete'))}"><span class="ms ms-sm">close</span></button>` : ''}
           </span>`).join('')}
       </div>
-      <div class="table-foot">This list feeds the Department dropdown on the employee form.</div>
+      <div class="table-foot">${esc(t('cat.departmentsFoot'))}</div>
     </div>`);
 
   /* ---- Provider & contract categories ---- */
@@ -236,31 +235,31 @@ Views.catalog = async function (el) {
     <div class="grid grid-2" style="margin-top:16px;gap:16px">
       <div class="card">
         <div class="card-head">
-          <h3>Provider categories (${providerCategories.length})</h3>
-          ${canEdit ? '<button class="btn btn-primary btn-sm" id="pcat-add"><span class="ms">add</span> Add</button>' : ''}
+          <h3>${esc(t('cat.providerCategories'))} (${providerCategories.length})</h3>
+          ${canEdit ? `<button class="btn btn-primary btn-sm" id="pcat-add"><span class="ms">add</span> ${esc(t('cat.add'))}</button>` : ''}
         </div>
         <div class="card-pad" style="display:flex;flex-wrap:wrap;gap:8px">
-          ${providerCategories.length === 0 ? '<span class="cell-sub">No categories yet.</span>' :
+          ${providerCategories.length === 0 ? `<span class="cell-sub">${esc(t('cat.noCategories'))}</span>` :
             providerCategories.map((d) => `
             <span class="chip" style="display:inline-flex;align-items:center;gap:6px">${esc(d)}
-              ${canEdit ? `<button class="icon-btn" style="width:20px;height:20px" data-delpcat="${esc(d)}" title="Delete"><span class="ms ms-sm">close</span></button>` : ''}
+              ${canEdit ? `<button class="icon-btn" style="width:20px;height:20px" data-delpcat="${esc(d)}" title="${esc(t('cat.delete'))}"><span class="ms ms-sm">close</span></button>` : ''}
             </span>`).join('')}
         </div>
-        <div class="table-foot">Feeds the Category dropdown on Providers &amp; Contracts. Forms also allow “Other (type manually)”.</div>
+        <div class="table-foot">${esc(t('cat.providerCatFoot'))}</div>
       </div>
       <div class="card">
         <div class="card-head">
-          <h3>Contract categories (${contractCategories.length})</h3>
-          ${canEdit ? '<button class="btn btn-primary btn-sm" id="ccat-add"><span class="ms">add</span> Add</button>' : ''}
+          <h3>${esc(t('cat.contractCategories'))} (${contractCategories.length})</h3>
+          ${canEdit ? `<button class="btn btn-primary btn-sm" id="ccat-add"><span class="ms">add</span> ${esc(t('cat.add'))}</button>` : ''}
         </div>
         <div class="card-pad" style="display:flex;flex-wrap:wrap;gap:8px">
-          ${contractCategories.length === 0 ? '<span class="cell-sub">No categories yet.</span>' :
+          ${contractCategories.length === 0 ? `<span class="cell-sub">${esc(t('cat.noCategories'))}</span>` :
             contractCategories.map((d) => `
             <span class="chip" style="display:inline-flex;align-items:center;gap:6px">${esc(d)}
-              ${canEdit ? `<button class="icon-btn" style="width:20px;height:20px" data-delccat="${esc(d)}" title="Delete"><span class="ms ms-sm">close</span></button>` : ''}
+              ${canEdit ? `<button class="icon-btn" style="width:20px;height:20px" data-delccat="${esc(d)}" title="${esc(t('cat.delete'))}"><span class="ms ms-sm">close</span></button>` : ''}
             </span>`).join('')}
         </div>
-        <div class="table-foot">Feeds the Category dropdown when adding a contract.</div>
+        <div class="table-foot">${esc(t('cat.contractCatFoot'))}</div>
       </div>
     </div>`);
 
@@ -319,7 +318,7 @@ Views.catalog = async function (el) {
     try {
       if (b.dataset.del) {
         await api('/catalog/' + b.dataset.del, { method: 'DELETE' });
-        toast('Catalog entry removed', 'success');
+        toast(t('cat.entryRemoved'), 'success');
         Views.catalog(el);
       } else if (b.dataset.setdef) {
         const r = await api('/catalog/locations/default', { method: 'PUT', body: { name: b.dataset.setdef } });
@@ -356,7 +355,7 @@ Views.catalog = async function (el) {
               body: empTotal > 0 ? { reassignTo: d.reassignTo } : undefined,
             });
             AppConfig.departments = r;
-            toast(`Department "${name}" removed`, 'success');
+            toast(t('cat.deptRemoved').replace('{name}', name), 'success');
             Views.catalog(el);
           },
         });

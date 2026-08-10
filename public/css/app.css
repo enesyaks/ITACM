@@ -1142,6 +1142,15 @@ table.data.net-list .net-col-actions .btn .ms { font-size: 18px; }
 /* Customizable table columns — gear button + popover (mirrors .msel-menu). */
 .col-picker { position: relative; display: inline-block; }
 .col-picker.open { z-index: 130; }
+
+/* Default-location cell: pill + a subtle inline clear (×) button, aligned. */
+.loc-default { display: inline-flex; align-items: center; gap: 6px; }
+.loc-default-clear {
+  width: 22px; height: 22px; border-radius: 999px; flex: none;
+  color: var(--on-surface-variant); border: 1px solid transparent;
+}
+.loc-default-clear:hover { color: var(--rose-600, #e11d48); background: var(--surface-container); border-color: var(--outline-variant); }
+.loc-default-clear .ms { font-size: 15px; }
 .col-picker-pop {
   position: absolute; z-index: 121; top: calc(100% + 6px); right: 0;
   min-width: 220px; max-width: 260px; max-height: 320px; overflow: auto;
