@@ -37,24 +37,42 @@ async function removeDepartment(name, { reassignTo } = {}) {
   const { rows } = await query('SELECT id FROM departments WHERE name = $1', [clean]);
   if (!rows[0]) throw HttpError.notFound(`Department "${clean}" not found`);
   const deptId = rows[0].id;
-  const teamCount = await query('SELECT COUNT(*)::int AS n FROM teams WHERE department_id = $1', [deptId]);
-  if (teamCount.rows[0].n > 0) {
-    throw HttpError.badRequest('Remove or move the teams in this department first');
-  }
+
   const total = await query('SELECT COUNT(*)::int AS n FROM departments');
   if (total.rows[0].n <= 1) throw HttpError.badRequest('At least one department must remain');
 
+  // Resolve the reassignment target once — both teams and employees move here.
+  const target = String(reassignTo || '').trim();
+  let destId = null;
+  if (target) {
+    if (target === clean) throw HttpError.badRequest('Pick a different department to move employees to');
+    const dest = await query('SELECT id FROM departments WHERE name = $1', [target]);
+    if (!dest.rows[0]) throw HttpError.badRequest(`Target department "${target}" not found`);
+    destId = dest.rows[0].id;
+  }
+
+  // Teams belong to a department (FK ON DELETE CASCADE). When a target is given,
+  // move them across so team membership survives; otherwise keep the old guard.
+  const teamCount = await query('SELECT COUNT(*)::int AS n FROM teams WHERE department_id = $1', [deptId]);
+  if (teamCount.rows[0].n > 0) {
+    if (!destId) throw HttpError.badRequest('Remove or move the teams in this department first');
+    const teamRows = await query('SELECT id, name FROM teams WHERE department_id = $1', [deptId]);
+    for (const tm of teamRows.rows) {
+      // Rename any team that would clash with one already in the target
+      // (unique on department_id, name) so nothing is lost to the constraint.
+      const clash = await query(
+        'SELECT 1 FROM teams WHERE department_id = $1 AND lower(name) = lower($2)', [destId, tm.name]
+      );
+      const newName = clash.rows[0] ? `${tm.name} (${clean})`.slice(0, 60) : tm.name;
+      await query('UPDATE teams SET department_id = $1, name = $2 WHERE id = $3', [destId, newName, tm.id]);
+    }
+  }
+
   const empCount = await query('SELECT COUNT(*)::int AS n FROM employees WHERE department = $1', [clean]);
   if (empCount.rows[0].n > 0) {
-    // Move the employees to another department first when the caller picked one;
-    // otherwise refuse (keeps the old behaviour for callers that don't).
-    const target = String(reassignTo || '').trim();
-    if (!target) {
+    if (!destId) {
       throw HttpError.badRequest(`${empCount.rows[0].n} employee(s) are still in "${clean}" — reassign them first`);
     }
-    if (target === clean) throw HttpError.badRequest('Pick a different department to move employees to');
-    const dest = await query('SELECT 1 FROM departments WHERE name = $1', [target]);
-    if (!dest.rows[0]) throw HttpError.badRequest(`Target department "${target}" not found`);
     await query('UPDATE employees SET department = $2 WHERE department = $1', [clean, target]);
   }
 
