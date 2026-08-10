@@ -73,6 +73,25 @@ Views.employees = async function (el, params = {}) {
   });
   const empTh = (key, label) => tableSortTh(key, label, { sort: sortKey, order: sortOrder });
 
+  const empCols = columnPicker({
+    storageKey: 'itacm_cols_employees',
+    onChange: () => renderPage(),
+    columns: [
+      { key: 'name', label: t('emp.colEmployee') || 'Employee', mandatory: true, sortKey: 'name',
+        render: (x) => `<div style="display:flex;align-items:center;gap:12px"><span class="avatar">${esc(initials(x.fullName))}</span><div><div class="cell-title">${esc(x.fullName)}</div><div class="cell-sub">${esc(x.email)}</div></div></div>`,
+        csv: (x) => x.fullName },
+      { key: 'id', label: t('emp.colId'), tdClass: 'mono', render: (x) => esc(String(x.id).slice(0, 8).toUpperCase()), csv: (x) => x.id },
+      { key: 'department', label: t('emp.colDepartment') || 'Department', sortKey: 'department',
+        render: (x) => `${esc(x.department || '—')}<div class="cell-sub">${esc(x.title || '')}</div>`, csv: (x) => x.department || '' },
+      { key: 'assets', label: t('emp.assignedAssets') || 'Assigned Assets', sortKey: 'assets',
+        render: (x) => `<span class="badge-count ${x.activeAssetCount === 0 ? 'zero' : ''}">${x.activeAssetCount}</span>`, csv: (x) => String(x.activeAssetCount) },
+      { key: 'status', label: t('common.status'), mandatory: true, sortKey: 'status', render: (x) => badge(x.status), csv: (x) => x.status },
+      { key: 'email', label: t('cols.email'), default: false, render: (x) => esc(x.email || '—'), csv: (x) => x.email || '' },
+      { key: 'title', label: t('cols.title'), default: false, render: (x) => esc(x.title || '—'), csv: (x) => x.title || '' },
+      { key: 'startDate', label: t('cols.startDate'), default: false, render: (x) => esc(x.startDate ? fmtDate(x.startDate) : '—'), csv: (x) => (x.startDate ? fmtDate(x.startDate) : '') },
+    ],
+  });
+
   el.innerHTML = `
     ${pageHead(t('emp.directory'), t('emp.directorySub'), `
       ${canOnboard ? `<button class="btn btn-outline" id="emp-onboard"><span class="ms">person_add</span> ${esc(t('emp.onboard'))}</button>` : ''}
@@ -96,20 +115,14 @@ Views.employees = async function (el, params = {}) {
         selected: selectedDepts,
         options: deptCatalog.map((d) => ({ value: d, label: d })),
       })}
+      <div style="margin-left:auto">${empCols.gearHtml()}</div>
     </div>
     <div id="emp-chips"></div>
 
     <div class="card">
       <div class="m-emp-list" id="emp-mlist"></div>
       <div class="table-wrap"><table class="data">
-        <thead><tr>
-          ${empTh('name', t('emp.colEmployee') || 'Employee')}
-          <th>${esc(t('emp.colId'))}</th>
-          ${empTh('department', t('emp.colDepartment') || 'Department')}
-          ${empTh('assets', t('emp.assignedAssets') || 'Assigned Assets')}
-          ${empTh('status', t('common.status') || 'Status')}
-          <th style="text-align:right">${esc(t('common.actions'))}</th>
-        </tr></thead>
+        <thead><tr id="emp-thead-row"></tr></thead>
         <tbody id="emp-tbody"></tbody>
       </table></div>
       <div class="table-foot" id="emp-foot"></div>
@@ -118,18 +131,14 @@ Views.employees = async function (el, params = {}) {
   /* Server-side pagination (50 rows per page). `pages` is kept current by loadData. */
   function renderPage() {
     const slice = items;
+    const theadRow = $('#emp-thead-row', el);
+    if (theadRow) theadRow.innerHTML = empCols.headerCells({ sort: sortKey, order: sortOrder }) + `<th style="text-align:right">${esc(t('common.actions'))}</th>`;
+    const colCount = empCols.visibleColumns().length + 1;
     const empty = total === 0
-      ? `<tr><td colspan="6" class="table-empty">${esc(t('emp.noneFound'))}</td></tr>`
+      ? `<tr><td colspan="${colCount}" class="table-empty">${esc(t('emp.noneFound'))}</td></tr>`
       : slice.map((x) => `
         <tr class="emp-row" data-open="${esc(x.id)}" style="cursor:pointer" title="${esc(t('emp.viewAssignedTitle'))}">
-          <td><div style="display:flex;align-items:center;gap:12px">
-            <span class="avatar">${esc(initials(x.fullName))}</span>
-            <div><div class="cell-title">${esc(x.fullName)}</div><div class="cell-sub">${esc(x.email)}</div></div>
-          </div></td>
-          <td class="mono">${esc(String(x.id).slice(0, 8).toUpperCase())}</td>
-          <td>${esc(x.department || '—')}<div class="cell-sub">${esc(x.title || '')}</div></td>
-          <td><span class="badge-count ${x.activeAssetCount === 0 ? 'zero' : ''}">${x.activeAssetCount}</span></td>
-          <td>${badge(x.status)}</td>
+          ${empCols.bodyCells(x)}
           <td class="actions">
             <button class="btn btn-outline btn-sm" data-assets="${esc(x.id)}"><span class="ms">devices</span> ${esc(t('common.assets'))}</button>
             ${canUpdate ? `<button class="btn btn-outline btn-sm" data-edit="${esc(x.id)}">${esc(t('common.edit'))}</button>` : ''}
@@ -276,6 +285,7 @@ Views.employees = async function (el, params = {}) {
     status: (vals) => setHash({ ...cur(), status: vals.join(','), page: 1 }),
     department: (vals) => setHash({ ...cur(), department: vals.join(','), page: 1 }),
   });
+  empCols.mountGear($('#emp-filters', el));
   if (canCreate) {
     $('#emp-new', el)?.addEventListener('click', () => employeeForm(null, () => setHash(cur())));
   }
