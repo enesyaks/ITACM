@@ -156,7 +156,7 @@ Views.users = async function (el) {
     'ai',
   ];
   const ACTIONS_BY_RESOURCE = {
-    asset: ['read', 'create', 'update', 'delete', 'assign', 'unassign', 'export', 'import', 'manage'],
+    asset: ['read', 'create', 'update', 'delete', 'assign', 'unassign', 'sell', 'export', 'import', 'manage'],
     license: ['read', 'create', 'update', 'delete', 'assign', 'unassign', 'view_confidential', 'manage'],
     line: ['read', 'create', 'update', 'delete', 'assign', 'unassign', 'view_confidential', 'manage'],
     employee: ['read', 'create', 'update', 'delete', 'view_inventory', 'view_history', 'view_handover', 'manage'],

@@ -21,7 +21,7 @@ const RESOURCES = Object.freeze([
 
 /** Full union of actions (legacy rows + matrix). */
 const ACTIONS = Object.freeze([
-  'read', 'create', 'update', 'delete', 'assign', 'unassign',
+  'read', 'create', 'update', 'delete', 'assign', 'unassign', 'sell',
   'export', 'import', 'manage', 'approve', 'view_confidential',
   'view_history', 'view_inventory', 'view_handover',
   'download', 'upload', 'use',
@@ -33,7 +33,7 @@ const ACTIONS = Object.freeze([
  */
 const ACTIONS_BY_RESOURCE = Object.freeze({
   asset: Object.freeze([
-    'read', 'create', 'update', 'delete', 'assign', 'unassign', 'export', 'import', 'manage',
+    'read', 'create', 'update', 'delete', 'assign', 'unassign', 'sell', 'export', 'import', 'manage',
   ]),
   license: Object.freeze([
     'read', 'create', 'update', 'delete', 'assign', 'unassign', 'view_confidential', 'manage',
@@ -93,7 +93,7 @@ const ACTIONS_BY_RESOURCE = Object.freeze({
  * Explicit toggles remain for export/import/view_confidential/view_*.
  */
 const MANAGE_EXPAND = Object.freeze({
-  asset: Object.freeze(['read', 'update', 'delete', 'assign', 'unassign']),
+  asset: Object.freeze(['read', 'update', 'delete', 'assign', 'unassign', 'sell']),
   license: Object.freeze(['read', 'update', 'delete', 'assign', 'unassign']),
   line: Object.freeze(['read', 'update', 'delete', 'assign', 'unassign']),
   employee: Object.freeze(['read', 'update', 'delete']),

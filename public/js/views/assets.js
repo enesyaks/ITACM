@@ -1703,6 +1703,7 @@ async function showAssetDetail(id, onChange) {
   const canUpdate = Auth.canIam('asset', 'update') || Auth.canIam('asset', 'manage');
   const canCreate = Auth.canIam('asset', 'create');
   const canUnassign = Auth.canIam('asset', 'unassign') || Auth.canIam('asset', 'manage');
+  const canSell = Auth.canIam('asset', 'sell') || Auth.canIam('asset', 'manage');
   const canRepair = Auth.canIam('maintenance', 'create');
   const canDownloadDocs = Auth.canIam('document', 'download') || Auth.can('canDownloadDocuments');
   const refresh = () => { if (onChange) onChange(); };
@@ -1912,7 +1913,7 @@ async function showAssetDetail(id, onChange) {
       ${canUpdate ? `<button class="btn btn-outline" id="ad-edit"><span class="ms">edit</span> ${esc(t('common.edit'))}</button>` : ''}
       ${canCreate ? `<button class="btn btn-outline" id="ad-duplicate"><span class="ms">content_copy</span> ${esc(t('common.duplicate'))}</button>` : ''}
       ${canUnassign && !isInfra && x.status === 'Assigned' ? `<button class="btn btn-outline" id="ad-return"><span class="ms">undo</span> ${esc(t('common.return'))}</button>` : ''}
-      ${canUpdate && !isInfra && (x.status === 'In Stock' || x.status === 'Assigned') ? `<button class="btn btn-outline" id="ad-sell"><span class="ms">sell</span> ${esc(t('hw.d.sell'))}</button>` : ''}
+      ${canSell && !isInfra && (x.status === 'In Stock' || x.status === 'Assigned') ? `<button class="btn btn-outline" id="ad-sell"><span class="ms">sell</span> ${esc(t('hw.d.sell'))}</button>` : ''}
       ${canRepair && (x.status === 'In Stock' || x.status === 'Assigned') ? `<button class="btn btn-primary" id="ad-repair"><span class="ms">build</span> ${esc(t('common.repair'))}</button>` : ''}
       ${canUpdate && isInfra
         ? `<button class="btn btn-primary" id="ad-responsible"><span class="ms">person_search</span> ${esc(t('network.setResponsible') || 'Set responsible')}</button>`
@@ -2010,16 +2011,24 @@ async function showAssetDetail(id, onChange) {
           ...(x.status === 'Assigned'
             ? [{ type: 'html', full: true, html: `<p class="cell-sub">${esc(t('hw.sellHintAssigned'))}</p>` }]
             : []),
+          { name: 'approvedBy', label: `${t('hw.saleApprover')} *`, required: true, full: true, placeholder: t('hw.saleApproverPh') },
           { name: 'buyer', label: t('hw.saleBuyer'), full: true },
-          { name: 'price', label: t('hw.salePrice') },
+          { name: 'price', label: t('hw.salePrice'), type: 'number', step: '0.01' },
+          { name: 'currency', label: t('hw.saleCurrency'), type: 'select', value: appCurrency(),
+            options: currencyOptionsForSelect(appCurrency()) },
           { name: 'date', label: t('hw.saleDate'), type: 'date' },
           { name: 'note', label: t('hw.saleNote'), type: 'textarea', full: true },
         ],
         submitLabel: 'hw.d.sell',
         async onSubmit(d) {
+          const amount = (d.price != null ? String(d.price) : '').trim();
+          const cur = (d.currency || appCurrency() || '').trim();
           const sale = {
+            approvedBy: (d.approvedBy || '').trim(),
             buyer: (d.buyer || '').trim(),
-            price: (d.price || '').trim(),
+            // Price is stored as free text on the sale note — keep the currency
+            // alongside the amount (e.g. "1500 USD") so the record is unambiguous.
+            price: amount ? `${amount}${cur ? ` ${cur}` : ''}` : '',
             date: d.date || '',
             note: (d.note || '').trim(),
           };

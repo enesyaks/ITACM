@@ -179,6 +179,15 @@ router.post('/', requireAnyPermission([['asset', 'create']], getBodyContext), as
 
 /** PUT /api/assets/:id — edit hardware. İzin: asset:update | manage */
 router.put('/:id', requireAnyPermission([['asset', 'update'], ['asset', 'manage']], getAssetContext), asyncHandler(async (req, res) => {
+  // Marking an asset Sold needs an explicit sell grant (or manage) — updating
+  // other fields only needs asset:update. Custom groups must be given asset:sell
+  // in the permission matrix; role-based Admin/Helpdesk get it via fallback.
+  if (req.body && req.body.status === 'Sold') {
+    const ctx = await getAssetContext(req);
+    const canSell = await permissionService.checkPermission(req.user, 'asset', 'sell', ctx)
+      || await permissionService.checkPermission(req.user, 'asset', 'manage', ctx);
+    if (!canSell) throw HttpError.forbidden('You do not have permission to sell (mark as Sold) assets');
+  }
   const pending = await disposalApprovalGate(req);
   if (pending) return res.status(202).json({ success: true, data: pending });
   const updated = await assetService.updateAsset(req.params.id, req.body, req.user);
