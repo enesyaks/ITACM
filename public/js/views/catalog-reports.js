@@ -642,10 +642,12 @@ const REPORT_BUILDERS = {
       rows: items.map((x) => [x.assetTag, x.category, x.brand, x.model, x.serialNumber,
         x.macEthernet || x.macWifi || '', x.status, asgName(x), x.location || '',
         x.purchaseDate ? fmtDate(x.purchaseDate) : '']),
-      summary: `${items.length} assets • ${items.filter((x) => x.status === 'Assigned').length} assigned • `
-        + `${items.filter((x) => x.status === 'In Stock').length} in stock • `
-        + `${items.filter((x) => x.status === 'In Repair').length} in repair • `
-        + `${items.filter((x) => x.status === 'Scrap').length} scrapped`,
+      summary: t('rep.sum.inventory')
+        .replace('{n}', items.length)
+        .replace('{a}', items.filter((x) => x.status === 'Assigned').length)
+        .replace('{s}', items.filter((x) => x.status === 'In Stock').length)
+        .replace('{r}', items.filter((x) => x.status === 'In Repair').length)
+        .replace('{c}', items.filter((x) => x.status === 'Scrap').length),
     };
   },
 
@@ -659,7 +661,7 @@ const REPORT_BUILDERS = {
     const rows = Object.entries(map).sort((a, b) => b[1].total - a[1].total)
       .map(([cat, c]) => [cat, c.total, c['In Stock'], c.Assigned, c['In Repair'], c.Scrap]);
     return { cols: ['Category', 'Total', 'In Stock', 'Assigned', 'In Repair', 'Scrap'], rows,
-      summary: `${items.length} assets across ${rows.length} categories` };
+      summary: t('rep.sum.byCategory').replace('{n}', items.length).replace('{c}', rows.length) };
   },
 
   'by-location': async () => {
@@ -673,7 +675,7 @@ const REPORT_BUILDERS = {
     const rows = Object.entries(map).sort((a, b) => b[1].total - a[1].total)
       .map(([loc, c]) => [loc, c.total, c.assigned, c.stock]);
     return { cols: ['Location', 'Total Assets', 'Assigned', 'In Stock'], rows,
-      summary: `${items.length} assets across ${rows.length} locations` };
+      summary: t('rep.sum.byLocation').replace('{n}', items.length).replace('{c}', rows.length) };
   },
 
   'by-status': async () => {
@@ -683,7 +685,7 @@ const REPORT_BUILDERS = {
       const n = items.filter((x) => x.status === s).length;
       return [s, n, Math.round((n / total) * 100) + '%'];
     });
-    return { cols: ['Status', 'Count', '% of Fleet'], rows, summary: `${items.length} assets total` };
+    return { cols: ['Status', 'Count', '% of Fleet'], rows, summary: t('rep.sum.total').replace('{n}', items.length) };
   },
 
   'in-stock': async () => {
@@ -691,7 +693,7 @@ const REPORT_BUILDERS = {
     return { cols: ['Asset Tag', 'Category', 'Brand', 'Model', 'Serial No', 'Location', 'Purchase Date'],
       rows: items.map((x) => [x.assetTag, x.category, x.brand, x.model, x.serialNumber, x.location || '',
         x.purchaseDate ? fmtDate(x.purchaseDate) : '']),
-      summary: `${items.length} assets available to assign` };
+      summary: t('rep.sum.inStock').replace('{n}', items.length) };
   },
 
   eol: async () => {
@@ -705,7 +707,7 @@ const REPORT_BUILDERS = {
         fmtDate(x.purchaseDate), fmtDate(l.eol), Math.min(l.pct, 100) + '%', l.overdue ? 'REPLACE NOW' : 'Due soon']);
     const overdue = rows.filter((r) => r[7] === 'REPLACE NOW').length;
     return { cols: ['Asset Tag', 'Category', 'Brand / Model', 'Assigned To', 'Purchase Date', 'EOL Date', 'Elapsed', 'State'], rows,
-      summary: `${rows.length} assets at/near end-of-life • ${overdue} overdue for replacement` };
+      summary: t('rep.sum.eol').replace('{n}', rows.length).replace('{o}', overdue) };
   },
 
   aging: async () => {
@@ -715,7 +717,7 @@ const REPORT_BUILDERS = {
       .sort((a, b) => b.age - a.age)
       .map(({ x, age }) => [x.assetTag, x.category, `${x.brand} ${x.model}`, fmtDate(x.purchaseDate), age, x.status, asgName(x)]);
     return { cols: ['Asset Tag', 'Category', 'Brand / Model', 'Purchase Date', 'Age (months)', 'Status', 'Assigned To'], rows,
-      summary: `${rows.length} assets with a purchase date` };
+      summary: t('rep.sum.aging').replace('{n}', rows.length) };
   },
   depreciation: async () => {
     const { items } = await api('/assets?limit=2000');
@@ -745,8 +747,11 @@ const REPORT_BUILDERS = {
       cols: ['Asset Tag', 'Category', 'Brand / Model', 'Purchase Date', 'Purchase Cost',
         'Salvage', 'Book Value', 'Depreciated', 'Depreciated %', 'Status', 'Assigned To'],
       rows,
-      summary: `${rows.length} priced assets • purchase ${fmtMoney(totalCost)} • `
-        + `book ${fmtMoney(totalBook)} • depreciated ${fmtMoney(totalCost - totalBook)}`,
+      summary: t('rep.sum.depreciation')
+        .replace('{n}', rows.length)
+        .replace('{p}', fmtMoney(totalCost))
+        .replace('{b}', fmtMoney(totalBook))
+        .replace('{d}', fmtMoney(totalCost - totalBook)),
     };
   },
 
@@ -755,7 +760,7 @@ const REPORT_BUILDERS = {
     return { cols: ['Asset Tag', 'Category', 'Brand / Model', 'Serial No', 'Location', 'Purchase Date'],
       rows: items.map((x) => [x.assetTag, x.category, `${x.brand} ${x.model}`, x.serialNumber, x.location || '',
         x.purchaseDate ? fmtDate(x.purchaseDate) : '']),
-      summary: `${items.length} scrapped / retired assets` };
+      summary: t('rep.sum.scrap').replace('{n}', items.length) };
   },
 
   assignments: async () => {
@@ -781,7 +786,7 @@ const REPORT_BUILDERS = {
     const emps = employeeList(await api('/employees?limit=10000')).items;
     return { cols: ['Employee', 'Email', 'Department', 'Title', 'Status', 'Assets Held'],
       rows: emps.map((p) => [p.fullName, p.email, p.department || '', p.title || '', p.status, p.activeAssetCount]),
-      summary: `${emps.length} employees • ${emps.filter((p) => p.status === 'Active').length} active` };
+      summary: t('rep.sum.employees').replace('{n}', emps.length).replace('{a}', emps.filter((p) => p.status === 'Active').length) };
   },
 
   'no-assets': async () => {
@@ -789,7 +794,7 @@ const REPORT_BUILDERS = {
     const none = emps.filter((p) => p.status === 'Active' && !p.activeAssetCount);
     return { cols: ['Employee', 'Email', 'Department', 'Title'],
       rows: none.map((p) => [p.fullName, p.email, p.department || '', p.title || '']),
-      summary: `${none.length} active employees hold no assets` };
+      summary: t('rep.sum.noAssets').replace('{n}', none.length) };
   },
 
   handovers: async () => {
@@ -798,7 +803,7 @@ const REPORT_BUILDERS = {
       .map((h) => [fmtDateTime(h.transactionDate), h.employeeName, (h.items || []).length,
         (h.items || []).map((i) => i.assetTag).join(', '), h.documentType]);
     return { cols: ['Date', 'Employee', '# Items', 'Asset Tags', 'Type'], rows,
-      summary: `${hs.length} handover transactions` };
+      summary: t('rep.sum.handovers').replace('{n}', hs.length) };
   },
 
   licenses: async () => {
@@ -806,8 +811,10 @@ const REPORT_BUILDERS = {
     return { cols: ['Software', 'Vendor', 'Used Seats', 'Total Seats', 'Utilization %', 'Expires'],
       rows: lics.map((l) => [l.softwareName, l.vendor || '', l.usedSeats, l.totalSeats,
         Math.round((l.usedSeats / l.totalSeats) * 100), fmtDate(l.expirationDate)]),
-      summary: `${lics.length} license pools • ${lics.reduce((s2, l) => s2 + l.usedSeats, 0)}/`
-        + `${lics.reduce((s2, l) => s2 + l.totalSeats, 0)} seats in use` };
+      summary: t('rep.sum.licenses')
+        .replace('{n}', lics.length)
+        .replace('{u}', lics.reduce((s2, l) => s2 + l.usedSeats, 0))
+        .replace('{t}', lics.reduce((s2, l) => s2 + l.totalSeats, 0)) };
   },
 
   'expiring-licenses': async () => {
@@ -818,14 +825,14 @@ const REPORT_BUILDERS = {
       .sort((a, b) => a.days - b.days)
       .map(({ l, days }) => [l.softwareName, l.vendor || '', fmtDate(l.expirationDate), days, `${l.usedSeats}/${l.totalSeats}`]);
     return { cols: ['Software', 'Vendor', 'Expires', 'Days Left', 'Seats (used/total)'], rows,
-      summary: `${rows.length} licenses expiring within 90 days` };
+      summary: t('rep.sum.expiring').replace('{n}', rows.length) };
   },
 
   software: async () => {
     const rows = await api('/licenses/assignments');
     return { cols: ['Employee', 'Software', 'Assigned At', 'Assigned By'],
       rows: rows.map((a2) => [a2.employeeName, a2.softwareName, fmtDate(a2.assignedAt), a2.assignedByName || '']),
-      summary: `${rows.length} active software assignments` };
+      summary: t('rep.sum.software').replace('{n}', rows.length) };
   },
 
   maintenance: async () => {
@@ -839,8 +846,10 @@ const REPORT_BUILDERS = {
           m.returnDate ? fmtDate(m.returnDate) : '', Math.max(0, Math.round((back - sent) / 86400000)),
           fmtMoney(m.cost || 0), m.returnDate ? 'Closed' : 'Open', (m.progressNotes || []).length];
       }),
-      summary: `${logs.length} repair logs • ${logs.filter((m) => !m.returnDate).length} open • `
-        + `total cost ${fmtMoney(totalCost)}` };
+      summary: t('rep.sum.maintenance')
+        .replace('{n}', logs.length)
+        .replace('{o}', logs.filter((m) => !m.returnDate).length)
+        .replace('{c}', fmtMoney(totalCost)) };
   },
 
   'open-repairs': async () => {
@@ -850,14 +859,14 @@ const REPORT_BUILDERS = {
       Math.max(0, Math.round((Date.now() - new Date(m.sentDate).getTime()) / 86400000)), fmtMoney(m.cost || 0)])
       .sort((a, b) => b[4] - a[4]);
     return { cols: ['Asset Tag', 'Service Company', 'Issue', 'Sent', 'Days Open', 'Est. Cost'], rows,
-      summary: `${open.length} assets currently in repair` };
+      summary: t('rep.sum.openRepairs').replace('{n}', open.length) };
   },
 
   consumables: async () => {
     const cons = await api('/consumables');
     return { cols: ['Item', 'Stock', 'Min. Level', 'Status'],
       rows: cons.map((c) => [c.itemName, c.totalStock, c.minimumStockAlertLevel, c.lowStock ? 'LOW STOCK' : 'OK']),
-      summary: `${cons.length} items • ${cons.filter((c) => c.lowStock).length} below minimum` };
+      summary: t('rep.sum.consumables').replace('{n}', cons.length).replace('{b}', cons.filter((c) => c.lowStock).length) };
   },
 
   'low-stock': async () => {
@@ -865,7 +874,7 @@ const REPORT_BUILDERS = {
     const low = cons.filter((c) => c.lowStock);
     return { cols: ['Item', 'Stock', 'Min. Level', 'Shortfall'],
       rows: low.map((c) => [c.itemName, c.totalStock, c.minimumStockAlertLevel, Math.max(0, c.minimumStockAlertLevel - c.totalStock)]),
-      summary: `${low.length} of ${cons.length} items at/below minimum` };
+      summary: t('rep.sum.lowStock').replace('{n}', low.length).replace('{t}', cons.length) };
   },
 };
 
@@ -1060,6 +1069,54 @@ const REP_COL_I18N = {
   'Title': 'rep.col.title',
   'Status': 'common.status',
   'Assets Held': 'rep.col.assetsHeld',
+  '# Items': 'rep.col.items',
+  '% of Fleet': 'rep.col.fleetPct',
+  'Age (months)': 'rep.col.ageMonths',
+  'Asset Tags': 'rep.col.assetTags',
+  'Assigned At': 'rep.col.assignedAt',
+  'Assigned By': 'rep.col.assignedBy',
+  'Assigned To': 'rep.col.assignedTo',
+  'Assigned': 'rep.col.assigned',
+  'Brand': 'rep.col.brand',
+  'Cost': 'rep.col.cost',
+  'Count': 'rep.col.count',
+  'Date': 'rep.col.date',
+  'Days Left': 'rep.col.daysLeft',
+  'Days Open': 'rep.col.daysOpen',
+  'Days': 'rep.col.days',
+  'EOL Date': 'rep.col.eolDate',
+  'Elapsed': 'rep.col.elapsed',
+  'Est. Cost': 'rep.col.estCost',
+  'Expires': 'rep.col.expires',
+  'In Repair': 'rep.col.inRepair',
+  'In Stock': 'rep.col.inStock',
+  'Issue': 'rep.col.issue',
+  'Item': 'rep.col.item',
+  'MAC': 'rep.col.mac',
+  'Min. Level': 'rep.col.minLevel',
+  'Model': 'rep.col.model',
+  'Notes': 'rep.col.notes',
+  'Returned': 'rep.col.returned',
+  'Scrap': 'rep.col.scrap',
+  'Seats (used/total)': 'rep.col.seatsUsedTotal',
+  'Sent': 'rep.col.sent',
+  'Service Company': 'rep.col.serviceCompany',
+  'Shortfall': 'rep.col.shortfall',
+  'Software': 'rep.col.software',
+  'State': 'rep.col.state',
+  'Stock': 'rep.col.stock',
+  'Total Assets': 'rep.col.totalAssets',
+  'Total Seats': 'rep.col.totalSeats',
+  'Total': 'rep.col.total',
+  'Type': 'rep.col.type',
+  'Used Seats': 'rep.col.usedSeats',
+  'Utilization %': 'rep.col.utilizationPct',
+  'Vendor': 'rep.col.vendor',
+  'Purchase Cost': 'rep.col.purchaseCost',
+  'Salvage': 'rep.col.salvage',
+  'Book Value': 'rep.col.bookValue',
+  'Depreciated': 'rep.col.depreciated',
+  'Depreciated %': 'rep.col.depreciatedPct',
 };
 function repCol(name) {
   const key = REP_COL_I18N[name];
