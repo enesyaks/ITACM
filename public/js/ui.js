@@ -1333,18 +1333,36 @@ function tableSortTh(key, label, { sort, order, extraClass = '', scope = '' } = 
  */
 function columnPicker({ storageKey, columns, onChange } = {}) {
   const all = Array.isArray(columns) ? columns : [];
-  const toggleable = all.filter((c) => !c.mandatory);
-  const defaults = () => new Set(all.filter((c) => c.mandatory || c.default !== false).map((c) => c.key));
+  const byKey = new Map(all.map((c) => [c.key, c]));
+  const allKeys = all.map((c) => c.key);
+  const defaultOrder = () => allKeys.slice();
+  const defaultVisible = () => new Set(all.filter((c) => c.mandatory || c.default !== false).map((c) => c.key));
+
+  // State: `order` (display order of every column) + `visible` (shown set). Both
+  // persist under one key. A legacy value (array of visible keys) still loads.
+  let order;
   let visible;
   try {
-    const saved = JSON.parse(localStorage.getItem(storageKey) || 'null');
-    visible = Array.isArray(saved) ? new Set(saved) : defaults();
-  } catch { visible = defaults(); }
+    const raw = JSON.parse(localStorage.getItem(storageKey) || 'null');
+    if (Array.isArray(raw)) { visible = new Set(raw); order = defaultOrder(); }
+    else if (raw && typeof raw === 'object') {
+      visible = new Set(Array.isArray(raw.v) ? raw.v : [...defaultVisible()]);
+      order = Array.isArray(raw.o) ? raw.o.filter((k) => byKey.has(k)) : defaultOrder();
+    } else { visible = defaultVisible(); order = defaultOrder(); }
+  } catch { visible = defaultVisible(); order = defaultOrder(); }
+  for (const k of allKeys) if (!order.includes(k)) order.push(k); // new columns appended
+  order = order.filter((k) => byKey.has(k));
   all.forEach((c) => { if (c.mandatory) visible.add(c.key); }); // mandatory can't be off
-  const save = () => { try { localStorage.setItem(storageKey, JSON.stringify([...visible])); } catch { /* private mode */ } };
 
-  const visibleColumns = () => all.filter((c) => visible.has(c.key));
+  const save = () => { try { localStorage.setItem(storageKey, JSON.stringify({ v: [...visible], o: order })); } catch { /* private mode */ } };
+  const ordered = () => order.map((k) => byKey.get(k)).filter(Boolean);
+  const visibleColumns = () => ordered().filter((c) => visible.has(c.key));
   const stripTags = (html) => String(html == null ? '' : html).replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+
+  const rowHtml = (c) => `<div class="col-picker-row" draggable="true" data-colkey="${esc(c.key)}">
+      <span class="ms col-grip" aria-hidden="true">drag_indicator</span>
+      <input type="checkbox" data-colcb="${esc(c.key)}" ${visible.has(c.key) ? 'checked' : ''} ${c.mandatory ? 'disabled' : ''}>
+      <span>${esc(c.label)}</span></div>`;
 
   return {
     visibleColumns,
@@ -1355,34 +1373,66 @@ function columnPicker({ storageKey, columns, onChange } = {}) {
       return `<div class="col-picker">
         <button type="button" class="btn btn-outline" data-colgear title="${esc(t('cols.customize') || 'Columns')}" aria-label="${esc(t('cols.customize') || 'Columns')}"><span class="ms">tune</span></button>
         <div class="col-picker-pop hidden" data-colpop role="menu">
-          <div class="col-picker-head">${esc(t('cols.title') || 'Columns')}</div>
-          <div class="col-picker-list">
-            ${toggleable.map((c) => `<label class="col-picker-row"><input type="checkbox" data-colkey="${esc(c.key)}" ${visible.has(c.key) ? 'checked' : ''}><span>${esc(c.label)}</span></label>`).join('')}
-          </div>
+          <div class="col-picker-head">${esc(t('cols.title') || 'Columns')} <span class="col-picker-hint">${esc(t('cols.dragHint') || 'drag to reorder')}</span></div>
+          <div class="col-picker-list" data-collist>${ordered().map(rowHtml).join('')}</div>
           <button type="button" class="col-picker-reset" data-colreset>${esc(t('cols.reset') || 'Reset to default')}</button>
         </div>
       </div>`;
     },
 
-    /** Wire the popover open/close + toggles. Call once after the toolbar mounts. */
+    /** Wire open/close + toggle + drag-to-reorder. Call once after mount. */
     mountGear(root) {
       const gear = root.querySelector('[data-colgear]');
       const pop = root.querySelector('[data-colpop]');
-      if (!gear || !pop) return;
+      const list = pop && pop.querySelector('[data-collist]');
+      if (!gear || !pop || !list) return;
       gear.addEventListener('click', (e) => { e.stopPropagation(); pop.classList.toggle('hidden'); });
       pop.addEventListener('click', (e) => e.stopPropagation());
       document.addEventListener('click', () => pop.classList.add('hidden'));
-      pop.querySelectorAll('[data-colkey]').forEach((cb) => {
-        cb.addEventListener('change', () => {
-          if (cb.checked) visible.add(cb.dataset.colkey); else visible.delete(cb.dataset.colkey);
-          save();
-          if (typeof onChange === 'function') onChange();
-        });
+
+      // Show / hide a column.
+      list.addEventListener('change', (e) => {
+        const cb = e.target.closest('[data-colcb]');
+        if (!cb) return;
+        if (cb.checked) visible.add(cb.dataset.colcb); else visible.delete(cb.dataset.colcb);
+        save();
+        if (typeof onChange === 'function') onChange();
       });
+
+      // Drag to reorder (desktop). Touch devices keep the current order.
+      const rowAfter = (y) => [...list.querySelectorAll('.col-picker-row:not(.dragging)')]
+        .reduce((closest, row) => {
+          const box = row.getBoundingClientRect();
+          const offset = y - box.top - box.height / 2;
+          return (offset < 0 && offset > closest.offset) ? { offset, el: row } : closest;
+        }, { offset: -Infinity, el: null }).el;
+      list.addEventListener('dragstart', (e) => {
+        const row = e.target.closest('.col-picker-row');
+        if (!row) return;
+        row.classList.add('dragging');
+        if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+      });
+      list.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        const dragging = list.querySelector('.dragging');
+        if (!dragging) return;
+        const after = rowAfter(e.clientY);
+        if (after == null) list.appendChild(dragging);
+        else list.insertBefore(dragging, after);
+      });
+      list.addEventListener('dragend', () => {
+        const dragging = list.querySelector('.dragging');
+        if (dragging) dragging.classList.remove('dragging');
+        order = [...list.querySelectorAll('.col-picker-row')].map((r) => r.dataset.colkey);
+        save();
+        if (typeof onChange === 'function') onChange();
+      });
+
       const reset = pop.querySelector('[data-colreset]');
       if (reset) reset.addEventListener('click', () => {
-        visible = defaults();
-        pop.querySelectorAll('[data-colkey]').forEach((cb) => { cb.checked = visible.has(cb.dataset.colkey); });
+        order = defaultOrder();
+        visible = defaultVisible();
+        list.innerHTML = ordered().map(rowHtml).join('');
         save();
         if (typeof onChange === 'function') onChange();
       });

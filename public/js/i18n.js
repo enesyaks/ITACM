@@ -942,6 +942,7 @@
     'cols.customize': L('Columns', 'Sütunlar', 'Spalten', 'Colonnes', 'Columnas', 'Colonne', 'Colunas', 'Kolommen', 'Kolumny', 'Столбцы', 'الأعمدة', '列'),
     'cols.title': L('Show columns', 'Görünecek sütunlar', 'Spalten anzeigen', 'Colonnes à afficher', 'Mostrar columnas', 'Mostra colonne', 'Mostrar colunas', 'Kolommen tonen', 'Pokaż kolumny', 'Показать столбцы', 'إظهار الأعمدة', '表示する列'),
     'cols.reset': L('Reset to default', 'Varsayılana dön', 'Zurücksetzen', 'Réinitialiser', 'Restablecer', 'Ripristina', 'Redefinir', 'Standaard', 'Przywróć domyślne', 'Сбросить', 'إعادة تعيين', '既定に戻す'),
+    'cols.dragHint': L('drag to reorder', 'sıralamak için sürükle', 'zum Sortieren ziehen', 'glisser pour réordonner', 'arrastra para reordenar', 'trascina per riordinare', 'arraste para reordenar', 'sleep om te ordenen', 'przeciągnij, aby zmienić', 'перетащите для порядка', 'اسحب لإعادة الترتيب', 'ドラッグで並べ替え'),
     'cols.category': L('Category', 'Kategori', 'Kategorie', 'Catégorie', 'Categoría', 'Categoria', 'Categoria', 'Categorie', 'Kategoria', 'Категория', 'الفئة', 'カテゴリ'),
     'cols.cpu': L('CPU', 'İşlemci', 'CPU', 'CPU', 'CPU', 'CPU', 'CPU', 'CPU', 'CPU', 'ЦП', 'المعالج', 'CPU'),
     'cols.ram': L('RAM', 'RAM', 'RAM', 'RAM', 'RAM', 'RAM', 'RAM', 'RAM', 'RAM', 'ОЗУ', 'الذاكرة', 'RAM'),

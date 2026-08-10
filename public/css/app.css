@@ -1149,13 +1149,21 @@ table.data.net-list .net-col-actions .btn .ms { font-size: 18px; }
 .col-picker-head {
   font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
   color: var(--on-surface-variant); padding: 6px 8px 4px;
+  display: flex; align-items: baseline; gap: 6px;
 }
+.col-picker-hint { font-weight: 500; text-transform: none; letter-spacing: 0; font-size: 10.5px; opacity: .8; }
 .col-picker-row {
   display: flex; align-items: center; gap: 8px;
-  padding: 7px 8px; border-radius: var(--radius-md); font-size: 13px; cursor: pointer;
+  padding: 7px 8px; border-radius: var(--radius-md); font-size: 13px;
+  background: #fff;
 }
 .col-picker-row:hover { background: var(--surface-container); }
 .col-picker-row input { width: 15px; height: 15px; flex: none; }
+.col-picker-row .col-grip {
+  font-size: 18px; color: var(--on-surface-variant); cursor: grab; flex: none; opacity: .55;
+}
+.col-picker-row:hover .col-grip { opacity: 1; }
+.col-picker-row.dragging { opacity: .5; background: var(--primary-container); }
 .col-picker-reset {
   width: 100%; margin-top: 4px; padding: 7px 8px; border-radius: var(--radius-md);
   border: none; background: none; color: var(--primary); font: inherit; font-size: 12.5px;
