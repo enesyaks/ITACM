@@ -1373,7 +1373,7 @@ function columnPicker({ storageKey, columns, onChange } = {}) {
       return `<div class="col-picker">
         <button type="button" class="btn btn-outline" data-colgear title="${esc(t('cols.customize') || 'Columns')}" aria-label="${esc(t('cols.customize') || 'Columns')}"><span class="ms">tune</span></button>
         <div class="col-picker-pop hidden" data-colpop role="menu">
-          <div class="col-picker-head">${esc(t('cols.title') || 'Columns')} <span class="col-picker-hint">${esc(t('cols.dragHint') || 'drag to reorder')}</span></div>
+          <div class="col-picker-head">${esc(t('cols.heading') || 'Columns')} <span class="col-picker-hint">${esc(t('cols.dragHint') || 'drag to reorder')}</span></div>
           <div class="col-picker-list" data-collist>${ordered().map(rowHtml).join('')}</div>
           <button type="button" class="col-picker-reset" data-colreset>${esc(t('cols.reset') || 'Reset to default')}</button>
         </div>
@@ -1386,9 +1386,13 @@ function columnPicker({ storageKey, columns, onChange } = {}) {
       const pop = root.querySelector('[data-colpop]');
       const list = pop && pop.querySelector('[data-collist]');
       if (!gear || !pop || !list) return;
-      gear.addEventListener('click', (e) => { e.stopPropagation(); pop.classList.toggle('hidden'); });
+      // Elevate the whole picker while open so the popover clears sticky table
+      // cells (which sit in their own stacking context) — mirrors `.msel.open`.
+      const picker = gear.closest('.col-picker');
+      const syncOpen = () => { if (picker) picker.classList.toggle('open', !pop.classList.contains('hidden')); };
+      gear.addEventListener('click', (e) => { e.stopPropagation(); pop.classList.toggle('hidden'); syncOpen(); });
       pop.addEventListener('click', (e) => e.stopPropagation());
-      document.addEventListener('click', () => pop.classList.add('hidden'));
+      document.addEventListener('click', () => { pop.classList.add('hidden'); syncOpen(); });
 
       // Show / hide a column.
       list.addEventListener('change', (e) => {
