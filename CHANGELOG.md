@@ -4,6 +4,15 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.34] — 2026-08-10
+
+### Fixed
+- **Reports are fully localized.** Report tables were half-translated — only a
+  handful of column names had translations and every summary line was hardcoded
+  English, so screens like the depreciation / book-value report mixed Turkish
+  headers with English ones (PURCHASE COST, SALVAGE, BOOK VALUE…) and an English
+  summary. All report column headers and summaries now go through i18n.
+
 ## [1.3.33] — 2026-08-10
 
 ### Fixed
