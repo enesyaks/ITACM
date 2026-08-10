@@ -4,6 +4,24 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.32] — 2026-08-10
+
+### Added
+- **Dedicated “sell” permission.** Marking an asset Sold is now its own
+  `asset:sell` action in the permission matrix instead of riding on
+  asset:update — custom permission groups must be granted it explicitly
+  (role-based Admin/Helpdesk and `manage` keep it). The sale dialog now
+  **requires the approving manager’s name** and offers a **currency selector**
+  (defaults to the app currency) next to the price.
+
+### Fixed
+- **Deleting a department with teams** no longer fails: when you pick a target
+  to move employees to, the department’s teams move across as well (any name
+  clash is renamed), so the department can actually be removed.
+- **Product Catalog** screen is now fully localized (headers, buttons, hints,
+  toasts) instead of hardcoded English.
+- The **“clear default location”** control is a tidy, aligned round icon button.
+
 ## [1.3.31] — 2026-08-10
 
 ### Added
