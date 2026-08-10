@@ -4,6 +4,15 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.35] — 2026-08-10
+
+### Added
+- **Suggested salvage value.** When entering the purchase cost on a new or
+  edited asset, the salvage field is pre-filled with a suggestion derived from
+  the cost and the category’s EOL window — longer-life gear keeps more residual
+  value (≤24 mo 5%, ≤48 mo 10%, ≤72 mo 15%, >72 mo 20%). A hint shows the
+  reasoning; it only auto-fills until you type your own and stays fully editable.
+
 ## [1.3.34] — 2026-08-10
 
 ### Fixed
