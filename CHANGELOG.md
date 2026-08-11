@@ -4,6 +4,12 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.36] — 2026-08-11
+
+### Fixed
+- A request with a malformed JSON body now returns **400 “Invalid JSON body”**
+  instead of a generic 500 (it’s a client mistake, not a server crash).
+
 ## [1.3.35] — 2026-08-10
 
 ### Added
