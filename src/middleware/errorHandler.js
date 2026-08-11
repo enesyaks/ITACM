@@ -18,6 +18,12 @@ function errorHandler(err, req, res, next) {
     });
   }
 
+  // Malformed JSON body — a client mistake (400), not a server crash (500).
+  if (err && (err.type === 'entity.parse.failed'
+    || (err instanceof SyntaxError && err.status === 400 && 'body' in err))) {
+    return res.status(400).json({ success: false, error: 'Invalid JSON body' });
+  }
+
   if (err && (err.code === 'EACCES' || err.code === 'EPERM')) {
     // Log the detailed message (incl. path) server-side; never return it — the
     // filesystem path is internal and must not leak to clients.
