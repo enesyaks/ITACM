@@ -99,6 +99,7 @@ function createApp() {
     // skip the small global parser so it doesn't reject them first.
     if (req.method === 'POST' && /^\/api\/(employees|maintenance|providers|contracts)\/[^/]+\/documents\/?$/.test(req.path)) return next();
     if (req.method === 'POST' && req.path === '/api/import/inventory') return next(); // big CSV payloads
+    if (req.method === 'POST' && req.path === '/api/import/zimmet/analyze') return next(); // base64 PDFs, own 80mb parser
     if (req.method === 'POST' && /^\/api\/integrations\/sync\//.test(req.path)) return next(); // sync JSON up to 6mb on route
     if (req.method === 'POST' && req.path === '/api/setup/migrate') return next(); // raw migration archive body
     return jsonSmall(req, res, next);
@@ -221,6 +222,7 @@ function createApp() {
   app.use('/api/lines', require('./routes/lines.routes'));
   app.use('/api/providers', require('./routes/providers.routes'));
   app.use('/api/contracts', require('./routes/contracts.routes'));
+  app.use('/api/import/zimmet', require('./routes/zimmetImport.routes'));
   app.use('/api/import', require('./routes/import.routes'));
   app.use('/api/audit', require('./routes/audit.routes'));
   app.use('/api/integrations', require('./routes/integrations.routes'));

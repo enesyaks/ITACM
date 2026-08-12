@@ -18,6 +18,7 @@ module.exports = {
   countService: require('./countService'),
   lineService: require('./lineService'),
   importService: require('./importService'),
+  zimmetImportService: require('./zimmetImportService'),
   auditService: require('./auditService'),
   providerService: require('./providerService'),
   notificationService: require('./notificationService'),
