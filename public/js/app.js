@@ -20,6 +20,7 @@ const ROUTES = {
   '#/providers': { title: 'Providers & Contracts', view: 'providers', icon: 'apartment' },
   '#/consumables': { title: 'Consumables', view: 'consumables', icon: 'inventory_2' },
   '#/employees': { title: 'Employees', view: 'employees', icon: 'badge' },
+  '#/zimmet-import': { title: 'Zimmet Import', view: 'zimmetImport', icon: 'upload_file', iam: ['handover_document', 'upload'] },
   '#/org': { title: 'Organization', view: 'org', icon: 'account_tree' },
   '#/handover': { title: 'Handover Ops', view: 'handover', icon: 'assignment_turned_in' },
   '#/maintenance': { title: 'Maintenance & Repair', view: 'maintenance', icon: 'build' },
@@ -73,6 +74,7 @@ function renderNav() {
       if (isPortalUser()) return hash === PORTAL_HASH;
       if (isHrConfined()) return HR_ALLOWED_HASHES.has(hash);
       if (r.hrOnly) return isHrUser(); // HR screen: any HR account, grouped or not
+      if (r.iam && !Auth.canIam(r.iam[0], r.iam[1])) return false;
       return !r.perm || Auth.can(r.perm);
     })
     .map(([hash, r]) =>
@@ -132,7 +134,7 @@ async function navigate() {
   // Dashboard, and this page is scoped to the people who file the tickets.
   if (route.hrOnly && !isHrUser()) { location.hash = homeHash; return; }
   // A route the user isn't permitted to open → 403 screen (clearer than a silent bounce).
-  if (route.perm && !Auth.can(route.perm)) {
+  if ((route.perm && !Auth.can(route.perm)) || (route.iam && !Auth.canIam(route.iam[0], route.iam[1]))) {
     $$('#nav a').forEach((a) => a.classList.remove('active'));
     view.dataset.navGen = String(gen);
     renderErrorState(view, {
