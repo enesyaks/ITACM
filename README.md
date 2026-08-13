@@ -508,6 +508,11 @@ npm run dev        # auto-restarting local server
 npm run lint       # syntax check (server + all src/scripts)
 npm run migrate    # apply schema + pending migrations manually (optional)
 
+npm test           # unit tests — pure, no database required
+npm run test:db    # integration tests — starts a throwaway Postgres in Docker,
+                   # provisions a scratch database, drops it after. Your own
+                   # stack and its data are never touched.
+
 # Demo data (run inside the API container — host `npm run seed:*` needs DB port published)
 docker compose exec api npm run seed:all -- --reset              # ~100 employees + infra + providers
 docker compose exec -e SEED_EMPLOYEES=100 api npm run seed:demo -- --reset

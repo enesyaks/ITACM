@@ -450,6 +450,11 @@ npm run dev        # otomatik yeniden başlayan yerel sunucu
 npm run lint       # sözdizimi kontrolü (server + tüm src/scripts)
 npm run migrate    # şema + bekleyen migration'ları elle uygula (opsiyonel)
 
+npm test           # birim testleri — saf, veritabanı gerekmez
+npm run test:db    # entegrasyon testleri — Docker'da tek kullanımlık bir Postgres
+                   # başlatır, kendi geçici veritabanını kurar, sonra siler.
+                   # Kendi stack'ine ve verine dokunmaz.
+
 # Demo veri (API container içinde — host’ta `npm run seed:*` için DB portunu açmanız gerekir)
 docker compose exec api npm run seed:all -- --reset              # ~100 personel + org şeması + infra + tedarikçi
 docker compose exec -e SEED_EMPLOYEES=100 api npm run seed:demo -- --reset

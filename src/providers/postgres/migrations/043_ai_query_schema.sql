@@ -94,9 +94,20 @@ CREATE OR REPLACE VIEW ai.audit_log AS
 -- non-superuser install (the feature simply stays unavailable there).
 DO $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'itacm_ai_ro') THEN
-    CREATE ROLE itacm_ai_ro NOLOGIN;
-  END IF;
+  -- Roles are CLUSTER-wide, not per-database, and the migration advisory lock is
+  -- per-database — so two ITACM databases provisioning on one Postgres server
+  -- (staging beside production, or two instances started together) can both see
+  -- "no such role" and both try to create it. The loser used to abort the whole
+  -- migration and crash-loop that instance's first start. Own sub-block so the
+  -- GRANTs below still run for the database that lost the race.
+  BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'itacm_ai_ro') THEN
+      CREATE ROLE itacm_ai_ro NOLOGIN;
+    END IF;
+  EXCEPTION
+    WHEN duplicate_object OR unique_violation THEN
+      RAISE NOTICE 'itacm_ai_ro already created by a concurrent provision — continuing';
+  END;
   GRANT USAGE ON SCHEMA ai TO itacm_ai_ro;
   GRANT SELECT ON ALL TABLES IN SCHEMA ai TO itacm_ai_ro;
   ALTER DEFAULT PRIVILEGES IN SCHEMA ai GRANT SELECT ON TABLES TO itacm_ai_ro;

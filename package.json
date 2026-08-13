@@ -23,7 +23,8 @@
     "reset-password": "node scripts/reset-password.js",
     "lint": "node --check server.js && find src scripts -name '*.js' -exec node --check {} +",
     "seed:all": "node scripts/seed-all.js",
-    "update": "bash scripts/update.sh"
+    "update": "bash scripts/update.sh",
+    "test:db": "bash scripts/test-db.sh"
   },
   "keywords": [
     "it-asset-management",

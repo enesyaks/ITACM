@@ -1,0 +1,31 @@
+# Weekly dependency PRs. `npm audit` being clean today is not a property that
+# maintains itself — this is what keeps it that way without anyone remembering.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    # Patch/minor bumps of runtime deps arrive as one PR instead of a dozen;
+    # anything major stays on its own so it gets read properly.
+    groups:
+      production-minor-patch:
+        applies-to: version-updates
+        dependency-type: production
+        update-types: [minor, patch]
+    labels: [dependencies]
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    labels: [dependencies, docker]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    labels: [dependencies]
