@@ -950,6 +950,36 @@ code, .mono { font-family: var(--mono); font-size: 12px; }
 .sidebar-nav a .ms { font-size: 20px; }
 .sidebar-nav a:hover { background: var(--sidebar-hover); color: #e6e9f2; }
 .sidebar-nav a.active { background: var(--sidebar-hover); color: #fff; box-shadow: inset 3px 0 0 var(--primary-container); }
+
+/* "Customise menu" sits at the end of the nav — deliberately quieter than the
+   links above it, since it is a settings affordance, not a destination. */
+.nav-customize {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  padding: 10px 12px; margin-top: 8px;
+  border: 1px dashed var(--sidebar-hover); border-radius: var(--radius-lg);
+  background: transparent; color: var(--sidebar-muted);
+  font-family: var(--font); font-weight: 500; font-size: 12.5px;
+  cursor: pointer; opacity: .75;
+}
+.nav-customize:hover { background: var(--sidebar-hover); color: #e6e9f2; opacity: 1; }
+.nav-customize .ms { font-size: 18px; }
+
+/* Rows in the customise dialog. */
+.nav-cust-list { display: flex; flex-direction: column; gap: 4px; max-height: 55vh; overflow-y: auto; }
+.nav-cust-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 8px; border: 1px solid var(--outline-variant); border-radius: var(--radius-md);
+  background: var(--surface, #fff);
+}
+.nav-cust-row.dragging { opacity: .5; }
+.nav-cust-grip { color: var(--on-surface-variant); cursor: grab; font-size: 18px; }
+.nav-cust-label { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; cursor: pointer; margin: 0; }
+/* The global `input { width: 100% }` applies to checkboxes too — without this
+   the box eats the row and the entry name gets squeezed to nothing. */
+.nav-cust-label input { width: 15px; height: 15px; flex: none; padding: 0; accent-color: var(--primary-container); }
+.nav-cust-label .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav-cust-label .ms { font-size: 19px; color: var(--on-surface-variant); }
+.nav-cust-row .icon-btn[disabled] { opacity: .3; cursor: default; }
 .sidebar-user { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-top: 1px solid rgba(255,255,255,.06); }
 .sidebar-user-info { flex: 1; min-width: 0; }
 .sidebar-user-info strong { display: block; color: #fff; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

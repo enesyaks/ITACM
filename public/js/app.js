@@ -61,37 +61,199 @@ function hasAllIam(pairs) {
   return (pairs || []).every(([resource, action]) => Auth.canIam(resource, action));
 }
 
+/* ---------------- Sidebar customisation (per browser) ----------------
+ * Order + hidden set, stored the same way table columns are. This is a display
+ * preference layered ON TOP of the permission filter below — hiding an entry
+ * never grants anything, and a route the user cannot reach is filtered out
+ * before any of this runs. */
+const NAV_PREF_KEY = 'itacm:nav:v1';
+
+function loadNavPref() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(NAV_PREF_KEY) || 'null');
+    if (raw && typeof raw === 'object') {
+      return {
+        order: Array.isArray(raw.o) ? raw.o.filter((h) => ROUTES[h]) : [],
+        hidden: new Set((Array.isArray(raw.h) ? raw.h : []).filter((h) => ROUTES[h])),
+      };
+    }
+  } catch { /* private mode / corrupt value → defaults */ }
+  return { order: [], hidden: new Set() };
+}
+let navPref = loadNavPref();
+
+function saveNavPref() {
+  try {
+    localStorage.setItem(NAV_PREF_KEY, JSON.stringify({ o: navPref.order, h: [...navPref.hidden] }));
+  } catch { /* private mode — the preference just does not persist */ }
+}
+
+/** Every route this account may open, in declaration order. */
+function permittedNavEntries() {
+  return Object.entries(ROUTES).filter(([hash, r]) => {
+    if (isPortalUser()) return hash === PORTAL_HASH;
+    if (isHrConfined()) return HR_ALLOWED_HASHES.has(hash);
+    if (r.hrOnly) return isHrUser(); // HR screen: any HR account, grouped or not
+    if (r.iam && !hasAllIam(r.iam)) return false;
+    return !r.perm || Auth.can(r.perm);
+  });
+}
+
+/** Apply the saved order. Anything unranked keeps its declared position and
+ *  lands after the customised entries — so a route added by an update shows up
+ *  rather than disappearing. */
+function orderedNavEntries(entries) {
+  const rank = new Map(navPref.order.map((h, i) => [h, i]));
+  const at = ([hash]) => (rank.has(hash) ? rank.get(hash) : Number.MAX_SAFE_INTEGER);
+  return entries.slice().sort((a, b) => at(a) - at(b)); // sort is stable
+}
+
+/** Nav labels come from i18n. Prefer nav.<view>, then a few historical aliases. */
+const NAV_KEY_ALIAS = { assets: 'hardware', licenses: 'software' };
+function navLabel(r) {
+  const primary = `nav.${r.view}`;
+  const v = t(primary);
+  if (v !== primary) return v;
+  const alias = NAV_KEY_ALIAS[r.view] ? `nav.${NAV_KEY_ALIAS[r.view]}` : null;
+  if (alias) {
+    const a = t(alias);
+    if (a !== alias) return a;
+  }
+  return r.title;
+}
+
+/** Re-apply the active highlight — renderNav() replaces the whole list. */
+function markActiveNav() {
+  const hash = location.hash || '';
+  $$('#nav a').forEach((a) => a.classList.toggle('active', a.dataset.route === hash));
+}
+
 function renderNav() {
   // Portal users get a bare topbar: search/scan/notifications/help/settings are
   // IT tools their role cannot use anyway (CSS hides them via .is-portal).
   document.body.classList.toggle('is-portal', isPortalUser());
   document.body.classList.toggle('is-hr', isHrUser());
-  // Nav labels come from the i18n dictionary. Prefer nav.<view>, then fall back
-  // to a few aliases where the route view name ≠ the historical nav key.
-  const NAV_KEY_ALIAS = { assets: 'hardware', licenses: 'software' };
-  const label = (r) => {
-    const primary = 'nav.' + r.view;
-    const alias = NAV_KEY_ALIAS[r.view] ? 'nav.' + NAV_KEY_ALIAS[r.view] : null;
-    const v = t(primary);
-    if (v !== primary) return v;
-    if (alias) {
-      const a = t(alias);
-      if (a !== alias) return a;
-    }
-    return r.title;
-  };
-  $('#nav').innerHTML = Object.entries(ROUTES)
-    .filter(([hash, r]) => {
-      if (isPortalUser()) return hash === PORTAL_HASH;
-      if (isHrConfined()) return HR_ALLOWED_HASHES.has(hash);
-      if (r.hrOnly) return isHrUser(); // HR screen: any HR account, grouped or not
-      if (r.iam && !hasAllIam(r.iam)) return false;
-      return !r.perm || Auth.can(r.perm);
-    })
+
+  const permitted = permittedNavEntries();
+  const links = orderedNavEntries(permitted)
+    .filter(([hash]) => !navPref.hidden.has(hash))
     .map(([hash, r]) =>
-      `<a href="${hash}" data-route="${hash}"><span class="ms">${r.icon}</span> ${esc(label(r))}</a>`)
+      `<a href="${hash}" data-route="${hash}"><span class="ms">${r.icon}</span> ${esc(navLabel(r))}</a>`)
     .join('');
+
+  // Only worth offering where there is actually a menu to arrange — a Portal
+  // account sees a single entry.
+  const canCustomize = permitted.length > 1;
+  $('#nav').innerHTML = links + (canCustomize
+    ? `<button type="button" class="nav-customize" id="nav-customize">
+         <span class="ms">tune</span> ${esc(t('nav.customize'))}</button>`
+    : '');
+
+  const btn = $('#nav-customize');
+  if (btn) btn.addEventListener('click', openNavCustomizer);
+  markActiveNav();
   if (typeof syncMobileChrome === 'function') syncMobileChrome();
+}
+
+/** Modal: show/hide entries and move them up or down. Applies as you click. */
+function openNavCustomizer() {
+  const entries = orderedNavEntries(permittedNavEntries());
+  // Work on a local copy so Cancel is possible; Reset writes through directly.
+  let working = entries.map(([hash]) => hash);
+
+  const rowHtml = (hash, i) => {
+    const r = ROUTES[hash];
+    const shown = !navPref.hidden.has(hash);
+    return `<div class="nav-cust-row" draggable="true" data-navrow="${esc(hash)}">
+      <span class="ms nav-cust-grip" aria-hidden="true">drag_indicator</span>
+      <label class="nav-cust-label">
+        <input type="checkbox" data-navcb="${esc(hash)}" ${shown ? 'checked' : ''}>
+        <span class="ms">${r.icon}</span>
+        <span class="grow">${esc(navLabel(r))}</span>
+      </label>
+      <button type="button" class="icon-btn" data-navup="${esc(hash)}" ${i === 0 ? 'disabled' : ''}
+        title="${esc(t('nav.moveUp'))}" aria-label="${esc(t('nav.moveUp'))}"><span class="ms ms-sm">arrow_upward</span></button>
+      <button type="button" class="icon-btn" data-navdown="${esc(hash)}" ${i === working.length - 1 ? 'disabled' : ''}
+        title="${esc(t('nav.moveDown'))}" aria-label="${esc(t('nav.moveDown'))}"><span class="ms ms-sm">arrow_downward</span></button>
+    </div>`;
+  };
+
+  openModal({
+    title: t('nav.customizeTitle'),
+    icon: 'tune',
+    body: `<p class="cell-sub" style="margin:0 0 12px">${esc(t('nav.customizeHint'))}</p>
+      <div class="nav-cust-list" data-navlist>${working.map(rowHtml).join('')}</div>`,
+    foot: `<button type="button" class="btn btn-outline" data-navreset>
+        <span class="ms">restart_alt</span> ${esc(t('nav.reset'))}</button>
+      <button type="button" class="btn btn-primary" data-close>${esc(t('common.done') || 'Done')}</button>`,
+    onMount(overlay) {
+      const list = $('[data-navlist]', overlay);
+
+      const apply = () => {
+        navPref.order = working.slice();
+        saveNavPref();
+        renderNav();
+        list.innerHTML = working.map(rowHtml).join('');
+      };
+
+      list.addEventListener('click', (e) => {
+        const up = e.target.closest('[data-navup]');
+        const down = e.target.closest('[data-navdown]');
+        const hash = (up && up.dataset.navup) || (down && down.dataset.navdown);
+        if (!hash) return;
+        const i = working.indexOf(hash);
+        const j = up ? i - 1 : i + 1;
+        if (i < 0 || j < 0 || j >= working.length) return;
+        [working[i], working[j]] = [working[j], working[i]];
+        apply();
+      });
+
+      list.addEventListener('change', (e) => {
+        const cb = e.target.closest('[data-navcb]');
+        if (!cb) return;
+        if (cb.checked) navPref.hidden.delete(cb.dataset.navcb);
+        else navPref.hidden.add(cb.dataset.navcb);
+        saveNavPref();
+        renderNav();
+      });
+
+      // Drag as well as the buttons — the buttons are what work on a phone.
+      const rowAfter = (y) => [...list.querySelectorAll('.nav-cust-row:not(.dragging)')]
+        .reduce((closest, row) => {
+          const box = row.getBoundingClientRect();
+          const offset = y - box.top - box.height / 2;
+          return (offset < 0 && offset > closest.offset) ? { offset, el: row } : closest;
+        }, { offset: -Infinity, el: null }).el;
+      list.addEventListener('dragstart', (e) => {
+        const row = e.target.closest('.nav-cust-row');
+        if (!row) return;
+        row.classList.add('dragging');
+        if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+      });
+      list.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        const dragging = list.querySelector('.dragging');
+        if (!dragging) return;
+        const after = rowAfter(e.clientY);
+        if (after == null) list.appendChild(dragging);
+        else list.insertBefore(dragging, after);
+      });
+      list.addEventListener('dragend', () => {
+        const dragging = list.querySelector('.dragging');
+        if (dragging) dragging.classList.remove('dragging');
+        working = [...list.querySelectorAll('.nav-cust-row')].map((r) => r.dataset.navrow);
+        apply();
+      });
+
+      $('[data-navreset]', overlay).addEventListener('click', () => {
+        navPref = { order: [], hidden: new Set() };
+        saveNavPref();
+        renderNav();
+        working = orderedNavEntries(permittedNavEntries()).map(([hash]) => hash);
+        list.innerHTML = working.map(rowHtml).join('');
+      });
+    },
+  });
 }
 
 /** Full-page error/empty state rendered into #view (nav + topbar stay usable). */
@@ -155,7 +317,7 @@ async function navigate() {
     return;
   }
 
-  $$('#nav a').forEach((a) => a.classList.toggle('active', a.dataset.route === hash));
+  markActiveNav();
 
   view.dataset.navGen = String(gen);
   if (view._viewAbort) view._viewAbort.abort(); // drop stale delegated listeners
