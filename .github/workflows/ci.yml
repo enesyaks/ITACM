@@ -74,7 +74,7 @@ jobs:
       # Build only — never pushed. Catches a broken Dockerfile or a dependency
       # that installs on a developer's macOS but not in the Alpine image, which
       # is otherwise only discovered at deploy time.
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           context: .
           push: false
