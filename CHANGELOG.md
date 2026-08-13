@@ -4,6 +4,45 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.4.0] — 2026-08-13
+
+### Added
+- **Bulk historical zimmet PDF import** (Employees → Zimmet Import). Drop in the
+  old handover forms — one PDF or many, several forms per file — and the server
+  splits them into individual documents, reads the assignee's name, matches it
+  to an employee and files each form on that profile. Nothing is written until
+  you review the matches and confirm: split forms sit in staging, a discarded or
+  abandoned batch is cleaned up (automatically after 24 hours), and every form
+  shows its confidence — auto-matched, uncertain, or no match. Gated on
+  `handover_document:upload` + `employee:view_handover`, and confined to the
+  user's own `employee:read` department scope, so the bulk path can never file a
+  document the per-employee upload would refuse.
+- **OCR for scanned forms.** A scanned PDF is a picture, not text, so there is no
+  name to read. With OCR on, the server reads the scan itself and the rest of the
+  pipeline is unchanged — a multi-form *scan* still splits correctly. Off by
+  default; toggle it in **Settings → Integrations** (`ZIMMET_OCR` is only the
+  starting default, and the toggle needs no restart). Turkish + English, roughly
+  2 seconds per page, and with the language data on disk nothing leaves the
+  machine. Rows read by OCR are badged so they get a second look.
+- The assignment picker searches the roster by name or department, Turkish-aware
+  — typing "ayse" finds "Ayşe" — instead of a plain dropdown of every employee.
+
+### Fixed
+- **Turkish uppercase was invisible to every form heuristic.** JavaScript's `/i`
+  flag does not relate `İ` (U+0130) to `i`, so a form titled "ZİMMET TESLİM
+  TUTANAĞI" — the normal casing — matched nothing: multi-form PDFs collapsed into
+  one document and "TESLİM ALAN:" never yielded a name. All marker and label
+  matching now runs on Turkish-folded text.
+- **Multi-page forms were shredded.** The form marker was matched anywhere on the
+  page, so body copy ("…işbu zimmet tutanağı…") started a new form on every page
+  and split one 3-page form into three. Only a short heading near the top of a
+  page starts a form now.
+- A match no longer reports high confidence when the runner-up is itself an
+  excellent match (two employees with near-identical names) — that case asks.
+- The Zimmet Import nav entry checked only one of the two permissions its API
+  requires, so a group holding just `handover_document:upload` saw a menu item
+  the server then refused.
+
 ## [1.3.36] — 2026-08-11
 
 ### Fixed
