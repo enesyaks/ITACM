@@ -9,12 +9,12 @@
 #   npm run test:db
 #
 # In CI, provide the database yourself and skip this script:
-#   TEST_DATABASE_URL=postgres://... node --test "tests/db/**/*.test.js"
+#   TEST_DATABASE_URL=postgres://... node --test tests/db/*.test.js
 set -euo pipefail
 
 if [ -n "${TEST_DATABASE_URL:-}" ]; then
   echo "[test:db] using TEST_DATABASE_URL from the environment"
-  exec node --test "tests/db/**/*.test.js"
+  exec node --test tests/db/*.test.js
 fi
 
 if ! command -v docker >/dev/null 2>&1; then
@@ -57,4 +57,4 @@ for i in $(seq 1 60); do
 done
 
 export TEST_DATABASE_URL="postgres://itacm_test:${PASSWORD}@127.0.0.1:${PORT}/postgres"
-node --test "tests/db/**/*.test.js"
+node --test tests/db/*.test.js

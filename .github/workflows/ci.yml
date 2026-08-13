@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Least privilege: nothing here writes to the repo.
+permissions:
+  contents: read
+
+concurrency:
+  # A new push supersedes the run still going for the same branch.
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    name: Lint + unit tests (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 20 is what the Dockerfile ships; lts/* catches what contributors run.
+        node: ['20', 'lts/*']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      # No TEST_DATABASE_URL here on purpose: this proves the unit suite still
+      # runs with no database anywhere near it.
+      - run: npm test
+
+  integration:
+    name: Integration tests (real PostgreSQL)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: itacm_ci
+          POSTGRES_PASSWORD: itacm_ci
+          POSTGRES_DB: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U itacm_ci -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      # scripts/test-db.sh skips starting its own container when this is set.
+      # The harness creates and drops its own scratch database inside this server.
+      - run: npm run test:db
+        env:
+          TEST_DATABASE_URL: postgres://itacm_ci:itacm_ci@localhost:5432/postgres
+
+  docker:
+    name: Docker image builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      # Build only — never pushed. Catches a broken Dockerfile or a dependency
+      # that installs on a developer's macOS but not in the Alpine image, which
+      # is otherwise only discovered at deploy time.
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          build-args: FRONTEND_DIGEST=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
