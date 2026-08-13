@@ -39,7 +39,7 @@
     "compression": "^1.8.1",
     "cors": "^2.8.5",
     "dejavu-fonts-ttf": "^2.37.3",
-    "dotenv": "^16.4.5",
+    "dotenv": "^17.4.2",
     "express": "^4.19.2",
     "jsonwebtoken": "^9.0.2",
     "nodemailer": "^9.0.5",
