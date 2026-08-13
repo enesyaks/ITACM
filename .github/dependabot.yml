@@ -16,6 +16,15 @@ updates:
         dependency-type: production
         update-types: [minor, patch]
     labels: [dependencies]
+    ignore:
+      # otplib 13 dropped the `authenticator` export that authProvider.js
+      # configures at module load, so the bump does not just disable MFA — the
+      # process fails to boot. Taking it needs a real migration to the new
+      # functional API (TOTP + plugins) with the MFA paths tested. Until then
+      # the PR would only come back and fail CI every week.
+      # See tests/auth-crypto.test.js, which now guards this.
+      - dependency-name: otplib
+        update-types: [version-update:semver-major]
 
   - package-ecosystem: docker
     directory: /
