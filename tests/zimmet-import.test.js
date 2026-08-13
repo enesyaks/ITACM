@@ -260,6 +260,20 @@ test('toRgb24 returns null for an image kind it cannot read', () => {
   assert.equal(ocr.toRgb24({ kind: ocr.RGB_24BPP, width: 0, height: 0, data: null }), null);
 });
 
+test('the OCR image ceiling is low enough to bound the allocation', () => {
+  // Input is an untrusted PDF. Each accepted image costs ~3 bytes/px for the
+  // RGB copy plus ~3 bytes/px for the BMP, so an unbounded ceiling is an
+  // out-of-memory crash from one crafted page. Assert the budget, not the
+  // constant: if someone raises the limit, this fails and makes them think.
+  const bytesPerPixel = 6;
+  const worstCase = ocr.MAX_IMAGE_PIXELS * bytesPerPixel * ocr.MAX_IMAGES_PER_PAGE;
+  assert.ok(worstCase <= 1024 * 1024 * 1024,
+    `a single page could ask for ${Math.round(worstCase / 1e6)}MB — too much`);
+  // Still comfortably above a real document: A4 at 600dpi is roughly 35MP.
+  assert.ok(ocr.MAX_IMAGE_PIXELS >= 35 * 1000 * 1000, 'must not reject a 600dpi A4 scan');
+  assert.ok(ocr.MIN_IMAGE_PIXELS < ocr.MAX_IMAGE_PIXELS);
+});
+
 test('OCR models follow the instance language, not a hardcoded Turkish default', () => {
   // A Japanese instance reading its scans with a Turkish model is the bug this
   // guards; English rides along for digits, asset tags and serials.

@@ -34,6 +34,16 @@ const RGBA_32BPP = 3;
 /** Ignore decorative marks (logos, signature stamps) — a page scan is big. */
 const MIN_IMAGE_PIXELS = 50000; // ~224×224
 const MAX_IMAGES_PER_PAGE = 4;
+/**
+ * Upper bound on what we will convert and OCR. The input is an untrusted PDF,
+ * and each image costs roughly 3 bytes/px for the RGB copy plus 3 bytes/px for
+ * the BMP — so a page declaring a 20000×20000 scan would ask for ~2.4GB on top
+ * of what pdfjs already decoded, and take the process down.
+ *
+ * 40 megapixels is far past any real document: an A4 page scanned at 600dpi is
+ * about 35MP, and this pipeline runs at whatever the scanner produced.
+ */
+const MAX_IMAGE_PIXELS = 40 * 1000 * 1000;
 
 let _tesseract = null;
 function tesseractLib() {
@@ -199,12 +209,15 @@ async function pageImages(page, lib) {
     let obj;
     try { obj = await new Promise((res, rej) => { try { page.objs.get(name, res); } catch (e) { rej(e); } }); }
     catch { continue; }
-    if (!obj || obj.width * obj.height < MIN_IMAGE_PIXELS) continue;
+    if (!obj || !obj.width || !obj.height) continue;
+    const area = obj.width * obj.height;
+    if (area < MIN_IMAGE_PIXELS) continue;
+    if (area > MAX_IMAGE_PIXELS) continue; // absurd dimensions — see MAX_IMAGE_PIXELS
     const rgb = toRgb24(obj);
     if (!rgb) continue;
     // The scan's own resolution, from how many pixels cover the page width.
     const dpi = Math.max(72, Math.round(obj.width / (viewport.width / 72)));
-    out.push({ area: obj.width * obj.height, bmp: encodeBmp24(rgb, obj.width, obj.height, dpi) });
+    out.push({ area, bmp: encodeBmp24(rgb, obj.width, obj.height, dpi) });
   }
   return out.sort((a, b) => b.area - a.area).slice(0, MAX_IMAGES_PER_PAGE).map((i) => i.bmp);
 }
@@ -282,4 +295,5 @@ async function ocrPages(buffer, opts = {}) {
 module.exports = {
   ocrPages, availability, isAvailable, localLangs, resolveLangs, TESSERACT_LANG,
   encodeBmp24, toRgb24, GRAYSCALE_1BPP, RGB_24BPP, RGBA_32BPP,
+  MIN_IMAGE_PIXELS, MAX_IMAGE_PIXELS, MAX_IMAGES_PER_PAGE,
 };

@@ -343,7 +343,13 @@ const PDF_PREVIEW_MAX_PAGES = 20;
 async function renderPdfPreview(host, data, onFail) {
   try {
     const pdfjsLib = await loadPdfJs();
-    const pdf = await pdfjsLib.getDocument({ data }).promise;
+    // Every PDF rendered here is user-supplied — an uploaded scan, or a form
+    // pulled in by the bulk zimmet import. `isEvalSupported: false` stops pdf.js
+    // compiling font programs out of that file (the CVE-2024-4367 class, which
+    // turns a crafted font into script running in this origin). The app's CSP
+    // has no 'unsafe-eval' and already blocks it, but this must not depend on
+    // one CSP directive nobody remembers is load-bearing.
+    const pdf = await pdfjsLib.getDocument({ data, isEvalSupported: false }).promise;
     const cssWidth = host.clientWidth || 600;
     // Cap the backing store so a phone doesn't blow its memory budget on a
     // retina-sized canvas per page.
