@@ -126,6 +126,9 @@ Yeni çalışanın setini planlayın (cihaz + hat rezerve edin), sonra tek zimme
 ### 🌳 Organizasyon şeması
 **Yöneticili** departmanlar, **lead'li** takımlar ve üyeleri; ağ görünümüyle aynı düğüm-bağlantı stilinde **interaktif topoloji grafiği** olarak. Yönetici/lead'i tek tıkla ata veya değiştir, takım ekle, kişileri aralarında taşı. Departmanlar **tek kaynak**: Ürün Kataloğu'ndan eklediğin anında burada belirir, yöneticisi atanmaya hazır. Helpdesk eskalasyonu için ideal — kiminle iletişime geçileceği tek bakışta belli.
 
+### 📄 Toplu zimmet PDF içe aktarımı
+Eski imzalı zimmet tutanaklarınız otomatik dağıtılır. Bir ya da yirmi PDF atın — bir dosyada birden çok tutanak olabilir — sunucu **tutanakları tek tek ayırır**, zimmetlenen kişinin adını okur, çalışanla eşler ve her tutanağı o profile ekler. **12 arayüz dilinin hepsinde** çalışır: form başlıkları ve "teslim alan" etiketleri dile göre tanınır, isimler Latin, Kiril, Arap ve CJK alfabelerinde eşleşir (aksana da toleranslı: taramadan `Ayse Yilmaz` okunsa bile `Ayşe Yılmaz`'ı bulur). Siz onaylamadan hiçbir şey yazılmaz: her tutanak **otomatik eşleşti / belirsiz / eşleşme yok** olarak gösterilir, tek tük olanı aranabilir bir seçiciyle düzeltirsiniz. **Taranmış** tutanaklar — içinde okunacak metin olmayan görüntüler — isteğe bağlı **OCR** ile okunur (Türkçe + İngilizce, cihaz üzerinde, hiçbir veri dışarı çıkmaz); **Ayarlar → Entegrasyonlar**'dan açılır. İptal edilen ya da yarıda bırakılan gruplar kendiliğinden temizlenir ve içe aktarım, tekil belge yüklemeyle aynı departman kapsamıyla sınırlıdır — yani elle yükleyemeyeceğiniz bir profile buradan da yazamaz.
+
 </td>
 <td width="50%" valign="top">
 
@@ -144,8 +147,6 @@ Bir sayım oturumu açın ve **giriş yapmış herhangi bir cihazdan** tarayın 
 ### 📥 Excel / CSV taşıma
 Şablonu indirin, mevcut zimmet tablonuzla doldurun, yükleyin — kuru çalıştırma (dry-run) önizlemesi tam olarak neyin oluşturulacağını gösterir; sonra tek işlemde personeli, katalog kayıtlarını, cihazları (sıralı etiketler) ve her personel için tam geçmişli bir zimmeti otomatik oluşturur.
 
-### 📄 Toplu zimmet PDF içe aktarımı
-Eski imzalı zimmet tutanaklarınız otomatik dağıtılır. Bir ya da yirmi PDF atın — bir dosyada birden çok tutanak olabilir — sunucu **tutanakları tek tek ayırır**, zimmetlenen kişinin adını okur, çalışanla eşler ve her tutanağı o profile ekler. **12 arayüz dilinin hepsinde** çalışır: form başlıkları ve "teslim alan" etiketleri dile göre tanınır, isimler Latin, Kiril, Arap ve CJK alfabelerinde eşleşir (aksana da toleranslı: taramadan `Ayse Yilmaz` okunsa bile `Ayşe Yılmaz`'ı bulur). Siz onaylamadan hiçbir şey yazılmaz: her tutanak **otomatik eşleşti / belirsiz / eşleşme yok** olarak gösterilir, tek tük olanı aranabilir bir seçiciyle düzeltirsiniz. **Taranmış** tutanaklar — içinde okunacak metin olmayan görüntüler — isteğe bağlı **OCR** ile okunur (Türkçe + İngilizce, cihaz üzerinde, hiçbir veri dışarı çıkmaz); **Ayarlar → Entegrasyonlar**'dan açılır. İptal edilen ya da yarıda bırakılan gruplar kendiliğinden temizlenir ve içe aktarım, tekil belge yüklemeyle aynı departman kapsamıyla sınırlıdır — yani elle yükleyemeyeceğiniz bir profile buradan da yazamaz.
 
 ### 📄 Lisanslar · 🏷 etiketler · 💱 para birimi
 Atomik al/bırak ve 30 günlük süre uyarılı koltuk havuzları. Taranabilir **Code 128** etiketler yazdırın (boyut/alan/kopya ayarlanabilir). Maliyetler için uygulama genelinde **görüntüleme para birimi** seçin. Uyarı digest'i (biten lisanslar, düşük stok, EOL, işe alım) SMTP ile **günlük veya haftalık otomatik** gönderilebilir — **Integrations → SMTP & alert digest** (Auto-send: Kapalı / Günlük / Haftalık).
