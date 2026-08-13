@@ -103,7 +103,7 @@ Donanım ve ağ envanteri · yazdırılabilir PDF tutanaklı personel zimmetleri
 <td width="50%" valign="top">
 
 ### 🖥 Dahili, mobil uyumlu web arayüzü
-Backend'in kendisi sunar — build adımı yok, katı same-origin CSP. 16 modül, global arama (Cmd/Ctrl+K), QR kodlar, koyu tema uyumu, **kullanıcıya özel özelleştirilebilir tablo sütunları** (göster/gizle + sürükle-sırala, tarayıcıda kalıcı) ve mobil alt menü + kamera tarayıcılı duyarlı kabuk. Sadece `http://localhost:8000` adresini açın.
+Backend'in kendisi sunar — build adımı yok, katı same-origin CSP. 17 modül, global arama (Cmd/Ctrl+K), QR kodlar, koyu tema uyumu, **kullanıcıya özel özelleştirilebilir tablo sütunları** (göster/gizle + sürükle-sırala, tarayıcıda kalıcı) ve mobil alt menü + kamera tarayıcılı duyarlı kabuk. Sadece `http://localhost:8000` adresini açın.
 
 ### 🤝 Atomik zimmet sepeti
 Birden çok cihazı tek "ya hep ya hiç" işlemle bir personele atayın; yazdırılabilir Zimmet Tutanağı üretir. Satır kilitleri çift atamayı imkânsız kılar; yeniden yazdırmada orijinal teslim edenin adı korunur.
@@ -144,6 +144,9 @@ Bir sayım oturumu açın ve **giriş yapmış herhangi bir cihazdan** tarayın 
 ### 📥 Excel / CSV taşıma
 Şablonu indirin, mevcut zimmet tablonuzla doldurun, yükleyin — kuru çalıştırma (dry-run) önizlemesi tam olarak neyin oluşturulacağını gösterir; sonra tek işlemde personeli, katalog kayıtlarını, cihazları (sıralı etiketler) ve her personel için tam geçmişli bir zimmeti otomatik oluşturur.
 
+### 📄 Toplu zimmet PDF içe aktarımı
+Eski imzalı zimmet tutanaklarınız otomatik dağıtılır. Bir ya da yirmi PDF atın — bir dosyada birden çok tutanak olabilir — sunucu **tutanakları tek tek ayırır**, zimmetlenen kişinin adını okur, çalışanla eşler (Türkçe duyarlı: taramadan `Ayse Yilmaz` okunsa bile `Ayşe Yılmaz`'ı bulur) ve her tutanağı o profile ekler. Siz onaylamadan hiçbir şey yazılmaz: her tutanak **otomatik eşleşti / belirsiz / eşleşme yok** olarak gösterilir, tek tük olanı aranabilir bir seçiciyle düzeltirsiniz. **Taranmış** tutanaklar — içinde okunacak metin olmayan görüntüler — isteğe bağlı **OCR** ile okunur (Türkçe + İngilizce, cihaz üzerinde, hiçbir veri dışarı çıkmaz); **Ayarlar → Entegrasyonlar**'dan açılır. İptal edilen ya da yarıda bırakılan gruplar kendiliğinden temizlenir ve içe aktarım, tekil belge yüklemeyle aynı departman kapsamıyla sınırlıdır — yani elle yükleyemeyeceğiniz bir profile buradan da yazamaz.
+
 ### 📄 Lisanslar · 🏷 etiketler · 💱 para birimi
 Atomik al/bırak ve 30 günlük süre uyarılı koltuk havuzları. Taranabilir **Code 128** etiketler yazdırın (boyut/alan/kopya ayarlanabilir). Maliyetler için uygulama genelinde **görüntüleme para birimi** seçin. Uyarı digest'i (biten lisanslar, düşük stok, EOL, işe alım) SMTP ile **günlük veya haftalık otomatik** gönderilebilir — **Integrations → SMTP & alert digest** (Auto-send: Kapalı / Günlük / Haftalık).
 
@@ -175,6 +178,7 @@ Kenar menü, özellik setiyle bire bir eşleşir:
 | **Tedarikçi & Sözleşmeler** | Tedarikçi rehberi + yenileme takipli ticari sözleşmeler ve belgeler |
 | **Sarf Malzemeleri** | Düşük stok uyarılı stok hareketleri |
 | **Personel** | Rehber, kişi bazlı detay (cihaz/lisans/hat/altyapı), işe alım & çıkış |
+| **Zimmet İçe Aktarım** | Geçmiş zimmet PDF'lerini toplu olarak profillere dağıtır — otomatik ayırma, isim eşleştirme, onaydan önce inceleme, taramalar için isteğe bağlı OCR |
 | **Organizasyon** | Departman → takım → üye topoloji şeması; yönetici/lead ata, kişileri taşı, helpdesk eskalasyonu |
 | **Zimmet İşlemleri** | Atomik zimmet sepeti + yazdırılabilir/PDF tutanaklar |
 | **Bakım & Onarım** | Servise gönder / iade / hurda, belge ekleriyle |
@@ -205,6 +209,7 @@ Uygulamanın tamamı duyarlıdır — ayrı bir mobil build yok:
 | **Kimlik doğrulama** | JWT (HS256, algoritma sabitlenmiş) + bcrypt (maliyet 12), her istekte yeniden denetlenen rol middleware'i |
 | **Arayüz** | Backend'in sunduğu vanilla JS SPA — **build adımı yok**, ekran başına modüllere bölünmüş |
 | **PDF / etiketler** | PDFKit + QR kodlar, özel zimmet şablonları, Code 128 barkodlar |
+| **PDF okuma** | Zimmet içe aktarımı için pdf.js (metin + sayfa görüntüsü) ve pdf-lib (ayırma); taramaların cihaz üzerinde OCR'ı için Tesseract.js |
 | **Tarama** | Yerleşik ZXing tarayıcı yapısı (kamera QR/barkod) |
 | **Paketleme** | Docker + Docker Compose |
 
@@ -328,6 +333,8 @@ docker compose exec api npm run reset-password -- owner@example.com --password '
 | `JWT_EXPIRES_IN` | – | Token ömrü (varsayılan `12h`) |
 | `ADMIN_EMAIL` / `ADMIN_USERNAME` / `ADMIN_PASSWORD` | – | İlk çalıştırma Owner tohumu (boşsa parola otomatik üretilir) |
 | `TRUST_PROXY` | – | Ters proxy / Cloudflare arkasında `1` (veya hop sayısı) — rate-limit gerçek istemci IP'sine göre çalışsın diye. Varsayılan kapalı. |
+| `ZIMMET_OCR` | – | **Taranmış** zimmet PDF'lerini OCR ile okumanın varsayılanı. Yalnızca varsayılan — **Ayarlar → Entegrasyonlar**'daki anahtar veritabanında tutulur ve bunu ezer, yani OCR'ı açıp kapatmak için yeniden başlatma gerekmez. Ayarlanmadıkça kapalı. |
+| `ZIMMET_OCR_LANGS` / `ZIMMET_OCR_LANG_PATH` / `ZIMMET_OCR_MAX_PAGES` | – | OCR dilleri (varsayılan `tur+eng`), `<dil>.traineddata` dosyalarının bulunduğu dizin (varsayılan `DATA_DIR/tessdata` — dosyalar oradaysa sunucu hiç internete çıkmaz; [tessdata_fast](https://github.com/tesseract-ocr/tessdata_fast)'tan indirin) ve grup başına sayfa bütçesi (varsayılan `40`). |
 
 Docker compose ile `POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD` hem veritabanı konteynerini hem de API'nin `DATABASE_URL`'ini besler.
 
@@ -362,6 +369,7 @@ Tüm yanıtlar `{ success, data }` veya `{ success: false, error, details? }` bi
 | GET/POST | `/api/counts` · `/:id/scan` · `/close` | Admin, Helpdesk | Fiziksel sayım oturumları |
 | GET/PUT | `/api/catalog/*` | Admin, Helpdesk | Katalog, lokasyon, departman, ayarlar |
 | POST | `/api/import/inventory` | Admin, Helpdesk | Excel/CSV taşıma (kuru çalıştırma + işleme) |
+| POST | `/api/import/zimmet/analyze` · `/commit` | `handover_document:upload` + `employee:view_handover` | **Toplu zimmet PDF içe aktarımı** — ayır + isim eşle, bekleyen gruba yaz, sonra profillere ekle |
 | GET | `/api/audit` · `/:bucket/:id` | Owner, Admin | Birleşik denetim zaman çizelgesi + olay detayı |
 | GET | `/api/documents/:id/download` | tümü | Kayıtlı belgeyi akıt (inline/attachment) |
 
@@ -417,7 +425,7 @@ POST /api/handovers
 │   ├── config/                Ortam değişkeni ayrıştırma
 │   ├── middleware/            Bearer auth + rol geçidi, hata yönetimi
 │   ├── routes/                İnce controller'lar (assets, providers, contracts, audit, …)
-│   ├── utils/                 PDF, uploadGuard, contentDisposition, permissions, defaults
+│   ├── utils/                 PDF build/read/split/OCR, uploadGuard, contentDisposition, permissions
 │   ├── services/              Backend'den bağımsız servis cephesi
 │   └── providers/postgres/    JWT auth + PostgreSQL
 │       ├── schema.sql         Idempotent temel şema

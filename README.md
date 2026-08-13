@@ -103,7 +103,7 @@ Most asset trackers are either a spreadsheet that rots or a heavyweight SaaS you
 <td width="50%" valign="top">
 
 ### 🖥 Built-in, mobile-ready web UI
-Served by the backend itself — no build step, strict same-origin CSP. 16 modules, global search (Cmd/Ctrl+K), QR codes, dark-mode aware, **per-user customizable table columns** (show/hide + drag-to-reorder, remembered per browser), and a responsive shell with mobile bottom-nav + camera scanner. Just open `http://localhost:8000`.
+Served by the backend itself — no build step, strict same-origin CSP. 17 modules, global search (Cmd/Ctrl+K), QR codes, dark-mode aware, **per-user customizable table columns** (show/hide + drag-to-reorder, remembered per browser), and a responsive shell with mobile bottom-nav + camera scanner. Just open `http://localhost:8000`.
 
 ### 🤝 Atomic handover basket
 Assign multiple assets to an employee in one all-or-nothing transaction, producing a printable handover receipt (Zimmet Tutanağı). Row locks make double-assignment impossible; reprints preserve the original issuer's name.
@@ -147,6 +147,9 @@ Open a count session and scan from **any signed-in device** — start on the PC,
 ### 📥 Excel / CSV migration
 Download the template, fill it with your existing zimmet spreadsheet, upload — a dry-run preview shows exactly what will be created, then one transaction auto-creates employees, catalog entries, assets (sequential tags) and one handover per employee with full history.
 
+### 📄 Bulk zimmet PDF import
+Your old signed handover forms, filed automatically. Drop in one PDF or twenty — several forms per file is fine — and the server **splits them into individual documents**, reads the assignee's name, matches it to an employee (Turkish-aware, so a scan reading `Ayse Yilmaz` still finds `Ayşe Yılmaz`) and attaches each form to that profile. Nothing is written until you review: every form shows **auto-matched / uncertain / no match**, and you fix the odd one with a searchable picker. **Scanned** forms — pictures, with no text to read — are handled by opt-in **OCR** (Turkish + English, on-device, nothing leaves the machine); toggle it in **Settings → Integrations**. Discarded or abandoned batches clean themselves up, and the import is confined to the same department scope as the per-employee upload, so it can never file a document you couldn't file by hand.
+
 ### 📄 Licenses · 🏷 labels · 💱 currency
 Seat pools with atomic claim/release and 30-day expiry alerts. Print scannable **Code 128** labels (size/fields/copies configurable). Pick your **display currency** for costs across the app. The alert digest (expiring licenses, low stock, EOL, onboarding due) can be **auto-sent daily or weekly** over SMTP — **Integrations → SMTP & alert digest** (Auto-send: Off / Daily / Weekly).
 
@@ -179,6 +182,7 @@ The sidebar maps 1:1 to the feature set, plus a floating **AI assistant** (⌘/C
 | **Providers & Contracts** | Vendor directory + commercial agreements with renewal tracking and documents |
 | **Consumables** | Stock movements with low-stock alerts |
 | **Employees** | Directory, per-person detail (assets/licenses/lines/infra), onboarding & offboarding |
+| **Zimmet Import** | Bulk-file historical handover PDFs onto employee profiles — auto split, name matching, review before commit, optional OCR for scans |
 | **Organization** | Department → team → member topology chart; assign managers/leads, move people, helpdesk escalation |
 | **Handover Ops** | Atomic handover basket + printable/PDF receipts |
 | **Maintenance & Repair** | Send to repair / return / scrap, with document attachments |
@@ -209,6 +213,7 @@ The entire app is responsive — no separate mobile build:
 | **Auth** | JWT (HS256, pinned alg) + bcrypt (cost 12), role-based middleware re-checked per request |
 | **Frontend** | Vanilla JS SPA served by the backend — **no build step**, split into per-view modules |
 | **PDF / labels** | PDFKit + QR codes, custom handover templates, Code 128 barcodes |
+| **PDF reading** | pdf.js (text + page images) and pdf-lib (splitting) for the zimmet import; Tesseract.js for optional on-device OCR of scans |
 | **Scanning** | Vendored ZXing browser build (camera QR/barcode) |
 | **Packaging** | Docker + Docker Compose |
 
@@ -385,6 +390,8 @@ docker compose exec api npm run reset-password -- owner@example.com --password '
 | `APP_URL` | – | Public URL used in outbound email links. Prefer setting it in-app (Integrations → Notifications → App URL); this env var is the fallback. Defaults to `http://localhost:8000`. |
 | `APP_DOMAIN` | – | Domain for the HTTPS compose profiles (`--profile tls` / `--profile cloudflare`). |
 | `AI_ENABLED` / `AI_PROVIDER` / `AI_MODEL` / `AI_BASE_URL` / `AI_API_KEY` | – | AI assistant defaults (optional). Normally configured in **Integrations → AI**, not via env. Assistant is off unless enabled. |
+| `ZIMMET_OCR` | – | Default for reading **scanned** zimmet PDFs with OCR. Only a default — the **Settings → Integrations** toggle is stored in the database and overrides it, so turning OCR on or off needs no restart. Off unless set. |
+| `ZIMMET_OCR_LANGS` / `ZIMMET_OCR_LANG_PATH` / `ZIMMET_OCR_MAX_PAGES` | – | OCR languages (default `tur+eng`), the directory holding `<lang>.traineddata` (default `DATA_DIR/tessdata` — with the files there the server never reaches the internet; grab them from [tessdata_fast](https://github.com/tesseract-ocr/tessdata_fast)), and the per-batch page budget (default `40`). |
 
 With docker compose, `POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD` feed both the database container and the API's `DATABASE_URL`.
 
@@ -419,6 +426,7 @@ All responses are `{ success, data }` or `{ success: false, error, details? }`. 
 | GET/POST | `/api/counts` · `/:id/scan` · `/close` | Admin, Helpdesk | Physical stock-count sessions |
 | GET/PUT | `/api/catalog/*` | Admin, Helpdesk | Catalog, locations, departments, settings |
 | POST | `/api/import/inventory` | Owner, Admin | Excel/CSV migration (dry-run + commit) |
+| POST | `/api/import/zimmet/analyze` · `/commit` | `handover_document:upload` + `employee:view_handover` | **Bulk zimmet PDF import** — split + name-match into a staged batch, then attach to profiles |
 | GET | `/api/documents/:id/download` | Owner, Admin, Helpdesk | Stream a stored handover document (auth required) |
 | GET | `/api/audit` · `/:bucket/:id` | Owner, Admin | Unified audit timeline + event detail |
 | POST | `/api/ai/query` | staff | **AI assistant** — SSE streaming, agentic tool loop, guarded read-only queries (per-user rate-limited) |
@@ -477,7 +485,7 @@ If **any** asset is locked, the API returns `409` with a per-asset conflict list
 │   ├── config/                Env parsing
 │   ├── middleware/            Bearer auth + role gate, error handling
 │   ├── routes/                Thin controllers (assets, providers, contracts, audit, …)
-│   ├── utils/                 PDF, uploadGuard, contentDisposition, permissions, defaults
+│   ├── utils/                 PDF build/read/split/OCR, uploadGuard, contentDisposition, permissions
 │   ├── services/              Backend-agnostic service facade
 │   └── providers/postgres/    JWT auth + PostgreSQL
 │       ├── schema.sql         Idempotent base schema
