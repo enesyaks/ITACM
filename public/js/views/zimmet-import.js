@@ -111,8 +111,15 @@ Views.zimmetImport = async function (el) {
     const scans = batch.items.filter((it) => it.viaOcr).length;
     if (o.available && o.pages) {
       const msg = t('zim.ocrUsed').replace('{p}', o.pages).replace('{n}', scans)
+        + (o.langs ? ` (${o.langs})` : '')
         + (o.truncated ? ` ${t('zim.ocrTruncated')}` : '');
       return `<div class="cell-sub" style="margin-top:6px"><span class="ms ms-sm">document_scanner</span> ${esc(msg)}</div>`;
+    }
+    // OCR ran but read nothing: nearly always the wrong language model, so name
+    // the ones that were loaded rather than leaving the user guessing.
+    if (o.available && o.enabled && !o.pages && batch.items.some((it) => !it.extractedName)) {
+      return `<div class="cell-sub" style="margin-top:6px;color:var(--amber-600,#d97706)">
+        <span class="ms ms-sm">document_scanner</span> ${esc(t('zim.ocrNoText').replace('{l}', o.langs || '—'))}</div>`;
     }
     // Only worth mentioning OCR is off when something actually needed it.
     const unread = batch.items.filter((it) => it.confidence === 'none' && !it.extractedName).length;

@@ -109,10 +109,13 @@ async function analyze(files, user) {
   // from running past the proxy timeout.
   // The Owner's Integrations toggle decides; ZIMMET_OCR is only the default it
   // starts from. A settings read must never take the import down with it.
-  let ocrSetting;
-  try { ocrSetting = (await settingsService.getSettings()).zimmetOcr; }
-  catch { ocrSetting = undefined; }
-  const ocrStatus = pdfOcr.availability(ocrSetting);
+  let ocrSetting; let instanceLang;
+  try {
+    const s = await settingsService.getSettings();
+    ocrSetting = s.zimmetOcr;
+    instanceLang = s.language; // also picks the OCR models for a non-Turkish instance
+  } catch { ocrSetting = undefined; }
+  const ocrStatus = pdfOcr.availability(ocrSetting, instanceLang);
   let ocrBudget = ocrStatus.available ? config.ocr.maxPages : 0;
   let ocrUsedPages = 0;
   let ocrTruncated = false;
@@ -140,7 +143,7 @@ async function analyze(files, user) {
     // pipeline below is identical either way.
     if (!info.hasText && ocrBudget > 0) {
       try {
-        const r = await pdfOcr.ocrPages(f.buffer, { maxPages: ocrBudget });
+        const r = await pdfOcr.ocrPages(f.buffer, { maxPages: ocrBudget, langs: ocrStatus.langs });
         texts = r.pages.map((p) => p.text);
         ocrBudget -= r.ocrPages;
         ocrUsedPages += r.ocrPages;
@@ -208,6 +211,10 @@ async function analyze(files, user) {
     enabled: ocrStatus.enabled,
     available: ocrStatus.available,
     reason: ocrStatus.reason,
+    // Which models ran, and whether their data was on disk — the review screen
+    // needs both to explain a scan that came back blank.
+    langs: ocrStatus.langs,
+    offline: ocrStatus.offline,
     pages: ocrUsedPages,
     truncated: ocrTruncated,
   };

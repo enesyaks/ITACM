@@ -160,7 +160,34 @@ Beklenen yol "pdfjs ile sayfayı canvas'a çiz → OCR"du. `@napi-rs/canvas` gö
 
 **Bilinen sınır:** Sayfa başına en fazla 4 görüntü OCR'lanır ve çok küçük görüntüler (logo, kaşe) atlanır. Sayfayı onlarca parçaya bölen egzotik tarayıcı çıktılarında eksik okuma olabilir.
 
-## 13. Enes'e karar soruları
+## 13. Uygulama durumu (çok dillilik — tamamlandı)
+
+Başlangıçta yalnızca Türkçe (ve kısmen İngilizce) belgeler okunuyordu. Artık uygulamanın gönderildiği **12 dilin hepsinde** çalışıyor.
+
+**Asıl hata tek satırdaydı.** `normalizeName` şu filtreyi uyguluyordu:
+
+```js
+s.replace(/[^a-z0-9\s]/g, ' ')   // a-z dışındaki her şey silinir
+```
+
+`أحمد الشمري` → **boş string**. Rusça, Japonca, Yunanca aynı. Yani isim karşılaştırma aşamasına gelmeden yok oluyordu — "eşleşemedi" değil, "ortada isim kalmadı". Latin dilleri kurtuluyordu çünkü hem roster hem PDF metni aynı bozulmadan geçtiği için yine birbirini tutuyordu. Filtre `\p{L}` (her alfabeden harf) oldu.
+
+| Parça | Ne değişti |
+|---|---|
+| `normalizeName` | ASCII beyaz listesi yerine Unicode harf sınıfı. Kiril/Arapça/CJK isimler artık korunuyor. |
+| `foldTr` | Aksan haritası 12 dilin Latin harflerini kapsayacak şekilde genişletildi (ä, é, ł, ñ, ø, ó…). **Her giriş 1 karakter → 1 karakter**, çünkü `nameFromLabel` sonucu kaynak metinden offset ile kesiyor; NFD ya da ß→ss bu değişmezliği bozardı. |
+| Ters arama (CJK) | Japonca/Çince isim boşluksuz tek kelimedir (`田中太郎`) — "en az 2 kelime" kuralı hepsini eliyordu. 3+ ideograf tam isim sayılıyor ve CJK metninde boşluk sınırı olmadığı için düz alt-dize aranıyor. 2 karakterli soyadı (`田中`) hâlâ reddediliyor. |
+| Form başlıkları | 12 dilin tutanak başlığı eklendi (`ÜBERGABEPROTOKOLL`, `АКТ ПРИЁМА-ПЕРЕДАЧИ`, `محضر تسليم`, `貸与物受領書`…). Başlıklardaki boşluklar tire de kabul ediyor — Fransızca `PROCÈS-VERBAL` bu yüzden kaçıyordu. |
+| Etiket okuma | 12 dilin "teslim alan" karşılıkları + isim yakalama sınıfı `[a-z]` yerine `\p{L}`. |
+| OCR dili | `ZIMMET_OCR_LANGS` boşsa **instance dilinden** türetiliyor (`ja` → `jpn+eng`). Japonca bir kurulumun taramalarını Türkçe modelle okumaya çalışması anlamsızdı. Açık ayar her zaman kazanır. |
+
+**Doğrulama:** 12 dilin tamamında ters arama + etiket + bölme testleri (`tests/zimmet-import.test.js`), ayrıca 5 dilde (tr/de/fr/pl/ru) gerçek PDF üretip pdfjs ile okuyup uçtan uca eşleştirme — 5/5. Arapça ve CJK metin işleme düzeyinde doğrulandı; pdfkit'te Arapça shaping olmadığı için o dilde gerçek PDF üretilemedi.
+
+**Yanlış pozitif korumaları korundu:** tek kelimelik Latin isim (`Ali`) hâlâ reddediliyor, gövde metnindeki marker çok sayfalı formu hâlâ bölmüyor.
+
+**Bilinen sınır:** OCR için ilgili dilin `traineddata` dosyası gerekiyor (`ara`, `rus`, `jpn`… hepsi tessdata_fast'ta mevcut). Dosya yoksa tesseract.js CDN'e çıkar; hava boşluklu kurulumda inceleme ekranı hangi dillerin yüklü olduğunu yazıp eksik dosyayı işaret ediyor.
+
+## 14. Enes'e karar soruları
 1. Geçmiş PDF'ler **ITACM üretimi mi, taranmış görüntü mü, yoksa eski bir sistemin formatı mı?** (OCR gerekliliğini ve çıkarım sezgisini belirler.)
 2. Her tutanak **1 sayfa mı, değişken mi?** Kişi başına ayrı dosya mı, tek büyük birleşik PDF mi yüklenecek?
 3. Formların dili (Türkçe etiketler) — evet varsayıyorum, doğru mu?

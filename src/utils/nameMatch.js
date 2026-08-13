@@ -1,37 +1,67 @@
 /**
- * Turkish-aware person-name matching for the zimmet PDF import.
+ * Person-name matching for the zimmet PDF import, across the languages the app
+ * ships in.
  *
- * Folds Turkish letters to ASCII so "Ayşe Yılmaz" from a scanned form matches
- * "Ayse Yilmaz" in the DB, then scores candidates by token overlap + edit
- * distance. Also does a REVERSE lookup: given a page's raw text and the
+ * Folds accents and Turkish letters so "Ayşe Yılmaz" from a scanned form
+ * matches "Ayse Yilmaz" in the DB, then scores candidates by token overlap +
+ * edit distance. Also does a REVERSE lookup: given a page's raw text and the
  * employee list, find which known names actually appear in the text — the
  * strongest signal, since the roster is authoritative.
+ *
+ * Non-Latin scripts (Cyrillic, Arabic, CJK, Greek…) are carried through intact
+ * rather than folded to ASCII: there is nothing to fold them to. Both the
+ * roster name and the page text go through the same normalisation, so matching
+ * only needs the two sides to agree — not to end up as ASCII.
  */
 'use strict';
 
 const TR_MAP = { ş: 's', ı: 'i', ğ: 'g', ü: 'u', ö: 'o', ç: 'c' };
 
 /**
- * Case-fold Turkish text to ASCII while keeping punctuation and layout.
- * JavaScript's /i flag does NOT relate 'İ' (U+0130) to 'i', so patterns like
- * /zimmet/i or /teslim alan/i silently miss "ZİMMET" and "TESLİM ALAN" — the
- * normal casing on a Turkish form. Every marker/label regex matches folded text
- * instead. Each character maps to exactly one character, so offsets into the
- * folded string still address the original.
+ * Case-fold accented Latin text so a marker/label regex written in plain ASCII
+ * still matches "ZİMMET", "ÜBERGABEPROTOKOLL" or "PROTOKÓŁ".
+ *
+ * JavaScript's /i flag does NOT relate 'İ' (U+0130) to 'i', so /zimmet/i
+ * silently misses "ZİMMET" — the normal casing on a Turkish form. Rather than
+ * rely on /i, every marker and label pattern matches text put through here.
+ *
+ * EVERY entry maps ONE character to ONE character. nameFromLabel slices the
+ * result back out of the source string by offset, which only holds while the
+ * fold preserves length — so no ß→ss, no NFD decomposition.
  */
-const TR_FOLD = { İ: 'i', I: 'i', ı: 'i', Ş: 's', ş: 's', Ğ: 'g', ğ: 'g', Ü: 'u', ü: 'u', Ö: 'o', ö: 'o', Ç: 'c', ç: 'c' };
+const FOLD = {
+  // Turkish
+  İ: 'i', I: 'i', ı: 'i', Ş: 's', ş: 's', Ğ: 'g', ğ: 'g',
+  // Latin-1 / Latin-2 vowels and consonants used by de, fr, es, it, pt, nl, pl
+  Ä: 'a', ä: 'a', Á: 'a', á: 'a', À: 'a', à: 'a', Â: 'a', â: 'a', Ã: 'a', ã: 'a', Å: 'a', å: 'a', Ą: 'a', ą: 'a',
+  É: 'e', é: 'e', È: 'e', è: 'e', Ê: 'e', ê: 'e', Ë: 'e', ë: 'e', Ę: 'e', ę: 'e',
+  Í: 'i', í: 'i', Ì: 'i', ì: 'i', Î: 'i', î: 'i', Ï: 'i', ï: 'i',
+  Ó: 'o', ó: 'o', Ò: 'o', ò: 'o', Ô: 'o', ô: 'o', Õ: 'o', õ: 'o', Ö: 'o', ö: 'o', Ø: 'o', ø: 'o',
+  Ú: 'u', ú: 'u', Ù: 'u', ù: 'u', Û: 'u', û: 'u', Ü: 'u', ü: 'u',
+  Ç: 'c', ç: 'c', Ć: 'c', ć: 'c', Ñ: 'n', ñ: 'n', Ń: 'n', ń: 'n',
+  Ł: 'l', ł: 'l', Ś: 's', ś: 's', Ź: 'z', ź: 'z', Ż: 'z', ż: 'z', Ý: 'y', ý: 'y', ÿ: 'y',
+};
+const FOLD_RE = new RegExp(`[${Object.keys(FOLD).join('')}]`, 'g');
 function foldTr(input) {
-  return String(input == null ? '' : input).replace(/[İIıŞşĞğÜüÖöÇç]/g, (ch) => TR_FOLD[ch]).toLowerCase();
+  return String(input == null ? '' : input).replace(FOLD_RE, (ch) => FOLD[ch]).toLowerCase();
 }
 
-/** Fold Turkish letters + diacritics to ASCII, lowercase, strip punctuation. */
+/**
+ * Normalise a name for comparison: lowercase, accents folded, punctuation
+ * dropped, whitespace collapsed.
+ *
+ * Letters are kept by Unicode category (\p{L}), NOT by an a-z whitelist. An
+ * a-z filter erased Cyrillic, Arabic and CJK names down to an empty string, so
+ * those employees could never be matched at all — the name was gone before any
+ * comparison happened.
+ */
 function normalizeName(input) {
   if (input == null) return '';
   // Lowercase first: 'İ'→'i̇' (combining dot, stripped below), 'I'→'i', 'Ş'→'ş'…
   let s = String(input).toLowerCase();
   s = s.replace(/[şığüöç]/g, (ch) => TR_MAP[ch]);
   s = s.normalize('NFD').replace(/[̀-ͯ]/g, ''); // drop combining accents
-  s = s.replace(/[^a-z0-9\s]/g, ' ');                      // punctuation → space
+  s = s.replace(/[^\p{L}\p{N}\s]/gu, ' ');                // punctuation → space, any script
   return s.replace(/\s+/g, ' ').trim();
 }
 
@@ -119,6 +149,18 @@ function matchEmployee(extracted, employees, threshold = 0.72) {
 }
 
 /**
+ * Chinese/Japanese/Korean write a full name without spaces (田中太郎), and their
+ * prose has no spaces to delimit it with either — so such a name is both
+ * allowed as a single token and looked up as a plain substring. Three or more
+ * ideographs/kana is a full name rather than a bare surname, which is what
+ * makes the looser lookup safe.
+ */
+const CJK_RE = /[぀-ヿ㐀-䶿一-鿿豈-﫿가-힯]/;
+function isSpacelessFullName(key) {
+  return CJK_RE.test(key) && key.length >= 3;
+}
+
+/**
  * Reverse match: which known employees' names appear in the page text?
  * Strong because the roster is authoritative. Returns unique matches with the
  * portion of text that hit, sorted by name length (longer = more specific).
@@ -128,11 +170,15 @@ function findNamesInText(text, employees) {
   const hits = [];
   for (const e of employees || []) {
     const parts = tokens(e.fullName);
-    // A single-token roster entry ("Ali") would hit any form mentioning that
-    // word — far too loose to auto-assign a document on. Needs a full name.
-    if (parts.length < 2) continue;
     const key = parts.join(' ');
-    if (norm.includes(` ${key} `)) hits.push({ id: e.id, fullName: e.fullName, key, score: 1, via: 'text' });
+    const spaceless = isSpacelessFullName(key);
+    // A single-token roster entry ("Ali") would hit any form mentioning that
+    // word — far too loose to auto-assign a document on. Needs a full name,
+    // except in scripts that write one without spaces.
+    if (parts.length < 2 && !spaceless) continue;
+    // CJK prose has no spaces, so a space-delimited lookup would never fire.
+    const found = spaceless ? norm.includes(key) : norm.includes(` ${key} `);
+    if (found) hits.push({ id: e.id, fullName: e.fullName, key, score: 1, via: 'text' });
   }
   // "Ali Yılmaz" also matches inside "Ali Yılmaz Kaya" — when one hit's name is
   // contained in another's, only the longer (more specific) one is real.
@@ -141,13 +187,44 @@ function findNamesInText(text, employees) {
 }
 
 /**
- * Assignee label heuristic (Turkish): "Teslim Alan: Ad Soyad", "Personel: …".
- * `[^\S\n]` keeps the capture on one line — pdfText preserves line breaks, and
- * a greedy `\s` would run into whatever is typeset underneath the field.
+ * "Who received this?" labels, one group per shipped UI language. Matched
+ * against folded text (see foldTr), so the accented forms are written here
+ * already folded: "empfanger" for Empfänger, "recu par" for reçu par.
+ *
+ * This is the FALLBACK path — the primary signal is finding a roster name in
+ * the text (findNamesInText), which needs no labels at all. The label matters
+ * when OCR mangled the name enough that the exact lookup missed and only the
+ * fuzzy scorer can still place it.
  */
-const LABEL_RE = /(teslim ?alan|zimmetlenen|personel|adi?[^\S\n]*soyadi?|kullanici)[^\S\n]*[:\-][^\S\n]*([a-z][a-z.\t ]{2,49})/;
+const LABEL_WORDS = [
+  'teslim ?alan', 'zimmetlenen', 'personel', 'adi?[^\\S\\n]*soyadi?', 'kullanici',   // tr
+  'received ?by', 'issued ?to', 'recipient', 'employee ?name', 'full ?name', 'employee', // en
+  'empfanger', 'ubergeben ?an', 'mitarbeiter',                                       // de
+  'remis ?a', 'recu ?par', 'destinataire', 'employe',                                // fr
+  'recibido ?por', 'entregado ?a', 'empleado',                                       // es
+  'consegnato ?a', 'ricevuto ?da', 'dipendente',                                     // it
+  'recebido ?por', 'entregue ?a', 'funcionario',                                     // pt
+  'ontvangen ?door', 'overhandigd ?aan', 'medewerker',                               // nl
+  'odbiorca', 'przekazano', 'pracownik',                                             // pl
+  'получил', 'получатель', 'сотрудник',                                              // ru
+  'المستلم', 'اسم ?الموظف', 'الموظف',                                                  // ar
+  '受領者', '受取人', '氏名', '社員',                                                    // ja
+];
+/**
+ * `[^\S\n]` keeps the capture on one line — pdfText preserves line breaks, and
+ * a greedy `\s` would run into whatever is typeset underneath the field. The
+ * name is matched by Unicode letter class, not a-z, so Cyrillic, Arabic and CJK
+ * names are captured rather than silently skipped.
+ */
+const LABEL_RE = new RegExp(
+  `(${LABEL_WORDS.join('|')})[^\\S\\n]*[:\\-][^\\S\\n]*([\\p{L}][\\p{L}.\\t ]{2,49})`,
+  'u'
+);
 
-/** Keep at most the first 4 words — a label capture often trails into the next field. */
+/**
+ * Keep at most the first 4 words — a label capture often trails into the next
+ * field. A spaceless CJK name is one "word" already, so it survives untouched.
+ */
 function trimName(raw) {
   return String(raw == null ? '' : raw).replace(/\s+/g, ' ').trim().split(' ').slice(0, 4)
     .join(' ');

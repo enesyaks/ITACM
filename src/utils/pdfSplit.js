@@ -13,8 +13,36 @@ const { PDFDocument } = require('pdf-lib');
 // form.
 const { foldTr } = require('./nameMatch');
 
-/** Form-start markers, matched against folded text: "zimmet", "teslim tutana(gi)", "devir teslim". */
-const DEFAULT_MARKER = /(zimmet|teslim ?tutana|devir ?teslim|handover)/;
+/**
+ * Words that make a heading a handover-form title, one group per shipped UI
+ * language. Matched against folded text, so accented forms are written here
+ * already folded: "ubergabe" for Übergabe, "protokol" for protokół.
+ *
+ * A file whose headings match none of these is simply not split — it is treated
+ * as a single form, which is the right answer when the user uploads one PDF per
+ * person anyway.
+ */
+const MARKER_WORDS = [
+  'zimmet', 'teslim tutana', 'devir teslim',              // tr
+  'handover', 'asset receipt', 'equipment receipt',       // en
+  'ubergabe', 'empfangsbestatigung',                      // de
+  'proces verbal de remise', 'bon de remise', 'remise de materiel', // fr
+  'acta de entrega', 'entrega de equipos',                // es
+  'verbale di consegna', 'consegna attrezzature',         // it
+  'termo de entrega', 'auto de entrega',                  // pt
+  'overdracht',                                           // nl
+  'protokol przekazania', 'protokol zdawczo',             // pl
+  'акт при[ёе]ма', 'акт передачи', 'передач',             // ru
+  'تسليم', 'عهدة',                                         // ar
+  '受領書', '貸与', '受領証',                                // ja
+];
+/**
+ * Titles are typeset inconsistently — "PROCÈS-VERBAL DE REMISE" hyphenates
+ * where "acta de entrega" spaces, and a scan may drop the separator entirely.
+ * Each space in a phrase above therefore matches a space, a hyphen, or nothing.
+ */
+const flexible = (phrase) => phrase.replace(/ /g, '[ \\-]?');
+const DEFAULT_MARKER = new RegExp(`(${MARKER_WORDS.map(flexible).join('|')})`, 'u');
 
 /**
  * A form title is a short, few-worded heading near the top of a page. The

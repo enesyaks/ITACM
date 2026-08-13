@@ -43,6 +43,30 @@ function tesseractLib() {
   return _tesseract;
 }
 
+/**
+ * UI language → Tesseract language code, for the twelve languages the app ships
+ * in. A Japanese instance should not be trying to read its scans with a Turkish
+ * model; when ZIMMET_OCR_LANGS is unset the instance language decides.
+ */
+const TESSERACT_LANG = {
+  en: 'eng', tr: 'tur', de: 'deu', fr: 'fra', es: 'spa', it: 'ita',
+  pt: 'por', nl: 'nld', pl: 'pol', ru: 'rus', ar: 'ara', ja: 'jpn',
+};
+
+/**
+ * Which Tesseract models to load. An explicit ZIMMET_OCR_LANGS always wins;
+ * otherwise the instance language plus English, which carries the digits, asset
+ * tags and serial numbers that appear on a form whatever its language.
+ * @param {string} [instanceLang] settings.language ("tr", "ar", …)
+ */
+function resolveLangs(instanceLang) {
+  const explicit = String(config.ocr.langs || '').trim();
+  if (explicit && explicit !== 'tur+eng') return explicit; // operator override
+  const mapped = TESSERACT_LANG[String(instanceLang || '').slice(0, 2).toLowerCase()];
+  if (!mapped) return explicit || 'tur+eng';
+  return mapped === 'eng' ? 'eng' : `${mapped}+eng`;
+}
+
 /** Does the configured language directory hold the traineddata we need? */
 function localLangs(langs, langPath) {
   const wanted = String(langs || '').split('+').map((s) => s.trim()).filter(Boolean);
@@ -59,10 +83,12 @@ function localLangs(langs, langPath) {
  *
  * @param {boolean} [enabledOverride] the Owner's Integrations toggle, which
  *        wins over the ZIMMET_OCR env default. Omit to use the env value.
+ * @param {string} [instanceLang] settings.language, used to pick the models.
  * @returns {{enabled:boolean, available:boolean, reason:string|null, langs:string, offline:boolean}}
  */
-function availability(enabledOverride) {
-  const { langs, langPath } = config.ocr;
+function availability(enabledOverride, instanceLang) {
+  const { langPath } = config.ocr;
+  const langs = resolveLangs(instanceLang);
   const enabled = enabledOverride === undefined ? !!config.ocr.enabled : !!enabledOverride;
   const offline = localLangs(langs, langPath);
   if (!enabled) return { enabled: false, available: false, reason: 'disabled', langs, offline };
@@ -199,7 +225,7 @@ async function ocrPages(buffer, opts = {}) {
   const tesseract = tesseractLib();
   if (!tesseract) throw new Error('OCR is not available on this server');
 
-  const langs = opts.langs || config.ocr.langs;
+  const langs = opts.langs || resolveLangs(opts.instanceLang);
   const maxPages = Math.max(0, opts.maxPages == null ? config.ocr.maxPages : opts.maxPages);
   const langPath = config.ocr.langPath;
 
@@ -254,6 +280,6 @@ async function ocrPages(buffer, opts = {}) {
 }
 
 module.exports = {
-  ocrPages, availability, isAvailable, localLangs,
+  ocrPages, availability, isAvailable, localLangs, resolveLangs, TESSERACT_LANG,
   encodeBmp24, toRgb24, GRAYSCALE_1BPP, RGB_24BPP, RGBA_32BPP,
 };
