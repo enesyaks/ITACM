@@ -43,7 +43,7 @@
     "express": "^4.19.2",
     "jsonwebtoken": "^9.0.2",
     "nodemailer": "^9.0.5",
-    "otplib": "^12.0.1",
+    "otplib": "^13.4.1",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^4.10.38",
     "pdfkit": "^0.19.1",
