@@ -1,0 +1,61 @@
+name: Feature request
+description: Suggest something ITACM should be able to do
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: |
+        Describe the situation, not the solution. "I need a button that exports
+        X" hides the actual need; "at the end of every quarter I have to tell
+        finance which laptops we scrapped, and I do it by hand" can be solved
+        several ways — possibly with something that already exists.
+    validations:
+      required: true
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: How do you handle it today?
+      description: A spreadsheet, a manual step, an SQL query, or not at all.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part of ITACM?
+      options:
+        - Hardware / assets
+        - Network & Server inventory
+        - Employees, onboarding, offboarding
+        - Handovers and printed receipts
+        - Zimmet import (bulk PDF)
+        - Licenses / mobile lines / consumables
+        - Providers & contracts
+        - Reports
+        - Permissions and IT users
+        - Settings, integrations, notifications
+        - AI assistant
+        - Mobile UI
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What do you have in mind?
+      description: Optional. If you already have a shape in mind, describe it — including what it should NOT do.
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Fit
+      description: ITACM is self-hosted, has no build step and no telemetry. Suggestions that require a bundler, a hosted service or phoning home are unlikely to be taken.
+      options:
+        - label: This works for a self-hosted instance with no external services
+          required: false
+        - label: I would be willing to work on it
+          required: false

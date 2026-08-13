@@ -1,0 +1,16 @@
+# Blank issues stay available: a report that fits no template is better than
+# no report. The links below catch the two things that should never become a
+# public issue, and the one that is usually a question rather than a bug.
+blank_issues_enabled: true
+contact_links:
+  - name: 🔒 Security vulnerability
+    url: https://github.com/enesyaks/ITACM/security/advisories/new
+    about: Report privately — never in a public issue. A public report is an exploit handed to everyone running ITACM before they can patch.
+
+  - name: 💬 Question or help with a deployment
+    url: https://github.com/enesyaks/ITACM/discussions
+    about: Setup, upgrades, reverse proxies, backups — ask in Discussions.
+
+  - name: 📘 Install guide
+    url: https://enesyaks.github.io/ITACM/install-guide.html
+    about: Copy-paste installation walkthrough, in 12 languages.

@@ -1,0 +1,104 @@
+name: Bug report
+description: Something in ITACM does not work the way it should
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Do not report a security vulnerability here.** A public report is an
+        exploit handed to everyone running ITACM before they can patch — use
+        the private channel in [SECURITY.md](../blob/main/SECURITY.md) instead.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you got instead.
+      placeholder: |
+        I assigned a laptop to an employee from the handover basket.
+        I expected a printable receipt; the page showed "Asset is Assigned"
+        even though the asset list said In Stock.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Numbered, starting from a fresh login. This is usually what decides whether a bug gets fixed.
+      placeholder: |
+        1. Sign in as an Admin
+        2. Open Handover Ops
+        3. Add asset ITACM-0042 to the basket
+        4. Press Execute handover
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: ITACM version
+      description: Shown at the bottom of the sidebar, and by `/api/health`.
+      placeholder: "1.4.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: How is it deployed?
+      options:
+        - Docker Compose (default)
+        - Docker Compose behind a reverse proxy
+        - Docker Compose with the tls / cloudflare profile
+        - Node directly (no Docker)
+        - Managed platform (Railway, Render, Fly.io, Cloud Run…)
+        - Other / not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: role
+    attributes:
+      label: Which role hit the problem?
+      description: Permission bugs usually depend on this. If a custom permission group is involved, say which grants it has.
+      options:
+        - Owner
+        - Admin
+        - Helpdesk
+        - Viewer
+        - HR
+        - Portal (employee self-service)
+        - A custom permission group
+        - Not signed in
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Server logs
+      description: |
+        `docker compose logs api --tail 100` around the moment it failed.
+        **Check them before pasting** — remove tokens, passwords and anything
+        about real employees.
+      render: shell
+
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and device
+      description: Only if the problem is in the UI.
+      placeholder: "Chrome 141 on Windows 11 / Safari on iPhone"
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I am on the latest release, or I have checked that the newest CHANGELOG entries do not already mention this
+          required: true
+        - label: I searched existing issues
+          required: true
+        - label: There are no passwords, tokens or real personal data in what I pasted
+          required: true
