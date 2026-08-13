@@ -1,7 +1,9 @@
 /**
  * Bulk historical zimmet PDF import — mounted at /api/import/zimmet.
  * Gated with the same permission as the per-employee document archive
- * (handover_document:upload + employee:view_handover).
+ * (handover_document:upload + employee:view_handover). The service additionally
+ * confines every batch to the caller's employee:read department scope, so this
+ * route cannot file documents the per-employee upload route would refuse.
  */
 'use strict';
 
@@ -15,14 +17,19 @@ const { HttpError } = require('../utils/httpError');
 const { zimmetImportService } = require('../services');
 
 const gate = requireAllPermissions([['handover_document', 'upload'], ['employee', 'view_handover']]);
+// Only /analyze carries base64 PDFs; the other routes take small JSON bodies
+// and must not be handed an 80mb parser they have no use for.
+const bigJson = express.json({ limit: '80mb' });
 
-// Uploads carry several base64 PDFs — allow a large body just on this router.
-router.use(authenticate, express.json({ limit: '80mb' }));
+router.use(authenticate);
 
 /** POST /api/import/zimmet/analyze — split + match, stage a batch (no attach). */
-router.post('/analyze', gate, asyncHandler(async (req, res) => {
+router.post('/analyze', gate, bigJson, asyncHandler(async (req, res) => {
   const rawFiles = Array.isArray(req.body && req.body.files) ? req.body.files : [];
   if (!rawFiles.length) throw HttpError.badRequest('Provide at least one PDF file');
+  if (rawFiles.length > zimmetImportService.MAX_FILES) {
+    throw HttpError.badRequest(`Too many files (max ${zimmetImportService.MAX_FILES})`);
+  }
   const files = rawFiles.map((f) => {
     const { buffer, mime, filename } = validateUpload(f || {});
     if (mime !== 'application/pdf') throw HttpError.badRequest(`${filename}: only PDF files are supported`);
@@ -33,13 +40,15 @@ router.post('/analyze', gate, asyncHandler(async (req, res) => {
 
 /** GET /api/import/zimmet/batches/:id — re-fetch a staged batch preview. */
 router.get('/batches/:id', gate, asyncHandler(async (req, res) => {
-  res.json({ success: true, data: await zimmetImportService.getBatch(req.params.id) });
+  res.json({ success: true, data: await zimmetImportService.getBatch(req.params.id, req.user) });
 }));
 
 /** GET /api/import/zimmet/items/:id/preview — stream a split form for review. */
 router.get('/items/:id/preview', gate, asyncHandler(async (req, res) => {
-  const { buffer, filename, mime } = await zimmetImportService.getItemContent(req.params.id);
-  res.setHeader('Content-Type', mime);
+  const { buffer, filename } = await zimmetImportService.getItemContent(req.params.id, req.user);
+  // Staging only ever holds PDFs (uploadGuard sniffed the magic bytes), so the
+  // type is pinned here rather than echoed back from a stored column.
+  res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', contentDisposition(filename, { inline: true }));
   res.send(buffer);
 }));
@@ -48,12 +57,12 @@ router.get('/items/:id/preview', gate, asyncHandler(async (req, res) => {
 router.post('/commit', gate, asyncHandler(async (req, res) => {
   const { batchId, assignments } = req.body || {};
   if (!batchId) throw HttpError.badRequest('batchId is required');
-  res.json({ success: true, data: await zimmetImportService.commit(batchId, assignments || [], req.user) });
+  res.json({ success: true, data: await zimmetImportService.commit(batchId, assignments, req.user) });
 }));
 
 /** DELETE /api/import/zimmet/batches/:id — discard staging. */
 router.delete('/batches/:id', gate, asyncHandler(async (req, res) => {
-  res.json({ success: true, data: await zimmetImportService.discard(req.params.id) });
+  res.json({ success: true, data: await zimmetImportService.discard(req.params.id, req.user) });
 }));
 
 module.exports = router;

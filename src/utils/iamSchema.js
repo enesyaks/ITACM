@@ -133,7 +133,7 @@ function getIamSchema() {
       ownerBypass: 'Owner always has full access. Test matrix changes as a user assigned to that group.',
       manage: 'manage enables read/update/delete/(assign). Not create, export, import, costs, or employee view_*. Toggle create separately for Add buttons.',
       document: 'General files (providers, contracts, licenses, repair paperwork). read = listed (blurred if no download). download = open. upload / delete = mutate. Not employee zimmet scans.',
-      handover_document: 'Employee zimmet / handover PDF archive only. Also needs employee:view_handover for the Documents tab. Independent from document:*.',
+      handover_document: 'Employee zimmet / handover PDF archive only. Also needs employee:view_handover for the Documents tab. Independent from document:*. NOTE: upload + employee:view_handover also unlocks the bulk Zimmet Import screen, which files scanned forms onto MANY employee profiles at once — still limited to that user\'s employee:read department scope.',
       report: 'report:read = Reports page. report:export = CSV/print. Each preset also needs that module read (e.g. maintenance:read).',
       integration: 'read = view blurred secrets. update = custom-field values on forms. manage = SMTP, webhooks, API keys, field defs.',
       consumable: 'read = stock list. create = new item. update = adjust stock. manage = read+update+delete (not create).',

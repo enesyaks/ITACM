@@ -118,7 +118,49 @@ Bir "toplu PDF"in nerede bitip yenisinin başladığını bilmek gerekir. Kademe
 - **Faz 2:** taranmış PDF'ler için OCR (tesseract.js, opt-in).
 - **Faz 3:** cila — küçük resim önizleme, yüksek-güvenlileri toplu kabul, geri alma, duplikasyon tespiti.
 
-## 11. Enes'e karar soruları
+## 11. Uygulama durumu (Faz 1 — tamamlandı)
+
+Faz 1 planlandığı gibi çıktı; aşağıdakiler plandan **sapan veya plana eklenen** kararlar:
+
+| Konu | Karar |
+|---|---|
+| Staging depolama | `DATA_DIR/staging/...` yerine `zimmet_import_items.content` (bytea). Dosya sistemi ile DB arasında ikinci bir tutarlılık sorunu doğmuyor; commit/iptal/TTL'de tek yerden siliniyor. |
+| TTL temizliği | `zimmetImportService.purgeStale()` — `utils/scheduler` saatte bir çağırıyor. 24 saati geçen `pending` batch'ler silinir; kapanmış batch'lerde kalan byte'lar (commit ortasında çökme) boşaltılır. |
+| İzin kapsamı | Rota izni plandaki gibi (`handover_document:upload` + `employee:view_handover`), **ek olarak** aday listesi ve commit hedefi kullanıcının `employee:read` departman kısıtıyla sınırlanır — toplu yol, tekil yükleme yolunun reddedeceği bir profile belge yazamaz. Batch'ler yalnızca sahibine görünür. |
+| Bölme markörü | Sayfanın herhangi bir yerinde değil, **ilk 6 satırdaki kısa bir başlık satırında** aranır. Gövde metnindeki "…işbu zimmet tutanağı…" ifadesi 3 sayfalık tek formu 3 forma bölüyordu. |
+| Türkçe büyük harf | JS'in `/i` bayrağı `İ` (U+0130) ile `i`'yi eşleştirmez: `ZİMMET`, `TESLİM ALAN` gibi **normal form yazımları hiç yakalanmıyordu**. Tüm markör/etiket regex'leri `nameMatch.foldTr()` ile katlanmış metin üzerinde çalışır. |
+| Güven eşiği | "Yüksek" için tek başına puan farkı yetmez; ikinci aday da iyi bir eşleşmeyse (≥0.90) sonuç **belirsiz** kalır (§9'daki "aynı ada sahip iki çalışan" durumu). Ters eşleşmede tek kelimelik roster kayıtları yok sayılır. |
+| Limitler | Dosya başına 8MB (uploadGuard), batch başına 20 dosya / 55MB / 300 form / dosya başına 400 sayfa. Sayfa sınırı metin çıkarımından **önce** kontrol edilir. |
+| Audit | `describeRequest` kuralları eklendi: `import.zimmet.analyze` / `.commit` / `.discard`. |
+| Commit atomikliği | Tek transaction yerine **batch claim** (`UPDATE … WHERE status='pending' RETURNING`) + tutanak bazında rapor. `saveDocument` dosya sistemine de yazdığı için tek transaction gerçek bir garanti vermiyordu; çift tıklama/çift sekme artık iki kez ekleyemez. |
+| Testler | `tests/zimmet-import.test.js` — bölme ve isim eşleştirme (DB'siz saf fonksiyonlar). |
+
+Faz 3 (küçük resim, toplu kabul, geri alma, duplikasyon) açık.
+
+## 12. Uygulama durumu (Faz 2 — OCR, tamamlandı)
+
+Taranmış (metin katmanı olmayan) PDF'ler artık otomatik okunuyor. **Varsayılan kapalı** — `ZIMMET_OCR=1` ile açılır.
+
+**Plandan sapan tek büyük karar: rasterization yok.**
+Beklenen yol "pdfjs ile sayfayı canvas'a çiz → OCR"du. `@napi-rs/canvas` görüntü içeren sayfaları çizerken **segfault** veriyor (SIGSEGV/SIGABRT, Node 26 + arm64), üstelik Alpine imajına native modül sokuyordu. Yerine: **taranmış sayfa zaten tek bir görüntüdür** — pdfjs o görüntüyü bizim için çözüyor (DCT/CCITT/JBIG2/Flate hepsi düz piksel olarak geliyor), biz pikselleri sıkıştırmasız bir **BMP**'ye sarıp Tesseract'a veriyoruz. Sonuç: native bağımlılık yok, alpine/musl/arm64'te aynı şekilde çalışıyor, rasterization maliyeti de yok.
+
+| Konu | Karar |
+|---|---|
+| Açma/kapama | **Ayarlar → Entegrasyonlar**'daki Owner anahtarı (DB'de `app_settings.zimmet_ocr`). `ZIMMET_OCR` env'i yalnızca varsayılan; anahtar bir kez kullanıldığında onu ezer, yani açıp kapatmak için restart gerekmez. `update_check` ile aynı üç durumlu desen (NULL = env'i devral). |
+| Bağımlılık | Yalnızca `tesseract.js` (Apache-2.0), **optionalDependency**. `npm ci --omit=optional` yapılmış bir kurulum yine açılır; `availability()` nedeni bildirir, import patlamaz. |
+| Dil verisi | `DATA_DIR/tessdata/<lang>.traineddata`. Dosyalar oradaysa sunucu **hiç internete çıkmaz** (hava boşluklu kurulum). Yoksa tesseract.js kendi CDN'inden çeker. Varsayılan `tur+eng`. |
+| Bütçe | `ZIMMET_OCR_MAX_PAGES` (varsayılan 40) **batch başına** — dosya başına değil. `analyze()` tek bir HTTP isteği ve OCR sayfa başına ~2sn; proxy timeout'una girmemesini sağlayan şey bu. Bütçe biterse kalan sayfalar boş döner ve arayüz bunu söyler. |
+| Boru hattına etkisi | OCR metni, dijital PDF'in metin katmanıyla **aynı yere** besleniyor: bölme (`detectForms`) ve isim eşleştirme değişmedi. Yani çok formlu bir **tarama** da doğru bölünüyor. |
+| İzlenebilirlik | `zimmet_import_items.via_ocr` + arayüzde "OCR" rozeti — OCR çıktısı metin katmanından daha az güvenilir, inceleyen bunu görmeli. |
+| Hata durumu | OCR hatası batch'i düşürmez; ilgili dosya `failures[]`'a düşer, form elle atanır. |
+| Görüntü ayrıntıları | RGBA beyaza yassıltılır (şeffaf tarama siyah okunmasın), 1bpp maskeler açılır ve sayfa çoğunlukla koyuysa ters çevrilir, BMP başlığına DPI yazılır (yoksa Tesseract 70dpi varsayıp gözle görülür kötü okuyor). |
+| Migration | 050 — `via_ocr`, `error`, `failed` statüsü. 049 zaten uygulanmış veritabanları için idempotent tamamlayıcı. |
+
+**Ölçüm (örnek dosya, 5 sayfalık tarama, 4 tutanak):** 14 sn, 4/4 tutanak doğru bölündü, 3'ü otomatik yüksek güvenle eşleşti, listede olmayan 1 isim elle seçime düştü. Örnek dosyalar: `docs/samples/zimmet-ornek-dijital.pdf` ve `docs/samples/zimmet-ornek-tarama.pdf`.
+
+**Bilinen sınır:** Sayfa başına en fazla 4 görüntü OCR'lanır ve çok küçük görüntüler (logo, kaşe) atlanır. Sayfayı onlarca parçaya bölen egzotik tarayıcı çıktılarında eksik okuma olabilir.
+
+## 13. Enes'e karar soruları
 1. Geçmiş PDF'ler **ITACM üretimi mi, taranmış görüntü mü, yoksa eski bir sistemin formatı mı?** (OCR gerekliliğini ve çıkarım sezgisini belirler.)
 2. Her tutanak **1 sayfa mı, değişken mi?** Kişi başına ayrı dosya mı, tek büyük birleşik PDF mi yüklenecek?
 3. Formların dili (Türkçe etiketler) — evet varsayıyorum, doğru mu?

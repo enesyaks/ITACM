@@ -20,7 +20,13 @@ const ROUTES = {
   '#/providers': { title: 'Providers & Contracts', view: 'providers', icon: 'apartment' },
   '#/consumables': { title: 'Consumables', view: 'consumables', icon: 'inventory_2' },
   '#/employees': { title: 'Employees', view: 'employees', icon: 'badge' },
-  '#/zimmet-import': { title: 'Zimmet Import', view: 'zimmetImport', icon: 'upload_file', iam: ['handover_document', 'upload'] },
+  // `iam` is ALL-of: the import API gates on handover_document:upload AND
+  // employee:view_handover, so listing only one here would show the menu item to
+  // a group the server then 403s.
+  '#/zimmet-import': {
+    title: 'Zimmet Import', view: 'zimmetImport', icon: 'upload_file',
+    iam: [['handover_document', 'upload'], ['employee', 'view_handover']],
+  },
   '#/org': { title: 'Organization', view: 'org', icon: 'account_tree' },
   '#/handover': { title: 'Handover Ops', view: 'handover', icon: 'assignment_turned_in' },
   '#/maintenance': { title: 'Maintenance & Repair', view: 'maintenance', icon: 'build' },
@@ -50,6 +56,11 @@ const PORTAL_HASH = '#/zimmetlerim';
 const HR_HOME_HASH = '#/hr';
 const HR_ALLOWED_HASHES = new Set(['#/hr', '#/zimmetlerim']);
 
+/** A route's `iam` list is ALL-of — every [resource, action] pair must pass. */
+function hasAllIam(pairs) {
+  return (pairs || []).every(([resource, action]) => Auth.canIam(resource, action));
+}
+
 function renderNav() {
   // Portal users get a bare topbar: search/scan/notifications/help/settings are
   // IT tools their role cannot use anyway (CSS hides them via .is-portal).
@@ -74,7 +85,7 @@ function renderNav() {
       if (isPortalUser()) return hash === PORTAL_HASH;
       if (isHrConfined()) return HR_ALLOWED_HASHES.has(hash);
       if (r.hrOnly) return isHrUser(); // HR screen: any HR account, grouped or not
-      if (r.iam && !Auth.canIam(r.iam[0], r.iam[1])) return false;
+      if (r.iam && !hasAllIam(r.iam)) return false;
       return !r.perm || Auth.can(r.perm);
     })
     .map(([hash, r]) =>
@@ -134,7 +145,7 @@ async function navigate() {
   // Dashboard, and this page is scoped to the people who file the tickets.
   if (route.hrOnly && !isHrUser()) { location.hash = homeHash; return; }
   // A route the user isn't permitted to open → 403 screen (clearer than a silent bounce).
-  if ((route.perm && !Auth.can(route.perm)) || (route.iam && !Auth.canIam(route.iam[0], route.iam[1]))) {
+  if ((route.perm && !Auth.can(route.perm)) || (route.iam && !hasAllIam(route.iam))) {
     $$('#nav a').forEach((a) => a.classList.remove('active'));
     view.dataset.navGen = String(gen);
     renderErrorState(view, {

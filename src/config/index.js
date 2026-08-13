@@ -62,6 +62,22 @@ const config = {
   updateCheck: flagEnv('UPDATE_CHECK'),
   updateRepo: trimmedEnv('UPDATE_CHECK_REPO') || 'enesyaks/ITACM',
   updateToken: firstEnv(['UPDATE_CHECK_TOKEN', 'GITHUB_TOKEN']),
+
+  /**
+   * OCR for scanned zimmet PDFs (bulk import, phase 2) — OFF by default.
+   * Reading pages is CPU-heavy and pulls an optional dependency (tesseract.js),
+   * so an install that never imports scans pays nothing. maxPages is a
+   * whole-batch budget: analyze() is a plain HTTP request and OCR runs ~2s per
+   * page, so this is what keeps it from running past a proxy timeout.
+   */
+  ocr: {
+    enabled: flagEnv('ZIMMET_OCR'),
+    langs: trimmedEnv('ZIMMET_OCR_LANGS') || 'tur+eng',
+    // Local traineddata directory; falls back to the tesseract.js CDN if empty.
+    langPath: trimmedEnv('ZIMMET_OCR_LANG_PATH')
+      || path.join(trimmedEnv('DATA_DIR') || path.join(process.cwd(), 'data'), 'tessdata'),
+    maxPages: Number(trimmedEnv('ZIMMET_OCR_MAX_PAGES')) || 40,
+  },
 };
 
 function assertBackendConfig() {

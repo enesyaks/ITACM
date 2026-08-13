@@ -33,11 +33,17 @@ CREATE TABLE IF NOT EXISTS zimmet_import_items (
   byte_size             integer NOT NULL,
   content               bytea,
   status                text NOT NULL DEFAULT 'pending'
-                          CHECK (status IN ('pending', 'attached', 'skipped')),
+                          CHECK (status IN ('pending', 'attached', 'skipped', 'failed')),
+  error                 text,
+  -- The form had no text layer and its name was read by OCR — worth flagging in
+  -- review, since OCR output is less trustworthy than an embedded text layer.
+  via_ocr               boolean NOT NULL DEFAULT false,
   created_at            timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_zii_batch ON zimmet_import_items (batch_id);
+-- The staging purge sweeps abandoned pending batches by age.
+CREATE INDEX IF NOT EXISTS idx_zib_pending ON zimmet_import_batches (status, created_at);
 
 -- Allow imported historical zimmets as a distinct document kind.
 ALTER TABLE handover_documents DROP CONSTRAINT IF EXISTS handover_documents_kind_check;

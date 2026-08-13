@@ -1155,6 +1155,22 @@ table.data.net-list .net-col-actions .btn .ms { font-size: 18px; }
 }
 .zim-file-row .ms { color: var(--on-surface-variant); }
 
+/* Zimmet import — searchable assignment cell. The picker expands inside the
+   cell rather than floating, so the table's horizontal scroll cannot clip it. */
+.zim-assign { min-width: 260px; vertical-align: top; }
+.zim-pick {
+  display: flex; align-items: center; gap: 8px; width: 100%; min-width: 220px;
+  border: 1px solid var(--outline-variant); border-radius: var(--radius-lg);
+  background: var(--surface, #fff); color: var(--on-surface);
+  font-family: var(--font); font-size: 13.5px; text-align: left;
+  padding: 8px 12px; cursor: pointer;
+}
+.zim-pick:hover { border-color: var(--outline); background: var(--surface-low); }
+.zim-pick .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.zim-pick.is-empty { color: var(--on-surface-variant); font-style: italic; }
+.zim-picker { min-width: 240px; display: flex; flex-direction: column; gap: 6px; }
+.zim-picker .emp-search-results { max-height: 240px; }
+
 /* Default-location cell: pill + a subtle inline clear (×) button, aligned. */
 .loc-default { display: inline-flex; align-items: center; gap: 6px; }
 .loc-default-clear {

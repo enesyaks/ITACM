@@ -84,6 +84,12 @@ services:
       AI_MODEL: ${AI_MODEL:-}
       AI_API_KEY: ${AI_API_KEY:-}
       AI_ALLOW_PRIVATE: ${AI_ALLOW_PRIVATE:-1}
+      # Zimmet PDF import: OCR for scanned forms (optional, CPU-heavy).
+      # Put <lang>.traineddata under DATA_DIR/tessdata to keep it offline.
+      ZIMMET_OCR: ${ZIMMET_OCR:-}
+      ZIMMET_OCR_LANGS: ${ZIMMET_OCR_LANGS:-tur+eng}
+      ZIMMET_OCR_LANG_PATH: ${ZIMMET_OCR_LANG_PATH:-}
+      ZIMMET_OCR_MAX_PAGES: ${ZIMMET_OCR_MAX_PAGES:-40}
     extra_hosts:
       # So the API container can reach Ollama on the Docker host.
       - "host.docker.internal:host-gateway"

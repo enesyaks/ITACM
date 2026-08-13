@@ -98,9 +98,30 @@ test('IT approval of HR tickets is available to staff, not to HR', () => {
   assert.equal(can('Viewer', 'hr_request', 'update'), false);
 });
 
+test('bulk zimmet import needs BOTH of its permissions, on every surface', () => {
+  // The screen files documents onto many employee profiles at once. Its API
+  // gate is handover_document:upload AND employee:view_handover; the nav entry
+  // (#/zimmet-import in public/js/app.js) must list the same pair, or a group
+  // holding only one of them sees a menu item the server then refuses.
+  const canImport = (role) => can(role, 'handover_document', 'upload') && can(role, 'employee', 'view_handover');
+  assert.equal(canImport('Owner'), true);
+  assert.equal(canImport('Admin'), true);
+  assert.equal(canImport('Helpdesk'), true, 'Helpdesk runs zimmet operations');
+  for (const role of ['Viewer', 'HR', 'Portal']) {
+    assert.equal(canImport(role), false, `${role} must not reach the bulk import`);
+  }
+  // Neither half is enough on its own — that is the whole point of the pair.
+  assert.equal(can('Viewer', 'handover_document', 'upload'), false);
+  assert.equal(can('Viewer', 'employee', 'view_handover'), false);
+});
+
 test('the schema still carries the resources these rules depend on', () => {
-  for (const r of ['asset', 'employee', 'hr_request', 'user_management', 'settings', 'audit', 'dashboard']) {
+  for (const r of ['asset', 'employee', 'hr_request', 'user_management', 'settings', 'audit', 'dashboard',
+    'handover_document']) {
     assert.ok(RESOURCES.includes(r), `RESOURCES must still contain ${r}`);
+  }
+  for (const a of ['upload', 'view_handover']) {
+    assert.ok(ACTIONS.includes(a), `ACTIONS must still contain ${a} (bulk zimmet import gate)`);
   }
   for (const a of ['read', 'create', 'update', 'delete']) {
     assert.ok(ACTIONS.includes(a), `ACTIONS must still contain ${a}`);

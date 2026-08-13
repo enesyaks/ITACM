@@ -11,6 +11,19 @@
 
 const TR_MAP = { ş: 's', ı: 'i', ğ: 'g', ü: 'u', ö: 'o', ç: 'c' };
 
+/**
+ * Case-fold Turkish text to ASCII while keeping punctuation and layout.
+ * JavaScript's /i flag does NOT relate 'İ' (U+0130) to 'i', so patterns like
+ * /zimmet/i or /teslim alan/i silently miss "ZİMMET" and "TESLİM ALAN" — the
+ * normal casing on a Turkish form. Every marker/label regex matches folded text
+ * instead. Each character maps to exactly one character, so offsets into the
+ * folded string still address the original.
+ */
+const TR_FOLD = { İ: 'i', I: 'i', ı: 'i', Ş: 's', ş: 's', Ğ: 'g', ğ: 'g', Ü: 'u', ü: 'u', Ö: 'o', ö: 'o', Ç: 'c', ç: 'c' };
+function foldTr(input) {
+  return String(input == null ? '' : input).replace(/[İIıŞşĞğÜüÖöÇç]/g, (ch) => TR_FOLD[ch]).toLowerCase();
+}
+
 /** Fold Turkish letters + diacritics to ASCII, lowercase, strip punctuation. */
 function normalizeName(input) {
   if (input == null) return '';
@@ -95,9 +108,12 @@ function matchEmployee(extracted, employees, threshold = 0.72) {
   if (scored.length) {
     const top = scored[0];
     const second = scored[1];
-    // High: a strong, clearly-leading single match. Medium: matched but close/ambiguous.
-    if (top.score >= 0.92 && (!second || top.score - second.score >= 0.08)) confidence = 'high';
-    else confidence = 'medium';
+    // High: a strong, clearly-leading single match. A runner-up that is itself
+    // an excellent match ("Ayşe Yılmaz" vs "Ayşe Yılmaz" / "Ayse Yilmez") stays
+    // medium however wide the gap looks — filing a zimmet on the wrong person
+    // costs far more than asking. Medium: matched but close/ambiguous.
+    const clearLead = !second || (top.score - second.score >= 0.08 && second.score < 0.9);
+    confidence = (top.score >= 0.92 && clearLead) ? 'high' : 'medium';
   }
   return { candidates: scored.slice(0, 5), confidence, best: scored[0] || null };
 }
@@ -108,14 +124,52 @@ function matchEmployee(extracted, employees, threshold = 0.72) {
  * portion of text that hit, sorted by name length (longer = more specific).
  */
 function findNamesInText(text, employees) {
-  const norm = ` ${normalizeName(text)} `;
+  const norm = ` ${normalizeName(text).replace(/\n/g, ' ')} `;
   const hits = [];
   for (const e of employees || []) {
-    const key = tokens(e.fullName).join(' ');
-    if (key.length < 3) continue;
-    if (norm.includes(` ${key} `)) hits.push({ id: e.id, fullName: e.fullName, score: 1, via: 'text' });
+    const parts = tokens(e.fullName);
+    // A single-token roster entry ("Ali") would hit any form mentioning that
+    // word — far too loose to auto-assign a document on. Needs a full name.
+    if (parts.length < 2) continue;
+    const key = parts.join(' ');
+    if (norm.includes(` ${key} `)) hits.push({ id: e.id, fullName: e.fullName, key, score: 1, via: 'text' });
   }
-  return hits.sort((a, b) => b.fullName.length - a.fullName.length);
+  // "Ali Yılmaz" also matches inside "Ali Yılmaz Kaya" — when one hit's name is
+  // contained in another's, only the longer (more specific) one is real.
+  const kept = hits.filter((h) => !hits.some((o) => o !== h && o.key.includes(h.key)));
+  return kept.sort((a, b) => b.key.length - a.key.length);
 }
 
-module.exports = { normalizeName, tokens, levenshtein, ratio, nameSimilarity, matchEmployee, findNamesInText };
+/**
+ * Assignee label heuristic (Turkish): "Teslim Alan: Ad Soyad", "Personel: …".
+ * `[^\S\n]` keeps the capture on one line — pdfText preserves line breaks, and
+ * a greedy `\s` would run into whatever is typeset underneath the field.
+ */
+const LABEL_RE = /(teslim ?alan|zimmetlenen|personel|adi?[^\S\n]*soyadi?|kullanici)[^\S\n]*[:\-][^\S\n]*([a-z][a-z.\t ]{2,49})/;
+
+/** Keep at most the first 4 words — a label capture often trails into the next field. */
+function trimName(raw) {
+  return String(raw == null ? '' : raw).replace(/\s+/g, ' ').trim().split(' ').slice(0, 4)
+    .join(' ');
+}
+
+/**
+ * Read the name next to a label, returned in its ORIGINAL spelling.
+ * The regex runs on folded text (see foldTr) but the result is sliced out of
+ * the source, so "TESLİM ALAN: Ayşe Yılmaz" yields "Ayşe Yılmaz", not "ayse…".
+ */
+function nameFromLabel(text) {
+  const src = String(text == null ? '' : text);
+  const folded = foldTr(src);
+  const m = LABEL_RE.exec(folded);
+  if (!m) return '';
+  const start = m.index + m[0].length - m[2].length;
+  // foldTr is 1:1, so offsets line up; fall back if that ever stops holding.
+  const raw = folded.length === src.length ? src.slice(start, start + m[2].length) : m[2];
+  return trimName(raw);
+}
+
+module.exports = {
+  normalizeName, foldTr, tokens, levenshtein, ratio, nameSimilarity,
+  matchEmployee, findNamesInText, nameFromLabel, trimName, LABEL_RE,
+};

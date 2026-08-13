@@ -137,6 +137,24 @@ function describeRequest(req) {
         const n = Array.isArray(body.rows) ? body.rows.length : 0;
         return `Imported inventory from Excel/CSV (${n} row(s) submitted)`;
       } },
+    { m: 'POST', re: /^\/api\/import\/zimmet\/analyze$/, action: 'import.zimmet.analyze', source: 'import',
+      summary: () => {
+        const n = Array.isArray(body.files) ? body.files.length : 0;
+        return `Analyzed ${n} historical zimmet PDF(s) for import`;
+      } },
+    { m: 'POST', re: /^\/api\/import\/zimmet\/commit$/, action: 'import.zimmet.commit', source: 'import',
+      summary: () => {
+        const n = Array.isArray(body.assignments) ? body.assignments.filter((a) => a && a.employeeId).length : 0;
+        return `Attached ${n} historical zimmet form(s) to employee profiles`;
+      },
+      entityType: 'import', entityId: () => body.batchId || null },
+    { m: 'DELETE', re: /^\/api\/import\/zimmet\/batches\/[^/]+$/, action: 'import.zimmet.discard', source: 'import',
+      summary: () => 'Discarded a staged zimmet import batch',
+      entityType: 'import',
+      entityId: () => {
+        const m = path.match(/^\/api\/import\/zimmet\/batches\/([^/]+)$/);
+        return m ? m[1] : null;
+      } },
     { m: 'PUT', re: /^\/api\/settings/, action: 'settings.update', source: 'settings', summary: () => 'Updated settings / branding' },
     { m: 'PATCH', re: /^\/api\/settings/, action: 'settings.update', source: 'settings', summary: () => 'Updated settings / branding' },
     { m: 'POST', re: /^\/api\/setup/, action: 'setup', source: 'setup', summary: () => 'Completed workspace setup' },

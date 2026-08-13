@@ -297,6 +297,20 @@ Views.integrations = async function (el) {
         </div>
       </section>` : ''}
 
+      ${canExport ? `<section class="card card-pad" style="margin-bottom:16px">
+        <h3 style="margin:0 0 8px">${esc(t('integration.ocrTitle'))}</h3>
+        <p class="cell-sub" style="margin:0 0 12px">${esc(t('integration.ocrHint'))}</p>
+        <label class="ob-check" style="margin-bottom:12px">
+          <input type="checkbox" id="int-ocr" ${AppConfig.zimmetOcr ? 'checked' : ''}>
+          <span>${esc(t('integration.ocrToggle'))}</span>
+        </label>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <button type="button" class="btn btn-primary" id="int-ocr-save">
+            <span class="ms">save</span> ${esc(t('common.save') || 'Save')}
+          </button>
+        </div>
+      </section>` : ''}
+
       <section class="card card-pad">
         <h3 style="margin:0 0 8px">Sync connectors (API)</h3>
         <pre class="mono" style="white-space:pre-wrap;font-size:12px;background:#f6f5fa;padding:12px;border-radius:10px;overflow:auto">POST /api/integrations/sync/employees
@@ -534,6 +548,20 @@ GET /api/integrations/licenses/:id/sam
       // client-side re-render without a full reload.
       if (typeof AppConfig === 'object' && AppConfig) AppConfig.updateCheck = saved ? !!saved.updateCheck : on;
       toast(t('integration.updatesSaved') || 'Update settings saved', 'success');
+    } catch (err) { toast(err.message, 'error'); }
+    finally { if (btn) btn.disabled = false; }
+  });
+
+  $('#int-ocr-save', el)?.addEventListener('click', async () => {
+    const btn = $('#int-ocr-save', el);
+    const on = !!$('#int-ocr', el)?.checked;
+    if (btn) btn.disabled = true;
+    try {
+      const saved = await api('/settings', { method: 'PUT', body: { zimmetOcr: on } });
+      // Keep the in-memory bootstrap config in sync so the toggle survives a
+      // client-side re-render without a full reload.
+      if (typeof AppConfig === 'object' && AppConfig) AppConfig.zimmetOcr = saved ? !!saved.zimmetOcr : on;
+      toast(t('integration.ocrSaved'), 'success');
     } catch (err) { toast(err.message, 'error'); }
     finally { if (btn) btn.disabled = false; }
   });
