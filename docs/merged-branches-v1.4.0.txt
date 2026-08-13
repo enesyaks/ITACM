@@ -1,0 +1,33 @@
+# Branches merged into main and deleted on 2026-08-13 (at v1.4.0 / fcd0ecf).
+# Every commit below is an ancestor of main — restore any with: git branch <name> <sha>
+
+docs/cloudflare-deploy-guide ac75c2b1c844a1b65dffda1fabd712ccfc42efce
+docs/install-guide af7e51b5a209483e978465365e6b024e84731722
+docs/pages-guide 6d709d3ee1ca0250fb1d704f1cbd834e9212d8bb
+docs/readme-ai-assistant 36f2359e979df3d07e42a21bf10e4b489480f9a6
+feat/ai-permission-matrix f84ad8573883435bf989fe733147b023553fa360
+feat/app-url-setting 1c996c2d87470ef8250fac09f681c61fa3d08497
+feat/assets-firstpaint-skeleton 40d6139681ea119ecef4060d8db9a5e3f82fe818
+feat/bulk-zimmet-pdf-import fcd0ecfb3a08e4dc16bfa0271d282ac731376b40
+feat/caddy-tls-profile cc6e33641fd3b672569e0ec416fc6f503efa82e2
+feat/cloudflare-origin-cert ebbfea20f17cfc211e8aff37773785274467ebfc
+feat/loading-screens 98c0aed98e487035a29a7652fadc5754ee8ed027
+feat/manual-update-check ecd3258323a0a3c0b086a739eef66876b7cbc08f
+feat/one-command-update d0dba9813e2def9972485635520f47657486dacf
+feat/search-inplace-serial-copy e558d900a9548765b6240605ab021490731d99e0
+feat/setup-https-wizard aa7de45dbfaa78c6174f5fb3d1de6d2771d61694
+feat/sidebar-version-label c3f6cb8f1ccf3b78577871d1cab5ccafedd0a16b
+feature/ai-assistant d942d8771d6dcfcf28bc777200c61d535705ecd8
+feature/org-chart-approvals 9c29f8080dd2be879ce9a7821b2a8309fdb142b4
+fix/cache-bust-assets 5a79259e384f7ddedc719308690a4fa97fee7f8c
+fix/i18n-gaps-hr-email f2369e9f068b16c146df231d997cd599d9e58936
+fix/i18n-portal-headers-md-guard d73996e193f3470a195fad3f93589a2d6cd43eb0
+fix/iam-modals-i18n 8d3cb3ef30c5e673425c10573455804516e64a19
+fix/mobile-modal-foot f6c072fd21bfd244fe6b88165493afa1f650e475
+fix/mobile-more-scan-gate df04400729797ea9c72e2edb4fa85f66a51896d0
+fix/onboarding-dev-cruft e0f6073b7a2b92b91e9db478a2d0ba1a900b3b06
+fix/rerender-stuck-skeleton e091e3707ebc575d649a9fdd6c512cff0ea00225
+fix/scan-gate-inventory-access 60a755b2499c9bc490feca8b6e6a3e2a8af9f334
+fix/scoped-directory-and-error-screens 221c0bae111150148b9b9153e344962ee9f1bb48
+fix/search-error-skeleton 3a98c924e2fed0ac1185efdbf3c14710d08779cb
+fix/search-keystroke-skeleton 07563d5f15abc30f8c091c4257de9835a100c746
