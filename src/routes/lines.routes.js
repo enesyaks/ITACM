@@ -21,7 +21,7 @@ router.post('/', requirePermission('line', 'create'), asyncHandler(async (req, r
 /** PUT /api/lines/:id — edit a line. İzin: line:update */
 router.put('/:id', requirePermission('line', 'update'), asyncHandler(async (req, res) => {
   await gateCostWrite(req.user, 'line', req.body);
-  res.json({ success: true, data: await lineService.updateLine(req.params.id, req.body) });
+  res.json({ success: true, data: await lineService.updateLine(req.params.id, req.body, req.user) });
 }));
 
 /** POST /api/lines/:id/assign — assign to an employee. İzin: line:assign */

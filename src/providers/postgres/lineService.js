@@ -82,11 +82,47 @@ async function createLine(body) {
   }
 }
 
-async function updateLine(id, body) {
+async function updateLine(id, body, itUser) {
   if (!isUuid(id)) throw HttpError.notFound('Line not found');
   const d = sanitize(body, { partial: true });
   if (!Object.keys(d).length) throw HttpError.badRequest('No updatable fields provided');
   if (d.sim_serial !== undefined) await assertSimSerialAvailable(d.sim_serial, { excludeId: id });
+
+  // Cancelling a line terminates it — it can never be assigned again
+  // (assignLine requires status 'Active'). Leaving it attached would keep a dead
+  // number on the employee's profile and in their asset count forever, so the
+  // cancel must ALSO detach it, exactly like an unassign, and log the handback.
+  // Row-locked in one transaction so a concurrent assign/unassign can't race it.
+  if (d.status === 'Cancelled') {
+    return withTransaction(async (t) => {
+      const l = await t.query('SELECT * FROM mobile_lines WHERE id = $1 FOR UPDATE', [id]);
+      if (!l.rows[0]) throw HttpError.notFound('Line not found');
+      const row = l.rows[0];
+      const cols = Object.keys(d);
+      const sets = cols.map((c, i) => `${c} = $${i + 2}`).join(', ');
+      const upd = await t.query(
+        `UPDATE mobile_lines
+            SET ${sets}, current_employee_id = NULL, current_employee_name = NULL,
+                reserved_for_employee_id = NULL, updated_at = now()
+          WHERE id = $1 RETURNING *`,
+        [id, ...cols.map((c) => d[c])]
+      );
+      if (row.current_employee_id) {
+        const by = (itUser && (itUser.uid || itUser.id)) || null;
+        const byName = (itUser && (itUser.username || itUser.email)) || 'IT';
+        await t.query(
+          `INSERT INTO mobile_line_history
+             (line_id, phone_number, employee_id, employee_name, action_type, notes, changed_by, changed_by_name)
+           VALUES ($1,$2,$3,$4,'line_unassigned',$5,$6,$7)`,
+          [id, row.phone_number, row.current_employee_id, row.current_employee_name,
+            `İptal edildi${[row.operator, row.plan].filter(Boolean).length ? ' · ' + [row.operator, row.plan].filter(Boolean).join(' · ') : ''}`,
+            by, byName]
+        );
+      }
+      return mapRow(upd.rows[0]);
+    });
+  }
+
   const cols = Object.keys(d);
   const sets = cols.map((c, i) => `${c} = $${i + 2}`).join(', ');
   try {

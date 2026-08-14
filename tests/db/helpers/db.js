@@ -110,6 +110,18 @@ async function makeLicense(overrides = {}) {
   return rows[0];
 }
 
+async function makeLine(overrides = {}) {
+  const { query } = require('../../../src/providers/postgres/pool');
+  const n = uniq();
+  const { rows } = await query(
+    `INSERT INTO mobile_lines (phone_number, operator, plan, status)
+     VALUES ($1, $2, $3, $4) RETURNING id, phone_number, status, current_employee_id`,
+    [overrides.phoneNumber || `+90555${n.slice(-7)}`, overrides.operator || 'Turkcell',
+      overrides.plan || 'Kurumsal', overrides.status || 'Active']
+  );
+  return rows[0];
+}
+
 const IT_USER = { uid: '00000000-0000-0000-0000-0000000000ff', username: 'Tester', email: 'tester@test.local', role: 'Admin' };
 
 /** Run n functions at once and report which resolved and which threw. */
@@ -123,5 +135,5 @@ async function race(fns) {
 
 module.exports = {
   skipReason, setup, teardown, SCRATCH,
-  makeEmployee, makeAsset, makeLicense, IT_USER, race,
+  makeEmployee, makeAsset, makeLicense, makeLine, IT_USER, race,
 };
