@@ -4,6 +4,19 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.4.4] — 2026-08-16
+
+### Fixed
+- **Filing an HR request no longer hangs on email.** Creating an
+  onboarding/offboarding request waited for the best-effort IT-notification
+  email, so a slow or unreachable SMTP server stalled the requester's submit
+  until the timeout. The notification now runs in the background; the submit
+  returns immediately and the outcome is still recorded (notified_at /
+  notify_error).
+- **The cancel reason is now visible.** When IT rejects a request, the reason
+  was saved but never shown. The HR request list now displays it (full text
+  on hover) on cancelled rows.
+
 ## [1.4.3] — 2026-08-16
 
 ### Fixed
