@@ -4,6 +4,26 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.4.1] — 2026-08-16
+
+### Changed
+- **Redesigned the login and two-step verification screens.** A clean,
+  corporate look on a light technical ground: framed inputs with leading
+  icons, a distinct card, and a footer that shows the running app version.
+  The change is presentational plus input handling — every form id, field
+  name, error box and submit handler is unchanged, so authentication and
+  server-side MFA verification behave exactly as before.
+
+### Added
+- A **password reveal** toggle on the login field.
+- **Segmented six-digit MFA entry** — one box per digit with auto-advance,
+  backspace, and arrow-key navigation. Pasting (or an authenticator that
+  autofills every digit into one box) distributes across all six. A
+  hidden **backup-code** toggle covers the "can't reach my phone" case, and
+  the boxes shake on a rejected code.
+- The running version is shown on the login footer.
+- New `login.*` interface strings translated across all twelve UI languages.
+
 ## [1.4.0] — 2026-08-13
 
 ### Added
