@@ -310,6 +310,10 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_backup_hashes TEXT[] NOT NULL DEF
 ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_pending_secret TEXT;
 -- Forced password change after portal temp-password email — also 030_must_change_password.sql
 ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT false;
+-- Per-account brute-force lockout — also 052_login_lockout.sql
+ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_login_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_until       TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_failed_at     TIMESTAMPTZ;
 
 CREATE TABLE IF NOT EXISTS jwt_denylist (
   jti         TEXT PRIMARY KEY,

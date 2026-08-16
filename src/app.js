@@ -63,18 +63,26 @@ function createApp() {
     next();
   });
 
-  // Coarse abuse guard for the whole API: 1000 requests / 5 min / IP.
+  // Coarse abuse guard for the whole API — a per-IP DoS backstop only. The real
+  // brute-force protection is per-account (login lockout) and the fair-use limit
+  // is per-user (after auth). Trusted networks (e.g. the office egress behind
+  // NAT) are exempt so a shared IP isn't throttled as one visitor.
   const { rateLimitIp } = require('./utils/setupAccess');
+  const { ipInCidrList } = require('./utils/ipMatch');
+  const API_LIMIT = config.security.apiRateLimit;
+  const API_WINDOW = config.security.apiRateWindowMs;
+  const TRUSTED_CIDRS = config.security.trustedCidrs;
   const apiHits = new Map();
   app.use('/api', (req, res, next) => {
-    const now = Date.now();
     const ipKey = rateLimitIp(req);
+    if (TRUSTED_CIDRS.length && ipInCidrList(ipKey, TRUSTED_CIDRS)) return next();
+    const now = Date.now();
     let entry = apiHits.get(ipKey);
     if (!entry || now > entry.resetAt) {
-      entry = { count: 0, resetAt: now + 5 * 60 * 1000 };
+      entry = { count: 0, resetAt: now + API_WINDOW };
       apiHits.set(ipKey, entry);
     }
-    if (++entry.count > 1000) {
+    if (++entry.count > API_LIMIT) {
       return res.status(429).json({ success: false, error: 'Too many requests — slow down' });
     }
     // Memory guard: sweep only EXPIRED buckets so a flood of throwaway IPs cannot

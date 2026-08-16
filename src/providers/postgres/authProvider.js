@@ -165,16 +165,84 @@ async function assertPortalEmployeeActive(user) {
   }
 }
 
+/* ---- Per-account brute-force lockout (persisted on the user row) ----
+ * Keyed on the account, not the IP, so a whole office behind one NAT IP never
+ * locks colleagues out and the lock survives a restart. The coarse per-IP login
+ * backstop in auth.routes.js still covers spraying across unknown emails. */
+
+/** Throw 429 when the account is currently locked. No-op for unknown accounts. */
+function assertNotLocked(user) {
+  if (!user || !user.locked_until) return;
+  const until = new Date(user.locked_until).getTime();
+  if (until > Date.now()) {
+    const mins = Math.max(1, Math.ceil((until - Date.now()) / 60000));
+    throw HttpError.tooMany(`Too many failed attempts — account locked. Try again in ${mins} min.`);
+  }
+}
+
+/** Record a failed attempt; lock the account once the fail count hits the limit. */
+async function recordLoginFailure(user, meta = {}) {
+  if (!user) return; // unknown email → nothing to persist; per-IP backstop covers it
+  const limit = config.security.loginFailLimit;
+  const { rows } = await query(
+    `UPDATE users
+        SET failed_login_count = failed_login_count + 1,
+            last_failed_at = now(),
+            locked_until = CASE WHEN failed_login_count + 1 >= $2
+                                THEN now() + make_interval(secs => $3)
+                                ELSE locked_until END
+      WHERE id = $1
+      RETURNING failed_login_count, locked_until`,
+    [user.id, limit, config.security.loginLockMs / 1000]
+  );
+  const row = rows[0];
+  if (row && row.locked_until && new Date(row.locked_until).getTime() > Date.now()
+      && Number(row.failed_login_count) >= limit) {
+    auditLockout(user, Number(row.failed_login_count), meta);
+  }
+}
+
+/** Reset the fail counter + lock after a correct password. */
+async function clearLoginFailure(userId) {
+  await query(
+    `UPDATE users SET failed_login_count = 0, locked_until = NULL
+      WHERE id = $1 AND (failed_login_count <> 0 OR locked_until IS NOT NULL)`,
+    [userId]
+  );
+}
+
+/** Fire-and-forget audit alarm when an account crosses into a locked state. */
+function auditLockout(user, count, meta) {
+  try {
+    require('./auditService').logEvent({
+      action: 'auth.login.locked',
+      source: 'auth',
+      summary: `Account locked after ${count} failed login attempts: ${user.email}`,
+      entityType: 'user',
+      entityId: user.id,
+      entityLabel: user.email,
+      ip: (meta && meta.ip) || null,
+      userAgent: (meta && meta.userAgent) || null,
+      meta: { failedCount: count },
+    }).catch(() => {});
+  } catch { /* never block login on audit */ }
+}
+
 async function login({ email, password, rememberMe }, meta = {}) {
   if (!email || !password) throw HttpError.badRequest('email and password are required');
 
   const { rows } = await query('SELECT * FROM users WHERE email = $1', [email.toLowerCase()]);
   const user = rows[0];
+  assertNotLocked(user);
   const match = await bcrypt.compare(password, user ? user.password_hash : DUMMY_HASH);
   const valid = user && match;
-  if (!valid) throw HttpError.unauthorized('Invalid email or password');
+  if (!valid) {
+    await recordLoginFailure(user, meta);
+    throw HttpError.unauthorized('Invalid email or password');
+  }
   if (user.status === 'Disabled') throw HttpError.forbidden('This account has been disabled — contact your Owner');
   await assertPortalEmployeeActive(user);
+  await clearLoginFailure(user.id);
 
   const remember = !!rememberMe;
   if (user.mfa_enabled && user.mfa_secret) {

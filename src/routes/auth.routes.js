@@ -5,13 +5,20 @@ const crypto = require('crypto');
 const { authProvider, permissionService, notificationService } = require('../services');
 const { HttpError } = require('../utils/httpError');
 const { rateLimitIp } = require('../utils/setupAccess');
+const { ipInCidrList } = require('../utils/ipMatch');
+const config = require('../config');
 
-// Brute-force protection: max 20 *failed* login attempts per IP per 15 minutes.
-// Uses rateLimitIp (TCP peer unless TRUST_PROXY) so X-Forwarded-For cannot rotate buckets.
+// Per-IP login backstop: max 20 *failed* attempts per IP per 15 minutes — catches
+// spraying across many unknown emails from one source. The precise, per-account
+// lockout lives in authProvider. Trusted networks (office egress behind NAT) are
+// exempt here so colleagues sharing an IP don't lock each other out; each of
+// their accounts is still protected individually by the per-account lockout.
 const loginAttempts = new Map();
 function loginLimiter(req, res, next) {
   const now = Date.now();
   const ipKey = rateLimitIp(req);
+  const trusted = config.security.trustedCidrs;
+  if (trusted.length && ipInCidrList(ipKey, trusted)) return next();
   req._loginIpKey = ipKey;
   let entry = loginAttempts.get(ipKey);
   if (!entry || now > entry.resetAt) {

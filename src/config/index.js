@@ -55,6 +55,26 @@ const config = {
   // Uploaded documents (scans, repair paperwork) — persisted outside BYTEA.
   dataDir: trimmedEnv('DATA_DIR') || path.join(process.cwd(), 'data'),
 
+  /**
+   * Abuse / brute-force controls. Keyed by WHO, not only WHERE, so a whole
+   * office behind one NAT IP isn't throttled as a single visitor:
+   *   - coarse per-IP API guard (src/app.js) — DoS backstop, exempt for trusted CIDRs
+   *   - per-user API fairness (src/middleware/auth.js) — after auth, keyed on uid
+   *   - per-account login lockout (authProvider) — keyed on email, persisted in DB
+   * All limits are env-tunable so a large office can loosen them without a code change.
+   */
+  security: {
+    apiRateLimit: Number(trimmedEnv('API_RATE_LIMIT')) || 1000,
+    apiRateWindowMs: (Number(trimmedEnv('API_RATE_WINDOW_SEC')) || 300) * 1000,
+    userRateLimit: Number(trimmedEnv('USER_RATE_LIMIT')) || 600,
+    userRateWindowMs: (Number(trimmedEnv('USER_RATE_WINDOW_SEC')) || 300) * 1000,
+    loginFailLimit: Number(trimmedEnv('LOGIN_FAIL_LIMIT')) || 10,
+    loginLockMs: (Number(trimmedEnv('LOGIN_LOCK_MIN')) || 15) * 60 * 1000,
+    // IPs/CIDRs exempt from the coarse per-IP API guard — e.g. the office egress
+    // behind NAT. Per-account login lockout still applies. Comma separated.
+    trustedCidrs: trimmedEnv('RATE_LIMIT_TRUSTED_CIDRS').split(',').map((s) => s.trim()).filter(Boolean),
+  },
+
   // Opt-in upstream update check. When on, the server asks GitHub once a day
   // whether a newer release exists and surfaces it to the Owner. OFF by default
   // so air-gapped / offline installs never reach out. GITHUB_TOKEN is optional

@@ -14,8 +14,25 @@
  */
 const { authProvider } = require('../providers');
 const { HttpError } = require('../utils/httpError');
+const config = require('../config');
 const { needsMfaEnrollment, isMfaEnrollmentAllowedPath } = require('../utils/mfaPolicy');
 const { needsPasswordChange, isPasswordChangeAllowedPath } = require('../utils/passwordPolicy');
+
+// Per-user fair-use limit for interactive (JWT) sessions. Keyed on the account,
+// not the IP, so a whole office behind one NAT IP each gets its own budget
+// instead of sharing one bucket. API keys are exempt — they are machine
+// integrations that may legitimately burst, and are covered by the per-IP guard.
+const userHits = new Map();
+function enforceUserRate(uid) {
+  if (!uid) return;
+  const now = Date.now();
+  let e = userHits.get(uid);
+  if (!e || now > e.resetAt) { e = { count: 0, resetAt: now + config.security.userRateWindowMs }; userHits.set(uid, e); }
+  if (userHits.size > 20000) {
+    for (const [k, v] of userHits) { if (now > v.resetAt) userHits.delete(k); }
+  }
+  if (++e.count > config.security.userRateLimit) throw HttpError.tooMany('Too many requests — slow down');
+}
 // Allowlist of the endpoints a Portal (self-service employee) account may reach:
 // its own zimmet plus the self-service auth actions. Everything else is 403.
 const { isPortalAllowedPath } = require('../utils/portalPolicy');
@@ -95,6 +112,7 @@ async function authenticate(req, res, next) {
     // customConstraints) from the users row it has to read anyway.
     req.user = await authProvider.verifyToken(token);
 
+    enforceUserRate(req.user && req.user.uid);
     applyPostAuthGates(req);
 
     next();
