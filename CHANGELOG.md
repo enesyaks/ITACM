@@ -4,6 +4,14 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.5.2] — 2026-08-16
+
+### Changed
+- The account-lockout audit event now shows a friendly, translated label
+  (short title + explanation, all 12 languages) instead of an English
+  segment-derived fallback. It reads cleanly in the audit log under the
+  Authentication source.
+
 ## [1.5.1] — 2026-08-16
 
 ### Fixed
