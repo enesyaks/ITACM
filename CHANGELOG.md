@@ -4,6 +4,23 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.5.0] — 2026-08-16
+
+### Added
+- **Identity-based abuse protection.** Rate limits were keyed only on IP, so a
+  whole office behind one NAT IP was throttled — and could lock each other
+  out — as a single visitor. They now key on *who*, not only *where*:
+  - **Per-account login lockout**, persisted on the user (migration 052), so
+    one person's mistyped password never locks colleagues out and the lock
+    survives a restart. Crossing into a locked state is written to the audit log.
+  - **Per-user fair-use limit** for interactive (JWT) sessions — each user gets
+    their own request budget instead of sharing an IP bucket. API keys are exempt.
+  - **Trusted-network exemption** (`RATE_LIMIT_TRUSTED_CIDRS`) for the coarse
+    per-IP guard and the per-IP login backstop — e.g. the office egress behind
+    NAT. Authentication and the per-account lockout are never exempted.
+- All thresholds and windows are environment-tunable (`API_RATE_LIMIT`,
+  `USER_RATE_LIMIT`, `LOGIN_FAIL_LIMIT`, `LOGIN_LOCK_MIN`, …) — see `.env.example`.
+
 ## [1.4.4] — 2026-08-16
 
 ### Fixed
