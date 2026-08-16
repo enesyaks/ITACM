@@ -289,6 +289,19 @@ Rate-limiting and brute-force protection key on the client IP, so when a proxy s
 - **Lock the origin to the proxy.** With `TRUST_PROXY=1` the app trusts those IP headers, so a client reaching the origin directly could spoof them. Use a **Cloudflare Tunnel** (origin has no public port), or firewall the origin to [Cloudflare's IP ranges](https://www.cloudflare.com/ips/) + enable Authenticated Origin Pulls.
 - In Cloudflare, **turn OFF Rocket Loader, Auto Minify (JS/HTML) and Email Obfuscation** — they rewrite/inject scripts and the strict `script-src 'self'` CSP will block them. Use SSL mode **Full (strict)** and a cache rule that **bypasses `/api/*`**.
 
+### Shared-IP offices (NAT)
+
+Limits key on **who**, not only **where**: a coarse per-IP guard, a per-user fair-use limit once you're logged in, and a per-**account** login lockout (persisted, so one colleague's mistyped password never locks the rest of the office out). So many people sharing one office IP are normally fine.
+
+If a busy office still hits the coarse per-IP guard, exempt its **public egress IP** — find it from an office machine with `curl ifconfig.me`:
+
+```bash
+# .env  (single IP; comma-separate or use a CIDR for a range)
+RATE_LIMIT_TRUSTED_CIDRS=203.0.113.7/32
+```
+
+Then `docker compose up -d`. The exemption relaxes only the coarse per-IP guard — **authentication and the per-account login lockout still apply**. Behind a proxy/ALB you must also set `TRUST_PROXY=1`, or the app sees the proxy's IP instead of the office's and the match won't fire.
+
 For managed platforms (Railway, Render, Fly.io, Cloud Run…), deploy the `Dockerfile`, attach a Postgres add-on, and set the same environment variables (`DATABASE_URL`, `PGSSL=true`, `JWT_SECRET`, `ADMIN_*`, and `TRUST_PROXY=1` since these run behind a load balancer). The schema and migrations are applied automatically on startup.
 
 ---
@@ -386,6 +399,10 @@ docker compose exec api npm run reset-password -- owner@example.com --password '
 | `JWT_EXPIRES_IN` | – | Token lifetime (default `12h`) |
 | `ADMIN_EMAIL` / `ADMIN_USERNAME` / `ADMIN_PASSWORD` | – | First-run Owner seed (password auto-generated if empty) |
 | `TRUST_PROXY` | – | `1` (or a hop count) when behind a reverse proxy / Cloudflare, so rate limits key on the real client IP. Off by default. |
+| `RATE_LIMIT_TRUSTED_CIDRS` | – | Comma-separated IPs/CIDRs exempt from the coarse per-IP API guard — e.g. your office egress IP behind NAT (`203.0.113.7/32`). Authentication and the per-account login lockout are never exempted. Blank by default. |
+| `API_RATE_LIMIT` / `API_RATE_WINDOW_SEC` | – | Coarse per-IP API guard — requests per window (default `1000` / `300`s). |
+| `USER_RATE_LIMIT` / `USER_RATE_WINDOW_SEC` | – | Per-user fair-use limit for logged-in sessions (default `600` / `300`s). |
+| `LOGIN_FAIL_LIMIT` / `LOGIN_LOCK_MIN` | – | Failed logins before an account is locked, and how long it stays locked (default `10` / `15` min). Keyed per-account and persisted in the DB. |
 | `APP_URL` | – | Public URL used in outbound email links. Prefer setting it in-app (Integrations → Notifications → App URL); this env var is the fallback. Defaults to `http://localhost:8000`. |
 | `APP_DOMAIN` | – | Domain for the HTTPS compose profiles (`--profile tls` / `--profile cloudflare`). |
 | `AI_ENABLED` / `AI_PROVIDER` / `AI_MODEL` / `AI_BASE_URL` / `AI_API_KEY` | – | AI assistant defaults (optional). Normally configured in **Integrations → AI**, not via env. Assistant is off unless enabled. |
@@ -463,7 +480,8 @@ If **any** asset is locked, the API returns `409` with a per-asset conflict list
 - **Auth:** passwords are bcrypt-hashed (cost 12); JWTs are signed HS256 with the algorithm **pinned** on verify; login uses a single error message and a constant-time compare (dummy hash for unknown emails) so it can't be used to enumerate accounts; every request re-checks the user row so role changes / disables / deletes apply instantly; **`Owner` accounts must have TOTP MFA enabled** — until they do, the middleware blocks every route except MFA enrolment, token verification and logout.
 - **Access control:** every API router mounts `authenticate`, and mutating routes add `requireRole(...)`. The audit log **redacts** sensitive keys (passwords, tokens, keys) before persisting.
 - **Uploads:** document routes validate the real file type by **magic bytes** (not the client's claim) and cap each file at 8 MB; downloads set a sanitized `Content-Disposition`. All SQL is parameterized; all rendered values are HTML-escaped.
-- **Hardening:** strict Content-Security-Policy (no inline scripts, self-only), HSTS, nosniff / frame-deny / referrer / permissions-policy headers, login rate-limiting (20 / 15 min / IP), global API rate limit (1000 / 5 min / IP), same-origin-only CORS by default, 1 MB default body limit, `x-powered-by` disabled, a one-shot onboarding endpoint that locks itself after first use, and an `npm audit`-clean dependency tree.
+- **Abuse protection keys on identity, not just IP:** a per-**account** login lockout (persisted, `LOGIN_FAIL_LIMIT` / `LOGIN_LOCK_MIN`, audited on trip) so a shared office IP never locks colleagues out; a per-**user** fair-use limit for logged-in sessions; and a coarse per-IP API guard as a DoS backstop, with trusted networks exemptable (`RATE_LIMIT_TRUSTED_CIDRS`). All thresholds are env-tunable.
+- **Hardening:** strict Content-Security-Policy (no inline scripts, self-only), HSTS, nosniff / frame-deny / referrer / permissions-policy headers, same-origin-only CORS by default, 1 MB default body limit, `x-powered-by` disabled, a one-shot onboarding endpoint that locks itself after first use, and an `npm audit`-clean dependency tree.
 - **Transport:** front the API with HTTPS (Caddy / Nginx / Traefik). Set `CORS_ORIGINS` to your exact frontend origin if it differs.
 
 ---

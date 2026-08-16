@@ -76,6 +76,17 @@ services:
       PORT: 8000
       # Set TRUST_PROXY=1 only behind a reverse proxy that sanitizes X-Forwarded-For.
       TRUST_PROXY: ${TRUST_PROXY:-0}
+      # Rate limiting / brute-force (all optional; see .env.example). Set
+      # RATE_LIMIT_TRUSTED_CIDRS to your office egress IP (e.g. 203.0.113.7/32)
+      # so many colleagues behind one NAT IP aren't throttled as one visitor;
+      # authentication and the per-account login lockout still apply.
+      API_RATE_LIMIT: ${API_RATE_LIMIT:-1000}
+      API_RATE_WINDOW_SEC: ${API_RATE_WINDOW_SEC:-300}
+      USER_RATE_LIMIT: ${USER_RATE_LIMIT:-600}
+      USER_RATE_WINDOW_SEC: ${USER_RATE_WINDOW_SEC:-300}
+      LOGIN_FAIL_LIMIT: ${LOGIN_FAIL_LIMIT:-10}
+      LOGIN_LOCK_MIN: ${LOGIN_LOCK_MIN:-15}
+      RATE_LIMIT_TRUSTED_CIDRS: ${RATE_LIMIT_TRUSTED_CIDRS:-}
       ONBOARDING_VIDEO_URL: ${ONBOARDING_VIDEO_URL:-}
       # AI assistant (optional — enable in Integrations → AI, or set AI_ENABLED=1)
       AI_ENABLED: ${AI_ENABLED:-}
