@@ -4,6 +4,22 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.4.3] — 2026-08-16
+
+### Fixed
+- **Slow actions no longer look frozen.** Confirmation dialogs (grant portal
+  access, deletes, revokes) and the onboarding/offboarding request submit
+  buttons now show a spinner while the request is in flight, instead of
+  sitting idle.
+- **Granting portal access hung ~15s** when SMTP was unreachable. The SMTP
+  connect/greeting timeouts are shortened to 8s (socket 12s), so a
+  misconfigured mail server fails fast and the temporary password is
+  revealed without the long wait.
+
+### Changed
+- Rejecting an onboarding/offboarding request now opens an in-app reason
+  dialog instead of the browser's native `prompt()`.
+
 ## [1.4.2] — 2026-08-16
 
 ### Added
