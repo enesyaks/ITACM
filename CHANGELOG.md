@@ -4,6 +4,15 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.5.1] — 2026-08-16
+
+### Fixed
+- The v1.5.0 rate-limit settings are now passed through `docker-compose.yml`
+  (they are listed explicitly, so they previously never reached the container).
+  Setting `RATE_LIMIT_TRUSTED_CIDRS` — or any other threshold — in `.env` now
+  takes effect. Documented the office / shared-IP (NAT) setup and every new
+  variable in the README.
+
 ## [1.5.0] — 2026-08-16
 
 ### Added
