@@ -4,6 +4,13 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.4.2] — 2026-08-16
+
+### Added
+- A subtle light that travels around the login card's frame — a masked
+  conic-gradient beam with a soft glow, purely decorative and frozen under
+  `prefers-reduced-motion`.
+
 ## [1.4.1] — 2026-08-16
 
 ### Changed
