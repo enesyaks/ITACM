@@ -684,7 +684,9 @@ function showLogin() {
   else if (typeof syncMobileChrome === 'function') syncMobileChrome();
   if (typeof applyStaticI18n === 'function') applyStaticI18n();
   applyBranding();
-  $('#login-mode-note').textContent = 'IT Asset Control Pro';
+  $('#login-mode-note').textContent = (AppConfig && AppConfig.version)
+    ? `v${AppConfig.version}`
+    : 'IT Asset Control Pro';
   const loginForm = $('#login-form');
   const mfaForm = $('#mfa-form');
   if (loginForm) loginForm.classList.remove('hidden');
@@ -3563,6 +3565,21 @@ async function init() {
   const rememberBox = $('#login-remember');
   if (rememberBox) rememberBox.checked = rememberPref;
 
+  const revealBtn = $('#login-reveal');
+  if (revealBtn) {
+    revealBtn.addEventListener('click', () => {
+      const input = $('#login-form').elements.password;
+      if (!input) return;
+      const reveal = input.type === 'password';
+      input.type = reveal ? 'text' : 'password';
+      const icon = revealBtn.querySelector('.ms');
+      if (icon) icon.textContent = reveal ? 'visibility_off' : 'visibility';
+      const label = t(reveal ? 'login.hidePassword' : 'login.showPassword');
+      revealBtn.title = label;
+      revealBtn.setAttribute('aria-label', label);
+    });
+  }
+
   $('#login-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const btn = $('#login-btn');
@@ -3582,7 +3599,10 @@ async function init() {
         mfaForm.classList.remove('hidden');
         mfaForm.dataset.mfaToken = result.mfaToken;
         mfaForm.dataset.rememberMe = rememberMe ? '1' : '0';
-        mfaForm.elements.code.focus();
+        const acct = $('#mfa-account');
+        if (acct) acct.textContent = email;
+        const firstCell = mfaForm.querySelector('.mfa-cell');
+        (firstCell || mfaForm.elements.code).focus();
         return;
       }
       showApp();
@@ -3616,6 +3636,7 @@ async function init() {
       } catch (err) {
         errBox.textContent = err.message;
         errBox.classList.remove('hidden');
+        mfaForm.classList.add('bad');
       } finally {
         btn.disabled = false;
       }
@@ -3628,6 +3649,80 @@ async function init() {
       $('#login-form').classList.remove('hidden');
       $('#mfa-error').classList.add('hidden');
     });
+
+    // Segmented 6-digit code: auto-advance, backspace, paste-distribute; the
+    // joined value is mirrored into the hidden name="code" the submit reads.
+    const codeWrap = mfaForm.querySelector('#mfa-code');
+    if (codeWrap) {
+      const cells = Array.from(codeWrap.querySelectorAll('.mfa-cell'));
+      const hidden = mfaForm.elements.code;
+      const verifyBtn = $('#mfa-btn');
+      const backupWrap = $('#mfa-backup');
+      const backupInput = mfaForm.elements.backupCode;
+      const toggleLink = $('#mfa-toggle-backup');
+      const joined = () => cells.map((c) => c.value).join('');
+      const sync = () => {
+        cells.forEach((c) => c.classList.toggle('filled', !!c.value));
+        hidden.value = joined();
+        const backupOn = backupWrap && backupWrap.classList.contains('show');
+        const ok = joined().length === cells.length
+          || (backupOn && backupInput.value.trim().length >= 4);
+        verifyBtn.disabled = !ok;
+      };
+      cells.forEach((cell, idx) => {
+        cell.addEventListener('input', () => {
+          const digits = cell.value.replace(/\D/g, '');
+          if (digits.length > 1) {
+            for (let k = 0; k < digits.length && idx + k < cells.length; k += 1) cells[idx + k].value = digits[k];
+            cells[Math.min(idx + digits.length, cells.length - 1)].focus();
+          } else {
+            cell.value = digits;
+            if (digits && idx < cells.length - 1) cells[idx + 1].focus();
+          }
+          mfaForm.classList.remove('bad');
+          sync();
+        });
+        cell.addEventListener('keydown', (e) => {
+          if (e.key === 'Backspace' && !cell.value && idx > 0) {
+            cells[idx - 1].focus(); cells[idx - 1].value = ''; sync(); e.preventDefault();
+          } else if (e.key === 'ArrowLeft' && idx > 0) {
+            cells[idx - 1].focus();
+          } else if (e.key === 'ArrowRight' && idx < cells.length - 1) {
+            cells[idx + 1].focus();
+          }
+        });
+        cell.addEventListener('paste', (e) => {
+          e.preventDefault();
+          const raw = (e.clipboardData || window.clipboardData).getData('text') || '';
+          const digits = raw.replace(/\D/g, '').slice(0, cells.length).split('');
+          digits.forEach((d, i) => { if (cells[i]) cells[i].value = d; });
+          (cells[Math.min(digits.length, cells.length - 1)] || cell).focus();
+          sync();
+        });
+      });
+      if (backupInput) backupInput.addEventListener('input', sync);
+      if (toggleLink && backupWrap) {
+        toggleLink.addEventListener('click', () => {
+          backupWrap.classList.toggle('show');
+          const on = backupWrap.classList.contains('show');
+          toggleLink.textContent = t(on ? 'login.mfaBackToCode' : 'login.mfaUseBackup');
+          if (on) backupInput.focus(); else if (cells[0]) cells[0].focus();
+          sync();
+        });
+      }
+      mfaForm.addEventListener('reset', () => {
+        // reset() clears the native fields; run after so our derived state matches.
+        setTimeout(() => {
+          cells.forEach((c) => { c.value = ''; c.classList.remove('filled'); });
+          hidden.value = '';
+          if (backupWrap) backupWrap.classList.remove('show');
+          if (toggleLink) toggleLink.textContent = t('login.mfaUseBackup');
+          mfaForm.classList.remove('bad');
+          sync();
+        }, 0);
+      });
+      sync();
+    }
   }
 
   $('#logout-btn').addEventListener('click', () => logout());
