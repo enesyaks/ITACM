@@ -129,15 +129,36 @@ code, .mono { font-family: var(--mono); font-size: 12px; }
   box-shadow: 0 1px 2px rgba(18, 20, 40, 0.05), 0 24px 50px -24px rgba(24, 26, 55, 0.22);
   animation: login-panel-in 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
+/* A light that travels around the card's frame (conic beam masked to the border). */
+@property --login-beam {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
 .login-card::before {
   content: "";
   position: absolute;
-  left: 0; right: 0; top: 0;
-  height: 2px;
-  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
-  background: linear-gradient(90deg, transparent, var(--primary-container), transparent);
-  opacity: 0.75;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 2px;
+  background: conic-gradient(from var(--login-beam),
+    transparent 0deg,
+    transparent 232deg,
+    rgba(109, 92, 245, 0.35) 286deg,
+    #7c6cff 322deg,
+    #d6ccff 342deg,
+    #7c6cff 356deg,
+    transparent 360deg);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  filter: drop-shadow(0 0 5px rgba(124, 108, 255, 0.65));
+  pointer-events: none;
+  z-index: 2;
+  animation: login-beam-rotate 4.5s linear infinite;
 }
+@keyframes login-beam-rotate { to { --login-beam: 360deg; } }
 .login-logo { display: flex; gap: 12px; align-items: center; margin-bottom: 24px; }
 .login-logo h1 { margin: 0; font-size: 16px; font-weight: 800; letter-spacing: -0.02em; color: var(--on-surface); }
 .login-logo p { margin: 2px 0 0; color: var(--outline); font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; }
@@ -347,7 +368,8 @@ code, .mono { font-family: var(--mono); font-size: 12px; }
   .login-mesh,
   .login-grid,
   .login-blob,
-  .login-card {
+  .login-card,
+  .login-card::before {
     animation: none !important;
   }
 }
