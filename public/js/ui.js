@@ -825,10 +825,52 @@ function confirmModal(message, onYes) {
     foot: `<button class="btn btn-outline" data-close>${esc(t('common.cancel'))}</button>
            <button class="btn btn-danger" id="confirm-yes">${esc(t('common.confirm'))}</button>`,
     onMount(overlay) {
-      $('#confirm-yes', overlay).addEventListener('click', async () => {
+      const yes = $('#confirm-yes', overlay);
+      yes.addEventListener('click', async () => {
+        const label = yes.innerHTML;
+        yes.disabled = true;
+        yes.innerHTML = '<span class="btn-spin"></span>' + label;
         try { await onYes(); closeModal(); }
-        catch (err) { toast(err.message, 'error'); }
+        catch (err) { yes.disabled = false; yes.innerHTML = label; toast(err.message, 'error'); }
       });
+    },
+  });
+}
+
+/**
+ * In-app replacement for window.prompt: a stacked modal with a single field.
+ * `onSubmit(value)` runs on OK — it owns closing the modal(s) on success (call
+ * closeModal()/closeModal(true) inside it). If it throws, the modal stays open,
+ * the button re-enables, and the error is toasted. Cancel/backdrop/Esc dismiss.
+ * Opens with `stack:true`, so it can sit on top of another modal.
+ */
+function promptModal({ title, label, placeholder = '', value = '', multiline = false, okText, okDanger = false, required = false }, onSubmit) {
+  const field = multiline
+    ? `<textarea id="prompt-input" class="prompt-input" rows="3" placeholder="${esc(placeholder)}">${esc(value)}</textarea>`
+    : `<input id="prompt-input" type="text" class="prompt-input" placeholder="${esc(placeholder)}" value="${esc(value)}">`;
+  openModal({
+    title: title || t('common.confirm'),
+    stack: true,
+    body: `${label ? `<label class="prompt-label" for="prompt-input">${esc(label)}</label>` : ''}${field}`,
+    foot: `<button class="btn btn-outline" data-close>${esc(t('common.cancel'))}</button>
+           <button class="btn ${okDanger ? 'btn-danger' : 'btn-primary'}" id="prompt-ok">${esc(okText || t('common.ok') || 'OK')}</button>`,
+    onMount(overlay) {
+      const input = $('#prompt-input', overlay);
+      const okBtn = $('#prompt-ok', overlay);
+      if (input) setTimeout(() => input.focus(), 30);
+      const submit = async () => {
+        const val = input ? input.value : '';
+        if (required && !val.trim()) { if (input) input.focus(); return; }
+        const okLabel = okBtn.innerHTML;
+        okBtn.disabled = true;
+        okBtn.innerHTML = '<span class="btn-spin"></span>' + okLabel;
+        try { await onSubmit(val); }
+        catch (err) { okBtn.disabled = false; okBtn.innerHTML = okLabel; toast(err.message, 'error'); }
+      };
+      okBtn.addEventListener('click', submit);
+      if (input && !multiline) {
+        input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } });
+      }
     },
   });
 }

@@ -224,9 +224,12 @@ function buildTransport(smtp) {
     // STARTTLS on 587 when not using implicit TLS
     requireTLS: !secure && port === 587,
     auth,
-    connectionTimeout: 15000,
-    greetingTimeout: 15000,
-    socketTimeout: 20000,
+    // Kept short so an unreachable/misconfigured server fails fast on the
+    // interactive paths (grant portal access, test email) instead of leaving
+    // the UI hanging on a long TCP/greeting wait.
+    connectionTimeout: 8000,
+    greetingTimeout: 8000,
+    socketTimeout: 12000,
     // Prevent nodemailer from following unexpected redirects / local sockets.
     tls: { minVersion: 'TLSv1.2' },
   });

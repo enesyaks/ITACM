@@ -432,22 +432,22 @@ async function openHrRequestModal(requestId, el) {
         });
       }
       if (reject) {
-        reject.addEventListener('click', async () => {
-          const reason = prompt(t('hr.cancelReason'), '');
-          if (reason === null) return;
-          reject.disabled = true;
-          try {
+        reject.addEventListener('click', () => {
+          promptModal({
+            title: t('hr.reject'),
+            label: t('hr.cancelReason'),
+            multiline: true,
+            okText: t('hr.reject'),
+            okDanger: true,
+          }, async (reason) => {
             await api('/hr/requests/' + encodeURIComponent(r.id) + '/cancel', {
               method: 'POST',
               body: { reason: reason },
             });
-            closeModal();
+            closeModal(true);
             toast(t('hr.cancelOk'), 'success');
             Views.dashboard(el);
-          } catch (err) {
-            reject.disabled = false;
-            toast(err.message, 'error');
-          }
+          });
         });
       }
     },

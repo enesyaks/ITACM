@@ -209,6 +209,8 @@ Views.hr = async function (el) {
         items.push({ category: cb.dataset.cat, qty: Number(qtyEl && qtyEl.value) || 1 });
       });
       onSubmit.disabled = true;
+      const onLabel = onSubmit.innerHTML;
+      onSubmit.innerHTML = '<span class="btn-spin"></span>' + esc(t('common.sending'));
       try {
         await api('/hr/onboard-requests', {
           method: 'POST',
@@ -226,6 +228,7 @@ Views.hr = async function (el) {
         Views.hr(el);
       } catch (e) {
         onSubmit.disabled = false;
+        onSubmit.innerHTML = onLabel;
         err.textContent = e.message;
         err.classList.remove('hidden');
       }
@@ -244,6 +247,8 @@ Views.hr = async function (el) {
         return;
       }
       offSubmit.disabled = true;
+      const offLabel = offSubmit.innerHTML;
+      offSubmit.innerHTML = '<span class="btn-spin"></span>' + esc(t('common.sending'));
       try {
         await api('/hr/offboard-requests', {
           method: 'POST',
@@ -257,6 +262,7 @@ Views.hr = async function (el) {
         Views.hr(el);
       } catch (e) {
         offSubmit.disabled = false;
+        offSubmit.innerHTML = offLabel;
         err.textContent = e.message;
         err.classList.remove('hidden');
       }

@@ -5803,3 +5803,9 @@ body.ai-open .ai-panel { opacity: 1; visibility: visible; transform: none; }
 .view-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; min-height: 48vh; color: var(--on-surface-variant); }
 .view-loading .spinner { width: 34px; height: 34px; border-radius: 50%; border: 3px solid var(--surface-container); border-top-color: var(--primary); animation: itacm-spin .8s linear infinite; }
 .view-loading span { font-size: 13px; }
+/* Inline spinner for a button that is mid-request. */
+.btn-spin { display: inline-block; width: 15px; height: 15px; vertical-align: -2px; margin-right: 7px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, .45); border-top-color: #fff; animation: itacm-spin .7s linear infinite; }
+.btn-outline .btn-spin, .btn-ghost .btn-spin { border-color: var(--outline-variant); border-top-color: var(--primary); }
+/* In-app prompt modal (replaces window.prompt). */
+.prompt-label { display: block; font-size: 12px; font-weight: 600; color: var(--on-surface-variant); margin-bottom: 8px; }
+.prompt-input { width: 100%; }
