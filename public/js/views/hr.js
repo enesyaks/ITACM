@@ -86,6 +86,15 @@ Views.hr = async function (el) {
 
   function actionsFor(r) {
     if (r.status !== 'pending') {
+      // A cancelled ticket surfaces WHY it was rejected (full text on hover),
+      // so the requester isn't left guessing.
+      if (r.status === 'cancelled') {
+        const reason = String(r.cancelReason || '').trim();
+        if (!reason) return '<span class="cell-sub">' + esc(t('hr.cancelledNoReason')) + '</span>';
+        const short = reason.length > 60 ? reason.slice(0, 60) + '…' : reason;
+        return '<span class="cell-sub" title="' + esc(reason) + '">'
+          + '<span class="ms" style="font-size:14px;vertical-align:-2px">info</span> ' + esc(short) + '</span>';
+      }
       // Three distinct end states, not two: IT picked it up, IT scheduled the
       // onboarding, or the kit is actually in the person's hands.
       if (r.fulfilledAt) {

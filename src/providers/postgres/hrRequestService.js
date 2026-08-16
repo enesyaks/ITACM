@@ -270,7 +270,10 @@ async function createOnboardRequest(body, user) {
     entityLabel: fullName,
     meta: { type: 'onboard', eventDate, itemCount: items.length, employeeId: data.employeeId || null },
   });
-  await notifyRequest(data);
+  // Best-effort IT notification runs in the background: a slow or unreachable
+  // SMTP server must not hold up the requester's submit. The outcome is still
+  // recorded on the row (notified_at / notify_error).
+  notifyRequest(data);
   return getRequest(requestId);
 }
 
@@ -325,7 +328,10 @@ async function createOffboardRequest(body, user) {
     entityLabel: data.fullName || '',
     meta: { type: 'offboard', eventDate, employeeId },
   });
-  await notifyRequest(data);
+  // Best-effort IT notification runs in the background: a slow or unreachable
+  // SMTP server must not hold up the requester's submit. The outcome is still
+  // recorded on the row (notified_at / notify_error).
+  notifyRequest(data);
   return getRequest(requestId);
 }
 

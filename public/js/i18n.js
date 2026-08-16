@@ -72,6 +72,7 @@
     'hr.cancelReason': L('Reason (optional):', 'Gerekçe (isteğe bağlı):'),
     'hr.cancelReasonPh': L('Why is this request being cancelled?', 'Bu talep neden iptal ediliyor?'),
     'hr.cancelOk': L('Request cancelled', 'Talep iptal edildi'),
+    'hr.cancelledNoReason': L('Cancelled — no reason given', 'İptal edildi — gerekçe belirtilmedi', 'Storniert — kein Grund angegeben', 'Annulé — aucun motif indiqué', 'Cancelado — sin motivo indicado', 'Annullato — nessun motivo indicato', 'Cancelado — sem motivo informado', 'Geannuleerd — geen reden opgegeven', 'Anulowano — bez podania powodu', 'Отменено — причина не указана', 'أُلغيت — لم يُذكر سبب', 'キャンセル — 理由なし'),
     'hr.rejectOk': L('Request rejected', 'Talep reddedildi'),
     'hr.ackOk': L('Request approved', 'Talep onaylandı'),
     'hr.ackOnboardOk': L('Approved — scheduled onboarding created', 'Onaylandı — planlı işe alım oluşturuldu'),
