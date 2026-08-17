@@ -10,6 +10,14 @@ const MAX_CELL_CHARS = 400;
 const FORBIDDEN_KEYWORDS = /\b(insert|update|delete|merge|upsert|into|drop|alter|create|truncate|grant|revoke|comment|copy|call|do|vacuum|analyze|reindex|cluster|lock|set|reset|show|begin|start|commit|rollback|savepoint|release|execute|prepare|deallocate|listen|notify|unlisten|discard|refresh|import|declare|fetch|move|close|attach|detach)\b/i;
 const BLOCKED_FUNCTIONS = /\b(pg_read_file|pg_read_binary_file|pg_ls_dir|pg_stat_file|lo_import|lo_export|lo_get|lo_put|dblink|pg_sleep|pg_terminate_backend|pg_cancel_backend|pg_reload_conf|pg_rotate_logfile|current_setting|set_config|txid_current|pg_catalog|information_schema)\b/i;
 
+// The read-only role is confined to the ai.* views, but PostgreSQL always keeps
+// pg_catalog implicitly on the search_path — so unqualified catalog relations
+// (pg_roles, pg_settings, pg_database, pg_stat_activity, …) and server-metadata
+// functions stay reachable and leak version / config / role names even though no
+// business data is exposed. The ai.* views never use a pg_/information_schema name,
+// so rejecting them outright is fail-safe. Complements the DB-role privileges.
+const BLOCKED_CATALOG = /\b(pg_[a-z0-9_]+|information_schema|version|current_database|current_catalog|current_schema|current_user|session_user|current_role|inet_server_addr|inet_server_port|inet_client_addr|inet_client_port)\b/i;
+
 // Each ai.* view maps to the app permission a user must already hold to read it,
 // so advanced_query cannot bypass the per-resource RBAC the other tools enforce.
 const VIEW_PERMISSIONS = {
@@ -63,6 +71,7 @@ function validateSql(raw) {
   }
   if (FORBIDDEN_KEYWORDS.test(bare)) throw HttpError.badRequest('Query contains a forbidden keyword');
   if (BLOCKED_FUNCTIONS.test(bare)) throw HttpError.badRequest('Query references a blocked function or schema');
+  if (BLOCKED_CATALOG.test(bare)) throw HttpError.badRequest('Query references a system catalog or server-metadata function');
   return sql;
 }
 
