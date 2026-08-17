@@ -4,6 +4,26 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.5.3] — 2026-08-17
+
+### Security
+- **Outbound SSRF filter hardening.** The private/reserved-IP guard that vets
+  Owner-configured SMTP hosts (and other outbound targets) only unwrapped the
+  dotted-decimal `::ffff:` spelling, so IPv4-mapped IPv6 in hex
+  (`::ffff:7f00:1` = 127.0.0.1, `::ffff:a9fe:a9fe` = 169.254.169.254), a
+  fully-expanded loopback (`0:0:0:0:0:0:0:1`), NAT64 (`64:ff9b::/96`) and
+  deprecated IPv4-compatible (`::a.b.c.d`) literals slipped through. The filter
+  now canonicalizes every IPv6 form to its embedded IPv4 / loopback before
+  applying the rules, and strips any zone-id suffix.
+- **AI advanced-query catalog lockdown.** The read-only role is confined to the
+  curated `ai.*` views, but `pg_catalog` is always implicitly on the
+  `search_path`, so unqualified system-catalog reads (`pg_roles`, `pg_settings`,
+  `pg_database`, …) and server-metadata functions (`version()`,
+  `current_database()`, …) still leaked server version, config and role names.
+  The query validator now rejects any `pg_*` / `information_schema` reference and
+  those metadata functions. No business data was ever exposed (the role holds no
+  table privileges); this closes the remaining metadata disclosure.
+
 ## [1.5.2] — 2026-08-16
 
 ### Changed
