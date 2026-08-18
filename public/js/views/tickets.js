@@ -40,12 +40,27 @@ Views.tickets = async function (el) {
   const canUpdate = Auth.canIam('ticket', 'update') || Auth.canIam('ticket', 'manage');
   const canAssign = Auth.canIam('ticket', 'assign') || Auth.canIam('ticket', 'manage');
 
-  const [tickets, staff, empRes, assetRes] = await Promise.all([
+  const [tickets, staff, empRes, assetRes, stats0] = await Promise.all([
     api('/tickets?open=1').catch(() => []),
     api('/auth/users').catch(() => []),
     api('/employees?status=Active&limit=1000').catch(() => ({ items: [] })),
     api('/assets?limit=1000').catch(() => ({ items: [] })),
+    api('/tickets/stats').catch(() => null),
   ]);
+
+  // KPI strip: open · unassigned · SLA-breached · resolved today.
+  const statsHtml = (s) => {
+    if (!s) return '';
+    const card = (label, val, icon, tone) => `<div class="card card-pad metric">
+      <div class="metric-top"><h3 class="card-title">${esc(label)}</h3>${iconChip(icon, tone)}</div>
+      <div class="metric-value">${val}</div></div>`;
+    return `<div class="grid grid-4" style="margin-bottom:16px">
+      ${card(t('tk.kpiOpen'), s.open, 'confirmation_number', 'indigo')}
+      ${card(t('tk.kpiUnassigned'), s.unassigned, 'person_off', s.unassigned ? 'amber' : 'emerald')}
+      ${card(t('tk.kpiBreached'), s.breached, 'warning', s.breached ? 'rose' : 'emerald')}
+      ${card(t('tk.kpiResolvedToday'), s.resolvedToday, 'task_alt', 'blue')}
+    </div>`;
+  };
   const staffList = Array.isArray(staff) ? staff : [];
   const staffName = (uid) => (staffList.find((u) => u.uid === uid) || {}).username || '';
 
@@ -78,6 +93,7 @@ Views.tickets = async function (el) {
     el.innerHTML = `
       ${pageHead(t('tk.title'), t('tk.subtitle'), canCreate
         ? `<button class="btn btn-primary" id="tk-new"><span class="ms">add</span> ${esc(t('tk.new'))}</button>` : '')}
+      <div id="tk-stats">${statsHtml(stats0)}</div>
       <div class="card card-pad" style="margin-bottom:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
         <select id="tk-f-status" class="ops-select">
           <option value="open">${esc(t('tk.filterOpen'))}</option>
@@ -121,6 +137,7 @@ Views.tickets = async function (el) {
     if (type) qs.set('type', type);
     if (mine && Auth.profile) qs.set('assignee', Auth.profile.uid);
     const list = await api('/tickets?' + qs.toString()).catch(() => []);
+    api('/tickets/stats').then((s) => { const box = $('#tk-stats', el); if (box && s) box.innerHTML = statsHtml(s); }).catch(() => {});
     const body = $('#tk-rows', el);
     if (body) body.innerHTML = list.length ? list.map(rowHtml).join('')
       : `<tr><td colspan="9" class="table-empty">${esc(t('tk.none'))}</td></tr>`;

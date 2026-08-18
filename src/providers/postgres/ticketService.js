@@ -206,6 +206,26 @@ async function listTickets(opts = {}) {
   return rows.map(decorateSla);
 }
 
+// Service-desk KPI counts for the stats strip. Breach is computed live (open
+// tickets past their resolution target) so it doesn't wait on the scheduler.
+async function stats() {
+  const { rows } = await query(`
+    SELECT
+      COUNT(*) FILTER (WHERE status NOT IN ('resolved','closed','cancelled')) AS open,
+      COUNT(*) FILTER (WHERE status NOT IN ('resolved','closed','cancelled') AND assignee_user_id IS NULL) AS unassigned,
+      COUNT(*) FILTER (WHERE status NOT IN ('resolved','closed','cancelled') AND resolved_at IS NULL
+                         AND resolve_due_at IS NOT NULL AND resolve_due_at < now()) AS breached,
+      COUNT(*) FILTER (WHERE resolved_at >= date_trunc('day', now())) AS resolved_today
+    FROM tickets`);
+  const r = rows[0] || {};
+  return {
+    open: Number(r.open) || 0,
+    unassigned: Number(r.unassigned) || 0,
+    breached: Number(r.breached) || 0,
+    resolvedToday: Number(r.resolved_today) || 0,
+  };
+}
+
 async function updateTicket(id, patch, user) {
   if (!isUuid(id)) throw HttpError.notFound('Ticket not found');
   const a = actor(user);
@@ -433,5 +453,5 @@ function audit(action, summary, a, entityId, label) {
 module.exports = {
   createTicket, getTicket, listTickets, updateTicket, addComment,
   createMyTicket, listMyTickets, getMyTicket, addMyComment,
-  sweepSlaBreaches, SLA_TARGETS,
+  sweepSlaBreaches, SLA_TARGETS, stats,
 };

@@ -35,6 +35,11 @@ router.post('/', requirePermission('ticket', 'create'), asyncHandler(async (req,
   res.status(201).json({ success: true, data: await ticketService.createTicket(req.body || {}, req.user) });
 }));
 
+// GET /api/tickets/stats — KPI counts for the service-desk strip (before /:id)
+router.get('/stats', requirePermission('ticket', 'read'), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await ticketService.stats() });
+}));
+
 // GET /api/tickets/:id — detail + comments + activity
 router.get('/:id', requirePermission('ticket', 'read'), asyncHandler(async (req, res) => {
   res.json({ success: true, data: await ticketService.getTicket(req.params.id, req.user) });
