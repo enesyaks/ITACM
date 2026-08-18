@@ -102,6 +102,7 @@ services:
       SSO_REDIRECT_URI: ${SSO_REDIRECT_URI:-}
       SSO_ALLOWED_DOMAINS: ${SSO_ALLOWED_DOMAINS:-}
       SSO_BUTTON_LABEL: ${SSO_BUTTON_LABEL:-}
+      SSO_REQUIRE: ${SSO_REQUIRE:-}
       ONBOARDING_VIDEO_URL: ${ONBOARDING_VIDEO_URL:-}
       # AI assistant (optional — enable in Integrations → AI, or set AI_ENABLED=1)
       AI_ENABLED: ${AI_ENABLED:-}

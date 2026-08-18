@@ -306,11 +306,19 @@ Then `docker compose up -d`. The exemption relaxes only the coarse per-IP guard 
 
 Let staff sign in with your identity provider (Google Workspace, Microsoft Entra, Okta, Auth0, Keycloak…). It's **invite-only and secure by design**:
 
-- SSO **never creates accounts** — it signs in a user who already exists in ITACM, matched by their **verified** email, then by the stable `(issuer, subject)` pair afterwards. Unknown emails are refused, so nobody self-provisions.
-- Authorization Code flow with **PKCE**; all token exchange is server-side and the ID token is validated against the provider's JWKS (`openid-client`). Optionally restrict to your email domain with `SSO_ALLOWED_DOMAINS`.
+- SSO **never creates accounts** — it signs in a user who already exists in ITACM, matched by their **verified** email (`email_verified` required), then by the stable `(issuer, subject)` pair afterwards. Unknown or unverified emails are refused, so nobody self-provisions.
+- Authorization Code flow with **PKCE**; all token exchange is server-side and the ID token is validated against the provider's JWKS (`openid-client`). The finished session reaches the browser via a **single-use** handoff ticket, never a long-lived token in the URL.
 - **Local password login stays available** as a break-glass path — if the IdP is down, an Owner can still get in.
 
-Register the redirect URI **verbatim** at the provider — `https://<your-host>/api/auth/sso/callback` — then set `SSO_ENABLED=1`, `SSO_ISSUER`, `SSO_CLIENT_ID`, `SSO_CLIENT_SECRET`, `SSO_REDIRECT_URI` in `.env`. Behind a proxy/ALB, `TRUST_PROXY=1` is required. A "Sign in with SSO" button then appears on the login screen.
+**Configure it from the UI** (recommended): sign in as Owner/Admin → **Integrations → Single sign-on (SSO)**. The panel shows the exact **redirect URI** to register at your provider, takes the issuer / client ID / client secret (the secret is **encrypted at rest** and never shown again), and has a **Test connection** button that verifies the provider before you enable it. Options:
+
+- **Allowed email domains** — restrict sign-in to e.g. `company.com`.
+- **Require SSO for staff** (optional, off by default) — when on, only an Owner may still use a password; everyone else must use SSO.
+- Custom **login-button label**.
+
+Then register the redirect URI **verbatim** at the provider — `https://<your-host>/api/auth/sso/callback` — enable, and a "Sign in with SSO" button appears on the login screen. Behind a proxy/ALB, set `TRUST_PROXY=1`. Admins can see which accounts are SSO-linked in **IT Users** and **unlink** one there.
+
+> Prefer env vars? The same settings exist as `SSO_ENABLED`, `SSO_ISSUER`, `SSO_CLIENT_ID`, `SSO_CLIENT_SECRET`, `SSO_REDIRECT_URI`, `SSO_ALLOWED_DOMAINS`, `SSO_BUTTON_LABEL`, `SSO_REQUIRE` (see below). UI config takes precedence once an issuer is saved there; otherwise the env values are used.
 
 For managed platforms (Railway, Render, Fly.io, Cloud Run…), deploy the `Dockerfile`, attach a Postgres add-on, and set the same environment variables (`DATABASE_URL`, `PGSSL=true`, `JWT_SECRET`, `ADMIN_*`, and `TRUST_PROXY=1` since these run behind a load balancer). The schema and migrations are applied automatically on startup.
 
@@ -415,9 +423,10 @@ docker compose exec api npm run reset-password -- owner@example.com --password '
 | `LOGIN_FAIL_LIMIT` / `LOGIN_LOCK_MIN` | – | Failed logins before an account is locked, and how long it stays locked (default `10` / `15` min). Keyed per-account and persisted in the DB. |
 | `BACKUP_ENABLED` | – | `1` turns on automatic nightly `pg_dump` backups (off by default). |
 | `BACKUP_HOUR` / `BACKUP_KEEP` / `BACKUP_DIR` | – | Backup hour `0–23` (default `3`), how many to retain (default `7`), and where they land (default `DATA_DIR/backups`). Each archive is verified as a complete, restorable dump; keep off-box copies too. |
-| `SSO_ENABLED` | – | `1` turns on invite-only OpenID Connect sign-in (off by default). |
-| `SSO_ISSUER` / `SSO_CLIENT_ID` / `SSO_CLIENT_SECRET` / `SSO_REDIRECT_URI` | – | OIDC provider settings. The redirect URI (`https://<host>/api/auth/sso/callback`) must be registered verbatim at the IdP. Secrets are env-only, never stored in the DB. |
+| `SSO_ENABLED` | – | `1` turns on invite-only OpenID Connect sign-in (off by default). Also configurable in the UI (Integrations → SSO), which takes precedence once an issuer is saved there. |
+| `SSO_ISSUER` / `SSO_CLIENT_ID` / `SSO_CLIENT_SECRET` / `SSO_REDIRECT_URI` | – | OIDC provider settings. The redirect URI (`https://<host>/api/auth/sso/callback`) must be registered verbatim at the IdP. Via env the secret stays in `.env`; via the UI it is encrypted in the DB. |
 | `SSO_ALLOWED_DOMAINS` / `SSO_BUTTON_LABEL` | – | Optional: restrict sign-in to these email domains, and the login-screen button text. |
+| `SSO_REQUIRE` | – | Optional. `1` requires staff to use SSO — only an Owner may still sign in with a password (break-glass). Off by default. |
 | `APP_URL` | – | Public URL used in outbound email links. Prefer setting it in-app (Integrations → Notifications → App URL); this env var is the fallback. Defaults to `http://localhost:8000`. |
 | `APP_DOMAIN` | – | Domain for the HTTPS compose profiles (`--profile tls` / `--profile cloudflare`). |
 | `AI_ENABLED` / `AI_PROVIDER` / `AI_MODEL` / `AI_BASE_URL` / `AI_API_KEY` | – | AI assistant defaults (optional). Normally configured in **Integrations → AI**, not via env. Assistant is off unless enabled. |
