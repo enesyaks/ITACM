@@ -38,6 +38,18 @@ async function getClient(cfg) {
   return client;
 }
 
+/** Verify the provider is reachable and returns valid OIDC metadata (no login). */
+async function discover(cfg) {
+  if (!cfg || !cfg.issuer) throw HttpError.badRequest('Set the issuer URL first');
+  const issuer = await Issuer.discover(cfg.issuer);
+  return {
+    issuer: issuer.metadata.issuer,
+    authorizationEndpoint: issuer.metadata.authorization_endpoint || null,
+    tokenEndpoint: issuer.metadata.token_endpoint || null,
+    jwksUri: issuer.metadata.jwks_uri || null,
+  };
+}
+
 /** Start a login: returns the IdP redirect URL + PKCE verifier / state / nonce. */
 async function beginAuth(cfg) {
   const client = await getClient(cfg);
@@ -67,4 +79,4 @@ async function completeAuth(cfg, callbackUrl, { codeVerifier, state, nonce }) {
   return tokenSet.claims();
 }
 
-module.exports = { isReady, beginAuth, completeAuth };
+module.exports = { isReady, discover, beginAuth, completeAuth };

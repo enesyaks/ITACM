@@ -185,7 +185,10 @@ Views.integrations = async function (el) {
             <input id="int-sso-label" value="${esc(sso.buttonLabel || '')}" placeholder="Sign in with Google"${inputDis}></div>
           <div class="form-field full"><label><input type="checkbox" id="int-sso-enabled" ${sso.enabled ? 'checked' : ''}${chkDis}> ${esc(t('int.sso.enable') || 'Enable SSO sign-in')}</label></div>
         </div>
-        ${canManage ? `<div style="margin-top:12px"><button class="btn btn-primary" id="int-sso-save">${esc(t('int.sso.save') || 'Save SSO')}</button></div>` : ''}
+        ${canManage ? `<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+          <button class="btn btn-primary" id="int-sso-save">${esc(t('int.sso.save') || 'Save SSO')}</button>
+          <button class="btn btn-outline" id="int-sso-test">${esc(t('int.sso.test') || 'Test connection')}</button>
+        </div>` : ''}
       </section>
 
       <section class="card card-pad" style="margin-bottom:16px">
@@ -453,6 +456,18 @@ GET /api/integrations/licenses/:id/sam
       toast(t('int.sso.saved') || 'SSO settings saved', 'success');
       Views.integrations(el);
     } catch (err) { toast(err.message, 'error'); }
+  });
+
+  $('#int-sso-test', el)?.addEventListener('click', async () => {
+    const btn = $('#int-sso-test', el);
+    const label = btn.textContent;
+    btn.disabled = true; btn.textContent = t('common.loading') || 'Loading…';
+    try {
+      const r = await api('/integrations/sso/test', { method: 'POST' });
+      toast((t('int.sso.testOk') || 'Provider reachable') + ' — ' + (r.issuer || ''), 'success');
+    } catch (err) {
+      toast((t('int.sso.testFail') || 'Could not reach provider') + ': ' + err.message, 'error');
+    } finally { btn.disabled = false; btn.textContent = label; }
   });
 
   $('#int-smtp-save', el)?.addEventListener('click', async () => {
