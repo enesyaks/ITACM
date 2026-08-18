@@ -4,6 +4,17 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.6.0] — 2026-08-18
+
+### Added
+- **Automatic nightly database backups** (opt-in, `BACKUP_ENABLED=1`). Once a
+  day at `BACKUP_HOUR` the scheduler streams `pg_dump --clean | gzip` into
+  `DATA_DIR/backups` and **verifies** each archive by fully decompressing it and
+  confirming the dump header — a truncated or corrupt backup is caught
+  immediately, not discovered at restore time. Keeps the newest `BACKUP_KEEP`
+  copies and records every outcome in the audit log. Tune with `BACKUP_HOUR`,
+  `BACKUP_KEEP`, `BACKUP_DIR`; store copies off-box too.
+
 ## [1.5.3] — 2026-08-17
 
 ### Security
