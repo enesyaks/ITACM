@@ -5826,6 +5826,11 @@ body.ai-open .ai-panel { opacity: 1; visibility: visible; transform: none; }
 .tk-sla { display: flex; flex-wrap: wrap; gap: 8px 22px; align-items: center; }
 .tk-sla > span { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
 
+/* Sortable table headers */
+th.tk-sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+th.tk-sortable:hover { color: var(--primary); }
+th.tk-sortable.active { color: var(--primary); }
+
 /* List/Board segmented toggle */
 .seg { display: inline-flex; border: 1px solid var(--outline-variant); border-radius: 10px; overflow: hidden; }
 .seg-btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; font-size: 13px; font-weight: 600;

@@ -43,13 +43,19 @@ Views.tickets = async function (el, params = {}) {
   const canManage = Auth.canIam('ticket', 'manage');
   let mode = localStorage.getItem('tk_mode') === 'board' ? 'board' : 'list';
 
-  const [tickets, staff, empRes, assetRes, stats0] = await Promise.all([
+  const [tickets, staff, empRes, assetRes, stats0, catsRes] = await Promise.all([
     api('/tickets?open=1').catch(() => []),
     api('/auth/users').catch(() => []),
     api('/employees?status=Active&limit=1000').catch(() => ({ items: [] })),
     api('/assets?limit=1000').catch(() => ({ items: [] })),
     api('/tickets/stats').catch(() => null),
+    api('/tickets/categories').catch(() => []),
   ]);
+  const catList = Array.isArray(catsRes) ? catsRes : [];
+  let sortKey = 'created';
+  let sortOrder = 'desc';
+  let searchTerm = '';
+  let searchTimer = null;
 
   // KPI strip: open · unassigned · SLA-breached · resolved today.
   const statsHtml = (s) => {
@@ -92,11 +98,15 @@ Views.tickets = async function (el, params = {}) {
       <td class="cell-sub">${esc(String(tk.createdAt || '').slice(0, 10))}</td>
     </tr>`;
 
+  const sortTh = (key, label) => {
+    const arrow = sortKey === key ? (sortOrder === 'asc' ? ' ▲' : ' ▼') : '';
+    return `<th class="tk-sortable${sortKey === key ? ' active' : ''}" data-sort="${key}">${esc(label)}${arrow}</th>`;
+  };
   const tableHtml = (list) => `<div class="card" style="overflow-x:auto"><table class="table">
       <thead><tr>
-        <th>#</th><th>${esc(t('tk.type'))}</th><th>${esc(t('tk.subject'))}</th>
-        <th>${esc(t('tk.statusCol'))}</th><th>${esc(t('tk.priorityCol'))}</th><th>${esc(t('tk.slaCol'))}</th>
-        <th>${esc(t('tk.requester'))}</th><th>${esc(t('tk.assignee'))}</th><th>${esc(t('tk.createdCol'))}</th>
+        ${sortTh('number', '#')}<th>${esc(t('tk.type'))}</th>${sortTh('subject', t('tk.subject'))}
+        ${sortTh('status', t('tk.statusCol'))}${sortTh('priority', t('tk.priorityCol'))}${sortTh('sla', t('tk.slaCol'))}
+        <th>${esc(t('tk.requester'))}</th><th>${esc(t('tk.assignee'))}</th>${sortTh('created', t('tk.createdCol'))}
       </tr></thead>
       <tbody id="tk-rows">${list.length ? list.map(rowHtml).join('')
         : `<tr><td colspan="9" class="table-empty">${esc(t('tk.none'))}</td></tr>`}</tbody>
@@ -123,6 +133,12 @@ Views.tickets = async function (el, params = {}) {
     box.innerHTML = tableHtml(list);
     box.querySelectorAll('#tk-rows tr[data-open]').forEach((tr) =>
       tr.addEventListener('click', () => openTicket(tr.dataset.open)));
+    box.querySelectorAll('th.tk-sortable').forEach((th) => th.addEventListener('click', () => {
+      const key = th.dataset.sort;
+      if (sortKey === key) sortOrder = sortOrder === 'asc' ? 'desc' : 'asc';
+      else { sortKey = key; sortOrder = key === 'subject' || key === 'number' ? 'asc' : 'desc'; }
+      refresh();
+    }));
   };
 
   const paintBoard = (list) => {
@@ -176,6 +192,7 @@ Views.tickets = async function (el, params = {}) {
           <button class="seg-btn ${mode === 'list' ? 'active' : ''}" id="tk-mode-list"><span class="ms ms-sm">list</span> ${esc(t('tk.viewList'))}</button>
           <button class="seg-btn ${mode === 'board' ? 'active' : ''}" id="tk-mode-board"><span class="ms ms-sm">view_kanban</span> ${esc(t('tk.viewBoard'))}</button>
         </div>
+        <input type="search" id="tk-f-search" class="ops-select" placeholder="${esc(t('tk.searchTickets'))}" style="min-width:200px" value="${esc(searchTerm)}">
         <select id="tk-f-status" class="ops-select" ${mode === 'board' ? 'style="display:none"' : ''}>
           <option value="open">${esc(t('tk.filterOpen'))}</option>
           <option value="">${esc(t('tk.filterAll'))}</option>
@@ -186,8 +203,17 @@ Views.tickets = async function (el, params = {}) {
           <option value="incident">${esc(tkTypeLabel('incident'))}</option>
           <option value="request">${esc(tkTypeLabel('request'))}</option>
         </select>
+        <select id="tk-f-priority" class="ops-select">
+          <option value="">${esc(t('tk.allPriorities'))}</option>
+          ${TK_PRIORITY.map((p) => `<option value="${p}">${esc(tkPriorityLabel(p))}</option>`).join('')}
+        </select>
+        ${catList.length ? `<select id="tk-f-category" class="ops-select">
+          <option value="">${esc(t('tk.allCategories'))}</option>
+          ${catList.map((c) => `<option value="${esc(c)}">${esc(c)}</option>`).join('')}
+        </select>` : ''}
         <label style="display:inline-flex;align-items:center;gap:6px;font-size:13px">
           <input type="checkbox" id="tk-f-mine"> ${esc(t('tk.mineOnly'))}</label>
+        <button class="btn btn-outline btn-sm" id="tk-csv" style="margin-left:auto"><span class="ms ms-sm">download</span> ${esc(t('tk.exportCsv'))}</button>
       </div>
       <div id="tk-content"></div>`;
 
@@ -200,22 +226,61 @@ Views.tickets = async function (el, params = {}) {
     const reload = () => refresh();
     $('#tk-f-status', el)?.addEventListener('change', reload);
     $('#tk-f-type', el)?.addEventListener('change', reload);
+    $('#tk-f-priority', el)?.addEventListener('change', reload);
+    $('#tk-f-category', el)?.addEventListener('change', reload);
     $('#tk-f-mine', el)?.addEventListener('change', reload);
+    $('#tk-f-search', el)?.addEventListener('input', (e) => {
+      searchTerm = e.target.value;
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(refresh, 300);
+    });
+    $('#tk-csv', el)?.addEventListener('click', exportCsv);
   };
 
-  async function refresh() {
-    const type = $('#tk-f-type', el)?.value;
-    const mine = $('#tk-f-mine', el)?.checked;
+  // Shared query string from the active filters (mode-aware).
+  function filterQs() {
     const qs = new URLSearchParams();
+    const type = $('#tk-f-type', el)?.value;
+    const priority = $('#tk-f-priority', el)?.value;
+    const category = $('#tk-f-category', el)?.value;
+    const mine = $('#tk-f-mine', el)?.checked;
+    if (searchTerm.trim()) qs.set('search', searchTerm.trim());
     if (type) qs.set('type', type);
+    if (priority) qs.set('priority', priority);
+    if (category) qs.set('category', category);
     if (mine && Auth.profile) qs.set('assignee', Auth.profile.uid);
     if (mode === 'board') {
-      qs.set('limit', '500'); // board groups by status client-side (terminal states drop off)
+      qs.set('limit', '500');
     } else {
       const status = $('#tk-f-status', el)?.value;
       if (status === 'open') qs.set('open', '1'); else if (status) qs.set('status', status);
+      qs.set('sort', sortKey); qs.set('order', sortOrder);
     }
+    return qs;
+  }
+
+  async function exportCsv() {
+    const qs = filterQs();
+    qs.set('limit', '5000');
+    qs.delete('open'); // export everything matching, not just open
     const list = await api('/tickets?' + qs.toString()).catch(() => []);
+    const arr = Array.isArray(list) ? list : [];
+    const cell = (v) => { const s = String(v == null ? '' : v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+    const headers = ['Number', 'Type', 'Subject', 'Status', 'Priority', 'Category', 'Requester', 'Assignee', 'Created', 'Resolve due', 'SLA'];
+    const rows = arr.map((tk) => [
+      tk.number, tkTypeLabel(tk.type), tk.subject, tkStatusLabel(tk.status), tkPriorityLabel(tk.priority),
+      tk.category || '', tk.requesterName || '', tk.assigneeName || '',
+      String(tk.createdAt || '').slice(0, 16).replace('T', ' '),
+      tk.sla && tk.sla.resolve && tk.sla.resolve.dueAt ? String(tk.sla.resolve.dueAt).slice(0, 16).replace('T', ' ') : '',
+      tk.sla && tk.sla.resolve ? tkSlaLabel(tk.sla.resolve) : '',
+    ].map(cell).join(','));
+    const csv = '﻿' + [headers.join(','), ...rows].join('\r\n'); // BOM for Excel/Turkish chars
+    downloadTextFile(`tickets-${new Date().toISOString().slice(0, 10)}.csv`, csv);
+    toast(t('tk.exported').replace('{n}', arr.length), 'success');
+  }
+
+  async function refresh() {
+    const list = await api('/tickets?' + filterQs().toString()).catch(() => []);
     refreshStats();
     const arr = Array.isArray(list) ? list : [];
     if (mode === 'board') paintBoard(arr); else paintList(arr);

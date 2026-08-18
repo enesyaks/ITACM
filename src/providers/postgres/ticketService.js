@@ -228,23 +228,53 @@ async function getTicket(id, user, { ownEmployeeId = null } = {}) {
   return ownEmployeeId ? stripSla(ticket) : decorateSla(ticket);
 }
 
+// Whitelisted sort keys → SQL. Priority/status sort by workflow order, not
+// alphabetically, so "sort by priority" surfaces the urgent ones.
+const SORT_SQL = Object.freeze({
+  created: 't.created_at',
+  number: 't.number',
+  subject: 't.subject',
+  status: "CASE t.status WHEN 'new' THEN 1 WHEN 'open' THEN 2 WHEN 'in_progress' THEN 3 WHEN 'pending' THEN 4 WHEN 'resolved' THEN 5 WHEN 'closed' THEN 6 ELSE 7 END",
+  priority: "CASE t.priority WHEN 'urgent' THEN 4 WHEN 'high' THEN 3 WHEN 'medium' THEN 2 ELSE 1 END",
+  sla: 't.resolve_due_at',
+});
+
 async function listTickets(opts = {}) {
   const where = [];
   const params = [];
   const add = (cond, val) => { params.push(val); where.push(cond.replace('$?', '$' + params.length)); };
   if (opts.status && STATUSES.has(opts.status)) add('t.status = $?', opts.status);
   if (opts.type && TYPES.has(opts.type)) add('t.type = $?', opts.type);
+  if (opts.priority && PRIORITIES.has(opts.priority)) add('t.priority = $?', opts.priority);
+  if (opts.category) add('t.category = $?', String(opts.category).slice(0, 120));
   if (opts.assigneeUserId && isUuid(opts.assigneeUserId)) add('t.assignee_user_id = $?', opts.assigneeUserId);
   if (opts.open === true) where.push("t.status NOT IN ('resolved','closed','cancelled')");
   if (opts.assetId && isUuid(opts.assetId)) add('t.asset_id = $?', opts.assetId);
+  if (opts.search && String(opts.search).trim()) {
+    params.push(`%${String(opts.search).trim().slice(0, 120)}%`);
+    const p = '$' + params.length; // one bound param, referenced three times
+    where.push(`(t.number ILIKE ${p} OR t.subject ILIKE ${p} OR re.full_name ILIKE ${p})`);
+  }
   const whereSql = where.length ? 'WHERE ' + where.join(' AND ') : '';
-  const limit = Math.min(Math.max(Number(opts.limit) || 200, 1), 500);
+
+  const sortCol = SORT_SQL[opts.sort] || SORT_SQL.created;
+  const dir = String(opts.order).toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+  const orderSql = `ORDER BY ${sortCol} ${dir} NULLS LAST, t.created_at DESC`;
+
+  const limit = Math.min(Math.max(Number(opts.limit) || 200, 1), 5000);
   params.push(limit);
   const { rows } = await query(
-    `SELECT ${SELECT_COLS} ${FROM_JOINS} ${whereSql} ORDER BY t.created_at DESC LIMIT $${params.length}`,
+    `SELECT ${SELECT_COLS} ${FROM_JOINS} ${whereSql} ${orderSql} LIMIT $${params.length}`,
     params
   );
   return rows.map(decorateSla);
+}
+
+async function categories() {
+  const { rows } = await query(
+    "SELECT DISTINCT category FROM tickets WHERE category IS NOT NULL AND category <> '' ORDER BY category LIMIT 200"
+  );
+  return rows.map((r) => r.category);
 }
 
 // Service-desk KPI counts for the stats strip. Breach is computed live (open
@@ -495,5 +525,5 @@ function audit(action, summary, a, entityId, label) {
 module.exports = {
   createTicket, getTicket, listTickets, updateTicket, addComment,
   createMyTicket, listMyTickets, getMyTicket, addMyComment,
-  sweepSlaBreaches, SLA_TARGETS, stats, getSlaConfig, saveSlaConfig,
+  sweepSlaBreaches, SLA_TARGETS, stats, getSlaConfig, saveSlaConfig, categories,
 };

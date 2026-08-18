@@ -23,6 +23,11 @@ router.get('/', requirePermission('ticket', 'read'), asyncHandler(async (req, re
   res.json({ success: true, data: await ticketService.listTickets({
     status: req.query.status,
     type: req.query.type,
+    priority: req.query.priority,
+    category: req.query.category,
+    search: req.query.search,
+    sort: req.query.sort,
+    order: req.query.order,
     assigneeUserId: req.query.assignee,
     assetId: req.query.assetId,
     open: req.query.open === '1' || req.query.open === 'true',
@@ -46,6 +51,11 @@ router.get('/sla', requirePermission('ticket', 'read'), asyncHandler(async (req,
 }));
 router.put('/sla', requirePermission('ticket', 'manage'), asyncHandler(async (req, res) => {
   res.json({ success: true, data: await ticketService.saveSlaConfig(req.body || {}) });
+}));
+
+// GET /api/tickets/categories — distinct categories for the filter (before /:id)
+router.get('/categories', requirePermission('ticket', 'read'), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await ticketService.categories() });
 }));
 
 // GET /api/tickets/:id — detail + comments + activity
