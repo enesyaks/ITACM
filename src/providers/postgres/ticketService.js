@@ -209,6 +209,7 @@ async function listTickets(opts = {}) {
 async function updateTicket(id, patch, user) {
   if (!isUuid(id)) throw HttpError.notFound('Ticket not found');
   const a = actor(user);
+  let plan = null;
   await withTransaction(async (t) => {
     const { rows } = await t.query('SELECT * FROM tickets WHERE id = $1 FOR UPDATE', [id]);
     const cur = rows[0];
@@ -218,6 +219,8 @@ async function updateTicket(id, patch, user) {
     const vals = [];
     const set = (col, val) => { vals.push(val); sets.push(`${col} = $${vals.length}`); };
     const acts = [];
+    let statusTo = null;
+    let newAssigneeId = null;
 
     if (patch.priority !== undefined) {
       if (!PRIORITIES.has(patch.priority)) throw HttpError.badRequest('Invalid priority');
@@ -245,6 +248,7 @@ async function updateTicket(id, patch, user) {
       if (String(next || '') !== String(cur.assignee_user_id || '')) {
         set('assignee_user_id', next);
         acts.push(['assigned', next ? 'assigned' : 'unassigned']);
+        newAssigneeId = next; // notify the new assignee (null on unassign → skipped)
       }
     }
     if (patch.status !== undefined) {
@@ -256,6 +260,7 @@ async function updateTicket(id, patch, user) {
         }
         set('status', patch.status);
         acts.push(['status', `${cur.status} → ${patch.status}`]);
+        statusTo = patch.status;
         if (patch.status === 'resolved') set('resolved_at', new Date());
         else if (patch.status === 'closed') set('closed_at', new Date());
         else if (['open', 'in_progress'].includes(patch.status)) { set('resolved_at', null); set('closed_at', null); }
@@ -270,7 +275,12 @@ async function updateTicket(id, patch, user) {
       await t.query('INSERT INTO ticket_activity (ticket_id, actor_name, action, detail) VALUES ($1,$2,$3,$4)', [id, a.name, action, detail]);
     }
     audit('ticket.update', `Updated ${cur.number}`, a, id, cur.number);
+    if (statusTo || newAssigneeId) {
+      plan = { number: cur.number, subject: cur.subject, actorName: a.name,
+        requesterEmployeeId: cur.requester_employee_id, statusTo, newAssigneeId };
+    }
   });
+  if (plan) notifyUpdate(plan);
   return getTicket(id, user);
 }
 
@@ -290,6 +300,7 @@ async function addComment(id, body, user, { ownEmployeeId = null } = {}) {
   if (!ownEmployeeId) {
     await query('UPDATE tickets SET first_response_at = COALESCE(first_response_at, now()), updated_at = now() WHERE id = $1', [id]);
   }
+  notifyComment({ id, ownEmployeeId, internal, snippet: text.slice(0, 200), actorName: a.name });
   return getTicket(id, user, { ownEmployeeId });
 }
 
@@ -355,6 +366,58 @@ async function sweepSlaBreaches() {
     }
   }
   return flagged;
+}
+
+/* --------------------------- email notifications --------------------------- */
+
+async function partyEmails({ requesterEmployeeId, assigneeUserId }) {
+  const out = { requesterEmail: null, assigneeEmail: null };
+  if (requesterEmployeeId) {
+    const r = await query('SELECT email FROM employees WHERE id = $1', [requesterEmployeeId]);
+    out.requesterEmail = (r.rows[0] && r.rows[0].email) || null;
+  }
+  if (assigneeUserId) {
+    const r = await query('SELECT email FROM users WHERE id = $1', [assigneeUserId]);
+    out.assigneeEmail = (r.rows[0] && r.rows[0].email) || null;
+  }
+  return out;
+}
+
+// Fire-and-forget: never let a mail hiccup touch the ticket write path.
+function mail(opts) {
+  try {
+    require('./notificationService').sendTicketNotification(opts).catch(() => {});
+  } catch { /* ignore */ }
+}
+
+// Notify after an update (status change → requester; new assignee → assignee).
+function notifyUpdate(plan) {
+  (async () => {
+    const p = await partyEmails({ requesterEmployeeId: plan.requesterEmployeeId, assigneeUserId: plan.newAssigneeId });
+    if (plan.statusTo && p.requesterEmail) {
+      mail({ to: p.requesterEmail, ticketNumber: plan.number, subject: plan.subject, event: `status changed to “${plan.statusTo}”`, actorName: plan.actorName });
+    }
+    if (plan.newAssigneeId && p.assigneeEmail) {
+      mail({ to: p.assigneeEmail, ticketNumber: plan.number, subject: plan.subject, event: 'assigned to you', actorName: plan.actorName });
+    }
+  })().catch(() => {});
+}
+
+// Notify after a comment (staff public reply → requester; employee reply → assignee).
+function notifyComment({ id, ownEmployeeId, internal, snippet, actorName }) {
+  if (internal) return; // internal notes never leave the building
+  (async () => {
+    const meta = (await query(
+      'SELECT number, subject, requester_employee_id AS "requesterEmployeeId", assignee_user_id AS "assigneeUserId" FROM tickets WHERE id = $1', [id]
+    )).rows[0];
+    if (!meta) return;
+    const p = await partyEmails(meta);
+    if (!ownEmployeeId && p.requesterEmail) {
+      mail({ to: p.requesterEmail, ticketNumber: meta.number, subject: meta.subject, event: 'a new reply was posted', actorName, snippet });
+    } else if (ownEmployeeId && p.assigneeEmail) {
+      mail({ to: p.assigneeEmail, ticketNumber: meta.number, subject: meta.subject, event: 'the requester replied', actorName, snippet });
+    }
+  })().catch(() => {});
 }
 
 function audit(action, summary, a, entityId, label) {

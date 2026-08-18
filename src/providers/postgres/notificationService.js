@@ -54,6 +54,7 @@ const DEFAULT_NOTIFY = {
   eol: true,
   onboarding: true,
   handoverCompleted: false,
+  ticketUpdates: false,
   // Automatic digest schedule: 'off' | 'daily' | 'weekly'. `hour` is server
   // local time (0-23); `weekday` (0=Sun) applies only to the weekly cadence.
   // `lastRunDate` is server-managed (YYYY-MM-DD) and guards once-per-day sends.
@@ -188,6 +189,7 @@ async function saveMailConfig({ smtp, notify }) {
       eol: notify.eol !== false,
       onboarding: notify.onboarding !== false,
       handoverCompleted: !!notify.handoverCompleted,
+      ticketUpdates: !!notify.ticketUpdates,
       schedule,
       hour: clampInt(notify.hour, 0, 23, 8),
       weekday: clampInt(notify.weekday, 0, 6, 1),
@@ -569,6 +571,38 @@ async function sendOnboardingWelcomeEmail({ onboardingId, to, extraNote } = {}) 
  * Templates); renderTemplate HTML-escapes every variable, so untrusted names
  * cannot inject markup.
  */
+/**
+ * One transactional ticket notification (reply / status change / assignment).
+ * Gated on notifications being enabled AND the `ticketUpdates` toggle. Always
+ * resolves (never throws) so the caller can fire-and-forget: SMTP problems and
+ * a disabled feature both come back as `{ skipped }`.
+ */
+async function sendTicketNotification({ to, ticketNumber, subject, event, actorName, snippet }) {
+  try {
+    if (!to) return { skipped: true, reason: 'no recipient' };
+    const { notify, smtp, companyName } = await getMailConfig();
+    if (!notify.enabled || !notify.ticketUpdates) return { skipped: true, reason: 'ticket notifications off' };
+    if (!smtp.host) return { skipped: true, reason: 'no smtp host' };
+
+    const base = appBaseUrl(notify);
+    const safe = (s) => String(s || '').replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
+    const line = `${actorName || 'Someone'} — ${event} · ${ticketNumber}`;
+    const textParts = [line, snippet ? `\n"${snippet}"` : '', base ? `\n${base}` : ''].filter(Boolean);
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"></head>`
+      + `<body style="font-family:system-ui,-apple-system,sans-serif;line-height:1.5;color:#1a1a1a;max-width:640px;margin:0 auto;padding:24px">`
+      + `<p style="margin:0 0 6px;color:#64748b;font-size:13px">${safe(companyName)} · Service Desk</p>`
+      + `<h2 style="margin:0 0 10px;font-size:18px">${safe(ticketNumber)} — ${safe(subject)}</h2>`
+      + `<p style="margin:0 0 12px">${safe(actorName || 'Someone')} — ${safe(event)}.</p>`
+      + (snippet ? `<blockquote style="margin:0 0 12px;padding:10px 14px;border-left:3px solid #cbd5e1;background:#f8fafc;color:#334155">${safe(snippet)}</blockquote>` : '')
+      + (base ? `<p style="margin:0"><a href="${safe(base)}" style="color:#4f46e5">Open the service desk</a></p>` : '')
+      + `</body></html>`;
+
+    return await sendMail({ to, subject: `[${ticketNumber}] ${subject}`, text: textParts.join('\n'), html });
+  } catch (err) {
+    return { skipped: true, reason: err.message };
+  }
+}
+
 async function sendPortalAccessEmail({ to, username, tempPassword }) {
   const [{ companyName }, templates] = await Promise.all([getMailConfig(), getEmailTemplates()]);
   const tpl = templates.portal_access;
@@ -648,6 +682,7 @@ async function sendHrRequestNotice(request) {
 module.exports = {
   getMailConfig, saveMailConfig, clearMailConfig, sendTestEmail, runAlertDigest, runScheduledDigest, notifyHandoverCompleted, sendMail,
   getEmailTemplates, saveEmailTemplates, sendOnboardingWelcomeEmail, sendPortalAccessEmail, sendHrRequestNotice,
+  sendTicketNotification,
   sendOwnerTransferEmail,
   DEFAULT_NOTIFY, TEMPLATE_KEYS, PLACEHOLDERS,
 };

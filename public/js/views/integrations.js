@@ -132,6 +132,7 @@ Views.integrations = async function (el) {
             <label><input type="checkbox" id="int-notify-on" ${notify.enabled ? 'checked' : ''}${chkDis}> Enable digests</label>
             <label title="Only for servers that require implicit TLS on 465. Leave off for iCloud (587)."><input type="checkbox" id="int-smtp-secure" ${smtp.secure ? 'checked' : ''}${chkDis}> TLS (port 465)</label>
             <label><input type="checkbox" id="int-notify-ho" ${notify.handoverCompleted ? 'checked' : ''}${chkDis}> Email on handover</label>
+            <label title="Notify the requester and assignee on replies, status changes and assignment."><input type="checkbox" id="int-notify-tickets" ${notify.ticketUpdates ? 'checked' : ''}${chkDis}> Email on ticket updates</label>
           </div>
           <div class="form-field full" style="display:flex;flex-wrap:wrap;gap:12px;align-items:center">
             <label style="display:flex;align-items:center;gap:6px">Auto-send
@@ -512,6 +513,7 @@ GET /api/integrations/licenses/:id/sam
             enabled: $('#int-notify-on', el).checked,
             to,
             handoverCompleted: $('#int-notify-ho', el).checked,
+            ticketUpdates: $('#int-notify-tickets', el).checked,
             schedule: $('#int-notify-schedule', el).value,
             hour: Number($('#int-notify-hour', el).value),
             weekday: Number($('#int-notify-weekday', el).value),
