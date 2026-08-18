@@ -1353,6 +1353,8 @@
     'tk.requester': L('Requester', 'Talep eden'),
     'tk.assignee': L('Assignee', 'Atanan'),
     'tk.createdCol': L('Created', 'Oluşturulma'),
+    'tk.viewList': L('List', 'Liste'),
+    'tk.viewBoard': L('Board', 'Pano'),
     'tk.slaSettings': L('SLA targets', 'SLA hedefleri'),
     'tk.slaHint': L('First-response and resolution targets per priority, in minutes. Applies to new tickets and to open tickets when their priority changes.', 'Öncelik başına ilk yanıt ve çözüm hedefleri (dakika). Yeni ticket\'lara ve önceliği değişen açık ticket\'lara uygulanır.'),
     'tk.mins': L('minutes', 'dakika'),

@@ -1,6 +1,7 @@
 /* ============================ SERVICE DESK (ITIL) ============================ */
 
 const TK_STATUS = ['new', 'open', 'in_progress', 'pending', 'resolved', 'closed', 'cancelled'];
+const TK_BOARD_COLUMNS = ['new', 'open', 'in_progress', 'pending', 'resolved'];
 const TK_PRIORITY = ['low', 'medium', 'high', 'urgent'];
 const TK_STATUS_PILL = {
   new: 'pill-slate', open: 'pill-blue', in_progress: 'pill-amber', pending: 'pill-slate',
@@ -40,6 +41,7 @@ Views.tickets = async function (el, params = {}) {
   const canUpdate = Auth.canIam('ticket', 'update') || Auth.canIam('ticket', 'manage');
   const canAssign = Auth.canIam('ticket', 'assign') || Auth.canIam('ticket', 'manage');
   const canManage = Auth.canIam('ticket', 'manage');
+  let mode = localStorage.getItem('tk_mode') === 'board' ? 'board' : 'list';
 
   const [tickets, staff, empRes, assetRes, stats0] = await Promise.all([
     api('/tickets?open=1').catch(() => []),
@@ -90,14 +92,91 @@ Views.tickets = async function (el, params = {}) {
       <td class="cell-sub">${esc(String(tk.createdAt || '').slice(0, 10))}</td>
     </tr>`;
 
-  const render = (list) => {
+  const tableHtml = (list) => `<div class="card" style="overflow-x:auto"><table class="table">
+      <thead><tr>
+        <th>#</th><th>${esc(t('tk.type'))}</th><th>${esc(t('tk.subject'))}</th>
+        <th>${esc(t('tk.statusCol'))}</th><th>${esc(t('tk.priorityCol'))}</th><th>${esc(t('tk.slaCol'))}</th>
+        <th>${esc(t('tk.requester'))}</th><th>${esc(t('tk.assignee'))}</th><th>${esc(t('tk.createdCol'))}</th>
+      </tr></thead>
+      <tbody id="tk-rows">${list.length ? list.map(rowHtml).join('')
+        : `<tr><td colspan="9" class="table-empty">${esc(t('tk.none'))}</td></tr>`}</tbody>
+    </table></div>`;
+
+  const cardHtml = (tk) => `<div class="tk-card" data-id="${esc(tk.id)}" data-status="${esc(tk.status)}"${canUpdate ? ' draggable="true"' : ''}>
+      <div class="tk-card-top"><span class="mono cell-sub">${esc(tk.number)}</span>${pill(TK_PRIORITY_PILL[tk.priority], tkPriorityLabel(tk.priority))}</div>
+      <div class="tk-card-title">${esc(tk.subject)}</div>
+      <div class="tk-card-foot">${tkSlaBadge(tk.sla && tk.sla.resolve)}<span class="cell-sub">${esc(tk.assigneeName || t('tk.unassigned'))}</span></div>
+    </div>`;
+
+  const boardHtml = (list) => {
+    const by = {}; TK_BOARD_COLUMNS.forEach((s) => { by[s] = []; });
+    list.forEach((tk) => { if (by[tk.status]) by[tk.status].push(tk); });
+    return `<div class="tk-board">${TK_BOARD_COLUMNS.map((s) => `
+      <div class="tk-col">
+        <div class="tk-col-head">${pill(TK_STATUS_PILL[s], tkStatusLabel(s))}<span class="tk-col-count" data-count="${s}">${by[s].length}</span></div>
+        <div class="tk-col-body" data-col="${s}">${by[s].map(cardHtml).join('')}</div>
+      </div>`).join('')}</div>`;
+  };
+
+  const paintList = (list) => {
+    const box = $('#tk-content', el); if (!box) return;
+    box.innerHTML = tableHtml(list);
+    box.querySelectorAll('#tk-rows tr[data-open]').forEach((tr) =>
+      tr.addEventListener('click', () => openTicket(tr.dataset.open)));
+  };
+
+  const paintBoard = (list) => {
+    const box = $('#tk-content', el); if (!box) return;
+    box.innerHTML = boardHtml(list);
+    box.querySelectorAll('.tk-card').forEach((card) => {
+      card.addEventListener('click', () => { if (!card.dataset.dragging) openTicket(card.dataset.id); });
+      card.addEventListener('dragstart', (e) => { card.dataset.dragging = '1'; card.classList.add('dragging'); e.dataTransfer.setData('text/plain', card.dataset.id); e.dataTransfer.effectAllowed = 'move'; });
+      card.addEventListener('dragend', () => { card.classList.add('dragging'); delete card.dataset.dragging; card.classList.remove('dragging'); });
+    });
+    box.querySelectorAll('.tk-col-body').forEach((col) => {
+      col.addEventListener('dragover', (e) => { e.preventDefault(); col.classList.add('drop-target'); });
+      col.addEventListener('dragleave', () => col.classList.remove('drop-target'));
+      col.addEventListener('drop', (e) => { e.preventDefault(); col.classList.remove('drop-target'); onDrop(col, e.dataTransfer.getData('text/plain')); });
+    });
+  };
+
+  const updateCounts = () => el.querySelectorAll('.tk-col-body').forEach((col) => {
+    const span = el.querySelector(`.tk-col-count[data-count="${col.dataset.col}"]`);
+    if (span) span.textContent = col.querySelectorAll('.tk-card').length;
+  });
+
+  async function onDrop(col, id) {
+    const to = col.dataset.col;
+    const card = id && el.querySelector(`.tk-card[data-id="${id}"]`);
+    if (!card || card.dataset.status === to) return;
+    const prevBody = card.parentNode;
+    col.appendChild(card); card.dataset.status = to; updateCounts(); // optimistic
+    try {
+      await api('/tickets/' + encodeURIComponent(id), { method: 'PATCH', body: { status: to } });
+      refreshStats();
+    } catch (err) {
+      toast(err.message, 'error');
+      if (prevBody) { prevBody.appendChild(card); card.dataset.status = prevBody.dataset.col; updateCounts(); }
+    }
+  }
+
+  const refreshStats = () => api('/tickets/stats')
+    .then((s) => { const b = $('#tk-stats', el); if (b && s) b.innerHTML = statsHtml(s); }).catch(() => {});
+
+  const setMode = (m) => { mode = m; localStorage.setItem('tk_mode', m); render(); refresh(); };
+
+  const render = () => {
     el.innerHTML = `
       ${pageHead(t('tk.title'), t('tk.subtitle'),
         `${canManage ? `<button class="btn btn-outline" id="tk-sla"><span class="ms">schedule</span> ${esc(t('tk.slaSettings'))}</button>` : ''}`
         + `${canCreate ? `<button class="btn btn-primary" id="tk-new"><span class="ms">add</span> ${esc(t('tk.new'))}</button>` : ''}`)}
       <div id="tk-stats">${statsHtml(stats0)}</div>
       <div class="card card-pad" style="margin-bottom:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-        <select id="tk-f-status" class="ops-select">
+        <div class="seg" role="tablist">
+          <button class="seg-btn ${mode === 'list' ? 'active' : ''}" id="tk-mode-list"><span class="ms ms-sm">list</span> ${esc(t('tk.viewList'))}</button>
+          <button class="seg-btn ${mode === 'board' ? 'active' : ''}" id="tk-mode-board"><span class="ms ms-sm">view_kanban</span> ${esc(t('tk.viewBoard'))}</button>
+        </div>
+        <select id="tk-f-status" class="ops-select" ${mode === 'board' ? 'style="display:none"' : ''}>
           <option value="open">${esc(t('tk.filterOpen'))}</option>
           <option value="">${esc(t('tk.filterAll'))}</option>
           ${TK_STATUS.map((s) => `<option value="${s}">${esc(tkStatusLabel(s))}</option>`).join('')}
@@ -110,22 +189,14 @@ Views.tickets = async function (el, params = {}) {
         <label style="display:inline-flex;align-items:center;gap:6px;font-size:13px">
           <input type="checkbox" id="tk-f-mine"> ${esc(t('tk.mineOnly'))}</label>
       </div>
-      <div class="card" style="overflow-x:auto"><table class="table">
-        <thead><tr>
-          <th>#</th><th>${esc(t('tk.type'))}</th><th>${esc(t('tk.subject'))}</th>
-          <th>${esc(t('tk.statusCol'))}</th><th>${esc(t('tk.priorityCol'))}</th><th>${esc(t('tk.slaCol'))}</th>
-          <th>${esc(t('tk.requester'))}</th><th>${esc(t('tk.assignee'))}</th><th>${esc(t('tk.createdCol'))}</th>
-        </tr></thead>
-        <tbody id="tk-rows">${list.length ? list.map(rowHtml).join('')
-          : `<tr><td colspan="9" class="table-empty">${esc(t('tk.none'))}</td></tr>`}</tbody>
-      </table></div>`;
+      <div id="tk-content"></div>`;
 
-    el.querySelectorAll('#tk-rows tr[data-open]').forEach((tr) =>
-      tr.addEventListener('click', () => openTicket(tr.dataset.open)));
     const nb = $('#tk-new', el);
     if (nb) nb.addEventListener('click', openCreate);
     const sb = $('#tk-sla', el);
     if (sb) sb.addEventListener('click', openSlaEditor);
+    $('#tk-mode-list', el)?.addEventListener('click', () => { if (mode !== 'list') setMode('list'); });
+    $('#tk-mode-board', el)?.addEventListener('click', () => { if (mode !== 'board') setMode('board'); });
     const reload = () => refresh();
     $('#tk-f-status', el)?.addEventListener('change', reload);
     $('#tk-f-type', el)?.addEventListener('change', reload);
@@ -133,20 +204,21 @@ Views.tickets = async function (el, params = {}) {
   };
 
   async function refresh() {
-    const status = $('#tk-f-status', el)?.value;
     const type = $('#tk-f-type', el)?.value;
     const mine = $('#tk-f-mine', el)?.checked;
     const qs = new URLSearchParams();
-    if (status === 'open') qs.set('open', '1'); else if (status) qs.set('status', status);
     if (type) qs.set('type', type);
     if (mine && Auth.profile) qs.set('assignee', Auth.profile.uid);
+    if (mode === 'board') {
+      qs.set('limit', '500'); // board groups by status client-side (terminal states drop off)
+    } else {
+      const status = $('#tk-f-status', el)?.value;
+      if (status === 'open') qs.set('open', '1'); else if (status) qs.set('status', status);
+    }
     const list = await api('/tickets?' + qs.toString()).catch(() => []);
-    api('/tickets/stats').then((s) => { const box = $('#tk-stats', el); if (box && s) box.innerHTML = statsHtml(s); }).catch(() => {});
-    const body = $('#tk-rows', el);
-    if (body) body.innerHTML = list.length ? list.map(rowHtml).join('')
-      : `<tr><td colspan="9" class="table-empty">${esc(t('tk.none'))}</td></tr>`;
-    el.querySelectorAll('#tk-rows tr[data-open]').forEach((tr) =>
-      tr.addEventListener('click', () => openTicket(tr.dataset.open)));
+    refreshStats();
+    const arr = Array.isArray(list) ? list : [];
+    if (mode === 'board') paintBoard(arr); else paintList(arr);
   }
 
   async function openSlaEditor() {
@@ -299,7 +371,9 @@ Views.tickets = async function (el, params = {}) {
     });
   }
 
-  render(Array.isArray(tickets) ? tickets : []);
+  render();
+  // Initial paint: reuse the open-tickets fetch for list mode; board needs all statuses.
+  if (mode === 'board') refresh(); else paintList(Array.isArray(tickets) ? tickets : []);
   // Deep-link: #/tickets?open=<id> (e.g. from an asset's related-tickets list).
   if (params && params.open) openTicket(params.open);
 };

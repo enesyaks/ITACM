@@ -5825,3 +5825,25 @@ body.ai-open .ai-panel { opacity: 1; visibility: visible; transform: none; }
 .tk-activity li { margin: 3px 0; }
 .tk-sla { display: flex; flex-wrap: wrap; gap: 8px 22px; align-items: center; }
 .tk-sla > span { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+
+/* List/Board segmented toggle */
+.seg { display: inline-flex; border: 1px solid var(--outline-variant); border-radius: 10px; overflow: hidden; }
+.seg-btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; font-size: 13px; font-weight: 600;
+  background: transparent; color: var(--on-surface-variant); border: none; cursor: pointer; }
+.seg-btn + .seg-btn { border-left: 1px solid var(--outline-variant); }
+.seg-btn.active { background: var(--primary); color: #fff; }
+
+/* Kanban board */
+.tk-board { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 8px; align-items: flex-start; }
+.tk-col { flex: 1 0 230px; min-width: 230px; background: var(--surface-low); border: 1px solid var(--outline-variant);
+  border-radius: 12px; display: flex; flex-direction: column; }
+.tk-col-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--outline-variant); }
+.tk-col-count { margin-left: auto; font-size: 12px; font-weight: 700; color: var(--on-surface-variant); }
+.tk-col-body { flex: 1; min-height: 56px; padding: 10px; display: flex; flex-direction: column; gap: 8px; border-radius: 0 0 12px 12px; }
+.tk-col-body.drop-target { outline: 2px dashed var(--primary); outline-offset: -5px; }
+.tk-card { background: #fff; border: 1px solid var(--outline-variant); border-radius: 10px; padding: 10px 11px; cursor: pointer; box-shadow: var(--shadow-card); }
+.tk-card:hover { border-color: var(--primary); }
+.tk-card.dragging { opacity: .45; }
+.tk-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.tk-card-title { font-size: 13.5px; font-weight: 500; line-height: 1.35; margin-bottom: 8px; }
+.tk-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
