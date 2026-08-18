@@ -272,6 +272,27 @@ async function unlinkOidc(userId) {
 }
 
 /**
+ * Redeem a SINGLE-USE SSO handoff ticket and return the wrapped session token.
+ * The callback mints a 60s signed ticket carrying the session; this denylists
+ * its jti on first redemption so a replay within the TTL is rejected.
+ */
+async function consumeSsoTicket(ticket) {
+  let payload;
+  try {
+    payload = jwt.verify(String(ticket || ''), config.jwtSecret, { algorithms: ['HS256'] });
+  } catch {
+    throw HttpError.unauthorized('Invalid or expired SSO ticket');
+  }
+  if (payload.purpose !== 'sso_handoff' || !payload.token || !payload.jti) {
+    throw HttpError.unauthorized('Invalid SSO ticket');
+  }
+  await assertJtiNotDenied(payload.jti); // already redeemed → reject the replay
+  const exp = payload.exp ? new Date(payload.exp * 1000) : new Date(Date.now() + 60 * 1000);
+  await denylistJti(payload.jti, exp);   // one-time: mark this ticket spent
+  return payload.token;
+}
+
+/**
  * SSO sign-in (OpenID Connect). INVITE-ONLY: never creates accounts. It links a
  * verified external identity to an EXISTING local user on first sign-in (matched
  * by verified email), then matches by the stable (iss, sub) pair afterwards.
@@ -1135,7 +1156,7 @@ async function getAdminLogs(email, limit = 25) {
 }
 
 module.exports = {
-  login, loginWithOidc, unlinkOidc, verifyMfaLogin, verifyToken, logout, recordLogin, getLoginLogs,
+  login, loginWithOidc, unlinkOidc, consumeSsoTicket, verifyMfaLogin, verifyToken, logout, recordLogin, getLoginLogs,
   changePassword, mfaSetupStart, mfaSetupConfirm, mfaDisable, mfaStatus,
   createItUser, listEmployeeCandidates,
   upsertAdmin, upsertAdminTx, setUserRole, getVerifiedProfile, listUsers,

@@ -132,7 +132,11 @@ router.get('/sso/callback', asyncHandler(async (req, res) => {
     const session = await authProvider.loginWithOidc(claims, cfg, {
       ip: rateLimitIp(req), userAgent: req.headers['user-agent'] || null,
     });
-    const ticket = jwt.sign({ purpose: 'sso_handoff', token: session.token }, config.jwtSecret, { expiresIn: '60s' });
+    const ticket = jwt.sign(
+      { purpose: 'sso_handoff', token: session.token, jti: crypto.randomUUID() },
+      config.jwtSecret,
+      { expiresIn: '60s' }
+    );
     return res.redirect('/#sso_ticket=' + encodeURIComponent(ticket));
   } catch (err) {
     const code = (err && err.details && err.details.code) || 'denied';
@@ -141,13 +145,10 @@ router.get('/sso/callback', asyncHandler(async (req, res) => {
 }));
 
 // POST /api/auth/sso/exchange — SPA swaps the one-time ticket for the session.
+// Single-use: consumeSsoTicket denylists the ticket jti so a replay is rejected.
 router.post('/sso/exchange', asyncHandler(async (req, res) => {
-  const ticket = req.body && req.body.ticket;
-  let payload;
-  try { payload = jwt.verify(String(ticket || ''), config.jwtSecret); }
-  catch { throw HttpError.unauthorized('Invalid or expired SSO ticket'); }
-  if (payload.purpose !== 'sso_handoff' || !payload.token) throw HttpError.unauthorized('Invalid SSO ticket');
-  res.json({ success: true, data: { token: payload.token } });
+  const token = await authProvider.consumeSsoTicket(req.body && req.body.ticket);
+  res.json({ success: true, data: { token } });
 }));
 
 router.post('/logout', authenticate, asyncHandler(async (req, res) => {
