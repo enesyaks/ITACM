@@ -12,6 +12,7 @@
  */
 const notificationService = require('../providers/postgres/notificationService');
 const zimmetImportService = require('../providers/postgres/zimmetImportService');
+const backupService = require('../providers/postgres/backupService');
 
 const TICK_MS = 60 * 1000;
 const PURGE_EVERY_TICKS = 60; // hourly
@@ -23,6 +24,9 @@ function start() {
   timer = setInterval(() => {
     notificationService.runScheduledDigest().catch((err) => {
       console.warn('[scheduler] digest tick failed:', err.message);
+    });
+    backupService.runIfDue().catch((err) => {
+      console.warn('[scheduler] backup tick failed:', err.message);
     });
     if ((ticks += 1) % PURGE_EVERY_TICKS === 0) {
       zimmetImportService.purgeStale().then((r) => {

@@ -75,6 +75,20 @@ const config = {
     trustedCidrs: trimmedEnv('RATE_LIMIT_TRUSTED_CIDRS').split(',').map((s) => s.trim()).filter(Boolean),
   },
 
+  /**
+   * Automatic nightly database backups (OFF by default). When on, the scheduler
+   * runs `pg_dump | gzip` once a day at BACKUP_HOUR into BACKUP_DIR (default
+   * DATA_DIR/backups), verifies each archive is a complete, restorable dump, and
+   * keeps the newest BACKUP_KEEP files. Needs postgresql-client in the image
+   * (already present — the migration export uses it too).
+   */
+  backup: {
+    enabled: flagEnv('BACKUP_ENABLED'),
+    hour: Math.min(23, Math.max(0, Number(trimmedEnv('BACKUP_HOUR')) || 3)),
+    keep: Math.max(1, Number(trimmedEnv('BACKUP_KEEP')) || 7),
+    dir: trimmedEnv('BACKUP_DIR') || '',
+  },
+
   // Opt-in upstream update check. When on, the server asks GitHub once a day
   // whether a newer release exists and surfaces it to the Owner. OFF by default
   // so air-gapped / offline installs never reach out. GITHUB_TOKEN is optional

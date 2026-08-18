@@ -87,6 +87,12 @@ services:
       LOGIN_FAIL_LIMIT: ${LOGIN_FAIL_LIMIT:-10}
       LOGIN_LOCK_MIN: ${LOGIN_LOCK_MIN:-15}
       RATE_LIMIT_TRUSTED_CIDRS: ${RATE_LIMIT_TRUSTED_CIDRS:-}
+      # Automatic nightly DB backups (off by default). Files land in DATA_DIR/backups
+      # (the api-data volume), verified and pruned to BACKUP_KEEP copies.
+      BACKUP_ENABLED: ${BACKUP_ENABLED:-}
+      BACKUP_HOUR: ${BACKUP_HOUR:-3}
+      BACKUP_KEEP: ${BACKUP_KEEP:-7}
+      BACKUP_DIR: ${BACKUP_DIR:-}
       ONBOARDING_VIDEO_URL: ${ONBOARDING_VIDEO_URL:-}
       # AI assistant (optional — enable in Integrations → AI, or set AI_ENABLED=1)
       AI_ENABLED: ${AI_ENABLED:-}

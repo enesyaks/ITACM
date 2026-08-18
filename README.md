@@ -403,6 +403,8 @@ docker compose exec api npm run reset-password -- owner@example.com --password '
 | `API_RATE_LIMIT` / `API_RATE_WINDOW_SEC` | – | Coarse per-IP API guard — requests per window (default `1000` / `300`s). |
 | `USER_RATE_LIMIT` / `USER_RATE_WINDOW_SEC` | – | Per-user fair-use limit for logged-in sessions (default `600` / `300`s). |
 | `LOGIN_FAIL_LIMIT` / `LOGIN_LOCK_MIN` | – | Failed logins before an account is locked, and how long it stays locked (default `10` / `15` min). Keyed per-account and persisted in the DB. |
+| `BACKUP_ENABLED` | – | `1` turns on automatic nightly `pg_dump` backups (off by default). |
+| `BACKUP_HOUR` / `BACKUP_KEEP` / `BACKUP_DIR` | – | Backup hour `0–23` (default `3`), how many to retain (default `7`), and where they land (default `DATA_DIR/backups`). Each archive is verified as a complete, restorable dump; keep off-box copies too. |
 | `APP_URL` | – | Public URL used in outbound email links. Prefer setting it in-app (Integrations → Notifications → App URL); this env var is the fallback. Defaults to `http://localhost:8000`. |
 | `APP_DOMAIN` | – | Domain for the HTTPS compose profiles (`--profile tls` / `--profile cloudflare`). |
 | `AI_ENABLED` / `AI_PROVIDER` / `AI_MODEL` / `AI_BASE_URL` / `AI_API_KEY` | – | AI assistant defaults (optional). Normally configured in **Integrations → AI**, not via env. Assistant is off unless enabled. |
