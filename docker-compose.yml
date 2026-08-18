@@ -93,6 +93,15 @@ services:
       BACKUP_HOUR: ${BACKUP_HOUR:-3}
       BACKUP_KEEP: ${BACKUP_KEEP:-7}
       BACKUP_DIR: ${BACKUP_DIR:-}
+      # Single-provider SSO (OpenID Connect), invite-only. Off by default; the
+      # redirect URI must be registered verbatim at the IdP. Secrets are env-only.
+      SSO_ENABLED: ${SSO_ENABLED:-}
+      SSO_ISSUER: ${SSO_ISSUER:-}
+      SSO_CLIENT_ID: ${SSO_CLIENT_ID:-}
+      SSO_CLIENT_SECRET: ${SSO_CLIENT_SECRET:-}
+      SSO_REDIRECT_URI: ${SSO_REDIRECT_URI:-}
+      SSO_ALLOWED_DOMAINS: ${SSO_ALLOWED_DOMAINS:-}
+      SSO_BUTTON_LABEL: ${SSO_BUTTON_LABEL:-}
       ONBOARDING_VIDEO_URL: ${ONBOARDING_VIDEO_URL:-}
       # AI assistant (optional — enable in Integrations → AI, or set AI_ENABLED=1)
       AI_ENABLED: ${AI_ENABLED:-}

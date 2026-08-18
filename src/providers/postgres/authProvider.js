@@ -251,6 +251,53 @@ async function login({ email, password, rememberMe }, meta = {}) {
   return issueSession(user, meta, { rememberMe: remember });
 }
 
+/**
+ * SSO sign-in (OpenID Connect). INVITE-ONLY: never creates accounts. It links a
+ * verified external identity to an EXISTING local user on first sign-in (matched
+ * by verified email), then matches by the stable (iss, sub) pair afterwards.
+ * `claims` are already signature/nonce/aud-validated by openid-client.
+ */
+async function loginWithOidc(claims, meta = {}) {
+  const iss = String((claims && claims.iss) || '').trim();
+  const sub = String((claims && claims.sub) || '').trim();
+  const email = String((claims && claims.email) || '').trim().toLowerCase();
+  if (!iss || !sub) throw HttpError.unauthorized('SSO token is missing a subject');
+  // An unverified email must never be trusted for account matching — that is the
+  // classic SSO account-takeover vector.
+  if (!email || claims.email_verified !== true) {
+    throw HttpError.forbidden('Your SSO email is not verified — cannot sign in', { code: 'sso_email_unverified' });
+  }
+  const domains = config.sso.allowedDomains;
+  if (domains.length && !domains.includes(email.split('@')[1] || '')) {
+    throw HttpError.forbidden('Your email domain is not permitted to sign in here', { code: 'sso_domain' });
+  }
+
+  // 1) Already linked → match by the stable (iss, sub), independent of email.
+  let { rows } = await query('SELECT * FROM users WHERE oidc_iss = $1 AND oidc_sub = $2', [iss, sub]);
+  let user = rows[0];
+
+  // 2) First SSO sign-in → bind to an existing account with this verified email.
+  if (!user) {
+    ({ rows } = await query('SELECT * FROM users WHERE lower(email) = $1', [email]));
+    user = rows[0];
+    if (!user) {
+      throw HttpError.forbidden(
+        'No ITACM account exists for this email — ask your administrator to add you first',
+        { code: 'sso_no_account' }
+      );
+    }
+    if (user.oidc_sub && (user.oidc_sub !== sub || user.oidc_iss !== iss)) {
+      throw HttpError.forbidden('This account is already linked to a different SSO identity', { code: 'sso_conflict' });
+    }
+    await query('UPDATE users SET oidc_iss = $2, oidc_sub = $3 WHERE id = $1', [user.id, iss, sub]);
+  }
+
+  if (user.status === 'Disabled') throw HttpError.forbidden('This account has been disabled — contact your Owner');
+  await assertPortalEmployeeActive(user);
+  await clearLoginFailure(user.id);
+  return issueSession(user, meta, { rememberMe: true });
+}
+
 async function verifyMfaLogin({ mfaToken, code, backupCode, rememberMe }, meta = {}) {
   const { user, jti, tokenExp, rememberMe: challengeRemember } = await verifyMfaChallengeToken(mfaToken);
   if (!user.mfa_enabled || !user.mfa_secret) {
@@ -1067,7 +1114,7 @@ async function getAdminLogs(email, limit = 25) {
 }
 
 module.exports = {
-  login, verifyMfaLogin, verifyToken, logout, recordLogin, getLoginLogs,
+  login, loginWithOidc, verifyMfaLogin, verifyToken, logout, recordLogin, getLoginLogs,
   changePassword, mfaSetupStart, mfaSetupConfirm, mfaDisable, mfaStatus,
   createItUser, listEmployeeCandidates,
   upsertAdmin, upsertAdminTx, setUserRole, getVerifiedProfile, listUsers,

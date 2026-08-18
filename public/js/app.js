@@ -696,6 +696,15 @@ function showLogin() {
     mfaForm.dataset.mfaToken = '';
     mfaForm.dataset.rememberMe = '';
   }
+  const ssoBox = $('#login-sso');
+  if (ssoBox) {
+    const on = !!(AppConfig && AppConfig.sso && AppConfig.sso.enabled);
+    ssoBox.classList.toggle('hidden', !on);
+    if (on) {
+      const lbl = $('#login-sso-label');
+      if (lbl) lbl.textContent = (AppConfig.sso.label || '').trim() || (t('login.ssoBtn') || 'Sign in with SSO');
+    }
+  }
   showConfigError('#login-error');
   const mfaErr = $('#mfa-error');
   if (mfaErr) mfaErr.classList.add('hidden');
@@ -3559,11 +3568,40 @@ async function init() {
   applyBranding();
   bindOnboarding();
 
+  // SSO handoff: the callback redirected back with a one-time ticket (or an
+  // error code) in the URL hash. Handle it before the session/onboarding checks.
+  const ssoHash = (() => {
+    const h = location.hash || '';
+    const pick = (k) => { const m = new RegExp('(?:^|[#&])' + k + '=([^&]+)').exec(h); return m ? decodeURIComponent(m[1]) : null; };
+    return { ticket: pick('sso_ticket'), error: pick('sso_error') };
+  })();
+  if (ssoHash.ticket || ssoHash.error) {
+    // Strip the marker/ticket from the address bar + history immediately.
+    try { history.replaceState(null, '', location.pathname + location.search); } catch { location.hash = ''; }
+  }
+  if (ssoHash.ticket) {
+    try {
+      await loginWithSsoTicket(ssoHash.ticket);
+      showApp();
+      return;
+    } catch {
+      hideBootSplash();
+      toast(t('login.ssoFailed') || 'SSO sign-in failed', 'error');
+    }
+  } else if (ssoHash.error) {
+    hideBootSplash();
+    const key = ssoHash.error === 'sso_no_account' ? 'login.ssoNoAccount' : 'login.ssoDenied';
+    toast(t(key) || 'SSO sign-in was denied', 'error');
+  }
+
   const rememberPref = (() => {
     try { return localStorage.getItem('itacm_remember_me') === '1'; } catch { return false; }
   })();
   const rememberBox = $('#login-remember');
   if (rememberBox) rememberBox.checked = rememberPref;
+
+  const ssoBtn = $('#login-sso-btn');
+  if (ssoBtn) ssoBtn.addEventListener('click', () => { window.location.href = '/api/auth/sso/start'; });
 
   const revealBtn = $('#login-reveal');
   if (revealBtn) {

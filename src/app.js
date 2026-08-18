@@ -197,6 +197,12 @@ function createApp() {
     let updateAvailable = null;
     try { updateAvailable = require('./utils/updateCheck').getUpdateInfo(settings.updateCheck).updateAvailable; }
     catch { /* never block config on the update check */ }
+    // Whether to show the SSO button on the login screen (no secrets — just a
+    // flag + label). isReady() is true only when SSO is on AND fully configured.
+    let sso = { enabled: false, label: '' };
+    try {
+      if (require('./utils/oidc').isReady()) sso = { enabled: true, label: config.sso.buttonLabel };
+    } catch { /* SSO stays off if the module can't load */ }
     res.json({
       success: true,
       data: {
@@ -206,6 +212,7 @@ function createApp() {
         configError,
         onboardingVideoUrl,
         ownerMfaRequired,
+        sso,
         ...settings,
       },
     });

@@ -277,6 +277,11 @@ code, .mono { font-family: var(--mono); font-size: 12px; }
   line-height: 1.4;
   margin-bottom: 14px;
 }
+.login-sso { margin-top: 4px; }
+.login-or { display: flex; align-items: center; gap: 12px; margin: 16px 0; color: var(--outline); font-size: 12px; }
+.login-or::before, .login-or::after { content: ""; flex: 1; height: 1px; background: var(--outline-variant); }
+.login-sso #login-sso-btn { min-height: 46px; display: flex; align-items: center; justify-content: center; gap: 8px; }
+.login-sso #login-sso-btn .ms { font-size: 18px; }
 .login-notice {
   display: flex; align-items: flex-start; gap: 9px;
   margin-top: 16px; padding: 11px 12px;

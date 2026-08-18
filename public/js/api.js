@@ -162,6 +162,14 @@ async function loginWithMfa({ mfaToken, code, backupCode, rememberMe = false }) 
   return profile;
 }
 
+async function loginWithSsoTicket(ticket) {
+  const data = await api('/auth/sso/exchange', { method: 'POST', body: { ticket } });
+  Auth.token = data.token;
+  const profile = await api('/auth/verify-token', { method: 'POST' });
+  Auth.save(data.token, profile, { remember: true });
+  return profile;
+}
+
 async function logout() {
   try {
     if (Auth.token) await api('/auth/logout', { method: 'POST' });

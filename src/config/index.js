@@ -89,6 +89,23 @@ const config = {
     dir: trimmedEnv('BACKUP_DIR') || '',
   },
 
+  /**
+   * Single-provider SSO via OpenID Connect (OFF by default). Invite-only: SSO
+   * signs in users who already exist in ITACM, never creates accounts. Config is
+   * env-only so the client secret never lives in the DB or UI. The redirect URI
+   * must be registered verbatim at the IdP.
+   */
+  sso: {
+    enabled: flagEnv('SSO_ENABLED'),
+    issuer: trimmedEnv('SSO_ISSUER'),
+    clientId: trimmedEnv('SSO_CLIENT_ID'),
+    clientSecret: env('SSO_CLIENT_SECRET'),
+    redirectUri: trimmedEnv('SSO_REDIRECT_URI'),
+    allowedDomains: trimmedEnv('SSO_ALLOWED_DOMAINS')
+      .split(',').map((s) => s.trim().toLowerCase().replace(/^@/, '')).filter(Boolean),
+    buttonLabel: trimmedEnv('SSO_BUTTON_LABEL') || 'Sign in with SSO',
+  },
+
   // Opt-in upstream update check. When on, the server asks GitHub once a day
   // whether a newer release exists and surfaces it to the Owner. OFF by default
   // so air-gapped / offline installs never reach out. GITHUB_TOKEN is optional

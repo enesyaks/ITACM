@@ -314,6 +314,11 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL
 ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_login_count INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_until       TIMESTAMPTZ;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS last_failed_at     TIMESTAMPTZ;
+-- Single-provider SSO (OIDC) link — also 053_sso_identity.sql
+ALTER TABLE users ADD COLUMN IF NOT EXISTS oidc_iss TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS oidc_sub TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_oidc
+  ON users (oidc_iss, oidc_sub) WHERE oidc_sub IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS jwt_denylist (
   jti         TEXT PRIMARY KEY,

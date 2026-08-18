@@ -3,10 +3,25 @@ const { authenticate, requireRole, requirePermission } = require('../middleware/
 const { asyncHandler } = require('../utils/asyncHandler');
 const crypto = require('crypto');
 const { authProvider, permissionService, notificationService } = require('../services');
+const jwt = require('jsonwebtoken');
 const { HttpError } = require('../utils/httpError');
 const { rateLimitIp } = require('../utils/setupAccess');
 const { ipInCidrList } = require('../utils/ipMatch');
+const oidc = require('../utils/oidc');
 const config = require('../config');
+
+const SSO_COOKIE = 'itacm_sso';
+function isSecureReq(req) {
+  return req.secure || String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https';
+}
+function readCookie(req, name) {
+  const raw = req.headers.cookie || '';
+  for (const part of raw.split(';')) {
+    const i = part.indexOf('=');
+    if (i > -1 && part.slice(0, i).trim() === name) return decodeURIComponent(part.slice(i + 1).trim());
+  }
+  return null;
+}
 
 // Per-IP login backstop: max 20 *failed* attempts per IP per 15 minutes — catches
 // spraying across many unknown emails from one source. The precise, per-account
@@ -75,6 +90,61 @@ router.post('/mfa/verify', loginLimiter, asyncHandler(async (req, res) => {
     bumpLoginFail(req);
     throw err;
   }
+}));
+
+/* ---------------------------------- SSO ----------------------------------
+ * OpenID Connect, Authorization Code + PKCE. Invite-only (authProvider links to
+ * an existing user only). The PKCE verifier / state / nonce ride a short-lived,
+ * signed, HttpOnly cookie between /start and /callback; the finished session is
+ * handed to the SPA via a 60-second one-time ticket in the URL hash so the
+ * long-lived JWT never lands in browser history or access logs.
+ */
+
+// GET /api/auth/sso/start — send the browser to the identity provider.
+router.get('/sso/start', asyncHandler(async (req, res) => {
+  const { url, codeVerifier, state, nonce } = await oidc.beginAuth();
+  const stash = jwt.sign({ codeVerifier, state, nonce }, config.jwtSecret, { expiresIn: '10m' });
+  res.cookie(SSO_COOKIE, stash, {
+    httpOnly: true, secure: isSecureReq(req), sameSite: 'lax',
+    maxAge: 10 * 60 * 1000, path: '/api/auth/sso',
+  });
+  res.redirect(url);
+}));
+
+// GET /api/auth/sso/callback — the IdP redirects here with ?code&state.
+router.get('/sso/callback', asyncHandler(async (req, res) => {
+  const stashRaw = readCookie(req, SSO_COOKIE);
+  res.clearCookie(SSO_COOKIE, { path: '/api/auth/sso' });
+  let stash;
+  try { stash = jwt.verify(stashRaw || '', config.jwtSecret); }
+  catch { return res.redirect('/#sso_error=expired'); }
+  const callbackUrl = new URL(config.sso.redirectUri).origin + req.originalUrl;
+  let claims;
+  try {
+    claims = await oidc.completeAuth(callbackUrl, stash);
+  } catch {
+    return res.redirect('/#sso_error=verify');
+  }
+  try {
+    const session = await authProvider.loginWithOidc(claims, {
+      ip: rateLimitIp(req), userAgent: req.headers['user-agent'] || null,
+    });
+    const ticket = jwt.sign({ purpose: 'sso_handoff', token: session.token }, config.jwtSecret, { expiresIn: '60s' });
+    return res.redirect('/#sso_ticket=' + encodeURIComponent(ticket));
+  } catch (err) {
+    const code = (err && err.details && err.details.code) || 'denied';
+    return res.redirect('/#sso_error=' + encodeURIComponent(code));
+  }
+}));
+
+// POST /api/auth/sso/exchange — SPA swaps the one-time ticket for the session.
+router.post('/sso/exchange', asyncHandler(async (req, res) => {
+  const ticket = req.body && req.body.ticket;
+  let payload;
+  try { payload = jwt.verify(String(ticket || ''), config.jwtSecret); }
+  catch { throw HttpError.unauthorized('Invalid or expired SSO ticket'); }
+  if (payload.purpose !== 'sso_handoff' || !payload.token) throw HttpError.unauthorized('Invalid SSO ticket');
+  res.json({ success: true, data: { token: payload.token } });
 }));
 
 router.post('/logout', authenticate, asyncHandler(async (req, res) => {
