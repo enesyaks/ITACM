@@ -1353,6 +1353,8 @@
     'tk.requester': L('Requester', 'Talep eden'),
     'tk.assignee': L('Assignee', 'Atanan'),
     'tk.createdCol': L('Created', 'Oluşturulma'),
+    'tk.relatedTickets': L('Related tickets', 'İlgili ticket\'lar'),
+    'tk.noneForAsset': L('No tickets for this asset', 'Bu varlık için ticket yok'),
     'tk.kpiOpen': L('Open', 'Açık'),
     'tk.kpiUnassigned': L('Unassigned', 'Atanmamış'),
     'tk.kpiBreached': L('SLA breached', 'SLA ihlali'),

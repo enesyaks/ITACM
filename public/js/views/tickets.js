@@ -35,7 +35,7 @@ function slaDue(leg) {
   return ` <span class="cell-sub">· ${esc(t('tk.sla.target'))} ${esc(String(leg.dueAt).replace('T', ' ').slice(0, 16))}</span>`;
 }
 
-Views.tickets = async function (el) {
+Views.tickets = async function (el, params = {}) {
   const canCreate = Auth.canIam('ticket', 'create') || Auth.canIam('ticket', 'manage');
   const canUpdate = Auth.canIam('ticket', 'update') || Auth.canIam('ticket', 'manage');
   const canAssign = Auth.canIam('ticket', 'assign') || Auth.canIam('ticket', 'manage');
@@ -264,4 +264,6 @@ Views.tickets = async function (el) {
   }
 
   render(Array.isArray(tickets) ? tickets : []);
+  // Deep-link: #/tickets?open=<id> (e.g. from an asset's related-tickets list).
+  if (params && params.open) openTicket(params.open);
 };

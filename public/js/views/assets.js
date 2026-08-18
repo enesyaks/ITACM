@@ -1939,6 +1939,11 @@ async function showAssetDetail(id, onChange) {
           <div class="ad-sec-head"><strong>${esc(t('hw.d.secRepair'))}</strong><span>${repairs.length}</span></div>
           <div class="ad-timeline">${repairHtml}</div>
         </section>
+        ${(AppConfig.ticketing && AppConfig.ticketing.enabled && Auth.canIam('ticket', 'read')) ? `
+        <section class="ad-sec">
+          <div class="ad-sec-head"><strong>${esc(t('tk.relatedTickets'))}</strong></div>
+          <div class="ad-timeline" id="ad-tickets"><div class="ad-empty-block">${esc(t('common.loading') || '…')}</div></div>
+        </section>` : ''}
       </div>`,
     foot: `
       <button class="btn btn-outline" data-close>${esc(t('common.close'))}</button>
@@ -1971,6 +1976,25 @@ async function showAssetDetail(id, onChange) {
       }));
       $('#ad-qr', overlay).addEventListener('click', () => showQrModal(x));
       $('#ad-label', overlay).addEventListener('click', () => printAssetLabels([x]));
+      // Related service-desk tickets (module-gated) — filled async; row → open in Service Desk.
+      const tbox = $('#ad-tickets', overlay);
+      if (tbox) {
+        api('/tickets?assetId=' + encodeURIComponent(x.id)).then((list) => {
+          const arr = Array.isArray(list) ? list : [];
+          if (!arr.length) { tbox.innerHTML = `<div class="ad-empty-block">${esc(t('tk.noneForAsset'))}</div>`; return; }
+          tbox.innerHTML = arr.map((tk) => `
+            <div class="ad-timeline-item ad-ticket-row" data-tk="${esc(tk.id)}" style="cursor:pointer">
+              <div class="ad-timeline-when mono">${esc(tk.number)}</div>
+              <div class="ad-timeline-body">
+                <span class="pill ${TK_STATUS_PILL[tk.status] || 'pill-slate'}">${esc(tkStatusLabel(tk.status))}</span>
+                <span>${esc(tk.subject)}</span>
+              </div>
+            </div>`).join('');
+          tbox.querySelectorAll('.ad-ticket-row').forEach((r) => r.addEventListener('click', () => {
+            closeModal(); location.hash = '#/tickets?open=' + r.dataset.tk;
+          }));
+        }).catch(() => { tbox.innerHTML = ''; });
+      }
       // Attached repair paperwork: click → view inline in a new tab.
       overlay.querySelectorAll('[data-mdoc-dl]').forEach((a) => a.addEventListener('click', (e) => {
         e.preventDefault();
