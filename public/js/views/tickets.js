@@ -39,6 +39,7 @@ Views.tickets = async function (el, params = {}) {
   const canCreate = Auth.canIam('ticket', 'create') || Auth.canIam('ticket', 'manage');
   const canUpdate = Auth.canIam('ticket', 'update') || Auth.canIam('ticket', 'manage');
   const canAssign = Auth.canIam('ticket', 'assign') || Auth.canIam('ticket', 'manage');
+  const canManage = Auth.canIam('ticket', 'manage');
 
   const [tickets, staff, empRes, assetRes, stats0] = await Promise.all([
     api('/tickets?open=1').catch(() => []),
@@ -91,8 +92,9 @@ Views.tickets = async function (el, params = {}) {
 
   const render = (list) => {
     el.innerHTML = `
-      ${pageHead(t('tk.title'), t('tk.subtitle'), canCreate
-        ? `<button class="btn btn-primary" id="tk-new"><span class="ms">add</span> ${esc(t('tk.new'))}</button>` : '')}
+      ${pageHead(t('tk.title'), t('tk.subtitle'),
+        `${canManage ? `<button class="btn btn-outline" id="tk-sla"><span class="ms">schedule</span> ${esc(t('tk.slaSettings'))}</button>` : ''}`
+        + `${canCreate ? `<button class="btn btn-primary" id="tk-new"><span class="ms">add</span> ${esc(t('tk.new'))}</button>` : ''}`)}
       <div id="tk-stats">${statsHtml(stats0)}</div>
       <div class="card card-pad" style="margin-bottom:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
         <select id="tk-f-status" class="ops-select">
@@ -122,6 +124,8 @@ Views.tickets = async function (el, params = {}) {
       tr.addEventListener('click', () => openTicket(tr.dataset.open)));
     const nb = $('#tk-new', el);
     if (nb) nb.addEventListener('click', openCreate);
+    const sb = $('#tk-sla', el);
+    if (sb) sb.addEventListener('click', openSlaEditor);
     const reload = () => refresh();
     $('#tk-f-status', el)?.addEventListener('change', reload);
     $('#tk-f-type', el)?.addEventListener('change', reload);
@@ -143,6 +147,38 @@ Views.tickets = async function (el, params = {}) {
       : `<tr><td colspan="9" class="table-empty">${esc(t('tk.none'))}</td></tr>`;
     el.querySelectorAll('#tk-rows tr[data-open]').forEach((tr) =>
       tr.addEventListener('click', () => openTicket(tr.dataset.open)));
+  }
+
+  async function openSlaEditor() {
+    const cfg = await api('/tickets/sla').catch(() => null);
+    if (!cfg) { toast(t('common.error') || 'Error', 'error'); return; }
+    const row = (p) => `<tr>
+      <td>${pill(TK_PRIORITY_PILL[p], tkPriorityLabel(p))}</td>
+      <td><input type="number" min="1" max="100000" id="sla-${p}-resp" value="${esc(cfg[p].responseMins)}" style="width:110px"></td>
+      <td><input type="number" min="1" max="100000" id="sla-${p}-res" value="${esc(cfg[p].resolveMins)}" style="width:110px"></td>
+    </tr>`;
+    openModal({
+      title: t('tk.slaSettings'),
+      body: `<p class="cell-sub" style="margin:0 0 12px">${esc(t('tk.slaHint'))}</p>
+        <table class="table"><thead><tr>
+          <th>${esc(t('tk.priorityCol'))}</th>
+          <th>${esc(t('tk.sla.response'))} <span class="cell-sub">(${esc(t('tk.mins'))})</span></th>
+          <th>${esc(t('tk.sla.resolution'))} <span class="cell-sub">(${esc(t('tk.mins'))})</span></th>
+        </tr></thead><tbody>${TK_PRIORITY.map(row).join('')}</tbody></table>`,
+      foot: `<button class="btn btn-outline" data-close>${esc(t('common.cancel'))}</button>
+             <button class="btn btn-primary" id="sla-save">${esc(t('common.save'))}</button>`,
+      onMount(ov) {
+        $('#sla-save', ov).addEventListener('click', async () => {
+          const body = {};
+          TK_PRIORITY.forEach((p) => { body[p] = {
+            responseMins: Number($(`#sla-${p}-resp`, ov).value),
+            resolveMins: Number($(`#sla-${p}-res`, ov).value),
+          }; });
+          try { await api('/tickets/sla', { method: 'PUT', body }); closeModal(); toast(t('tk.saved'), 'success'); refresh(); }
+          catch (err) { toast(err.message, 'error'); }
+        });
+      },
+    });
   }
 
   function openCreate() {

@@ -28,14 +28,55 @@ const SLA_TARGETS = Object.freeze({
   low: { responseMins: 480, resolveMins: 2880 },    // 8h / 48h
 });
 
-function targetsFor(priority) {
-  return SLA_TARGETS[priority] || SLA_TARGETS.medium;
+const PRIORITY_ORDER = ['low', 'medium', 'high', 'urgent'];
+
+function sanitizeMins(v, dflt) {
+  const n = Math.round(Number(v));
+  return Number.isFinite(n) && n >= 1 && n <= 100000 ? n : dflt;
 }
+
+// Effective SLA targets = stored overrides (app_settings.sla_json) merged over
+// the code defaults. Cached briefly so the ticket write path stays a single read.
+let _slaCache = null;
+let _slaCacheAt = 0;
+async function getSlaConfig() {
+  if (_slaCache && Date.now() - _slaCacheAt < 60 * 1000) return _slaCache;
+  let stored = {};
+  try {
+    const { rows } = await query('SELECT sla_json FROM app_settings WHERE id = 1');
+    if (rows[0] && rows[0].sla_json && typeof rows[0].sla_json === 'object') stored = rows[0].sla_json;
+  } catch { stored = {}; }
+  const merged = {};
+  for (const p of PRIORITY_ORDER) {
+    const d = SLA_TARGETS[p];
+    const o = stored[p] || {};
+    merged[p] = { responseMins: sanitizeMins(o.responseMins, d.responseMins), resolveMins: sanitizeMins(o.resolveMins, d.resolveMins) };
+  }
+  _slaCache = merged;
+  _slaCacheAt = Date.now();
+  return merged;
+}
+
+async function saveSlaConfig(input) {
+  const out = {};
+  for (const p of PRIORITY_ORDER) {
+    const d = SLA_TARGETS[p];
+    const o = (input && input[p]) || {};
+    out[p] = { responseMins: sanitizeMins(o.responseMins, d.responseMins), resolveMins: sanitizeMins(o.resolveMins, d.resolveMins) };
+    if (out[p].responseMins > out[p].resolveMins) {
+      throw HttpError.badRequest(`${p}: first-response target cannot exceed the resolution target`);
+    }
+  }
+  await query('UPDATE app_settings SET sla_json = $1::jsonb WHERE id = 1', [JSON.stringify(out)]);
+  _slaCache = null;
+  return getSlaConfig();
+}
+
 function addMinutes(from, mins) {
   return new Date(new Date(from).getTime() + mins * 60 * 1000);
 }
-function slaDueDates(priority, from) {
-  const tgt = targetsFor(priority);
+function slaDueDates(targets, priority, from) {
+  const tgt = targets[priority] || targets.medium || SLA_TARGETS.medium;
   return { responseDueAt: addMinutes(from, tgt.responseMins), resolveDueAt: addMinutes(from, tgt.resolveMins) };
 }
 
@@ -145,7 +186,7 @@ async function createTicket(body, user, { asEmployee = null } = {}) {
   }
 
   const number = await nextNumber(type);
-  const { responseDueAt, resolveDueAt } = slaDueDates(priority, new Date());
+  const { responseDueAt, resolveDueAt } = slaDueDates(await getSlaConfig(), priority, new Date());
   const { rows } = await query(
     `INSERT INTO tickets (number, type, subject, description, priority, category,
         requester_employee_id, requester_user_id, asset_id, created_by, created_by_name, status,
@@ -229,6 +270,7 @@ async function stats() {
 async function updateTicket(id, patch, user) {
   if (!isUuid(id)) throw HttpError.notFound('Ticket not found');
   const a = actor(user);
+  const slaTargets = await getSlaConfig(); // read before the tx (separate connection)
   let plan = null;
   await withTransaction(async (t) => {
     const { rows } = await t.query('SELECT * FROM tickets WHERE id = $1 FOR UPDATE', [id]);
@@ -248,7 +290,7 @@ async function updateTicket(id, patch, user) {
         set('priority', patch.priority);
         acts.push(['priority', `${cur.priority} → ${patch.priority}`]);
         // Re-target the SLA clocks that haven't completed yet (relative to creation).
-        const due = slaDueDates(patch.priority, cur.created_at);
+        const due = slaDueDates(slaTargets, patch.priority, cur.created_at);
         if (!cur.first_response_at) set('response_due_at', due.responseDueAt);
         if (!cur.resolved_at) set('resolve_due_at', due.resolveDueAt);
       }
@@ -453,5 +495,5 @@ function audit(action, summary, a, entityId, label) {
 module.exports = {
   createTicket, getTicket, listTickets, updateTicket, addComment,
   createMyTicket, listMyTickets, getMyTicket, addMyComment,
-  sweepSlaBreaches, SLA_TARGETS, stats,
+  sweepSlaBreaches, SLA_TARGETS, stats, getSlaConfig, saveSlaConfig,
 };

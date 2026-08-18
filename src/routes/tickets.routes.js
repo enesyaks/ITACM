@@ -40,6 +40,14 @@ router.get('/stats', requirePermission('ticket', 'read'), asyncHandler(async (re
   res.json({ success: true, data: await ticketService.stats() });
 }));
 
+// GET/PUT /api/tickets/sla — effective SLA targets / save overrides (before /:id)
+router.get('/sla', requirePermission('ticket', 'read'), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await ticketService.getSlaConfig() });
+}));
+router.put('/sla', requirePermission('ticket', 'manage'), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await ticketService.saveSlaConfig(req.body || {}) });
+}));
+
 // GET /api/tickets/:id — detail + comments + activity
 router.get('/:id', requirePermission('ticket', 'read'), asyncHandler(async (req, res) => {
   res.json({ success: true, data: await ticketService.getTicket(req.params.id, req.user) });

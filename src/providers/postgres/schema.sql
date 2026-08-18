@@ -931,3 +931,6 @@ CREATE INDEX IF NOT EXISTS idx_tickets_response_due ON tickets (response_due_at)
   WHERE response_breached_at IS NULL AND first_response_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_tickets_resolve_due ON tickets (resolve_due_at)
   WHERE resolve_breached_at IS NULL AND resolved_at IS NULL;
+
+-- Configurable SLA targets (057): { priority: { responseMins, resolveMins } }.
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS sla_json JSONB NOT NULL DEFAULT '{}'::jsonb;
