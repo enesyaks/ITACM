@@ -30,6 +30,10 @@ const ROUTES = {
   '#/org': { title: 'Organization', view: 'org', icon: 'account_tree' },
   '#/handover': { title: 'Handover Ops', view: 'handover', icon: 'assignment_turned_in' },
   '#/maintenance': { title: 'Maintenance & Repair', view: 'maintenance', icon: 'build' },
+  '#/tickets': {
+    title: 'Service Desk', view: 'tickets', icon: 'confirmation_number',
+    iam: [['ticket', 'read']], module: 'ticketing',
+  },
   '#/stockcount': { title: 'Stock Count', view: 'stockcount', icon: 'fact_check' },
   '#/reports': { title: 'Reports', view: 'reports', icon: 'summarize' },
   '#/audit': { title: 'Audit Log', view: 'audit', icon: 'history', perm: 'canViewAudit' },
@@ -93,6 +97,8 @@ function permittedNavEntries() {
   return Object.entries(ROUTES).filter(([hash, r]) => {
     if (isPortalUser()) return hash === PORTAL_HASH;
     if (isHrConfined()) return HR_ALLOWED_HASHES.has(hash);
+    // Optional module (e.g. Service Desk): hidden unless the Owner enabled it.
+    if (r.module && !(typeof AppConfig === 'object' && AppConfig && AppConfig[r.module + 'Enabled'])) return false;
     if (r.hrOnly) return isHrUser(); // HR screen: any HR account, grouped or not
     if (r.iam && !hasAllIam(r.iam)) return false;
     return !r.perm || Auth.can(r.perm);

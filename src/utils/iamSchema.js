@@ -16,7 +16,7 @@ const RESOURCES = Object.freeze([
   'line', 'consumable', 'maintenance', 'stock_count', 'report',
   'audit', 'dashboard', 'settings', 'user_management',
   'integration', 'document', 'handover_document', 'catalog', 'handover', 'onboarding',
-  'hr_request', 'ai',
+  'hr_request', 'ai', 'ticket',
 ]);
 
 /** Full union of actions (legacy rows + matrix). */
@@ -86,6 +86,9 @@ const ACTIONS_BY_RESOURCE = Object.freeze({
   // AI assistant chat. `use` = may open the assistant and run queries. The tools
   // it calls still enforce each user's own per-resource RBAC on top of this.
   ai: Object.freeze(['use']),
+  // Service desk / ITIL tickets. `assign` = pick up / reassign; `manage` = queues,
+  // categories and others' tickets. Employees raise their own via /api/me/tickets.
+  ticket: Object.freeze(['read', 'create', 'update', 'assign', 'manage']),
 });
 
 /**
@@ -102,6 +105,7 @@ const MANAGE_EXPAND = Object.freeze({
   consumable: Object.freeze(['read', 'update', 'delete']),
   maintenance: Object.freeze(['read', 'update', 'delete']),
   stock_count: Object.freeze(['read', 'update', 'delete']),
+  ticket: Object.freeze(['read', 'update', 'assign']),
 });
 
 const OPS_COVERED_BY_MANAGE = Object.freeze([

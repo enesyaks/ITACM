@@ -214,6 +214,7 @@ function createApp() {
         onboardingVideoUrl,
         ownerMfaRequired,
         sso,
+        ticketing: { enabled: !!settings.ticketingEnabled },
         ...settings,
       },
     });
@@ -224,6 +225,7 @@ function createApp() {
   app.use('/api/auth', require('./routes/auth.routes'));
   app.use('/api/dashboard', require('./routes/dashboard.routes'));
   app.use('/api/assets', require('./routes/assets.routes'));
+  app.use('/api/tickets', require('./routes/tickets.routes'));
   app.use('/api/employees', require('./routes/employees.routes'));
   app.use('/api/org', require('./routes/org.routes'));
   app.use('/api/approvals', require('./routes/approvals.routes'));

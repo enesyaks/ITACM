@@ -2,6 +2,7 @@
 module.exports = {
   authProvider: require('./authProvider'),
   assetService: require('./assetService'),
+  ticketService: require('./ticketService'),
   handoverService: require('./handoverService'),
   maintenanceService: require('./maintenanceService'),
   dashboardService: require('./dashboardService'),

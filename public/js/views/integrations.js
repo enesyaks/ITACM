@@ -342,6 +342,17 @@ Views.integrations = async function (el) {
         </div>
       </section>` : ''}
 
+      <section class="card card-pad" style="margin-bottom:16px">
+        <h3 style="margin:0 0 8px">${esc(t('int.ticketing.title'))}</h3>
+        <p class="cell-sub" style="margin:0 0 12px">${esc(t('int.ticketing.hint'))}</p>
+        <label class="ob-check" style="margin-bottom:12px">
+          <input type="checkbox" id="int-ticketing" ${AppConfig.ticketingEnabled ? 'checked' : ''}${chkDis}>
+          <span>${esc(t('int.ticketing.toggle'))}</span>
+        </label>
+        ${canManage ? `<div><button type="button" class="btn btn-primary" id="int-ticketing-save">
+          <span class="ms">save</span> ${esc(t('common.save') || 'Save')}</button></div>` : ''}
+      </section>
+
       <section class="card card-pad">
         <h3 style="margin:0 0 8px">Sync connectors (API)</h3>
         <pre class="mono" style="white-space:pre-wrap;font-size:12px;background:#f6f5fa;padding:12px;border-radius:10px;overflow:auto">POST /api/integrations/sync/employees
@@ -625,6 +636,19 @@ GET /api/integrations/licenses/:id/sam
       // client-side re-render without a full reload.
       if (typeof AppConfig === 'object' && AppConfig) AppConfig.zimmetOcr = saved ? !!saved.zimmetOcr : on;
       toast(t('integration.ocrSaved'), 'success');
+    } catch (err) { toast(err.message, 'error'); }
+    finally { if (btn) btn.disabled = false; }
+  });
+
+  $('#int-ticketing-save', el)?.addEventListener('click', async () => {
+    const btn = $('#int-ticketing-save', el);
+    const on = !!$('#int-ticketing', el)?.checked;
+    if (btn) btn.disabled = true;
+    try {
+      const saved = await api('/settings', { method: 'PUT', body: { ticketingEnabled: on } });
+      if (typeof AppConfig === 'object' && AppConfig) AppConfig.ticketingEnabled = saved ? !!saved.ticketingEnabled : on;
+      toast(t('int.ticketing.saved'), 'success');
+      if (typeof renderNav === 'function') renderNav(); // show/hide the Service Desk item
     } catch (err) { toast(err.message, 'error'); }
     finally { if (btn) btn.disabled = false; }
   });

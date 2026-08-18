@@ -292,7 +292,7 @@ async function getSettings() {
             locations, default_location, spec_options, document_storage, handover_template,
             handover_templates, departments, language, currency, label_config,
             provider_categories, contract_categories, asset_tag_prefix, approvals, update_check,
-            zimmet_ocr
+            zimmet_ocr, ticketing_enabled
      FROM app_settings WHERE id = 1`
   );
   const s = rows[0] || {};
@@ -337,6 +337,8 @@ async function getSettings() {
     // Same three-state rule: NULL inherits the ZIMMET_OCR env default, an
     // explicit Owner toggle overrides it. Exposed as an effective boolean.
     zimmetOcr: s.zimmet_ocr == null ? !!config.ocr.enabled : !!s.zimmet_ocr,
+    // Optional ITIL service-desk module — off unless the Owner turns it on.
+    ticketingEnabled: !!s.ticketing_enabled,
     providerCategories: (s.provider_categories && s.provider_categories.length)
       ? s.provider_categories : [...DEFAULT_PROVIDER_CATEGORIES],
     contractCategories: (s.contract_categories && s.contract_categories.length)
@@ -403,6 +405,7 @@ async function saveSettings({
   locations, defaultLocation, specOptions, documentStorage, handoverTemplate,
   handoverTemplates, defaultTemplateId, departments, language, currency, labelConfig,
   providerCategories, contractCategories, assetTagPrefix, approvals, updateCheck, zimmetOcr,
+  ticketingEnabled,
 }) {
   if (language !== undefined && language !== null && !/^[a-z]{2}(-[A-Za-z]{2,4})?$/.test(String(language))) {
     throw HttpError.badRequest('language must be a short code like "en" or "tr"');
@@ -487,7 +490,8 @@ async function saveSettings({
        asset_tag_prefix = CASE WHEN $19::text IS NOT NULL THEN $19 ELSE asset_tag_prefix END,
        approvals = CASE WHEN $20::jsonb IS NOT NULL THEN $20 ELSE approvals END,
        update_check = CASE WHEN $21::boolean IS NOT NULL THEN $21 ELSE update_check END,
-       zimmet_ocr = CASE WHEN $22::boolean IS NOT NULL THEN $22 ELSE zimmet_ocr END
+       zimmet_ocr = CASE WHEN $22::boolean IS NOT NULL THEN $22 ELSE zimmet_ocr END,
+       ticketing_enabled = CASE WHEN $23::boolean IS NOT NULL THEN $23 ELSE ticketing_enabled END
      WHERE id = 1`,
     [companyName ?? null, companyLogo ?? null, onboarded ?? null, handoverTerms ?? null,
      lifecyclesClean ? JSON.stringify(lifecyclesClean) : null,
@@ -511,7 +515,8 @@ async function saveSettings({
      assetTagPrefixClean ?? null,
      approvals !== undefined ? JSON.stringify(approvals) : null,
      updateCheck === undefined ? null : !!updateCheck,
-     zimmetOcr === undefined ? null : !!zimmetOcr]
+     zimmetOcr === undefined ? null : !!zimmetOcr,
+     ticketingEnabled === undefined ? null : !!ticketingEnabled]
   );
   return getSettings();
 }
