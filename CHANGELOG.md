@@ -4,6 +4,28 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.7.0] — 2026-08-18
+
+### Added
+- **Single sign-on via OpenID Connect** (invite-only, off by default). Staff sign
+  in with your identity provider (Google Workspace, Microsoft Entra, Okta, Auth0,
+  Keycloak…). Authorization Code flow with **PKCE**; all token exchange is
+  server-side and the ID token is validated against the provider's JWKS
+  (`openid-client`). The session reaches the browser via a **single-use** handoff
+  ticket.
+  - **Invite-only & secure**: signs in a user who already exists in ITACM, matched
+    by their **verified** email (`email_verified` required), then by the stable
+    `(issuer, subject)` pair. Unknown/unverified emails and disallowed domains are
+    refused; it never creates accounts or elevates roles. Local password login
+    stays as a break-glass path.
+  - **Configure from the UI** (Integrations → SSO): issuer, client ID, encrypted
+    client secret (never shown again), the exact redirect URI to register, a
+    **Test connection** check, allowed email domains, and a custom button label.
+    Env vars (`SSO_*`) work as a fallback.
+  - Optional **Require SSO for staff** (`SSO_REQUIRE`) — only an Owner may still
+    use a password. Admins can see SSO-linked accounts in IT Users and **unlink**
+    one. SSO sign-ins are recorded in the audit log.
+
 ## [1.6.0] — 2026-08-18
 
 ### Added
