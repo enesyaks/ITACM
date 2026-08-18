@@ -5823,3 +5823,5 @@ body.ai-open .ai-panel { opacity: 1; visibility: visible; transform: none; }
 .tk-desc { white-space: pre-wrap; }
 .tk-activity { margin: 8px 0 0; padding-left: 18px; font-size: 12.5px; color: var(--on-surface-variant); }
 .tk-activity li { margin: 3px 0; }
+.tk-sla { display: flex; flex-wrap: wrap; gap: 8px 22px; align-items: center; }
+.tk-sla > span { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }

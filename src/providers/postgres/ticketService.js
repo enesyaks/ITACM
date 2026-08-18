@@ -15,6 +15,57 @@ const { HttpError } = require('../../utils/httpError');
 const TYPES = new Set(['incident', 'request']);
 const PRIORITIES = new Set(['low', 'medium', 'high', 'urgent']);
 const STATUSES = new Set(['new', 'open', 'in_progress', 'pending', 'resolved', 'closed', 'cancelled']);
+const TERMINAL = new Set(['resolved', 'closed', 'cancelled']);
+
+// SLA targets (elapsed minutes from creation) by priority. First response and
+// resolution each get their own clock; times are wall-clock (no business-hours
+// calendar in the MVP). Editable defaults — a settings-driven override can layer
+// on later without touching callers.
+const SLA_TARGETS = Object.freeze({
+  urgent: { responseMins: 30, resolveMins: 240 },   // 30m / 4h
+  high: { responseMins: 60, resolveMins: 480 },     // 1h / 8h
+  medium: { responseMins: 240, resolveMins: 1440 }, // 4h / 24h
+  low: { responseMins: 480, resolveMins: 2880 },    // 8h / 48h
+});
+
+function targetsFor(priority) {
+  return SLA_TARGETS[priority] || SLA_TARGETS.medium;
+}
+function addMinutes(from, mins) {
+  return new Date(new Date(from).getTime() + mins * 60 * 1000);
+}
+function slaDueDates(priority, from) {
+  const tgt = targetsFor(priority);
+  return { responseDueAt: addMinutes(from, tgt.responseMins), resolveDueAt: addMinutes(from, tgt.resolveMins) };
+}
+
+// Live SLA state for one leg. `doneAt` is when that leg completed
+// (first_response_at / resolved_at); once set it fixes met-vs-breached.
+function legState(dueAt, doneAt, open) {
+  if (!dueAt) return { state: 'none' };
+  const due = new Date(dueAt).getTime();
+  if (doneAt) return { state: new Date(doneAt).getTime() <= due ? 'met' : 'breached', dueAt };
+  if (!open) return { state: 'na', dueAt }; // closed/cancelled without ever completing this leg
+  const now = Date.now();
+  return now > due ? { state: 'breached', dueAt } : { state: 'due', dueAt, remainingMs: due - now };
+}
+
+const SLA_RAW = ['responseDueAt', 'resolveDueAt', 'responseBreachedAt', 'resolveBreachedAt'];
+
+// Attach a compact `sla` object for staff views; drop the raw columns either way.
+function decorateSla(row) {
+  const open = !TERMINAL.has(row.status);
+  row.sla = {
+    response: legState(row.responseDueAt, row.firstResponseAt, open),
+    resolve: legState(row.resolveDueAt, row.resolvedAt, open),
+  };
+  for (const k of SLA_RAW) delete row[k];
+  return row;
+}
+function stripSla(row) {
+  for (const k of SLA_RAW) delete row[k];
+  return row;
+}
 
 // Allowed status transitions (from → [to]). Missing / same-state = rejected.
 const TRANSITIONS = Object.freeze({
@@ -56,6 +107,8 @@ const SELECT_COLS = `
   t.asset_id AS "assetId", a.asset_tag AS "assetTag",
   t.created_by_name AS "createdByName",
   t.first_response_at AS "firstResponseAt", t.resolved_at AS "resolvedAt", t.closed_at AS "closedAt",
+  t.response_due_at AS "responseDueAt", t.resolve_due_at AS "resolveDueAt",
+  t.response_breached_at AS "responseBreachedAt", t.resolve_breached_at AS "resolveBreachedAt",
   t.created_at AS "createdAt", t.updated_at AS "updatedAt"`;
 const FROM_JOINS = `
   FROM tickets t
@@ -92,13 +145,16 @@ async function createTicket(body, user, { asEmployee = null } = {}) {
   }
 
   const number = await nextNumber(type);
+  const { responseDueAt, resolveDueAt } = slaDueDates(priority, new Date());
   const { rows } = await query(
     `INSERT INTO tickets (number, type, subject, description, priority, category,
-        requester_employee_id, requester_user_id, asset_id, created_by, created_by_name, status)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, 'new')
+        requester_employee_id, requester_user_id, asset_id, created_by, created_by_name, status,
+        response_due_at, resolve_due_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, 'new', $12, $13)
      RETURNING id`,
     [number, type, subject, description || null, priority, category,
-      requesterEmployeeId, asEmployee ? null : a.id, assetId, a.id, a.name]
+      requesterEmployeeId, asEmployee ? null : a.id, assetId, a.id, a.name,
+      responseDueAt, resolveDueAt]
   );
   const id = rows[0].id;
   await logActivity(id, a, 'created', `${type} · ${priority}`);
@@ -128,7 +184,7 @@ async function getTicket(id, user, { ownEmployeeId = null } = {}) {
     );
     ticket.activity = activity;
   }
-  return ticket;
+  return ownEmployeeId ? stripSla(ticket) : decorateSla(ticket);
 }
 
 async function listTickets(opts = {}) {
@@ -147,7 +203,7 @@ async function listTickets(opts = {}) {
     `SELECT ${SELECT_COLS} ${FROM_JOINS} ${whereSql} ORDER BY t.created_at DESC LIMIT $${params.length}`,
     params
   );
-  return rows;
+  return rows.map(decorateSla);
 }
 
 async function updateTicket(id, patch, user) {
@@ -165,7 +221,14 @@ async function updateTicket(id, patch, user) {
 
     if (patch.priority !== undefined) {
       if (!PRIORITIES.has(patch.priority)) throw HttpError.badRequest('Invalid priority');
-      if (patch.priority !== cur.priority) { set('priority', patch.priority); acts.push(['priority', `${cur.priority} → ${patch.priority}`]); }
+      if (patch.priority !== cur.priority) {
+        set('priority', patch.priority);
+        acts.push(['priority', `${cur.priority} → ${patch.priority}`]);
+        // Re-target the SLA clocks that haven't completed yet (relative to creation).
+        const due = slaDueDates(patch.priority, cur.created_at);
+        if (!cur.first_response_at) set('response_due_at', due.responseDueAt);
+        if (!cur.resolved_at) set('resolve_due_at', due.resolveDueAt);
+      }
     }
     if (patch.category !== undefined) set('category', patch.category ? String(patch.category).trim().slice(0, 120) : null);
     if (patch.assigneeUserId !== undefined) {
@@ -241,7 +304,7 @@ async function listMyTickets(user) {
     `SELECT ${SELECT_COLS} ${FROM_JOINS} WHERE t.requester_employee_id = $1 ORDER BY t.created_at DESC LIMIT 200`,
     [emp.id]
   );
-  return rows;
+  return rows.map(stripSla);
 }
 
 async function getMyTicket(id, user) {
@@ -254,6 +317,36 @@ async function addMyComment(id, body, user) {
   const emp = await employeeForUser(user);
   if (!emp) throw HttpError.forbidden('No employee record is linked to your account');
   return addComment(id, body, user, { ownEmployeeId: emp.id });
+}
+
+/**
+ * Stamp newly-breached SLA legs (once each) and log them to ticket_activity.
+ * Called from the 1-minute scheduler tick. The `<> breached_at IS NULL` guard
+ * plus the RETURNING set makes each breach fire exactly one activity row, even
+ * across overlapping ticks. Safe to run when the module is off (matches nothing).
+ */
+async function sweepSlaBreaches() {
+  const legs = [
+    { col: 'response_breached_at', done: 'first_response_at', due: 'response_due_at', action: 'sla_response', detail: 'First-response SLA breached' },
+    { col: 'resolve_breached_at', done: 'resolved_at', due: 'resolve_due_at', action: 'sla_resolve', detail: 'Resolution SLA breached' },
+  ];
+  let flagged = 0;
+  for (const l of legs) {
+    const { rows } = await query(
+      `UPDATE tickets SET ${l.col} = now()
+        WHERE ${l.col} IS NULL AND ${l.done} IS NULL AND ${l.due} IS NOT NULL AND ${l.due} < now()
+          AND status NOT IN ('resolved','closed','cancelled')
+        RETURNING id, number`
+    );
+    for (const r of rows) {
+      await query(
+        'INSERT INTO ticket_activity (ticket_id, actor_name, action, detail) VALUES ($1,$2,$3,$4)',
+        [r.id, 'system', l.action, l.detail]
+      );
+      flagged += 1;
+    }
+  }
+  return flagged;
 }
 
 function audit(action, summary, a, entityId, label) {
@@ -269,4 +362,5 @@ function audit(action, summary, a, entityId, label) {
 module.exports = {
   createTicket, getTicket, listTickets, updateTicket, addComment,
   createMyTicket, listMyTickets, getMyTicket, addMyComment,
+  sweepSlaBreaches, SLA_TARGETS,
 };

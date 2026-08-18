@@ -921,3 +921,13 @@ CREATE SEQUENCE IF NOT EXISTS ticket_incident_seq START 1001;
 CREATE SEQUENCE IF NOT EXISTS ticket_request_seq  START 1001;
 
 ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS ticketing_enabled BOOLEAN NOT NULL DEFAULT false;
+
+-- Ticket SLA (056): per-priority response/resolution due timestamps + breach markers.
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS response_due_at      TIMESTAMPTZ;
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS resolve_due_at       TIMESTAMPTZ;
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS response_breached_at TIMESTAMPTZ;
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS resolve_breached_at  TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS idx_tickets_response_due ON tickets (response_due_at)
+  WHERE response_breached_at IS NULL AND first_response_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_tickets_resolve_due ON tickets (resolve_due_at)
+  WHERE resolve_breached_at IS NULL AND resolved_at IS NULL;

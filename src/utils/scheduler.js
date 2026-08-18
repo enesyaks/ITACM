@@ -13,6 +13,7 @@
 const notificationService = require('../providers/postgres/notificationService');
 const zimmetImportService = require('../providers/postgres/zimmetImportService');
 const backupService = require('../providers/postgres/backupService');
+const ticketService = require('../providers/postgres/ticketService');
 
 const TICK_MS = 60 * 1000;
 const PURGE_EVERY_TICKS = 60; // hourly
@@ -28,6 +29,9 @@ function start() {
     backupService.runIfDue().catch((err) => {
       console.warn('[scheduler] backup tick failed:', err.message);
     });
+    ticketService.sweepSlaBreaches()
+      .then((n) => { if (n) console.log(`[scheduler] flagged ${n} SLA breach(es)`); })
+      .catch((err) => { console.warn('[scheduler] SLA sweep failed:', err.message); });
     if ((ticks += 1) % PURGE_EVERY_TICKS === 0) {
       zimmetImportService.purgeStale().then((r) => {
         const n = r ? (r.purgedItems || 0) + (r.clearedOrphans || 0) : 0;

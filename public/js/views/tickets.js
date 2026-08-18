@@ -11,6 +11,30 @@ const tkStatusLabel = (s) => t('tk.status.' + s) || s;
 const tkPriorityLabel = (p) => t('tk.priority.' + p) || p;
 const tkTypeLabel = (ty) => t('tk.type.' + ty) || ty;
 
+/* --- SLA badges (staff views only — portal payloads carry no `sla`) --- */
+const TK_SLA_PILL = { due: 'pill-blue', breached: 'pill-rose', met: 'pill-emerald', na: 'pill-slate', none: 'pill-slate' };
+function tkFmtRemaining(ms) {
+  const m = Math.max(0, Math.round((ms || 0) / 60000));
+  if (m < 60) return (t('tk.sla.inMin') || '{n}m').replace('{n}', m);
+  const h = Math.floor(m / 60);
+  if (h < 48) return (t('tk.sla.inHour') || '{n}h').replace('{n}', h);
+  return (t('tk.sla.inDay') || '{n}d').replace('{n}', Math.floor(h / 24));
+}
+function tkSlaLabel(leg) {
+  if (!leg || leg.state === 'none' || leg.state === 'na') return t('tk.sla.na');
+  if (leg.state === 'met') return t('tk.sla.met');
+  if (leg.state === 'breached') return t('tk.sla.breached');
+  return tkFmtRemaining(leg.remainingMs);
+}
+function tkSlaBadge(leg) {
+  const cls = TK_SLA_PILL[(leg && leg.state) || 'none'] || 'pill-slate';
+  return `<span class="pill ${cls}">${esc(tkSlaLabel(leg))}</span>`;
+}
+function slaDue(leg) {
+  if (!leg || !leg.dueAt) return '';
+  return ` <span class="cell-sub">· ${esc(t('tk.sla.target'))} ${esc(String(leg.dueAt).replace('T', ' ').slice(0, 16))}</span>`;
+}
+
 Views.tickets = async function (el) {
   const canCreate = Auth.canIam('ticket', 'create') || Auth.canIam('ticket', 'manage');
   const canUpdate = Auth.canIam('ticket', 'update') || Auth.canIam('ticket', 'manage');
@@ -30,6 +54,7 @@ Views.tickets = async function (el) {
       <td><div class="cell-title">${esc(tk.subject)}</div>${tk.assetTag ? `<div class="cell-sub">${esc(tk.assetTag)}</div>` : ''}</td>
       <td>${pill(TK_STATUS_PILL[tk.status], tkStatusLabel(tk.status))}</td>
       <td>${pill(TK_PRIORITY_PILL[tk.priority], tkPriorityLabel(tk.priority))}</td>
+      <td>${tkSlaBadge(tk.sla && tk.sla.resolve)}</td>
       <td class="cell-sub">${esc(tk.requesterName || '—')}</td>
       <td class="cell-sub">${esc(tk.assigneeName || t('tk.unassigned'))}</td>
       <td class="cell-sub">${esc(String(tk.createdAt || '').slice(0, 10))}</td>
@@ -56,11 +81,11 @@ Views.tickets = async function (el) {
       <div class="card" style="overflow-x:auto"><table class="table">
         <thead><tr>
           <th>#</th><th>${esc(t('tk.type'))}</th><th>${esc(t('tk.subject'))}</th>
-          <th>${esc(t('tk.statusCol'))}</th><th>${esc(t('tk.priorityCol'))}</th>
+          <th>${esc(t('tk.statusCol'))}</th><th>${esc(t('tk.priorityCol'))}</th><th>${esc(t('tk.slaCol'))}</th>
           <th>${esc(t('tk.requester'))}</th><th>${esc(t('tk.assignee'))}</th><th>${esc(t('tk.createdCol'))}</th>
         </tr></thead>
         <tbody id="tk-rows">${list.length ? list.map(rowHtml).join('')
-          : `<tr><td colspan="8" class="table-empty">${esc(t('tk.none'))}</td></tr>`}</tbody>
+          : `<tr><td colspan="9" class="table-empty">${esc(t('tk.none'))}</td></tr>`}</tbody>
       </table></div>`;
 
     el.querySelectorAll('#tk-rows tr[data-open]').forEach((tr) =>
@@ -84,7 +109,7 @@ Views.tickets = async function (el) {
     const list = await api('/tickets?' + qs.toString()).catch(() => []);
     const body = $('#tk-rows', el);
     if (body) body.innerHTML = list.length ? list.map(rowHtml).join('')
-      : `<tr><td colspan="8" class="table-empty">${esc(t('tk.none'))}</td></tr>`;
+      : `<tr><td colspan="9" class="table-empty">${esc(t('tk.none'))}</td></tr>`;
     el.querySelectorAll('#tk-rows tr[data-open]').forEach((tr) =>
       tr.addEventListener('click', () => openTicket(tr.dataset.open)));
   }
@@ -151,6 +176,11 @@ Views.tickets = async function (el) {
             <input id="tk-d-cat" value="${esc(tk.category || '')}" ${canUpdate ? '' : 'disabled'}></div>
           <div class="form-field full"><label>${esc(t('tk.requester'))}</label>
             <div>${esc(tk.requesterName || '—')}${tk.assetTag ? ` · <span class="ms" style="font-size:15px;vertical-align:-2px">devices</span> ${esc(tk.assetTag)}` : ''}</div></div>
+          <div class="form-field full"><label>${esc(t('tk.slaCol'))}</label>
+            <div class="tk-sla">
+              <span>${esc(t('tk.sla.response'))}: ${tkSlaBadge(tk.sla && tk.sla.response)}${slaDue(tk.sla && tk.sla.response)}</span>
+              <span>${esc(t('tk.sla.resolution'))}: ${tkSlaBadge(tk.sla && tk.sla.resolve)}${slaDue(tk.sla && tk.sla.resolve)}</span>
+            </div></div>
           <div class="form-field full"><label>${esc(t('tk.description'))}</label>
             <div class="tk-desc">${esc(tk.description || '—').replace(/\n/g, '<br>')}</div></div>
         </div>
