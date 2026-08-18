@@ -795,8 +795,10 @@ async function getVerifiedProfile(user) {
     role: enriched.role,
     mfaEnabled: !!row?.mfa_enabled,
     mfaMandatory: roleRequiresMfa(enriched.role),
-    mfaEnrollmentRequired: roleRequiresMfa(enriched.role) && !row?.mfa_enabled,
-    mustChangePassword: !!row?.must_change_password,
+    // An SSO session is authenticated by the IdP, so the app's own temp-password
+    // and MFA-enrolment prompts don't apply (the DB flags stay for password login).
+    mfaEnrollmentRequired: !enriched.sso && roleRequiresMfa(enriched.role) && !row?.mfa_enabled,
+    mustChangePassword: !enriched.sso && !!row?.must_change_password,
     permissionGroupId: enriched.permissionGroupId,
     customConstraints: enriched.customConstraints,
     permissions: uiPermissionsFromIam(iamPermissions, enriched.role),
