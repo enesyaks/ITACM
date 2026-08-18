@@ -56,6 +56,7 @@ Views.tickets = async function (el, params = {}) {
   let sortOrder = 'desc';
   let searchTerm = '';
   let searchTimer = null;
+  const selected = new Set(); // bulk-select ids for the current painted list
 
   // KPI strip: open · unassigned · SLA-breached · resolved today.
   const statsHtml = (s) => {
@@ -85,8 +86,10 @@ Views.tickets = async function (el, params = {}) {
   const empOptions = emps.map((e) => `<option value="${esc(empLabel(e))}">`).join('');
   const assetOptions = assets.map((x) => `<option value="${esc(assetLabel(x))}">`).join('');
 
+  const canBulk = canUpdate || canAssign;
   const pill = (cls, label) => `<span class="pill ${cls}">${esc(label)}</span>`;
   const rowHtml = (tk) => `<tr data-open="${esc(tk.id)}" style="cursor:pointer">
+      ${canBulk ? `<td class="tk-selcell"><input type="checkbox" class="tk-sel" data-id="${esc(tk.id)}"></td>` : ''}
       <td class="mono">${esc(tk.number)}</td>
       <td>${pill('pill-slate', tkTypeLabel(tk.type))}</td>
       <td><div class="cell-title">${esc(tk.subject)}</div>${tk.assetTag ? `<div class="cell-sub">${esc(tk.assetTag)}</div>` : ''}</td>
@@ -104,12 +107,13 @@ Views.tickets = async function (el, params = {}) {
   };
   const tableHtml = (list) => `<div class="card" style="overflow-x:auto"><table class="table">
       <thead><tr>
+        ${canBulk ? '<th class="tk-selcell"><input type="checkbox" id="tk-sel-all"></th>' : ''}
         ${sortTh('number', '#')}<th>${esc(t('tk.type'))}</th>${sortTh('subject', t('tk.subject'))}
         ${sortTh('status', t('tk.statusCol'))}${sortTh('priority', t('tk.priorityCol'))}${sortTh('sla', t('tk.slaCol'))}
         <th>${esc(t('tk.requester'))}</th><th>${esc(t('tk.assignee'))}</th>${sortTh('created', t('tk.createdCol'))}
       </tr></thead>
       <tbody id="tk-rows">${list.length ? list.map(rowHtml).join('')
-        : `<tr><td colspan="9" class="table-empty">${esc(t('tk.none'))}</td></tr>`}</tbody>
+        : `<tr><td colspan="${canBulk ? 10 : 9}" class="table-empty">${esc(t('tk.none'))}</td></tr>`}</tbody>
     </table></div>`;
 
   const cardHtml = (tk) => `<div class="tk-card" data-id="${esc(tk.id)}" data-status="${esc(tk.status)}"${canUpdate ? ' draggable="true"' : ''}>
@@ -130,6 +134,7 @@ Views.tickets = async function (el, params = {}) {
 
   const paintList = (list) => {
     const box = $('#tk-content', el); if (!box) return;
+    selected.clear(); // a fresh paint (sort/filter/refresh) starts with no selection
     box.innerHTML = tableHtml(list);
     box.querySelectorAll('#tk-rows tr[data-open]').forEach((tr) =>
       tr.addEventListener('click', () => openTicket(tr.dataset.open)));
@@ -139,6 +144,22 @@ Views.tickets = async function (el, params = {}) {
       else { sortKey = key; sortOrder = key === 'subject' || key === 'number' ? 'asc' : 'desc'; }
       refresh();
     }));
+    // Bulk-select checkboxes (don't let a checkbox click open the ticket).
+    box.querySelectorAll('.tk-sel').forEach((cb) => {
+      cb.addEventListener('click', (e) => e.stopPropagation());
+      cb.addEventListener('change', () => {
+        if (cb.checked) selected.add(cb.dataset.id); else selected.delete(cb.dataset.id);
+        const all = $('#tk-sel-all', box); if (all) all.checked = selected.size === list.length && list.length > 0;
+        renderBulk();
+      });
+    });
+    const selAll = $('#tk-sel-all', box);
+    if (selAll) selAll.addEventListener('change', () => {
+      selected.clear();
+      box.querySelectorAll('.tk-sel').forEach((cb) => { cb.checked = selAll.checked; if (selAll.checked) selected.add(cb.dataset.id); });
+      renderBulk();
+    });
+    renderBulk();
   };
 
   const paintBoard = (list) => {
@@ -179,6 +200,44 @@ Views.tickets = async function (el, params = {}) {
   const refreshStats = () => api('/tickets/stats')
     .then((s) => { const b = $('#tk-stats', el); if (b && s) b.innerHTML = statsHtml(s); }).catch(() => {});
 
+  function renderBulk() {
+    const box = $('#tk-bulk', el); if (!box) return;
+    if (!selected.size) { box.style.display = 'none'; box.innerHTML = ''; return; }
+    box.style.display = 'flex';
+    box.innerHTML = `
+      <span class="tk-bulk-count">${esc(t('tk.selected').replace('{n}', selected.size))}</span>
+      ${canAssign ? `<select class="ops-select" id="tk-bulk-assign">
+        <option value="">${esc(t('tk.bulkAssign'))}</option>
+        <option value="__none__">${esc(t('tk.unassigned'))}</option>
+        ${staffList.map((u) => `<option value="${esc(u.uid)}">${esc(u.username)}</option>`).join('')}
+      </select>` : ''}
+      ${canUpdate ? `<select class="ops-select" id="tk-bulk-priority">
+        <option value="">${esc(t('tk.bulkPriority'))}</option>
+        ${TK_PRIORITY.map((p) => `<option value="${p}">${esc(tkPriorityLabel(p))}</option>`).join('')}
+      </select>` : ''}
+      ${canUpdate ? `<select class="ops-select" id="tk-bulk-status">
+        <option value="">${esc(t('tk.bulkStatus'))}</option>
+        ${TK_STATUS.map((s) => `<option value="${s}">${esc(tkStatusLabel(s))}</option>`).join('')}
+      </select>` : ''}
+      <button class="btn btn-outline btn-sm" id="tk-bulk-clear" style="margin-left:auto">${esc(t('tk.clearSel'))}</button>`;
+    $('#tk-bulk-assign', box)?.addEventListener('change', (e) => { if (e.target.value) bulkApply({ assigneeUserId: e.target.value === '__none__' ? null : e.target.value }); });
+    $('#tk-bulk-priority', box)?.addEventListener('change', (e) => { if (e.target.value) bulkApply({ priority: e.target.value }); });
+    $('#tk-bulk-status', box)?.addEventListener('change', (e) => { if (e.target.value) bulkApply({ status: e.target.value }); });
+    $('#tk-bulk-clear', box)?.addEventListener('click', () => { selected.clear(); el.querySelectorAll('.tk-sel, #tk-sel-all').forEach((cb) => { cb.checked = false; }); renderBulk(); });
+  }
+
+  async function bulkApply(patch) {
+    const ids = [...selected];
+    if (!ids.length) return;
+    let ok = 0; let fail = 0;
+    for (const id of ids) {
+      try { await api('/tickets/' + encodeURIComponent(id), { method: 'PATCH', body: patch }); ok += 1; }
+      catch { fail += 1; }
+    }
+    toast(t('tk.bulkDone').replace('{ok}', ok).replace('{fail}', fail), fail ? 'error' : 'success');
+    refresh(); // repaint clears selection + checkboxes + hides the bar
+  }
+
   const setMode = (m) => { mode = m; localStorage.setItem('tk_mode', m); render(); refresh(); };
 
   const render = () => {
@@ -215,6 +274,7 @@ Views.tickets = async function (el, params = {}) {
           <input type="checkbox" id="tk-f-mine"> ${esc(t('tk.mineOnly'))}</label>
         <button class="btn btn-outline btn-sm" id="tk-csv" style="margin-left:auto"><span class="ms ms-sm">download</span> ${esc(t('tk.exportCsv'))}</button>
       </div>
+      <div id="tk-bulk" class="tk-bulk" style="display:none"></div>
       <div id="tk-content"></div>`;
 
     const nb = $('#tk-new', el);

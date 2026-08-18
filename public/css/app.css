@@ -5826,6 +5826,12 @@ body.ai-open .ai-panel { opacity: 1; visibility: visible; transform: none; }
 .tk-sla { display: flex; flex-wrap: wrap; gap: 8px 22px; align-items: center; }
 .tk-sla > span { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
 
+/* Bulk-action bar */
+.tk-bulk { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px;
+  padding: 10px 14px; border-radius: 12px; background: var(--primary-container); border: 1px solid var(--outline-variant); }
+.tk-bulk-count { font-weight: 600; font-size: 13px; }
+.tk-selcell { width: 34px; text-align: center; }
+
 /* Sortable table headers */
 th.tk-sortable { cursor: pointer; user-select: none; white-space: nowrap; }
 th.tk-sortable:hover { color: var(--primary); }
