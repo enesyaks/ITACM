@@ -102,7 +102,7 @@ Views.users = async function (el) {
             <div class="ops-user">
               <span class="avatar">${esc(initials(u.username))}</span>
               <div class="ops-user-text">
-                <div class="ops-user-name">${esc(u.username)}${isSelf ? ` <span class="ops-you">${esc(t('usr.you'))}</span>` : ''}</div>
+                <div class="ops-user-name">${esc(u.username)}${isSelf ? ` <span class="ops-you">${esc(t('usr.you'))}</span>` : ''}${u.ssoLinked ? ` <span class="pill pill-blue" title="${esc(t('usr.ssoLinkedHint') || 'Signs in via SSO')}">SSO</span>` : ''}</div>
                 <div class="ops-user-email">${esc(u.email)}</div>
               </div>
             </div>
@@ -132,6 +132,11 @@ Views.users = async function (el) {
               <button type="button" class="ops-icon-btn" data-logins="${esc(u.uid)}" data-uname="${esc(u.username)}" data-uemail="${esc(u.email)}" title="${esc(t('usr.loginHistory'))}">
                 <span class="ms">history</span>
               </button>
+              ${canAdminRow && u.ssoLinked ? `
+              <button type="button" class="ops-icon-btn" data-unlink-sso="${esc(u.uid)}" data-uname="${esc(u.username)}"
+                title="${esc(t('usr.ssoUnlink') || 'Unlink SSO')}">
+                <span class="ms">link_off</span>
+              </button>` : ''}
               ${canAdminRow ? `
               <button type="button" class="ops-icon-btn" data-toggle-status="${esc(u.uid)}" data-cur="${esc(u.status || 'Active')}"
                 title="${u.status === 'Disabled' ? esc('Re-enable account') : esc('Disable sign-in')}">
@@ -1180,6 +1185,16 @@ Views.users = async function (el) {
       try {
         await api(`/auth/users/${b.dataset.delUser}`, { method: 'DELETE' });
         toast('Account deleted — recorded in the audit log', 'success');
+        Views.users(el);
+      } catch (err) { toast(err.message, 'error'); }
+    });
+  }));
+  el.querySelectorAll('button[data-unlink-sso]').forEach((b) => b.addEventListener('click', () => {
+    const msg = (t('usr.ssoUnlinkConfirm') || 'Unlink SSO for "{name}"? They will sign in with a password until they link again.').replace('{name}', b.dataset.uname || '');
+    confirmModal(msg, async () => {
+      try {
+        await api(`/auth/users/${b.dataset.unlinkSso}/sso`, { method: 'DELETE' });
+        toast(t('usr.ssoUnlinked') || 'SSO link removed', 'success');
         Views.users(el);
       } catch (err) { toast(err.message, 'error'); }
     });

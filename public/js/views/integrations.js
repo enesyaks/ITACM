@@ -184,6 +184,8 @@ Views.integrations = async function (el) {
           <div class="form-field"><label>${esc(t('int.sso.button') || 'Login button label')}</label>
             <input id="int-sso-label" value="${esc(sso.buttonLabel || '')}" placeholder="Sign in with Google"${inputDis}></div>
           <div class="form-field full"><label><input type="checkbox" id="int-sso-enabled" ${sso.enabled ? 'checked' : ''}${chkDis}> ${esc(t('int.sso.enable') || 'Enable SSO sign-in')}</label></div>
+          <div class="form-field full"><label><input type="checkbox" id="int-sso-require" ${sso.requireSso ? 'checked' : ''}${chkDis}> ${esc(t('int.sso.require') || 'Require SSO for staff (optional — Owner can still use a password)')}</label>
+            <span class="ob-hint">${esc(t('int.sso.requireHint') || 'Off by default. When on, only an Owner may sign in with a password; everyone else must use SSO.')}</span></div>
         </div>
         ${canManage ? `<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
           <button class="btn btn-primary" id="int-sso-save">${esc(t('int.sso.save') || 'Save SSO')}</button>
@@ -451,6 +453,7 @@ GET /api/integrations/licenses/:id/sam
           redirectUri: $('#int-sso-redirect', el)?.value.trim(),
           allowedDomains: $('#int-sso-domains', el)?.value,
           buttonLabel: $('#int-sso-label', el)?.value.trim(),
+          requireSso: !!$('#int-sso-require', el)?.checked,
         },
       });
       toast(t('int.sso.saved') || 'SSO settings saved', 'success');

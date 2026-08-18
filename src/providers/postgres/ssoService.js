@@ -39,6 +39,7 @@ async function getSsoConfig() {
       redirectUri: String(db.redirectUri || '').trim(),
       allowedDomains: normDomains(db.allowedDomains),
       buttonLabel: String(db.buttonLabel || '').trim() || 'Sign in with SSO',
+      requireSso: !!db.requireSso,
     }
     : {
       source: 'env',
@@ -49,6 +50,7 @@ async function getSsoConfig() {
       redirectUri: config.sso.redirectUri,
       allowedDomains: config.sso.allowedDomains,
       buttonLabel: config.sso.buttonLabel,
+      requireSso: config.sso.requireSso,
     };
   cfg.secretConfigured = !!cfg.clientSecret;
   cfg.ready = !!(cfg.enabled && cfg.issuer && cfg.clientId && cfg.clientSecret && cfg.redirectUri);
@@ -66,6 +68,7 @@ async function getSsoForUi() {
     redirectUri: c.redirectUri,
     allowedDomains: c.allowedDomains,
     buttonLabel: c.buttonLabel,
+    requireSso: c.requireSso,
     secretConfigured: c.secretConfigured,
     ready: c.ready,
   };
@@ -107,6 +110,7 @@ async function saveSsoConfig(input) {
     redirectUri,
     allowedDomains: normDomains(input.allowedDomains),
     buttonLabel: String(input.buttonLabel || '').trim().slice(0, 60),
+    requireSso: !!input.requireSso,
   };
   await query('UPDATE app_settings SET sso_json = $1::jsonb WHERE id = 1', [JSON.stringify(payload)]);
   return getSsoForUi();

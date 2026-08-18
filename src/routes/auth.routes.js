@@ -283,6 +283,11 @@ router.delete('/users/:uid', authenticate, requirePermission('user_management', 
   res.json({ success: true, data: await authProvider.deleteUser(req.params.uid, req.user) });
 }));
 
+/** DELETE /api/auth/users/:uid/sso — remove the user's SSO link. İzin: user_management:update */
+router.delete('/users/:uid/sso', authenticate, requirePermission('user_management', 'update'), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await authProvider.unlinkOidc(req.params.uid) });
+}));
+
 /** GET /api/auth/users/:uid/logins — login logs. İzin: user_management:read */
 router.get('/users/:uid/logins', authenticate, requirePermission('user_management', 'read'), asyncHandler(async (req, res) => {
   res.json({ success: true, data: await authProvider.getLoginLogs(req.params.uid, req.query.limit) });

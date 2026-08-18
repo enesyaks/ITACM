@@ -104,6 +104,9 @@ const config = {
     allowedDomains: trimmedEnv('SSO_ALLOWED_DOMAINS')
       .split(',').map((s) => s.trim().toLowerCase().replace(/^@/, '')).filter(Boolean),
     buttonLabel: trimmedEnv('SSO_BUTTON_LABEL') || 'Sign in with SSO',
+    // Require SSO for staff — non-Owner accounts can't use a password (Owner
+    // keeps a break-glass password so a broken IdP never locks everyone out).
+    requireSso: flagEnv('SSO_REQUIRE'),
   },
 
   // Opt-in upstream update check. When on, the server asks GitHub once a day

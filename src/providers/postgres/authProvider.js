@@ -244,11 +244,31 @@ async function login({ email, password, rememberMe }, meta = {}) {
   await assertPortalEmployeeActive(user);
   await clearLoginFailure(user.id);
 
+  // "Require SSO for staff": once configured, only an Owner may still sign in
+  // with a password (break-glass). Everyone else must use the SSO button.
+  if (user.role !== 'Owner') {
+    const ssoCfg = await require('./ssoService').getSsoConfig();
+    if (ssoCfg.ready && ssoCfg.requireSso) {
+      throw HttpError.forbidden('Your organization requires SSO sign-in — use the SSO button', { code: 'sso_required' });
+    }
+  }
+
   const remember = !!rememberMe;
   if (user.mfa_enabled && user.mfa_secret) {
     return issueMfaChallenge(user, { rememberMe: remember });
   }
   return issueSession(user, meta, { rememberMe: remember });
+}
+
+/** Admin: remove an SSO link so the user must re-link or use a password. */
+async function unlinkOidc(userId) {
+  if (!isUuid(userId)) throw HttpError.badRequest('Invalid user id');
+  const { rows } = await query(
+    'UPDATE users SET oidc_iss = NULL, oidc_sub = NULL WHERE id = $1 RETURNING id, email',
+    [userId]
+  );
+  if (!rows[0]) throw HttpError.notFound('User not found');
+  return { unlinked: true, email: rows[0].email };
 }
 
 /**
@@ -820,6 +840,7 @@ async function listUsers() {
     `SELECT u.id AS uid, u.username, u.email, u.role, u.status, u.mfa_enabled AS "mfaEnabled",
             u.created_at AS "createdAt", u.last_login_at AS "lastLoginAt",
             u.permission_group_id AS "permissionGroupId",
+            (u.oidc_sub IS NOT NULL) AS "ssoLinked",
             pg.name AS "permissionGroupName"
      FROM users u
      LEFT JOIN permission_groups pg ON u.permission_group_id = pg.id
@@ -1114,7 +1135,7 @@ async function getAdminLogs(email, limit = 25) {
 }
 
 module.exports = {
-  login, loginWithOidc, verifyMfaLogin, verifyToken, logout, recordLogin, getLoginLogs,
+  login, loginWithOidc, unlinkOidc, verifyMfaLogin, verifyToken, logout, recordLogin, getLoginLogs,
   changePassword, mfaSetupStart, mfaSetupConfirm, mfaDisable, mfaStatus,
   createItUser, listEmployeeCandidates,
   upsertAdmin, upsertAdminTx, setUserRole, getVerifiedProfile, listUsers,
