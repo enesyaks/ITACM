@@ -697,6 +697,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_onboarding_items_line
 
 -- Product extensions (also migration 019_product_extensions.sql)
 ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS smtp_json JSONB NOT NULL DEFAULT '{}'::jsonb;
+-- UI-managed SSO (OIDC) config; client secret stored encrypted — also 054_sso_settings.sql
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS sso_json JSONB NOT NULL DEFAULT '{}'::jsonb;
 ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS notify_json JSONB NOT NULL DEFAULT '{}'::jsonb;
 ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS webhooks_json JSONB NOT NULL DEFAULT '[]'::jsonb;
 

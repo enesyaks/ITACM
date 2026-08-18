@@ -20,6 +20,7 @@ Views.integrations = async function (el) {
     api('/integrations/email-templates').catch(() => ({})),
     api('/ai/config').catch(() => ({ enabled: false, provider: 'ollama', providers: [] })),
   ]);
+  const sso = await api('/integrations/sso').catch(() => ({}));
   // The server ships every template it knows about, with its label and
   // placeholders — no local copy of the list to drift out of sync.
   const tpls = emailTemplates || {};
@@ -160,6 +161,31 @@ Views.integrations = async function (el) {
           <button class="btn btn-outline" id="int-smtp-clear" style="margin-left:auto;color:var(--rose,#be123c)">Clear SMTP &amp; recipients</button>` : ''}
           ${canRead ? `<button class="btn btn-outline" id="int-digest">Run digest now</button>` : ''}
         </div>
+      </section>
+
+      <section class="card card-pad" style="margin-bottom:16px">
+        <h3 style="margin:0 0 8px">${esc(t('int.sso.title') || 'Single sign-on (SSO)')}</h3>
+        <p class="cell-sub" style="margin:0 0 12px">${esc(t('int.sso.hint') || 'Invite-only OpenID Connect. Signs in users who already exist in ITACM (by verified email); it never creates accounts.')}</p>
+        ${sso.source === 'env' && (sso.issuer || sso.ready) ? `<p class="banner banner-amber" style="margin-bottom:12px">${esc(t('int.sso.envNote') || 'Currently configured via SSO_* environment variables. Saving here moves configuration to the database.')}</p>` : ''}
+        <div class="form-grid">
+          <div class="form-field full"><label>${esc(t('int.sso.redirect') || 'Redirect URI — register this verbatim at your provider')}</label>
+            <input value="${esc(sso.redirectUri || '')}" placeholder="https://itacm.company.com/api/auth/sso/callback" id="int-sso-redirect"${inputDis}></div>
+          <div class="form-field full"><label>${esc(t('int.sso.issuer') || 'Issuer URL')}</label>
+            <input id="int-sso-issuer" value="${esc(sso.issuer || '')}" placeholder="https://accounts.google.com"${inputDis}></div>
+          <div class="form-field"><label>Client ID</label>
+            <input id="int-sso-client" value="${esc(sso.clientId || '')}" autocomplete="off"${inputDis}></div>
+          <div class="form-field"><label>Client secret ${sso.secretConfigured ? '<span class="ob-hint">(saved — leave blank to keep)</span>' : ''}</label>
+            ${readOnly && sso.secretConfigured
+              ? secretLocked('••••••••••••', true)
+              : `<input id="int-sso-secret" type="password" value="" placeholder="${sso.secretConfigured ? '••••••••  leave blank to keep' : 'client secret'}" autocomplete="new-password"${inputDis}>`}
+          </div>
+          <div class="form-field"><label>${esc(t('int.sso.domains') || 'Allowed email domains (comma-separated, optional)')}</label>
+            <input id="int-sso-domains" value="${esc((sso.allowedDomains || []).join(', '))}" placeholder="company.com"${inputDis}></div>
+          <div class="form-field"><label>${esc(t('int.sso.button') || 'Login button label')}</label>
+            <input id="int-sso-label" value="${esc(sso.buttonLabel || '')}" placeholder="Sign in with Google"${inputDis}></div>
+          <div class="form-field full"><label><input type="checkbox" id="int-sso-enabled" ${sso.enabled ? 'checked' : ''}${chkDis}> ${esc(t('int.sso.enable') || 'Enable SSO sign-in')}</label></div>
+        </div>
+        ${canManage ? `<div style="margin-top:12px"><button class="btn btn-primary" id="int-sso-save">${esc(t('int.sso.save') || 'Save SSO')}</button></div>` : ''}
       </section>
 
       <section class="card card-pad" style="margin-bottom:16px">
@@ -408,6 +434,25 @@ GET /api/integrations/licenses/:id/sam
       if (typeof syncAssistantChrome === 'function') syncAssistantChrome().catch(() => {});
       Views.integrations(el);
     });
+  });
+
+  $('#int-sso-save', el)?.addEventListener('click', async () => {
+    try {
+      await api('/integrations/sso', {
+        method: 'PUT',
+        body: {
+          enabled: !!$('#int-sso-enabled', el)?.checked,
+          issuer: $('#int-sso-issuer', el)?.value.trim(),
+          clientId: $('#int-sso-client', el)?.value.trim(),
+          clientSecret: $('#int-sso-secret', el)?.value,
+          redirectUri: $('#int-sso-redirect', el)?.value.trim(),
+          allowedDomains: $('#int-sso-domains', el)?.value,
+          buttonLabel: $('#int-sso-label', el)?.value.trim(),
+        },
+      });
+      toast(t('int.sso.saved') || 'SSO settings saved', 'success');
+      Views.integrations(el);
+    } catch (err) { toast(err.message, 'error'); }
   });
 
   $('#int-smtp-save', el)?.addEventListener('click', async () => {

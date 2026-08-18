@@ -198,11 +198,12 @@ function createApp() {
     try { updateAvailable = require('./utils/updateCheck').getUpdateInfo(settings.updateCheck).updateAvailable; }
     catch { /* never block config on the update check */ }
     // Whether to show the SSO button on the login screen (no secrets — just a
-    // flag + label). isReady() is true only when SSO is on AND fully configured.
+    // flag + label). Resolved from the store (DB config wins, else env).
     let sso = { enabled: false, label: '' };
     try {
-      if (require('./utils/oidc').isReady()) sso = { enabled: true, label: config.sso.buttonLabel };
-    } catch { /* SSO stays off if the module can't load */ }
+      const ssoCfg = await require('./providers/postgres/ssoService').getSsoConfig();
+      if (ssoCfg.ready) sso = { enabled: true, label: ssoCfg.buttonLabel };
+    } catch { /* SSO stays off if it can't be resolved */ }
     res.json({
       success: true,
       data: {

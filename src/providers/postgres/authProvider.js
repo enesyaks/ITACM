@@ -257,7 +257,7 @@ async function login({ email, password, rememberMe }, meta = {}) {
  * by verified email), then matches by the stable (iss, sub) pair afterwards.
  * `claims` are already signature/nonce/aud-validated by openid-client.
  */
-async function loginWithOidc(claims, meta = {}) {
+async function loginWithOidc(claims, cfg = {}, meta = {}) {
   const iss = String((claims && claims.iss) || '').trim();
   const sub = String((claims && claims.sub) || '').trim();
   const email = String((claims && claims.email) || '').trim().toLowerCase();
@@ -267,7 +267,7 @@ async function loginWithOidc(claims, meta = {}) {
   if (!email || claims.email_verified !== true) {
     throw HttpError.forbidden('Your SSO email is not verified — cannot sign in', { code: 'sso_email_unverified' });
   }
-  const domains = config.sso.allowedDomains;
+  const domains = (cfg && cfg.allowedDomains) || [];
   if (domains.length && !domains.includes(email.split('@')[1] || '')) {
     throw HttpError.forbidden('Your email domain is not permitted to sign in here', { code: 'sso_domain' });
   }

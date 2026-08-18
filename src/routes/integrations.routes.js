@@ -55,6 +55,15 @@ router.post('/notifications/test', authenticate, requirePermission('integration'
   res.json({ success: true, data: await notificationService.sendTestEmail(req.body?.to) });
 }));
 
+// SSO (OIDC) configuration — secret is write-only (never returned).
+const ssoService = require('../providers/postgres/ssoService');
+router.get('/sso', authenticate, requirePermission('integration', 'read'), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await ssoService.getSsoForUi() });
+}));
+router.put('/sso', authenticate, requirePermission('integration', 'manage'), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await ssoService.saveSsoConfig(req.body || {}) });
+}));
+
 router.post('/notifications/digest', authenticate, requirePermission('integration', 'read'), asyncHandler(async (req, res) => {
   res.json({ success: true, data: await notificationService.runAlertDigest() });
 }));

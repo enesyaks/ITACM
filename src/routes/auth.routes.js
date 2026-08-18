@@ -8,6 +8,7 @@ const { HttpError } = require('../utils/httpError');
 const { rateLimitIp } = require('../utils/setupAccess');
 const { ipInCidrList } = require('../utils/ipMatch');
 const oidc = require('../utils/oidc');
+const ssoService = require('../providers/postgres/ssoService');
 const config = require('../config');
 
 const SSO_COOKIE = 'itacm_sso';
@@ -102,7 +103,8 @@ router.post('/mfa/verify', loginLimiter, asyncHandler(async (req, res) => {
 
 // GET /api/auth/sso/start — send the browser to the identity provider.
 router.get('/sso/start', asyncHandler(async (req, res) => {
-  const { url, codeVerifier, state, nonce } = await oidc.beginAuth();
+  const cfg = await ssoService.getSsoConfig();
+  const { url, codeVerifier, state, nonce } = await oidc.beginAuth(cfg);
   const stash = jwt.sign({ codeVerifier, state, nonce }, config.jwtSecret, { expiresIn: '10m' });
   res.cookie(SSO_COOKIE, stash, {
     httpOnly: true, secure: isSecureReq(req), sameSite: 'lax',
@@ -118,15 +120,16 @@ router.get('/sso/callback', asyncHandler(async (req, res) => {
   let stash;
   try { stash = jwt.verify(stashRaw || '', config.jwtSecret); }
   catch { return res.redirect('/#sso_error=expired'); }
-  const callbackUrl = new URL(config.sso.redirectUri).origin + req.originalUrl;
+  const cfg = await ssoService.getSsoConfig();
+  const callbackUrl = new URL(cfg.redirectUri).origin + req.originalUrl;
   let claims;
   try {
-    claims = await oidc.completeAuth(callbackUrl, stash);
+    claims = await oidc.completeAuth(cfg, callbackUrl, stash);
   } catch {
     return res.redirect('/#sso_error=verify');
   }
   try {
-    const session = await authProvider.loginWithOidc(claims, {
+    const session = await authProvider.loginWithOidc(claims, cfg, {
       ip: rateLimitIp(req), userAgent: req.headers['user-agent'] || null,
     });
     const ticket = jwt.sign({ purpose: 'sso_handoff', token: session.token }, config.jwtSecret, { expiresIn: '60s' });

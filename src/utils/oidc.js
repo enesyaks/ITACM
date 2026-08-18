@@ -3,50 +3,44 @@
 /**
  * OpenID Connect client — Authorization Code flow with PKCE.
  *
- * All token handling is server-side (backchannel). openid-client validates the
- * ID token signature against the provider's JWKS and checks iss / aud / exp /
- * nonce; PKCE (code_verifier) binds the code to this browser and state guards
- * CSRF. We never hand-roll any of that. Config is env-only (see config.sso).
+ * Stateless about config: every entry point takes an already-resolved `cfg`
+ * (from ssoService: DB or env). All token handling is server-side; openid-client
+ * validates the ID-token signature against the provider JWKS and checks iss /
+ * aud / exp / nonce; PKCE binds the code to this browser and state guards CSRF.
  */
 const { Issuer, generators } = require('openid-client');
-const config = require('../config');
 const { HttpError } = require('./httpError');
 
-/** True when SSO is switched on AND every required setting is present. */
-function isReady() {
-  const s = config.sso;
-  return !!(s.enabled && s.issuer && s.clientId && s.clientSecret && s.redirectUri);
+/** True when SSO is on AND every required field is present. */
+function isReady(cfg) {
+  return !!(cfg && cfg.enabled && cfg.issuer && cfg.clientId && cfg.clientSecret && cfg.redirectUri);
 }
 
-let clientPromise = null;
-
-async function getClient() {
-  if (!config.sso.enabled) throw HttpError.badRequest('SSO is not enabled');
-  if (!isReady()) {
-    throw HttpError.badRequest(
-      'SSO is misconfigured — set SSO_ISSUER, SSO_CLIENT_ID, SSO_CLIENT_SECRET and SSO_REDIRECT_URI'
-    );
-  }
-  if (!clientPromise) {
-    clientPromise = (async () => {
-      const issuer = await Issuer.discover(config.sso.issuer);
-      return new issuer.Client({
-        client_id: config.sso.clientId,
-        client_secret: config.sso.clientSecret,
-        redirect_uris: [config.sso.redirectUri],
-        response_types: ['code'],
-      });
-    })().catch((err) => { clientPromise = null; throw err; }); // don't cache a failed discovery
-  }
-  return clientPromise;
+// Cache the discovered client, keyed by the config that produced it, so a config
+// change in the UI transparently rebuilds it.
+let cache = { sig: null, client: null };
+function sigOf(cfg) {
+  return [cfg.issuer, cfg.clientId, cfg.redirectUri, cfg.clientSecret ? 'y' : 'n'].join('|');
 }
 
-/**
- * Start a login: returns the IdP redirect URL plus the PKCE verifier, state and
- * nonce the caller must stash (in a signed, HttpOnly cookie) for the callback.
- */
-async function beginAuth() {
-  const client = await getClient();
+async function getClient(cfg) {
+  if (!isReady(cfg)) throw HttpError.badRequest('SSO is not enabled or is misconfigured');
+  const sig = sigOf(cfg);
+  if (cache.sig === sig && cache.client) return cache.client;
+  const issuer = await Issuer.discover(cfg.issuer);
+  const client = new issuer.Client({
+    client_id: cfg.clientId,
+    client_secret: cfg.clientSecret,
+    redirect_uris: [cfg.redirectUri],
+    response_types: ['code'],
+  });
+  cache = { sig, client };
+  return client;
+}
+
+/** Start a login: returns the IdP redirect URL + PKCE verifier / state / nonce. */
+async function beginAuth(cfg) {
+  const client = await getClient(cfg);
   const codeVerifier = generators.codeVerifier();
   const codeChallenge = generators.codeChallenge(codeVerifier);
   const state = generators.state();
@@ -61,14 +55,11 @@ async function beginAuth() {
   return { url, codeVerifier, state, nonce };
 }
 
-/**
- * Finish a login: exchange the code and return the verified ID-token claims.
- * openid-client enforces state, nonce, PKCE and full ID-token validation here.
- */
-async function completeAuth(callbackUrl, { codeVerifier, state, nonce }) {
-  const client = await getClient();
+/** Finish a login: exchange the code and return the verified ID-token claims. */
+async function completeAuth(cfg, callbackUrl, { codeVerifier, state, nonce }) {
+  const client = await getClient(cfg);
   const params = client.callbackParams(callbackUrl);
-  const tokenSet = await client.callback(config.sso.redirectUri, params, {
+  const tokenSet = await client.callback(cfg.redirectUri, params, {
     code_verifier: codeVerifier,
     state,
     nonce,
