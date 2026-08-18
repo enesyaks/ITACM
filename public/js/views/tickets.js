@@ -40,12 +40,26 @@ Views.tickets = async function (el) {
   const canUpdate = Auth.canIam('ticket', 'update') || Auth.canIam('ticket', 'manage');
   const canAssign = Auth.canIam('ticket', 'assign') || Auth.canIam('ticket', 'manage');
 
-  const [tickets, staff] = await Promise.all([
+  const [tickets, staff, empRes, assetRes] = await Promise.all([
     api('/tickets?open=1').catch(() => []),
     api('/auth/users').catch(() => []),
+    api('/employees?status=Active&limit=1000').catch(() => ({ items: [] })),
+    api('/assets?limit=1000').catch(() => ({ items: [] })),
   ]);
   const staffList = Array.isArray(staff) ? staff : [];
   const staffName = (uid) => (staffList.find((u) => u.uid === uid) || {}).username || '';
+
+  // Searchable pickers (datalist): build unique label→id maps for requester + asset.
+  const emps = Array.isArray(empRes) ? empRes : (empRes.items || []);
+  const assets = Array.isArray(assetRes) ? assetRes : (assetRes.items || []);
+  const empLabel = (e) => [e.fullName, e.department || e.title].filter(Boolean).join(' · ') || e.fullName || '—';
+  const assetLabel = (x) => [x.assetTag, [x.brand, x.model].filter(Boolean).join(' ')].filter(Boolean).join(' · ');
+  const empById = new Map(emps.map((e) => [e.id, e]));
+  const assetById = new Map(assets.map((x) => [x.id, x]));
+  const empIdByLabel = new Map(emps.map((e) => [empLabel(e), e.id]));
+  const assetIdByLabel = new Map(assets.map((x) => [assetLabel(x), x.id]));
+  const empOptions = emps.map((e) => `<option value="${esc(empLabel(e))}">`).join('');
+  const assetOptions = assets.map((x) => `<option value="${esc(assetLabel(x))}">`).join('');
 
   const pill = (cls, label) => `<span class="pill ${cls}">${esc(label)}</span>`;
   const rowHtml = (tk) => `<tr data-open="${esc(tk.id)}" style="cursor:pointer">
@@ -125,6 +139,10 @@ Views.tickets = async function (el) {
         <div class="form-field full"><label>${esc(t('tk.subject'))} *</label><input id="tk-c-subject" maxlength="300"></div>
         <div class="form-field full"><label>${esc(t('tk.description'))}</label><textarea id="tk-c-desc" rows="4"></textarea></div>
         <div class="form-field"><label>${esc(t('tk.category'))}</label><input id="tk-c-cat" maxlength="120" placeholder="${esc(t('tk.categoryPh'))}"></div>
+        <div class="form-field"><label>${esc(t('tk.requester'))}</label>
+          <input id="tk-c-requester" list="tk-emp-list" autocomplete="off" placeholder="${esc(t('tk.searchPh'))}"><datalist id="tk-emp-list">${empOptions}</datalist></div>
+        <div class="form-field"><label>${esc(t('tk.asset'))}</label>
+          <input id="tk-c-asset" list="tk-asset-list" autocomplete="off" placeholder="${esc(t('tk.searchPh'))}"><datalist id="tk-asset-list">${assetOptions}</datalist></div>
       </div>`,
       foot: `<button class="btn btn-outline" data-close>${esc(t('common.cancel'))}</button>
              <button class="btn btn-primary" id="tk-c-save">${esc(t('tk.create'))}</button>`,
@@ -137,6 +155,8 @@ Views.tickets = async function (el) {
               subject: $('#tk-c-subject', ov).value.trim(),
               description: $('#tk-c-desc', ov).value.trim(),
               category: $('#tk-c-cat', ov).value.trim(),
+              requesterEmployeeId: empIdByLabel.get($('#tk-c-requester', ov).value.trim()) || null,
+              assetId: assetIdByLabel.get($('#tk-c-asset', ov).value.trim()) || null,
             } });
             closeModal();
             toast(t('tk.created'), 'success');
@@ -174,8 +194,12 @@ Views.tickets = async function (el) {
             <select id="tk-d-assignee" ${canAssign ? '' : 'disabled'}>${assignOpts}</select></div>
           <div class="form-field"><label>${esc(t('tk.category'))}</label>
             <input id="tk-d-cat" value="${esc(tk.category || '')}" ${canUpdate ? '' : 'disabled'}></div>
-          <div class="form-field full"><label>${esc(t('tk.requester'))}</label>
-            <div>${esc(tk.requesterName || '—')}${tk.assetTag ? ` · <span class="ms" style="font-size:15px;vertical-align:-2px">devices</span> ${esc(tk.assetTag)}` : ''}</div></div>
+          <div class="form-field"><label>${esc(t('tk.requester'))}</label>
+            <div style="padding-top:6px">${esc(tk.requesterName || '—')}</div></div>
+          <div class="form-field"><label>${esc(t('tk.asset'))}</label>
+            <input id="tk-d-asset" list="tk-asset-list" autocomplete="off" ${canUpdate ? '' : 'disabled'}
+              value="${esc(tk.assetId && assetById.has(tk.assetId) ? assetLabel(assetById.get(tk.assetId)) : (tk.assetTag || ''))}"
+              placeholder="${esc(t('tk.searchPh'))}"><datalist id="tk-asset-list">${assetOptions}</datalist></div>
           <div class="form-field full"><label>${esc(t('tk.slaCol'))}</label>
             <div class="tk-sla">
               <span>${esc(t('tk.sla.response'))}: ${tkSlaBadge(tk.sla && tk.sla.response)}${slaDue(tk.sla && tk.sla.response)}</span>
@@ -204,6 +228,12 @@ Views.tickets = async function (el) {
         $('#tk-d-priority', ov)?.addEventListener('change', (e) => patch({ priority: e.target.value }));
         $('#tk-d-assignee', ov)?.addEventListener('change', (e) => patch({ assigneeUserId: e.target.value || null }));
         $('#tk-d-cat', ov)?.addEventListener('change', (e) => patch({ category: e.target.value.trim() }));
+        $('#tk-d-asset', ov)?.addEventListener('change', (e) => {
+          const v = e.target.value.trim();
+          if (!v) { patch({ assetId: null }); return; }
+          const id = assetIdByLabel.get(v);
+          if (id) patch({ assetId: id }); else toast(t('tk.assetUnknown'), 'error');
+        });
         $('#tk-d-addcomment', ov)?.addEventListener('click', async () => {
           const body = $('#tk-d-comment', ov).value.trim();
           if (!body) return;

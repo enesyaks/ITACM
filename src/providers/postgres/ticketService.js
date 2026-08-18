@@ -231,6 +231,14 @@ async function updateTicket(id, patch, user) {
       }
     }
     if (patch.category !== undefined) set('category', patch.category ? String(patch.category).trim().slice(0, 120) : null);
+    if (patch.assetId !== undefined) {
+      const next = patch.assetId || null;
+      if (next && !isUuid(next)) throw HttpError.badRequest('Invalid assetId');
+      if (String(next || '') !== String(cur.asset_id || '')) {
+        set('asset_id', next);
+        acts.push(['asset', next ? 'linked' : 'unlinked']);
+      }
+    }
     if (patch.assigneeUserId !== undefined) {
       const next = patch.assigneeUserId || null;
       if (next && !isUuid(next)) throw HttpError.badRequest('Invalid assigneeUserId');
