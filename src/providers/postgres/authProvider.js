@@ -46,11 +46,13 @@ function sessionExpiresIn(rememberMe) {
   return config.jwtExpiresIn || '12h';
 }
 
-async function issueSession(user, meta = {}, { rememberMe = false } = {}) {
+async function issueSession(user, meta = {}, { rememberMe = false, sso = false } = {}) {
   const jti = crypto.randomUUID();
   const expiresIn = sessionExpiresIn(rememberMe);
   const token = jwt.sign(
-    { sub: user.id, email: user.email, role: user.role, jti },
+    // `sso: true` marks an IdP-authenticated session (signed → not forgeable), so
+    // the post-auth gates can skip the app's own password/MFA-setup nags.
+    { sub: user.id, email: user.email, role: user.role, jti, ...(sso ? { sso: true } : {}) },
     config.jwtSecret,
     { expiresIn, issuer: 'itacm', algorithm: 'HS256' }
   );
@@ -336,7 +338,28 @@ async function loginWithOidc(claims, cfg = {}, meta = {}) {
   if (user.status === 'Disabled') throw HttpError.forbidden('This account has been disabled — contact your Owner');
   await assertPortalEmployeeActive(user);
   await clearLoginFailure(user.id);
-  return issueSession(user, meta, { rememberMe: true });
+  auditSsoLogin(user, iss, meta);
+  return issueSession(user, meta, { rememberMe: true, sso: true });
+}
+
+/** Fire-and-forget audit record of a successful SSO sign-in. */
+function auditSsoLogin(user, iss, meta) {
+  try {
+    require('./auditService').logEvent({
+      action: 'auth.sso_login',
+      source: 'auth',
+      summary: `${user.email} signed in via SSO`,
+      actorId: user.id,
+      actorEmail: user.email,
+      actorName: user.username || null,
+      entityType: 'user',
+      entityId: user.id,
+      entityLabel: user.email,
+      ip: (meta && meta.ip) || null,
+      userAgent: (meta && meta.userAgent) || null,
+      meta: { via: 'sso', issuer: iss },
+    }).catch(() => {});
+  } catch { /* never block login on audit */ }
 }
 
 async function verifyMfaLogin({ mfaToken, code, backupCode, rememberMe }, meta = {}) {
@@ -420,6 +443,7 @@ async function verifyToken(token) {
     customConstraints: rows[0].customConstraints || null,
     jti: payload.jti || null,
     tokenExp: payload.exp ? new Date(payload.exp * 1000) : parseExpiryToDate(config.jwtExpiresIn),
+    sso: !!payload.sso,
   };
 }
 

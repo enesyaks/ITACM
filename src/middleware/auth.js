@@ -44,23 +44,28 @@ const { isHrAllowedPath } = require('../utils/hrPolicy');
  * be wired into the JWT path alone and be silently skipped by API keys.
  */
 function applyPostAuthGates(req) {
-  // Forced password change first — matches the UI (temp password → new password
-  // → Owner MFA enrol). Otherwise --clear-mfa recovery blocks /api/auth/password
-  // behind MFA_ENROLLMENT_REQUIRED and the user cannot finish either step.
-  if (needsPasswordChange(req.user) && !isPasswordChangeAllowedPath(req.originalUrl)) {
-    throw HttpError.forbidden(
-      'You must set a new password before continuing',
-      { code: 'PASSWORD_CHANGE_REQUIRED' }
-    );
-  }
+  // SSO sessions are authenticated by the identity provider, so the app's own
+  // temp-password and MFA-enrolment nags don't apply. The must_change_password
+  // flag stays in the DB, so a future PASSWORD login still enforces it.
+  if (!req.user.sso) {
+    // Forced password change first — matches the UI (temp password → new password
+    // → Owner MFA enrol). Otherwise --clear-mfa recovery blocks /api/auth/password
+    // behind MFA_ENROLLMENT_REQUIRED and the user cannot finish either step.
+    if (needsPasswordChange(req.user) && !isPasswordChangeAllowedPath(req.originalUrl)) {
+      throw HttpError.forbidden(
+        'You must set a new password before continuing',
+        { code: 'PASSWORD_CHANGE_REQUIRED' }
+      );
+    }
 
-  // Owners without MFA may only hit enrollment / logout / verify-token / password.
-  // Service actors are exempt inside needsMfaEnrollment().
-  if (needsMfaEnrollment(req.user) && !isMfaEnrollmentAllowedPath(req.originalUrl)) {
-    throw HttpError.forbidden(
-      'Owners must enable MFA before using the app',
-      { code: 'MFA_ENROLLMENT_REQUIRED' }
-    );
+    // Owners without MFA may only hit enrollment / logout / verify-token / password.
+    // Service actors are exempt inside needsMfaEnrollment().
+    if (needsMfaEnrollment(req.user) && !isMfaEnrollmentAllowedPath(req.originalUrl)) {
+      throw HttpError.forbidden(
+        'Owners must enable MFA before using the app',
+        { code: 'MFA_ENROLLMENT_REQUIRED' }
+      );
+    }
   }
 
   // Portal = untrusted self-service employee login. Confine it to its OWN

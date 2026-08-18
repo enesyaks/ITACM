@@ -125,7 +125,8 @@ router.get('/sso/callback', asyncHandler(async (req, res) => {
   let claims;
   try {
     claims = await oidc.completeAuth(cfg, callbackUrl, stash);
-  } catch {
+  } catch (err) {
+    console.warn('[sso] callback token exchange/validation failed:', err.message);
     return res.redirect('/#sso_error=verify');
   }
   try {
@@ -140,6 +141,7 @@ router.get('/sso/callback', asyncHandler(async (req, res) => {
     return res.redirect('/#sso_ticket=' + encodeURIComponent(ticket));
   } catch (err) {
     const code = (err && err.details && err.details.code) || 'denied';
+    console.warn(`[sso] sign-in denied (${code}) for <${String((claims && claims.email) || '').slice(0, 120)}>:`, err.message);
     return res.redirect('/#sso_error=' + encodeURIComponent(code));
   }
 }));
