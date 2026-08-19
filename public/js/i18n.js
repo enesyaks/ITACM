@@ -1405,6 +1405,7 @@
     'tk.unassigned': L('Unassigned', 'Atanmamış'),
     'tk.attachments': L('Attachments', 'Ekler'),
     'tk.attach': L('Attach file', 'Dosya ekle'),
+    'tk.docInternal': L('Internal (staff only)', 'İç (sadece personel)'),
     'tk.attachHint': L('Images or PDF, max 8MB', 'Görsel veya PDF, en fazla 8MB'),
     'tk.noAttachments': L('No attachments', 'Ek yok'),
     'tk.attached': L('File attached', 'Dosya eklendi'),

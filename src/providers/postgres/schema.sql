@@ -955,3 +955,4 @@ CREATE TABLE IF NOT EXISTS ticket_documents (
   created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_ticket_documents ON ticket_documents (ticket_id, created_at);
+ALTER TABLE ticket_documents ADD COLUMN IF NOT EXISTS internal BOOLEAN NOT NULL DEFAULT false;

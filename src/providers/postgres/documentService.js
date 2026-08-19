@@ -172,14 +172,14 @@ async function deleteMaintenanceDoc(docId) {
 
 /* ---- Ticket attachments ---- */
 
-async function saveTicketDoc({ ticketId, filename, mime, buffer, uploadedBy, uploadedByName }) {
+async function saveTicketDoc({ ticketId, filename, mime, buffer, uploadedBy, uploadedByName, internal = false }) {
   if (!ticketId || !filename || !buffer) {
     throw HttpError.badRequest('ticketId, filename and file content are required');
   }
   const { rows } = await query(
-    `INSERT INTO ticket_documents (ticket_id, filename, mime, byte_size, content, storage_path, uploaded_by, uploaded_by_name)
-     VALUES ($1,$2,$3,$4,NULL,NULL,$5,$6) RETURNING id`,
-    [ticketId, filename, mime || 'application/octet-stream', buffer.length, uploadedBy || null, uploadedByName || null]
+    `INSERT INTO ticket_documents (ticket_id, filename, mime, byte_size, content, storage_path, uploaded_by, uploaded_by_name, internal)
+     VALUES ($1,$2,$3,$4,NULL,NULL,$5,$6,$7) RETURNING id`,
+    [ticketId, filename, mime || 'application/octet-stream', buffer.length, uploadedBy || null, uploadedByName || null, !!internal]
   );
   const id = rows[0].id;
   let storagePath;
@@ -194,14 +194,15 @@ async function saveTicketDoc({ ticketId, filename, mime, buffer, uploadedBy, upl
   }
   return {
     id, ticketId, filename, mime: mime || 'application/octet-stream',
-    byteSize: buffer.length, uploadedBy, uploadedByName, createdAt: new Date().toISOString(),
+    byteSize: buffer.length, internal: !!internal, uploadedBy, uploadedByName, createdAt: new Date().toISOString(),
   };
 }
 
-async function listTicketDocs(ticketId) {
+async function listTicketDocs(ticketId, { publicOnly = false } = {}) {
   if (!isUuid(ticketId)) return [];
   const { rows } = await query(
-    'SELECT id, ticket_id, filename, mime, byte_size, uploaded_by_name, created_at FROM ticket_documents WHERE ticket_id = $1 ORDER BY created_at DESC',
+    `SELECT id, ticket_id, filename, mime, byte_size, internal, uploaded_by_name, created_at
+       FROM ticket_documents WHERE ticket_id = $1 ${publicOnly ? 'AND internal = false' : ''} ORDER BY created_at DESC`,
     [ticketId]
   );
   return mapRows(rows);

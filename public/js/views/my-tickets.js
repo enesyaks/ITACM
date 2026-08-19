@@ -86,7 +86,13 @@ Views.myTickets = async function (el) {
         ${open ? `<div style="margin-top:10px">
           <textarea id="mtk-d-comment" rows="2" placeholder="${esc(t('mtk.addComment'))}"></textarea>
           <div><button class="btn btn-outline btn-sm" id="mtk-d-post" style="margin-top:6px">${esc(t('tk.post'))}</button></div>
-        </div>` : `<p class="cell-sub" style="margin-top:10px">${esc(t('mtk.closedNote'))}</p>`}`,
+        </div>` : `<p class="cell-sub" style="margin-top:10px">${esc(t('mtk.closedNote'))}</p>`}
+        <h3 style="margin:16px 0 8px">${esc(t('tk.attachments'))}</h3>
+        <div id="mtk-docs" class="tk-docs"><p class="cell-sub">${esc(t('common.loading') || '…')}</p></div>
+        ${open ? `<div style="margin-top:8px"><label class="btn btn-outline btn-sm" style="margin:0">
+          <span class="ms ms-sm">upload_file</span> ${esc(t('tk.attach'))}
+          <input type="file" id="mtk-doc-file" style="display:none"></label>
+          <span class="cell-sub" style="margin-left:8px">${esc(t('tk.attachHint'))}</span></div>` : ''}`,
       foot: `<button class="btn btn-outline" data-close>${esc(t('common.close'))}</button>`,
       onMount(ov) {
         $('#mtk-d-post', ov)?.addEventListener('click', async () => {
@@ -96,6 +102,30 @@ Views.myTickets = async function (el) {
             await api('/me/tickets/' + encodeURIComponent(id) + '/comments', { method: 'POST', body: { body } });
             closeModal(); openMine(id);
           } catch (err) { toast(err.message, 'error'); }
+        });
+        // Own-ticket attachments (public only — server filters internal).
+        const fmtSize = (b) => (b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB');
+        const loadDocs = async () => {
+          const box = $('#mtk-docs', ov); if (!box) return;
+          const docs = await api('/me/tickets/' + encodeURIComponent(id) + '/documents').catch(() => []);
+          box.innerHTML = docs.length ? docs.map((d) => `<div class="tk-doc">
+              <span class="ms ms-sm">${(d.mime || '').startsWith('image/') ? 'image' : 'description'}</span>
+              <a href="#" data-dl="${esc(d.id)}" class="tk-doc-name">${esc(d.filename)}</a>
+              <span class="cell-sub">${esc(fmtSize(d.byteSize || 0))}</span></div>`).join('')
+            : `<p class="cell-sub">${esc(t('tk.noAttachments'))}</p>`;
+          box.querySelectorAll('[data-dl]').forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); viewAuthed('/api/me/tickets/' + encodeURIComponent(id) + '/documents/' + a.dataset.dl + '/download'); }));
+        };
+        loadDocs();
+        $('#mtk-doc-file', ov)?.addEventListener('change', (e) => {
+          const file = e.target.files && e.target.files[0]; if (!file) return;
+          const reader = new FileReader();
+          reader.onload = async () => {
+            const base64 = String(reader.result).split(',')[1] || '';
+            try { await api('/me/tickets/' + encodeURIComponent(id) + '/documents', { method: 'POST', body: { base64, filename: file.name } }); toast(t('tk.attached'), 'success'); loadDocs(); }
+            catch (err) { toast(err.message, 'error'); }
+            e.target.value = '';
+          };
+          reader.readAsDataURL(file);
         });
       },
     });

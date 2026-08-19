@@ -98,6 +98,7 @@ router.post('/:id/documents', requireAnyPermission([['document', 'upload'], ['do
   const saved = await documentService.saveTicketDoc({
     ticketId: ticket.id, filename, mime, buffer,
     uploadedBy: req.user.uid, uploadedByName: req.user.username || req.user.email,
+    internal: !!(req.body && req.body.internal),
   });
   res.status(201).json({ success: true, data: saved });
 }));

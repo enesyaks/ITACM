@@ -597,10 +597,11 @@ Views.tickets = async function (el, params = {}) {
         </div>` : ''}
         ${canDocRead ? `<h3 style="margin:16px 0 8px">${esc(t('tk.attachments'))}</h3>
           <div id="tk-docs" class="tk-docs"><p class="cell-sub">${esc(t('common.loading') || '…')}</p></div>
-          ${canDocUpload ? `<div style="margin-top:8px"><label class="btn btn-outline btn-sm">
+          ${canDocUpload ? `<div style="margin-top:8px;display:flex;align-items:center;gap:12px;flex-wrap:wrap"><label class="btn btn-outline btn-sm" style="margin:0">
             <span class="ms ms-sm">upload_file</span> ${esc(t('tk.attach'))}
             <input type="file" id="tk-doc-file" style="display:none"></label>
-            <span class="cell-sub" style="margin-left:8px">${esc(t('tk.attachHint'))}</span></div>` : ''}` : ''}
+            <label style="display:inline-flex;align-items:center;gap:6px;font-size:13px"><input type="checkbox" id="tk-doc-internal"> ${esc(t('tk.docInternal'))}</label>
+            <span class="cell-sub">${esc(t('tk.attachHint'))}</span></div>` : ''}` : ''}
         <details style="margin-top:14px"><summary class="cell-sub">${esc(t('tk.activity'))}</summary>
           <ul class="tk-activity">${activity}</ul></details>`,
       foot: `<button class="btn btn-outline" data-close>${esc(t('common.close'))}</button>`,
@@ -628,6 +629,7 @@ Views.tickets = async function (el, params = {}) {
             box.innerHTML = docs.length ? docs.map((d) => `<div class="tk-doc">
                 <span class="ms ms-sm">${(d.mime || '').startsWith('image/') ? 'image' : 'description'}</span>
                 <a href="#" data-dl="${esc(d.id)}" class="tk-doc-name">${esc(d.filename)}</a>
+                ${d.internal ? `<span class="pill pill-amber">${esc(t('tk.internal'))}</span>` : ''}
                 <span class="cell-sub">${esc(fmtSize(d.byteSize || 0))}</span>
                 ${canDocDelete ? `<button class="btn btn-outline btn-sm tk-doc-del" data-id="${esc(d.id)}" title="${esc(t('common.remove') || 'Remove')}"><span class="ms ms-sm">delete</span></button>` : ''}
               </div>`).join('') : `<p class="cell-sub">${esc(t('tk.noAttachments'))}</p>`;
@@ -643,7 +645,8 @@ Views.tickets = async function (el, params = {}) {
             const reader = new FileReader();
             reader.onload = async () => {
               const base64 = String(reader.result).split(',')[1] || '';
-              try { await api('/tickets/' + encodeURIComponent(id) + '/documents', { method: 'POST', body: { base64, filename: file.name } }); toast(t('tk.attached'), 'success'); loadDocs(); }
+              const internal = !!($('#tk-doc-internal', ov) && $('#tk-doc-internal', ov).checked);
+              try { await api('/tickets/' + encodeURIComponent(id) + '/documents', { method: 'POST', body: { base64, filename: file.name, internal } }); toast(t('tk.attached'), 'success'); loadDocs(); }
               catch (err) { toast(err.message, 'error'); }
               e.target.value = '';
             };
