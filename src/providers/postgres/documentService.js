@@ -170,6 +170,60 @@ async function deleteMaintenanceDoc(docId) {
   return { id: docId, deleted: true };
 }
 
+/* ---- Ticket attachments ---- */
+
+async function saveTicketDoc({ ticketId, filename, mime, buffer, uploadedBy, uploadedByName }) {
+  if (!ticketId || !filename || !buffer) {
+    throw HttpError.badRequest('ticketId, filename and file content are required');
+  }
+  const { rows } = await query(
+    `INSERT INTO ticket_documents (ticket_id, filename, mime, byte_size, content, storage_path, uploaded_by, uploaded_by_name)
+     VALUES ($1,$2,$3,$4,NULL,NULL,$5,$6) RETURNING id`,
+    [ticketId, filename, mime || 'application/octet-stream', buffer.length, uploadedBy || null, uploadedByName || null]
+  );
+  const id = rows[0].id;
+  let storagePath;
+  try {
+    storagePath = docStorage.writeBuffer('ticket', id, buffer, {
+      label: uploadedByName || 'ticket', ownerId: ticketId, ownerLabel: 'ticket', originalFilename: filename,
+    });
+    await query('UPDATE ticket_documents SET storage_path = $2 WHERE id = $1', [id, storagePath]);
+  } catch (err) {
+    await query('DELETE FROM ticket_documents WHERE id = $1', [id]).catch(() => {});
+    throw err;
+  }
+  return {
+    id, ticketId, filename, mime: mime || 'application/octet-stream',
+    byteSize: buffer.length, uploadedBy, uploadedByName, createdAt: new Date().toISOString(),
+  };
+}
+
+async function listTicketDocs(ticketId) {
+  if (!isUuid(ticketId)) return [];
+  const { rows } = await query(
+    'SELECT id, ticket_id, filename, mime, byte_size, uploaded_by_name, created_at FROM ticket_documents WHERE ticket_id = $1 ORDER BY created_at DESC',
+    [ticketId]
+  );
+  return mapRows(rows);
+}
+
+async function getTicketDoc(docId) {
+  if (!isUuid(docId)) throw HttpError.notFound(`Document ${docId} not found`);
+  const { rows } = await query('SELECT * FROM ticket_documents WHERE id = $1', [docId]);
+  if (!rows[0]) throw HttpError.notFound(`Document ${docId} not found`);
+  const buffer = loadBuffer(rows[0]);
+  if (!buffer) throw HttpError.notFound(`Document file missing for ${docId}`);
+  return { ...mapRow(rows[0]), buffer };
+}
+
+async function deleteTicketDoc(docId) {
+  if (!isUuid(docId)) throw HttpError.notFound(`Document ${docId} not found`);
+  const { rows } = await query('DELETE FROM ticket_documents WHERE id = $1 RETURNING storage_path', [docId]);
+  if (!rows[0]) throw HttpError.notFound(`Document ${docId} not found`);
+  docStorage.deleteFile(rows[0].storage_path);
+  return { id: docId, deleted: true };
+}
+
 /* ---- Provider & contract paperwork ---- */
 
 async function saveProviderDoc({
@@ -468,4 +522,5 @@ module.exports = {
   saveContractDoc, listContractDocs, listContractDocsByProvider,
   getContractDoc, deleteContractDoc,
   saveLicenseDoc, listLicenseDocs, getLicenseDoc, deleteLicenseDoc,
+  saveTicketDoc, listTicketDocs, getTicketDoc, deleteTicketDoc,
 };

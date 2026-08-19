@@ -940,3 +940,18 @@ ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS ticket_canned_json JSONB NOT N
 
 -- SLA clock-stop while 'pending' (059).
 ALTER TABLE tickets ADD COLUMN IF NOT EXISTS sla_paused_at TIMESTAMPTZ;
+
+-- Ticket attachments (060).
+CREATE TABLE IF NOT EXISTS ticket_documents (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  ticket_id        UUID NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+  filename         TEXT NOT NULL,
+  mime             TEXT NOT NULL,
+  byte_size        INTEGER NOT NULL,
+  content          BYTEA,
+  storage_path     TEXT,
+  uploaded_by      TEXT,
+  uploaded_by_name TEXT,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_ticket_documents ON ticket_documents (ticket_id, created_at);

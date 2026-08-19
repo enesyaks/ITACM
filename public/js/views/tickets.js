@@ -42,6 +42,9 @@ Views.tickets = async function (el, params = {}) {
   const canUpdate = Auth.canIam('ticket', 'update') || Auth.canIam('ticket', 'manage');
   const canAssign = Auth.canIam('ticket', 'assign') || Auth.canIam('ticket', 'manage');
   const canManage = Auth.canIam('ticket', 'manage');
+  const canDocRead = Auth.canIam('document', 'read');
+  const canDocUpload = Auth.canIam('document', 'upload') || Auth.canIam('document', 'create');
+  const canDocDelete = Auth.canIam('document', 'delete');
   let mode = localStorage.getItem('tk_mode') === 'board' ? 'board' : 'list';
 
   const [tickets, staff, empRes, assetRes, stats0, catsRes, cannedRes] = await Promise.all([
@@ -592,6 +595,12 @@ Views.tickets = async function (el, params = {}) {
             <input type="checkbox" id="tk-d-internal"> ${esc(t('tk.internalNote'))}</label>
           <div><button class="btn btn-outline btn-sm" id="tk-d-addcomment" style="margin-top:6px">${esc(t('tk.post'))}</button></div>
         </div>` : ''}
+        ${canDocRead ? `<h3 style="margin:16px 0 8px">${esc(t('tk.attachments'))}</h3>
+          <div id="tk-docs" class="tk-docs"><p class="cell-sub">${esc(t('common.loading') || '…')}</p></div>
+          ${canDocUpload ? `<div style="margin-top:8px"><label class="btn btn-outline btn-sm">
+            <span class="ms ms-sm">upload_file</span> ${esc(t('tk.attach'))}
+            <input type="file" id="tk-doc-file" style="display:none"></label>
+            <span class="cell-sub" style="margin-left:8px">${esc(t('tk.attachHint'))}</span></div>` : ''}` : ''}
         <details style="margin-top:14px"><summary class="cell-sub">${esc(t('tk.activity'))}</summary>
           <ul class="tk-activity">${activity}</ul></details>`,
       foot: `<button class="btn btn-outline" data-close>${esc(t('common.close'))}</button>`,
@@ -610,6 +619,37 @@ Views.tickets = async function (el, params = {}) {
           const id = assetIdByLabel.get(v);
           if (id) patch({ assetId: id }); else toast(t('tk.assetUnknown'), 'error');
         });
+        // Attachments (reuse the vetted document store).
+        if (canDocRead) {
+          const fmtSize = (b) => (b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB');
+          const loadDocs = async () => {
+            const box = $('#tk-docs', ov); if (!box) return;
+            const docs = await api('/tickets/' + encodeURIComponent(id) + '/documents').catch(() => []);
+            box.innerHTML = docs.length ? docs.map((d) => `<div class="tk-doc">
+                <span class="ms ms-sm">${(d.mime || '').startsWith('image/') ? 'image' : 'description'}</span>
+                <a href="#" data-dl="${esc(d.id)}" class="tk-doc-name">${esc(d.filename)}</a>
+                <span class="cell-sub">${esc(fmtSize(d.byteSize || 0))}</span>
+                ${canDocDelete ? `<button class="btn btn-outline btn-sm tk-doc-del" data-id="${esc(d.id)}" title="${esc(t('common.remove') || 'Remove')}"><span class="ms ms-sm">delete</span></button>` : ''}
+              </div>`).join('') : `<p class="cell-sub">${esc(t('tk.noAttachments'))}</p>`;
+            box.querySelectorAll('[data-dl]').forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); viewAuthed('/api/tickets/documents/' + a.dataset.dl + '/download?view=1'); }));
+            box.querySelectorAll('.tk-doc-del').forEach((b) => b.addEventListener('click', async () => {
+              try { await api('/tickets/documents/' + b.dataset.id, { method: 'DELETE' }); loadDocs(); }
+              catch (err) { toast(err.message, 'error'); }
+            }));
+          };
+          loadDocs();
+          $('#tk-doc-file', ov)?.addEventListener('change', (e) => {
+            const file = e.target.files && e.target.files[0]; if (!file) return;
+            const reader = new FileReader();
+            reader.onload = async () => {
+              const base64 = String(reader.result).split(',')[1] || '';
+              try { await api('/tickets/' + encodeURIComponent(id) + '/documents', { method: 'POST', body: { base64, filename: file.name } }); toast(t('tk.attached'), 'success'); loadDocs(); }
+              catch (err) { toast(err.message, 'error'); }
+              e.target.value = '';
+            };
+            reader.readAsDataURL(file);
+          });
+        }
         $('#tk-d-canned', ov)?.addEventListener('change', (e) => {
           const v = e.target.value;
           if (v === '__manage__') { e.target.value = ''; openCannedEditor(); return; }

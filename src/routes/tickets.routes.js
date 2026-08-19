@@ -3,10 +3,13 @@
  * permission AND the optional module to be switched on (else 404, as if absent).
  * Employees raise their own tickets via /api/me/tickets (me.routes.js).
  */
-const router = require('express').Router();
-const { authenticate, requirePermission } = require('../middleware/auth');
+const express = require('express');
+const router = express.Router();
+const { authenticate, requirePermission, requireAnyPermission } = require('../middleware/auth');
 const { asyncHandler } = require('../utils/asyncHandler');
-const { ticketService, settingsService } = require('../services');
+const { ticketService, settingsService, documentService } = require('../services');
+const { validateUpload } = require('../utils/uploadGuard');
+const { contentDisposition } = require('../utils/contentDisposition');
 const { HttpError } = require('../utils/httpError');
 
 // Gate the whole module: when ticketing is off, behave as if the routes don't exist.
@@ -64,6 +67,39 @@ router.get('/canned', requirePermission('ticket', 'read'), asyncHandler(async (r
 }));
 router.put('/canned', requirePermission('ticket', 'manage'), asyncHandler(async (req, res) => {
   res.json({ success: true, data: await ticketService.saveCannedResponses(req.body && req.body.items) });
+}));
+
+/* ---- Attachments (reuse the vetted document store + document:* IAM) ---- */
+
+// GET /api/tickets/documents/:docId/download (before /:id)
+router.get('/documents/:docId/download', requirePermission('document', 'download'), asyncHandler(async (req, res) => {
+  const doc = await documentService.getTicketDoc(req.params.docId);
+  const inline = String(req.query.view || '') === '1' || String(req.query.inline || '') === '1';
+  res.setHeader('Content-Type', doc.mime || 'application/octet-stream');
+  res.setHeader('Content-Disposition', contentDisposition(doc.filename, { inline }));
+  res.send(doc.buffer);
+}));
+
+// DELETE /api/tickets/documents/:docId
+router.delete('/documents/:docId', requirePermission('document', 'delete'), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await documentService.deleteTicketDoc(req.params.docId) });
+}));
+
+// GET /api/tickets/:id/documents — list attachments
+router.get('/:id/documents', requirePermission('document', 'read'), asyncHandler(async (req, res) => {
+  await ticketService.getTicket(req.params.id, req.user); // 404s if the ticket is gone
+  res.json({ success: true, data: await documentService.listTicketDocs(req.params.id) });
+}));
+
+// POST /api/tickets/:id/documents — attach a file (base64, sniffed + size-capped by uploadGuard)
+router.post('/:id/documents', requireAnyPermission([['document', 'upload'], ['document', 'create']]), express.json({ limit: '12mb' }), asyncHandler(async (req, res) => {
+  const ticket = await ticketService.getTicket(req.params.id, req.user);
+  const { buffer, mime, filename } = validateUpload(req.body || {});
+  const saved = await documentService.saveTicketDoc({
+    ticketId: ticket.id, filename, mime, buffer,
+    uploadedBy: req.user.uid, uploadedByName: req.user.username || req.user.email,
+  });
+  res.status(201).json({ success: true, data: saved });
 }));
 
 // GET /api/tickets/:id — detail + comments + activity
