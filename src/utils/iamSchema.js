@@ -16,7 +16,7 @@ const RESOURCES = Object.freeze([
   'line', 'consumable', 'maintenance', 'stock_count', 'report',
   'audit', 'dashboard', 'settings', 'user_management',
   'integration', 'document', 'handover_document', 'catalog', 'handover', 'onboarding',
-  'hr_request', 'ai', 'ticket',
+  'hr_request', 'ai', 'ticket', 'problem',
 ]);
 
 /** Full union of actions (legacy rows + matrix). */
@@ -89,6 +89,8 @@ const ACTIONS_BY_RESOURCE = Object.freeze({
   // Service desk / ITIL tickets. `assign` = pick up / reassign; `manage` = queues,
   // categories and others' tickets. Employees raise their own via /api/me/tickets.
   ticket: Object.freeze(['read', 'create', 'update', 'assign', 'manage']),
+  // ITIL Problem Management: root-cause records that group recurring incidents.
+  problem: Object.freeze(['read', 'create', 'update', 'manage']),
 });
 
 /**
@@ -106,6 +108,7 @@ const MANAGE_EXPAND = Object.freeze({
   maintenance: Object.freeze(['read', 'update', 'delete']),
   stock_count: Object.freeze(['read', 'update', 'delete']),
   ticket: Object.freeze(['read', 'update', 'assign']),
+  problem: Object.freeze(['read', 'update']),
 });
 
 const OPS_COVERED_BY_MANAGE = Object.freeze([

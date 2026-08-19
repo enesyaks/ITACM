@@ -35,6 +35,10 @@ const ROUTES = {
     title: 'Service Desk', view: 'tickets', icon: 'confirmation_number',
     iam: [['ticket', 'read']], module: 'ticketing',
   },
+  '#/problems': {
+    title: 'Problems', view: 'problems', icon: 'troubleshoot',
+    iam: [['problem', 'read']], module: 'ticketing',
+  },
   '#/stockcount': { title: 'Stock Count', view: 'stockcount', icon: 'fact_check' },
   '#/reports': { title: 'Reports', view: 'reports', icon: 'summarize' },
   '#/audit': { title: 'Audit Log', view: 'audit', icon: 'history', perm: 'canViewAudit' },

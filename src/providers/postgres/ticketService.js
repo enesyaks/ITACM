@@ -111,6 +111,8 @@ function decorateSla(row) {
 }
 function stripSla(row) {
   for (const k of SLA_RAW) delete row[k];
+  // Portal payloads don't expose internal problem linkage.
+  delete row.problemId; delete row.problemNumber; delete row.problemTitle;
   return row;
 }
 
@@ -152,6 +154,7 @@ const SELECT_COLS = `
   t.requester_employee_id AS "requesterEmployeeId", re.full_name AS "requesterName",
   t.assignee_user_id AS "assigneeUserId", au.username AS "assigneeName",
   t.asset_id AS "assetId", a.asset_tag AS "assetTag",
+  t.problem_id AS "problemId", pr.number AS "problemNumber", pr.title AS "problemTitle",
   t.created_by_name AS "createdByName",
   t.first_response_at AS "firstResponseAt", t.resolved_at AS "resolvedAt", t.closed_at AS "closedAt",
   t.response_due_at AS "responseDueAt", t.resolve_due_at AS "resolveDueAt",
@@ -162,7 +165,8 @@ const FROM_JOINS = `
   FROM tickets t
   LEFT JOIN employees re ON t.requester_employee_id = re.id
   LEFT JOIN users au     ON t.assignee_user_id = au.id
-  LEFT JOIN assets a     ON t.asset_id = a.id`;
+  LEFT JOIN assets a     ON t.asset_id = a.id
+  LEFT JOIN problems pr  ON t.problem_id = pr.id`;
 
 /** Resolve the employee row that owns a self-service (Portal) session, by email. */
 async function employeeForUser(user) {
@@ -337,6 +341,11 @@ async function updateTicket(id, patch, user) {
     const canAssign = await require('./permissionService').hasResourceAction(user, 'ticket', 'assign');
     if (!canAssign) throw HttpError.forbidden('You do not have permission to (re)assign tickets');
   }
+  // Linking an incident to a problem changes the problem's incident set → gate on problem:update.
+  if (patch.problemId !== undefined) {
+    const canProblem = await require('./permissionService').hasResourceAction(user, 'problem', 'update');
+    if (!canProblem) throw HttpError.forbidden('You do not have permission to link tickets to a problem');
+  }
   const slaTargets = await getSlaConfig(); // read before the tx (separate connection)
   let plan = null;
   await withTransaction(async (t) => {
@@ -371,6 +380,14 @@ async function updateTicket(id, patch, user) {
       if (String(next || '') !== String(cur.asset_id || '')) {
         set('asset_id', next);
         acts.push(['asset', next ? 'linked' : 'unlinked']);
+      }
+    }
+    if (patch.problemId !== undefined) {
+      const next = patch.problemId || null;
+      if (next && !isUuid(next)) throw HttpError.badRequest('Invalid problemId');
+      if (String(next || '') !== String(cur.problem_id || '')) {
+        set('problem_id', next);
+        acts.push(['problem', next ? 'linked to problem' : 'unlinked from problem']);
       }
     }
     if (patch.assigneeUserId !== undefined) {

@@ -3,6 +3,7 @@ module.exports = {
   authProvider: require('./authProvider'),
   assetService: require('./assetService'),
   ticketService: require('./ticketService'),
+  problemService: require('./problemService'),
   handoverService: require('./handoverService'),
   maintenanceService: require('./maintenanceService'),
   dashboardService: require('./dashboardService'),

@@ -45,9 +45,10 @@ Views.tickets = async function (el, params = {}) {
   const canDocRead = Auth.canIam('document', 'read');
   const canDocUpload = Auth.canIam('document', 'upload') || Auth.canIam('document', 'create');
   const canDocDelete = Auth.canIam('document', 'delete');
+  const canLinkProblem = Auth.canIam('problem', 'update') || Auth.canIam('problem', 'manage');
   let mode = localStorage.getItem('tk_mode') === 'board' ? 'board' : 'list';
 
-  const [tickets, staff, empRes, assetRes, stats0, catsRes, cannedRes] = await Promise.all([
+  const [tickets, staff, empRes, assetRes, stats0, catsRes, cannedRes, problemsRes] = await Promise.all([
     api('/tickets?open=1').catch(() => []),
     api('/auth/users').catch(() => []),
     api('/employees?status=Active&limit=1000').catch(() => ({ items: [] })),
@@ -55,7 +56,12 @@ Views.tickets = async function (el, params = {}) {
     api('/tickets/stats').catch(() => null),
     api('/tickets/categories').catch(() => []),
     api('/tickets/canned').catch(() => []),
+    canLinkProblem ? api('/problems?open=1&limit=500').catch(() => []) : Promise.resolve([]),
   ]);
+  const problemsList = Array.isArray(problemsRes) ? problemsRes : [];
+  const probLabel = (p) => `${p.number} · ${p.title}`;
+  const probIdByLabel = new Map(problemsList.map((p) => [probLabel(p), p.id]));
+  const probOptions = problemsList.map((p) => `<option value="${esc(probLabel(p))}">`).join('');
   const catList = Array.isArray(catsRes) ? catsRes : [];
   let canned = Array.isArray(cannedRes) ? cannedRes : [];
   let sortKey = 'created';
@@ -574,6 +580,11 @@ Views.tickets = async function (el, params = {}) {
             <input id="tk-d-asset" list="tk-asset-list" autocomplete="off" ${canUpdate ? '' : 'disabled'}
               value="${esc(tk.assetId && assetById.has(tk.assetId) ? assetLabel(assetById.get(tk.assetId)) : (tk.assetTag || ''))}"
               placeholder="${esc(t('tk.searchPh'))}"><datalist id="tk-asset-list">${assetOptions}</datalist></div>
+          ${canLinkProblem ? `<div class="form-field"><label>${esc(t('pr.problemLink'))}</label>
+            <input id="tk-d-problem" list="tk-prob-list" autocomplete="off"
+              value="${esc(tk.problemNumber ? tk.problemNumber + ' · ' + (tk.problemTitle || '') : '')}"
+              placeholder="${esc(t('pr.searchPh'))}"><datalist id="tk-prob-list">${probOptions}</datalist></div>`
+          : (tk.problemNumber ? `<div class="form-field"><label>${esc(t('pr.problemLink'))}</label><div style="padding-top:6px" class="mono">${esc(tk.problemNumber)}</div></div>` : '')}
           <div class="form-field full"><label>${esc(t('tk.slaCol'))}</label>
             <div class="tk-sla">
               <span>${esc(t('tk.sla.response'))}: ${tkSlaBadge(tk.sla && tk.sla.response)}${slaDue(tk.sla && tk.sla.response)}</span>
@@ -619,6 +630,12 @@ Views.tickets = async function (el, params = {}) {
           if (!v) { patch({ assetId: null }); return; }
           const id = assetIdByLabel.get(v);
           if (id) patch({ assetId: id }); else toast(t('tk.assetUnknown'), 'error');
+        });
+        $('#tk-d-problem', ov)?.addEventListener('change', (e) => {
+          const v = e.target.value.trim();
+          if (!v) { patch({ problemId: null }); return; }
+          const pid = probIdByLabel.get(v);
+          if (pid) patch({ problemId: pid }); else toast(t('pr.pickIncident'), 'error');
         });
         // Attachments (reuse the vetted document store).
         if (canDocRead) {
