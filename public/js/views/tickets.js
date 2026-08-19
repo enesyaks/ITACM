@@ -241,6 +241,88 @@ Views.tickets = async function (el, params = {}) {
     refresh(); // repaint clears selection + checkboxes + hides the bar
   }
 
+  /* ------------------------- saved views (per browser) ------------------------- */
+  const loadViews = () => { try { return JSON.parse(localStorage.getItem('tk_saved_views') || '[]'); } catch { return []; } };
+  const storeViews = (v) => localStorage.setItem('tk_saved_views', JSON.stringify(v.slice(0, 50)));
+
+  const currentFilters = () => ({
+    search: searchTerm,
+    status: $('#tk-f-status', el) ? $('#tk-f-status', el).value : 'open',
+    type: $('#tk-f-type', el) ? $('#tk-f-type', el).value : '',
+    priority: $('#tk-f-priority', el) ? $('#tk-f-priority', el).value : '',
+    category: $('#tk-f-category', el) ? $('#tk-f-category', el).value : '',
+    mine: !!($('#tk-f-mine', el) && $('#tk-f-mine', el).checked),
+    sortKey, sortOrder,
+  });
+
+  const applyView = (f) => {
+    searchTerm = f.search || '';
+    if ($('#tk-f-search', el)) $('#tk-f-search', el).value = searchTerm;
+    if ($('#tk-f-status', el)) $('#tk-f-status', el).value = f.status != null ? f.status : 'open';
+    if ($('#tk-f-type', el)) $('#tk-f-type', el).value = f.type || '';
+    if ($('#tk-f-priority', el)) $('#tk-f-priority', el).value = f.priority || '';
+    if ($('#tk-f-category', el)) $('#tk-f-category', el).value = f.category || '';
+    if ($('#tk-f-mine', el)) $('#tk-f-mine', el).checked = !!f.mine;
+    sortKey = f.sortKey || 'created';
+    sortOrder = f.sortOrder || 'desc';
+    refresh();
+  };
+
+  function renderViewsSelect() {
+    const wrap = $('#tk-views-wrap', el); if (!wrap) return;
+    const views = loadViews();
+    wrap.innerHTML = `<select id="tk-views" class="ops-select">
+      <option value="">${esc(t('tk.views'))}</option>
+      ${views.map((v, i) => `<option value="v:${i}">${esc(v.name)}</option>`).join('')}
+      <option value="__save__">＋ ${esc(t('tk.saveView'))}</option>
+      ${views.length ? `<option value="__manage__">${esc(t('tk.manageViews'))}…</option>` : ''}
+    </select>`;
+    $('#tk-views', wrap).addEventListener('change', (e) => {
+      const v = e.target.value;
+      if (v === '__save__') saveCurrentView();
+      else if (v === '__manage__') openViewsManager();
+      else if (v.startsWith('v:')) applyView(views[Number(v.slice(2))].filters);
+      e.target.value = '';
+    });
+  }
+
+  function saveCurrentView() {
+    openModal({
+      title: t('tk.saveView'),
+      body: `<div class="form-field full"><label>${esc(t('tk.viewName'))}</label><input id="tk-view-name" maxlength="60" placeholder="${esc(t('tk.viewNamePh'))}"></div>`,
+      foot: `<button class="btn btn-outline" data-close>${esc(t('common.cancel'))}</button><button class="btn btn-primary" id="tk-view-save">${esc(t('common.save'))}</button>`,
+      onMount(ov) {
+        const inp = $('#tk-view-name', ov); inp.focus();
+        $('#tk-view-save', ov).addEventListener('click', () => {
+          const name = inp.value.trim(); if (!name) return;
+          const views = loadViews(); views.push({ name, filters: currentFilters() }); storeViews(views);
+          closeModal(); renderViewsSelect(); toast(t('tk.viewSaved'), 'success');
+        });
+      },
+    });
+  }
+
+  function openViewsManager() {
+    const views = loadViews();
+    openModal({
+      title: t('tk.manageViews'),
+      body: views.length
+        ? `<ul class="tk-views-list" style="list-style:none;padding:0;margin:0">${views.map((v, i) => `
+            <li style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--outline-variant)">
+              <span style="flex:1">${esc(v.name)}</span>
+              <button class="btn btn-outline btn-sm tk-view-del" data-i="${i}"><span class="ms ms-sm">delete</span></button>
+            </li>`).join('')}</ul>`
+        : `<p class="cell-sub">${esc(t('tk.noViews'))}</p>`,
+      foot: `<button class="btn btn-outline" data-close>${esc(t('common.close'))}</button>`,
+      onMount(ov) {
+        ov.querySelectorAll('.tk-view-del').forEach((b) => b.addEventListener('click', () => {
+          const cur = loadViews(); cur.splice(Number(b.dataset.i), 1); storeViews(cur);
+          closeModal(); renderViewsSelect(); openViewsManager();
+        }));
+      },
+    });
+  }
+
   const setMode = (m) => { mode = m; localStorage.setItem('tk_mode', m); render(); refresh(); };
 
   const render = () => {
@@ -275,6 +357,7 @@ Views.tickets = async function (el, params = {}) {
         </select>` : ''}
         <label style="display:inline-flex;align-items:center;gap:6px;font-size:13px">
           <input type="checkbox" id="tk-f-mine"> ${esc(t('tk.mineOnly'))}</label>
+        <span id="tk-views-wrap"></span>
         <button class="btn btn-outline btn-sm" id="tk-csv" style="margin-left:auto"><span class="ms ms-sm">download</span> ${esc(t('tk.exportCsv'))}</button>
       </div>
       <div id="tk-bulk" class="tk-bulk" style="display:none"></div>
@@ -298,6 +381,7 @@ Views.tickets = async function (el, params = {}) {
       searchTimer = setTimeout(refresh, 300);
     });
     $('#tk-csv', el)?.addEventListener('click', exportCsv);
+    renderViewsSelect();
   };
 
   // Shared query string from the active filters (mode-aware).
