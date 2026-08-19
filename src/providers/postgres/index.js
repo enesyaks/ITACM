@@ -4,6 +4,7 @@ module.exports = {
   assetService: require('./assetService'),
   ticketService: require('./ticketService'),
   problemService: require('./problemService'),
+  changeService: require('./changeService'),
   handoverService: require('./handoverService'),
   maintenanceService: require('./maintenanceService'),
   dashboardService: require('./dashboardService'),

@@ -226,6 +226,7 @@ function createApp() {
   app.use('/api/assets', require('./routes/assets.routes'));
   app.use('/api/tickets', require('./routes/tickets.routes'));
   app.use('/api/problems', require('./routes/problems.routes'));
+  app.use('/api/changes', require('./routes/changes.routes'));
   app.use('/api/employees', require('./routes/employees.routes'));
   app.use('/api/org', require('./routes/org.routes'));
   app.use('/api/approvals', require('./routes/approvals.routes'));

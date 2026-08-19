@@ -16,7 +16,7 @@ const RESOURCES = Object.freeze([
   'line', 'consumable', 'maintenance', 'stock_count', 'report',
   'audit', 'dashboard', 'settings', 'user_management',
   'integration', 'document', 'handover_document', 'catalog', 'handover', 'onboarding',
-  'hr_request', 'ai', 'ticket', 'problem',
+  'hr_request', 'ai', 'ticket', 'problem', 'change',
 ]);
 
 /** Full union of actions (legacy rows + matrix). */
@@ -91,6 +91,8 @@ const ACTIONS_BY_RESOURCE = Object.freeze({
   ticket: Object.freeze(['read', 'create', 'update', 'assign', 'manage']),
   // ITIL Problem Management: root-cause records that group recurring incidents.
   problem: Object.freeze(['read', 'create', 'update', 'manage']),
+  // ITIL Change Enablement: `approve` = CAB decision (distinct from `update`).
+  change: Object.freeze(['read', 'create', 'update', 'approve', 'manage']),
 });
 
 /**
@@ -109,6 +111,7 @@ const MANAGE_EXPAND = Object.freeze({
   stock_count: Object.freeze(['read', 'update', 'delete']),
   ticket: Object.freeze(['read', 'update', 'assign']),
   problem: Object.freeze(['read', 'update']),
+  change: Object.freeze(['read', 'update', 'approve']),
 });
 
 const OPS_COVERED_BY_MANAGE = Object.freeze([
