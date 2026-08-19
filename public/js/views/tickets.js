@@ -514,8 +514,10 @@ Views.tickets = async function (el, params = {}) {
       body: `<div class="form-grid">
         <div class="form-field"><label>${esc(t('tk.type'))}</label>
           <select id="tk-c-type"><option value="incident">${esc(tkTypeLabel('incident'))}</option><option value="request">${esc(tkTypeLabel('request'))}</option></select></div>
-        <div class="form-field"><label>${esc(t('tk.priorityCol'))}</label>
-          <select id="tk-c-priority">${TK_PRIORITY.map((p) => `<option value="${p}"${p === 'medium' ? ' selected' : ''}>${esc(tkPriorityLabel(p))}</option>`).join('')}</select></div>
+        <div class="form-field"><label>${esc(t('tk.impact'))}</label>
+          <select id="tk-c-impact">${['low', 'medium', 'high'].map((l) => `<option value="${l}"${l === 'medium' ? ' selected' : ''}>${esc(tkPriorityLabel(l))}</option>`).join('')}</select></div>
+        <div class="form-field"><label>${esc(t('tk.urgency'))}</label>
+          <select id="tk-c-urgency">${['low', 'medium', 'high'].map((l) => `<option value="${l}"${l === 'medium' ? ' selected' : ''}>${esc(tkPriorityLabel(l))}</option>`).join('')}</select></div>
         <div class="form-field full"><label>${esc(t('tk.subject'))} *</label><input id="tk-c-subject" maxlength="300"></div>
         <div class="form-field full"><label>${esc(t('tk.description'))}</label><textarea id="tk-c-desc" rows="4"></textarea></div>
         <div class="form-field"><label>${esc(t('tk.category'))}</label><input id="tk-c-cat" maxlength="120" placeholder="${esc(t('tk.categoryPh'))}"></div>
@@ -531,7 +533,8 @@ Views.tickets = async function (el, params = {}) {
           try {
             await api('/tickets', { method: 'POST', body: {
               type: $('#tk-c-type', ov).value,
-              priority: $('#tk-c-priority', ov).value,
+              impact: $('#tk-c-impact', ov).value,
+              urgency: $('#tk-c-urgency', ov).value,
               subject: $('#tk-c-subject', ov).value.trim(),
               description: $('#tk-c-desc', ov).value.trim(),
               category: $('#tk-c-cat', ov).value.trim(),
@@ -568,8 +571,12 @@ Views.tickets = async function (el, params = {}) {
         <div class="form-grid">
           <div class="form-field"><label>${esc(t('tk.statusCol'))}</label>
             <select id="tk-d-status" ${canUpdate ? '' : 'disabled'}>${TK_STATUS.map((s) => `<option value="${s}"${s === tk.status ? ' selected' : ''}>${esc(tkStatusLabel(s))}</option>`).join('')}</select></div>
+          <div class="form-field"><label>${esc(t('tk.impact'))}</label>
+            <select id="tk-d-impact" ${canUpdate ? '' : 'disabled'}><option value="">—</option>${['low', 'medium', 'high'].map((l) => `<option value="${l}"${l === tk.impact ? ' selected' : ''}>${esc(tkPriorityLabel(l))}</option>`).join('')}</select></div>
+          <div class="form-field"><label>${esc(t('tk.urgency'))}</label>
+            <select id="tk-d-urgency" ${canUpdate ? '' : 'disabled'}><option value="">—</option>${['low', 'medium', 'high'].map((l) => `<option value="${l}"${l === tk.urgency ? ' selected' : ''}>${esc(tkPriorityLabel(l))}</option>`).join('')}</select></div>
           <div class="form-field"><label>${esc(t('tk.priorityCol'))}</label>
-            <select id="tk-d-priority" ${canUpdate ? '' : 'disabled'}>${TK_PRIORITY.map((p) => `<option value="${p}"${p === tk.priority ? ' selected' : ''}>${esc(tkPriorityLabel(p))}</option>`).join('')}</select></div>
+            <div style="padding-top:6px">${pill(TK_PRIORITY_PILL[tk.priority], tkPriorityLabel(tk.priority))} <span class="cell-sub">${esc(t('tk.derived'))}</span></div></div>
           <div class="form-field"><label>${esc(t('tk.assignee'))}</label>
             <select id="tk-d-assignee" ${canAssign ? '' : 'disabled'}>${assignOpts}</select></div>
           <div class="form-field"><label>${esc(t('tk.category'))}</label>
@@ -622,7 +629,8 @@ Views.tickets = async function (el, params = {}) {
           catch (err) { toast(err.message, 'error'); }
         };
         $('#tk-d-status', ov)?.addEventListener('change', (e) => patch({ status: e.target.value }));
-        $('#tk-d-priority', ov)?.addEventListener('change', (e) => patch({ priority: e.target.value }));
+        $('#tk-d-impact', ov)?.addEventListener('change', (e) => patch({ impact: e.target.value || null }));
+        $('#tk-d-urgency', ov)?.addEventListener('change', (e) => patch({ urgency: e.target.value || null }));
         $('#tk-d-assignee', ov)?.addEventListener('change', (e) => patch({ assigneeUserId: e.target.value || null }));
         $('#tk-d-cat', ov)?.addEventListener('change', (e) => patch({ category: e.target.value.trim() }));
         $('#tk-d-asset', ov)?.addEventListener('change', (e) => {

@@ -1012,3 +1012,7 @@ CREATE TABLE IF NOT EXISTS changes (
 );
 CREATE INDEX IF NOT EXISTS idx_changes_status ON changes (status, created_at DESC);
 CREATE SEQUENCE IF NOT EXISTS change_seq START 1001;
+
+-- Impact × Urgency prioritization (064).
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS impact  TEXT CHECK (impact  IN ('low', 'medium', 'high'));
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS urgency TEXT CHECK (urgency IN ('low', 'medium', 'high'));

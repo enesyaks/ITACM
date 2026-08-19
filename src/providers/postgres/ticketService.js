@@ -16,6 +16,17 @@ const TYPES = new Set(['incident', 'request']);
 const PRIORITIES = new Set(['low', 'medium', 'high', 'urgent']);
 const STATUSES = new Set(['new', 'open', 'in_progress', 'pending', 'resolved', 'closed', 'cancelled']);
 const TERMINAL = new Set(['resolved', 'closed', 'cancelled']);
+const LEVELS = new Set(['low', 'medium', 'high']);
+
+// ITIL priority = Impact × Urgency (rows = impact, cols = urgency).
+const PRIORITY_MATRIX = Object.freeze({
+  high: { high: 'urgent', medium: 'high', low: 'medium' },
+  medium: { high: 'high', medium: 'medium', low: 'low' },
+  low: { high: 'medium', medium: 'low', low: 'low' },
+});
+function derivePriority(impact, urgency) {
+  return (PRIORITY_MATRIX[impact] && PRIORITY_MATRIX[impact][urgency]) || 'medium';
+}
 
 // SLA targets (elapsed minutes from creation) by priority. First response and
 // resolution each get their own clock; times are wall-clock (no business-hours
@@ -151,6 +162,7 @@ async function logActivity(ticketId, a, action, detail) {
 
 const SELECT_COLS = `
   t.id, t.number, t.type, t.subject, t.description, t.status, t.priority, t.category,
+  t.impact, t.urgency,
   t.requester_employee_id AS "requesterEmployeeId", re.full_name AS "requesterName",
   t.assignee_user_id AS "assigneeUserId", au.username AS "assigneeName",
   t.asset_id AS "assetId", a.asset_tag AS "assetTag",
@@ -181,7 +193,13 @@ async function createTicket(body, user, { asEmployee = null } = {}) {
   const subject = String((body && body.subject) || '').trim().slice(0, 300);
   if (!subject) throw HttpError.badRequest('A subject is required');
   const description = String((body && body.description) || '').trim().slice(0, 8000);
-  const priority = PRIORITIES.has(body && body.priority) ? body.priority : 'medium';
+  // Priority is derived from Impact × Urgency when both are given; otherwise an
+  // explicit priority (or the medium default) is used.
+  const impact = LEVELS.has(body && body.impact) ? body.impact : null;
+  const urgency = LEVELS.has(body && body.urgency) ? body.urgency : null;
+  const priority = (impact && urgency)
+    ? derivePriority(impact, urgency)
+    : (PRIORITIES.has(body && body.priority) ? body.priority : 'medium');
   const category = body && body.category ? String(body.category).trim().slice(0, 120) : null;
   const a = actor(user);
 
@@ -201,12 +219,12 @@ async function createTicket(body, user, { asEmployee = null } = {}) {
   const { rows } = await query(
     `INSERT INTO tickets (number, type, subject, description, priority, category,
         requester_employee_id, requester_user_id, asset_id, created_by, created_by_name, status,
-        response_due_at, resolve_due_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, 'new', $12, $13)
+        response_due_at, resolve_due_at, impact, urgency)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, 'new', $12, $13, $14, $15)
      RETURNING id`,
     [number, type, subject, description || null, priority, category,
       requesterEmployeeId, asEmployee ? null : a.id, assetId, a.id, a.name,
-      responseDueAt, resolveDueAt]
+      responseDueAt, resolveDueAt, impact, urgency]
   );
   const id = rows[0].id;
   await logActivity(id, a, 'created', `${type} · ${priority}`);
@@ -360,18 +378,35 @@ async function updateTicket(id, patch, user) {
     let statusTo = null;
     let newAssigneeId = null;
 
-    if (patch.priority !== undefined) {
+    // ITIL prioritization: Impact × Urgency drives priority. Changing either
+    // re-derives the priority; an explicit priority still works when impact/
+    // urgency aren't both set.
+    let effImpact = cur.impact;
+    let effUrgency = cur.urgency;
+    let iuChanged = false;
+    if (patch.impact !== undefined) {
+      if (patch.impact !== null && !LEVELS.has(patch.impact)) throw HttpError.badRequest('Invalid impact');
+      if (String(patch.impact || '') !== String(cur.impact || '')) { set('impact', patch.impact || null); effImpact = patch.impact || null; iuChanged = true; }
+    }
+    if (patch.urgency !== undefined) {
+      if (patch.urgency !== null && !LEVELS.has(patch.urgency)) throw HttpError.badRequest('Invalid urgency');
+      if (String(patch.urgency || '') !== String(cur.urgency || '')) { set('urgency', patch.urgency || null); effUrgency = patch.urgency || null; iuChanged = true; }
+    }
+    let newPriority;
+    if (iuChanged && effImpact && effUrgency) newPriority = derivePriority(effImpact, effUrgency);
+    else if (patch.priority !== undefined) {
       if (!PRIORITIES.has(patch.priority)) throw HttpError.badRequest('Invalid priority');
-      if (patch.priority !== cur.priority) {
-        set('priority', patch.priority);
-        acts.push(['priority', `${cur.priority} → ${patch.priority}`]);
-        // Re-target the SLA clocks that haven't completed yet (relative to creation).
-        // Clear the matching breach marker too, so the sweep can re-flag against the
-        // new deadline (its guard is `<col> IS NULL`) and log it once for that target.
-        const due = slaDueDates(slaTargets, patch.priority, cur.created_at);
-        if (!cur.first_response_at) { set('response_due_at', due.responseDueAt); set('response_breached_at', null); }
-        if (!cur.resolved_at) { set('resolve_due_at', due.resolveDueAt); set('resolve_breached_at', null); }
-      }
+      newPriority = patch.priority;
+    }
+    if (newPriority !== undefined && newPriority !== cur.priority) {
+      set('priority', newPriority);
+      acts.push(['priority', `${cur.priority} → ${newPriority}`]);
+      // Re-target the SLA clocks that haven't completed yet (relative to creation).
+      // Clear the matching breach marker too, so the sweep can re-flag against the
+      // new deadline (its guard is `<col> IS NULL`) and log it once for that target.
+      const due = slaDueDates(slaTargets, newPriority, cur.created_at);
+      if (!cur.first_response_at) { set('response_due_at', due.responseDueAt); set('response_breached_at', null); }
+      if (!cur.resolved_at) { set('resolve_due_at', due.resolveDueAt); set('resolve_breached_at', null); }
     }
     if (patch.category !== undefined) set('category', patch.category ? String(patch.category).trim().slice(0, 120) : null);
     if (patch.assetId !== undefined) {
