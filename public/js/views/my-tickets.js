@@ -2,22 +2,41 @@
 /* Reuses the pills / label helpers defined in tickets.js (loaded before this). */
 
 Views.myTickets = async function (el) {
-  const list = await api('/me/tickets').catch(() => []);
+  const [list, tplRes, apprRes] = await Promise.all([
+    api('/me/tickets').catch(() => []),
+    api('/me/request-templates').catch(() => []),
+    api('/me/approvals/pending').catch(() => []),
+  ]);
   const tickets = Array.isArray(list) ? list : [];
+  const templates = Array.isArray(tplRes) ? tplRes : [];
+  const approvals = Array.isArray(apprRes) ? apprRes : [];
 
   const pill = (cls, label) => `<span class="pill ${cls}">${esc(label)}</span>`;
+  const apPill = (s) => (s === 'pending' ? pill('pill-amber', t('mtk.apPending'))
+    : s === 'approved' ? pill('pill-emerald', t('mtk.apApproved'))
+    : s === 'rejected' ? pill('pill-rose', t('mtk.apRejected')) : '');
   const rowHtml = (tk) => `<tr data-open="${esc(tk.id)}" style="cursor:pointer">
       <td class="mono">${esc(tk.number)}</td>
       <td>${pill('pill-slate', tkTypeLabel(tk.type))}</td>
       <td><div class="cell-title">${esc(tk.subject)}</div></td>
-      <td>${pill(TK_STATUS_PILL[tk.status], tkStatusLabel(tk.status))}</td>
+      <td>${pill(TK_STATUS_PILL[tk.status], tkStatusLabel(tk.status))}${tk.approvalStatus ? ' ' + apPill(tk.approvalStatus) : ''}</td>
       <td>${pill(TK_PRIORITY_PILL[tk.priority], tkPriorityLabel(tk.priority))}</td>
       <td class="cell-sub">${esc(String(tk.createdAt || '').slice(0, 10))}</td>
     </tr>`;
 
+  const apprCard = (a) => `<div class="tk-doc" data-appr="${esc(a.id)}">
+      <span style="flex:1"><strong>${esc(a.summary || t('mtk.apGeneric'))}</strong>
+        <span class="cell-sub"> · ${esc(t('mtk.apFrom'))} ${esc(a.requesterName || '—')}</span></span>
+      <button class="btn btn-outline btn-sm appr-reject" data-id="${esc(a.id)}" style="color:var(--rose-700)">${esc(t('ch.reject'))}</button>
+      <button class="btn btn-primary btn-sm appr-approve" data-id="${esc(a.id)}">${esc(t('ch.approve'))}</button>
+    </div>`;
+
   el.innerHTML = `
     ${pageHead(t('mtk.title'), t('mtk.subtitle'),
       `<button class="btn btn-primary" id="mtk-new"><span class="ms">add</span> ${esc(t('mtk.new'))}</button>`)}
+    ${approvals.length ? `<div class="card card-pad" style="margin-bottom:14px">
+      <h3 style="margin:0 0 10px">${esc(t('mtk.approvalsTitle'))} <span class="pill pill-amber">${approvals.length}</span></h3>
+      <div class="tk-docs">${approvals.map(apprCard).join('')}</div></div>` : ''}
     <div class="card" style="overflow-x:auto"><table class="table">
       <thead><tr>
         <th>#</th><th>${esc(t('tk.type'))}</th><th>${esc(t('tk.subject'))}</th>
@@ -30,29 +49,45 @@ Views.myTickets = async function (el) {
   el.querySelectorAll('#mtk-rows tr[data-open]').forEach((tr) =>
     tr.addEventListener('click', () => openMine(tr.dataset.open)));
   $('#mtk-new', el).addEventListener('click', openCreate);
+  const decideAppr = async (id, decision) => {
+    try { await api('/me/approvals/' + encodeURIComponent(id) + '/decide', { method: 'POST', body: { decision } });
+      toast(decision === 'approved' ? t('ch.approved') : t('ch.rejected'), 'success'); Views.myTickets(el);
+    } catch (err) { toast(err.message, 'error'); }
+  };
+  el.querySelectorAll('.appr-approve').forEach((b) => b.addEventListener('click', () => decideAppr(b.dataset.id, 'approved')));
+  el.querySelectorAll('.appr-reject').forEach((b) => b.addEventListener('click', () => decideAppr(b.dataset.id, 'rejected')));
 
   function openCreate() {
     openModal({
       title: t('mtk.new'),
       body: `<div class="form-grid">
-        <div class="form-field"><label>${esc(t('tk.type'))}</label>
-          <select id="mtk-c-type"><option value="incident">${esc(tkTypeLabel('incident'))}</option><option value="request">${esc(tkTypeLabel('request'))}</option></select></div>
+        <div class="form-field full"><label>${esc(t('mtk.kind'))}</label>
+          <select id="mtk-c-kind">
+            ${templates.map((tp) => `<option value="tpl:${esc(tp.id)}">${esc(tp.name)}${tp.category ? ' · ' + esc(tp.category) : ''}</option>`).join('')}
+            <option value="incident">${esc(tkTypeLabel('incident'))}</option>
+            <option value="request">${esc(tkTypeLabel('request'))}</option>
+          </select>
+          <div class="cell-sub" id="mtk-c-hint" style="margin-top:4px"></div></div>
         <div class="form-field full"><label>${esc(t('tk.subject'))} *</label><input id="mtk-c-subject" maxlength="300"></div>
         <div class="form-field full"><label>${esc(t('tk.description'))}</label><textarea id="mtk-c-desc" rows="4" placeholder="${esc(t('mtk.descPh'))}"></textarea></div>
       </div>`,
       foot: `<button class="btn btn-outline" data-close>${esc(t('common.cancel'))}</button>
              <button class="btn btn-primary" id="mtk-c-save">${esc(t('mtk.submit'))}</button>`,
       onMount(ov) {
+        const kind = $('#mtk-c-kind', ov);
+        const hint = $('#mtk-c-hint', ov);
+        const showHint = () => {
+          const tp = templates.find((x) => 'tpl:' + x.id === kind.value);
+          hint.textContent = tp && tp.description ? tp.description : '';
+        };
+        kind.addEventListener('change', showHint); showHint();
         $('#mtk-c-save', ov).addEventListener('click', async () => {
+          const v = kind.value;
+          const body = { subject: $('#mtk-c-subject', ov).value.trim(), description: $('#mtk-c-desc', ov).value.trim() };
+          if (v.startsWith('tpl:')) body.templateId = v.slice(4); else body.type = v;
           try {
-            await api('/me/tickets', { method: 'POST', body: {
-              type: $('#mtk-c-type', ov).value,
-              subject: $('#mtk-c-subject', ov).value.trim(),
-              description: $('#mtk-c-desc', ov).value.trim(),
-            } });
-            closeModal();
-            toast(t('mtk.created'), 'success');
-            Views.myTickets(el);
+            await api('/me/tickets', { method: 'POST', body });
+            closeModal(); toast(t('mtk.created'), 'success'); Views.myTickets(el);
           } catch (err) { toast(err.message, 'error'); }
         });
       },
@@ -78,7 +113,9 @@ Views.myTickets = async function (el) {
           ${pill('pill-slate', tkTypeLabel(tk.type))}
           ${pill(TK_STATUS_PILL[tk.status], tkStatusLabel(tk.status))}
           ${pill(TK_PRIORITY_PILL[tk.priority], tkPriorityLabel(tk.priority))}
+          ${tk.approvalStatus ? apPill(tk.approvalStatus) : ''}
         </div>
+        ${tk.approvalStatus === 'pending' && tk.approvalApprover ? `<p class="cell-sub" style="margin:-6px 0 12px">${esc(t('mtk.apWaiting'))} <strong>${esc(tk.approvalApprover)}</strong></p>` : ''}
         <div class="form-field full" style="margin-bottom:12px"><label>${esc(t('tk.description'))}</label>
           <div class="tk-desc">${esc(tk.description || '—').replace(/\n/g, '<br>')}</div></div>
         ${tk.resolutionNote ? `<div class="form-field full" style="margin-bottom:12px"><label>${esc(t('mtk.resolution'))}</label>

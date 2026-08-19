@@ -347,7 +347,8 @@ Views.tickets = async function (el, params = {}) {
   const render = () => {
     el.innerHTML = `
       ${pageHead(t('tk.title'), t('tk.subtitle'),
-        `${canManage ? `<button class="btn btn-outline" id="tk-sla"><span class="ms">schedule</span> ${esc(t('tk.slaSettings'))}</button>` : ''}`
+        `${canManage ? `<button class="btn btn-outline" id="tk-templates"><span class="ms">assignment</span> ${esc(t('rt.title'))}</button>` : ''}`
+        + `${canManage ? `<button class="btn btn-outline" id="tk-sla"><span class="ms">schedule</span> ${esc(t('tk.slaSettings'))}</button>` : ''}`
         + `${canCreate ? `<button class="btn btn-primary" id="tk-new"><span class="ms">add</span> ${esc(t('tk.new'))}</button>` : ''}`)}
       <div id="tk-stats">${statsHtml(stats0)}</div>
       <div class="card card-pad" style="margin-bottom:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
@@ -386,6 +387,8 @@ Views.tickets = async function (el, params = {}) {
     if (nb) nb.addEventListener('click', openCreate);
     const sb = $('#tk-sla', el);
     if (sb) sb.addEventListener('click', openSlaEditor);
+    const tb = $('#tk-templates', el);
+    if (tb) tb.addEventListener('click', openRequestTemplates);
     $('#tk-mode-list', el)?.addEventListener('click', () => { if (mode !== 'list') setMode('list'); });
     $('#tk-mode-board', el)?.addEventListener('click', () => { if (mode !== 'board') setMode('board'); });
     const reload = () => refresh();
@@ -450,6 +453,61 @@ Views.tickets = async function (el, params = {}) {
     refreshStats();
     const arr = Array.isArray(list) ? list : [];
     if (mode === 'board') paintBoard(arr); else paintList(arr);
+  }
+
+  async function openRequestTemplates() {
+    const [tpls, cfg] = await Promise.all([
+      api('/request-templates').catch(() => []),
+      api('/approvals/config').catch(() => ({ enabled: false })),
+    ]);
+    const loaded = Array.isArray(tpls) ? tpls : [];
+    const rowHtml = (tp) => {
+      const lv = (tp && tp.approvalLevels) || [];
+      return `<div class="rt-row" data-id="${esc((tp && tp.id) || '')}" style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+        <input class="rt-name" placeholder="${esc(t('rt.name'))}" value="${esc((tp && tp.name) || '')}" style="flex:0 0 180px">
+        <input class="rt-cat" placeholder="${esc(t('tk.category'))}" value="${esc((tp && tp.category) || '')}" style="flex:0 0 130px">
+        <label style="font-size:13px;display:inline-flex;gap:4px;align-items:center"><input type="checkbox" class="rt-mgr" ${lv.includes('manager') ? 'checked' : ''}> ${esc(t('rt.manager'))}</label>
+        <label style="font-size:13px;display:inline-flex;gap:4px;align-items:center"><input type="checkbox" class="rt-dept" ${lv.includes('department') ? 'checked' : ''}> ${esc(t('rt.department'))}</label>
+        <label style="font-size:13px;display:inline-flex;gap:4px;align-items:center"><input type="checkbox" class="rt-en" ${(tp && tp.enabled !== false) ? 'checked' : ''}> ${esc(t('rt.enabled'))}</label>
+        <button class="btn btn-outline btn-sm rt-del" type="button" title="${esc(t('common.remove') || 'Remove')}"><span class="ms ms-sm">delete</span></button>
+      </div>`;
+    };
+    openModal({
+      title: t('rt.title'),
+      wide: true,
+      body: `<label style="display:inline-flex;align-items:center;gap:8px;margin-bottom:12px;font-size:14px">
+          <input type="checkbox" id="rt-approvals-on" ${cfg.enabled ? 'checked' : ''}> <strong>${esc(t('rt.enableApprovals'))}</strong></label>
+        <p class="cell-sub" style="margin:0 0 12px">${esc(t('rt.hint'))}</p>
+        <div id="rt-list">${(loaded.length ? loaded : [null]).map(rowHtml).join('')}</div>
+        <button class="btn btn-outline btn-sm" id="rt-add" type="button"><span class="ms ms-sm">add</span> ${esc(t('rt.add'))}</button>`,
+      foot: `<button class="btn btn-outline" data-close>${esc(t('common.cancel'))}</button>
+             <button class="btn btn-primary" id="rt-save">${esc(t('common.save'))}</button>`,
+      onMount(ov) {
+        const listEl = $('#rt-list', ov);
+        const wireDel = () => listEl.querySelectorAll('.rt-del').forEach((b) => { b.onclick = () => b.closest('.rt-row').remove(); });
+        wireDel();
+        $('#rt-add', ov).addEventListener('click', () => { listEl.insertAdjacentHTML('beforeend', rowHtml(null)); wireDel(); });
+        $('#rt-save', ov).addEventListener('click', async () => {
+          try {
+            await api('/approvals/config', { method: 'PUT', body: { enabled: $('#rt-approvals-on', ov).checked } });
+            const rows = [...listEl.querySelectorAll('.rt-row')].map((r) => ({
+              id: r.dataset.id || null,
+              name: r.querySelector('.rt-name').value.trim(),
+              category: r.querySelector('.rt-cat').value.trim(),
+              approvalLevels: [].concat(r.querySelector('.rt-mgr').checked ? ['manager'] : [], r.querySelector('.rt-dept').checked ? ['department'] : []),
+              enabled: r.querySelector('.rt-en').checked,
+            }));
+            for (const orig of loaded) if (orig.id && !rows.find((x) => x.id === orig.id)) await api('/request-templates/' + orig.id, { method: 'DELETE' });
+            for (const row of rows) {
+              if (!row.name) continue;
+              if (row.id) await api('/request-templates/' + row.id, { method: 'PATCH', body: row });
+              else await api('/request-templates', { method: 'POST', body: row });
+            }
+            closeModal(); toast(t('tk.saved'), 'success');
+          } catch (err) { toast(err.message, 'error'); }
+        });
+      },
+    });
   }
 
   async function openSlaEditor() {
@@ -592,6 +650,8 @@ Views.tickets = async function (el, params = {}) {
             <input id="tk-d-cat" value="${esc(tk.category || '')}" ${canUpdate ? '' : 'disabled'}></div>
           <div class="form-field"><label>${esc(t('tk.requester'))}</label>
             <div style="padding-top:6px">${esc(tk.requesterName || '—')}</div></div>
+          ${tk.approvalStatus ? `<div class="form-field"><label>${esc(t('rt.approval'))}</label>
+            <div style="padding-top:6px">${pill({ pending: 'pill-amber', approved: 'pill-emerald', rejected: 'pill-rose' }[tk.approvalStatus] || 'pill-slate', t('mtk.ap' + tk.approvalStatus.charAt(0).toUpperCase() + tk.approvalStatus.slice(1)))}${tk.approvalStatus === 'pending' && tk.approvalApprover ? ` <span class="cell-sub">· ${esc(tk.approvalApprover)}</span>` : ''}</div></div>` : ''}
           <div class="form-field"><label>${esc(t('tk.asset'))}</label>
             <input id="tk-d-asset" list="tk-asset-list" autocomplete="off" ${canUpdate ? '' : 'disabled'}
               value="${esc(tk.assetId && assetById.has(tk.assetId) ? assetLabel(assetById.get(tk.assetId)) : (tk.assetTag || ''))}"
