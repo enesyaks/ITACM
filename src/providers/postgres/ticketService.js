@@ -82,23 +82,29 @@ function slaDueDates(targets, priority, from) {
 
 // Live SLA state for one leg. `doneAt` is when that leg completed
 // (first_response_at / resolved_at); once set it fixes met-vs-breached.
-function legState(dueAt, doneAt, open) {
+// `pausedAt` (resolution leg only) freezes the countdown while 'pending'.
+function legState(dueAt, doneAt, open, pausedAt) {
   if (!dueAt) return { state: 'none' };
   const due = new Date(dueAt).getTime();
   if (doneAt) return { state: new Date(doneAt).getTime() <= due ? 'met' : 'breached', dueAt };
   if (!open) return { state: 'na', dueAt }; // closed/cancelled without ever completing this leg
+  if (pausedAt) {
+    const rem = due - new Date(pausedAt).getTime();
+    return { state: 'paused', dueAt, remainingMs: rem > 0 ? rem : 0 };
+  }
   const now = Date.now();
   return now > due ? { state: 'breached', dueAt } : { state: 'due', dueAt, remainingMs: due - now };
 }
 
-const SLA_RAW = ['responseDueAt', 'resolveDueAt', 'responseBreachedAt', 'resolveBreachedAt'];
+const SLA_RAW = ['responseDueAt', 'resolveDueAt', 'responseBreachedAt', 'resolveBreachedAt', 'slaPausedAt'];
 
 // Attach a compact `sla` object for staff views; drop the raw columns either way.
 function decorateSla(row) {
   const open = !TERMINAL.has(row.status);
+  const paused = row.status === 'pending' ? row.slaPausedAt : null;
   row.sla = {
     response: legState(row.responseDueAt, row.firstResponseAt, open),
-    resolve: legState(row.resolveDueAt, row.resolvedAt, open),
+    resolve: legState(row.resolveDueAt, row.resolvedAt, open, paused),
   };
   for (const k of SLA_RAW) delete row[k];
   return row;
@@ -150,6 +156,7 @@ const SELECT_COLS = `
   t.first_response_at AS "firstResponseAt", t.resolved_at AS "resolvedAt", t.closed_at AS "closedAt",
   t.response_due_at AS "responseDueAt", t.resolve_due_at AS "resolveDueAt",
   t.response_breached_at AS "responseBreachedAt", t.resolve_breached_at AS "resolveBreachedAt",
+  t.sla_paused_at AS "slaPausedAt",
   t.created_at AS "createdAt", t.updated_at AS "updatedAt"`;
 const FROM_JOINS = `
   FROM tickets t
@@ -308,6 +315,7 @@ async function stats() {
       COUNT(*) FILTER (WHERE status NOT IN ('resolved','closed','cancelled')) AS open,
       COUNT(*) FILTER (WHERE status NOT IN ('resolved','closed','cancelled') AND assignee_user_id IS NULL) AS unassigned,
       COUNT(*) FILTER (WHERE status NOT IN ('resolved','closed','cancelled') AND resolved_at IS NULL
+                         AND sla_paused_at IS NULL
                          AND resolve_due_at IS NOT NULL AND resolve_due_at < now()) AS breached,
       COUNT(*) FILTER (WHERE resolved_at >= date_trunc('day', now())) AS resolved_today
     FROM tickets`);
@@ -387,6 +395,18 @@ async function updateTicket(id, patch, user) {
         if (patch.status === 'resolved') set('resolved_at', new Date());
         else if (patch.status === 'closed') set('closed_at', new Date());
         else if (['open', 'in_progress'].includes(patch.status)) { set('resolved_at', null); set('closed_at', null); }
+
+        // SLA clock-stop: pause the resolution clock while 'pending' (waiting on
+        // the requester); on resume, push resolve_due_at forward by the paused span.
+        if (patch.status === 'pending' && !cur.resolved_at && !cur.sla_paused_at) {
+          set('sla_paused_at', new Date());
+        } else if (cur.status === 'pending' && cur.sla_paused_at) {
+          if (['open', 'in_progress'].includes(patch.status) && cur.resolve_due_at && !cur.resolved_at) {
+            const pausedMs = Date.now() - new Date(cur.sla_paused_at).getTime();
+            set('resolve_due_at', new Date(new Date(cur.resolve_due_at).getTime() + pausedMs));
+          }
+          set('sla_paused_at', null); // cleared on resume and on terminal exits
+        }
       }
     }
     if (!sets.length) return;
@@ -470,15 +490,16 @@ async function addMyComment(id, body, user) {
  */
 async function sweepSlaBreaches() {
   const legs = [
-    { col: 'response_breached_at', done: 'first_response_at', due: 'response_due_at', action: 'sla_response', detail: 'First-response SLA breached' },
-    { col: 'resolve_breached_at', done: 'resolved_at', due: 'resolve_due_at', action: 'sla_resolve', detail: 'Resolution SLA breached' },
+    { col: 'response_breached_at', done: 'first_response_at', due: 'response_due_at', action: 'sla_response', detail: 'First-response SLA breached', extra: '' },
+    // resolution clock is paused while 'pending' → don't flag a breach then
+    { col: 'resolve_breached_at', done: 'resolved_at', due: 'resolve_due_at', action: 'sla_resolve', detail: 'Resolution SLA breached', extra: ' AND sla_paused_at IS NULL' },
   ];
   let flagged = 0;
   for (const l of legs) {
     const { rows } = await query(
       `UPDATE tickets SET ${l.col} = now()
         WHERE ${l.col} IS NULL AND ${l.done} IS NULL AND ${l.due} IS NOT NULL AND ${l.due} < now()
-          AND status NOT IN ('resolved','closed','cancelled')
+          AND status NOT IN ('resolved','closed','cancelled')${l.extra}
         RETURNING id, number`
     );
     for (const r of rows) {

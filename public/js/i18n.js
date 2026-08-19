@@ -1390,6 +1390,7 @@
     'tk.sla.target': L('target', 'hedef'),
     'tk.sla.met': L('Met', 'Karşılandı'),
     'tk.sla.breached': L('Breached', 'İhlal'),
+    'tk.sla.paused': L('Paused', 'Duraklatıldı'),
     'tk.sla.na': L('—', '—'),
     'tk.sla.inMin': L('{n}m left', '{n}dk kaldı'),
     'tk.sla.inHour': L('{n}h left', '{n}sa kaldı'),

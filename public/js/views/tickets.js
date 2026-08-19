@@ -13,7 +13,7 @@ const tkPriorityLabel = (p) => t('tk.priority.' + p) || p;
 const tkTypeLabel = (ty) => t('tk.type.' + ty) || ty;
 
 /* --- SLA badges (staff views only — portal payloads carry no `sla`) --- */
-const TK_SLA_PILL = { due: 'pill-blue', breached: 'pill-rose', met: 'pill-emerald', na: 'pill-slate', none: 'pill-slate' };
+const TK_SLA_PILL = { due: 'pill-blue', breached: 'pill-rose', met: 'pill-emerald', paused: 'pill-slate', na: 'pill-slate', none: 'pill-slate' };
 function tkFmtRemaining(ms) {
   const m = Math.max(0, Math.round((ms || 0) / 60000));
   if (m < 60) return (t('tk.sla.inMin') || '{n}m').replace('{n}', m);
@@ -25,6 +25,7 @@ function tkSlaLabel(leg) {
   if (!leg || leg.state === 'none' || leg.state === 'na') return t('tk.sla.na');
   if (leg.state === 'met') return t('tk.sla.met');
   if (leg.state === 'breached') return t('tk.sla.breached');
+  if (leg.state === 'paused') return t('tk.sla.paused');
   return tkFmtRemaining(leg.remainingMs);
 }
 function tkSlaBadge(leg) {
