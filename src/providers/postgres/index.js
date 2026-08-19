@@ -5,6 +5,7 @@ module.exports = {
   ticketService: require('./ticketService'),
   problemService: require('./problemService'),
   changeService: require('./changeService'),
+  requestTemplateService: require('./requestTemplateService'),
   handoverService: require('./handoverService'),
   maintenanceService: require('./maintenanceService'),
   dashboardService: require('./dashboardService'),

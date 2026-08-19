@@ -9,10 +9,19 @@ const express = require('express');
 const router = express.Router();
 const { authenticate } = require('../middleware/auth');
 const { asyncHandler } = require('../utils/asyncHandler');
-const { selfService, ticketService, settingsService, documentService } = require('../services');
+const { selfService, ticketService, settingsService, documentService, requestTemplateService, approvalService } = require('../services');
 const { validateUpload } = require('../utils/uploadGuard');
 const { contentDisposition } = require('../utils/contentDisposition');
+const { query } = require('../providers/postgres/pool');
 const { HttpError } = require('../utils/httpError');
+
+/** The signed-in user's employee record (by email), for approval routing. */
+async function currentEmployee(req) {
+  const email = String((req.user && req.user.email) || '').trim().toLowerCase();
+  if (!email) return null;
+  const { rows } = await query('SELECT id, full_name FROM employees WHERE lower(email) = $1 LIMIT 1', [email]);
+  return rows[0] ? { id: rows[0].id, fullName: rows[0].full_name } : null;
+}
 
 router.use(authenticate);
 
@@ -67,6 +76,29 @@ router.post('/tickets/:id/documents', requireTicketing, express.json({ limit: '1
     internal: false, // employees can never post internal attachments
   });
   res.status(201).json({ success: true, data: saved });
+}));
+
+/* Service-request templates the employee can raise (enabled only). */
+router.get('/request-templates', requireTicketing, asyncHandler(async (req, res) => {
+  const list = await requestTemplateService.listTemplates({ enabledOnly: true });
+  res.json({ success: true, data: list.map((tpl) => ({ id: tpl.id, name: tpl.name, description: tpl.description, category: tpl.category })) });
+}));
+
+/* Approvals the employee (as a manager) must act on — Portal accounts are
+   confined to /me/*, so managers approve here rather than /api/approvals. */
+router.get('/approvals/pending', asyncHandler(async (req, res) => {
+  const emp = await currentEmployee(req);
+  res.json({ success: true, data: emp ? await approvalService.listPending(emp.id) : [] });
+}));
+router.post('/approvals/:id/decide', asyncHandler(async (req, res) => {
+  const emp = await currentEmployee(req);
+  res.json({ success: true, data: await approvalService.decide(req.params.id, {
+    decision: req.body && req.body.decision,
+    note: (req.body && req.body.note) || '',
+    deciderName: (emp && emp.fullName) || (req.user && req.user.email) || 'Unknown',
+    deciderEmployeeId: emp && emp.id,
+    isAdmin: false,
+  }) });
 }));
 
 module.exports = router;

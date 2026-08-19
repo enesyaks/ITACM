@@ -27,6 +27,7 @@ const TYPE_LABELS = {
   asset_sale: 'Asset sale',
   asset_scrap: 'Asset scrap',
   license_assign: 'Software / license assignment',
+  ticket_request: 'Service request',
 };
 
 /** Read the (normalized) approval config from settings. */
@@ -52,10 +53,12 @@ function levelsFor(config, type) {
  * Open an approval request for an action, if policy requires one.
  * @returns {Promise<{required:false} | {required:true, request:object}>}
  */
-async function createRequest({ type, requesterEmployeeId, requesterName, payload = {}, resourceRef = null, summary = null }) {
+async function createRequest({ type, requesterEmployeeId, requesterName, payload = {}, resourceRef = null, summary = null, levels: explicitLevels = null }) {
   const config = await getConfig();
   if (!config.enabled) return { required: false };
-  const levels = levelsFor(config, type);
+  // A caller (e.g. a request template) may pass its own ordered levels; otherwise
+  // fall back to the per-type policy in settings.
+  const levels = (Array.isArray(explicitLevels) && explicitLevels.length) ? explicitLevels : levelsFor(config, type);
   if (!levels) return { required: false };
   if (!isUuid(requesterEmployeeId)) return { required: false }; // no requester → cannot route
 
@@ -132,6 +135,7 @@ async function decide(id, { decision, note = '', deciderName = '', deciderEmploy
          SET status='rejected', decided_by=$2, decided_at=now(), decision_note=$3
        WHERE id=$1`, [id, deciderName || null, String(note || '').slice(0, 1000)]
     );
+    await dispatchReject(req, { deciderName }); // let the underlying resource react (e.g. cancel the ticket)
     return getRequest(id);
   }
   if (decision !== 'approved') throw HttpError.badRequest("decision must be 'approved' or 'rejected'");
@@ -192,9 +196,25 @@ async function dispatch(req, { deciderName }) {
         return providers.offboardService.replayApproved(req.type, p, actor);
       }
       return null;
+    case 'ticket_request':
+      if (providers.ticketService && providers.ticketService.onRequestApproved) {
+        return providers.ticketService.onRequestApproved(p, actor);
+      }
+      return null;
     default:
       return null;
   }
+}
+
+/** React to a rejected request. Only ticket requests currently need this (the
+ * asset/license flows simply don't replay). Best-effort, never throws upward. */
+async function dispatchReject(req, { deciderName }) {
+  try {
+    const providers = require('./index');
+    if (req.type === 'ticket_request' && providers.ticketService && providers.ticketService.onRequestRejected) {
+      await providers.ticketService.onRequestRejected(req.payload || {}, { name: deciderName });
+    }
+  } catch { /* rejection side-effects are best-effort */ }
 }
 
 /** Fire-and-forget notification to the current approver (best-effort). */

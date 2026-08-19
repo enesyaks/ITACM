@@ -170,6 +170,7 @@ const SELECT_COLS = `
   t.assignee_user_id AS "assigneeUserId", au.username AS "assigneeName",
   t.asset_id AS "assetId", a.asset_tag AS "assetTag",
   t.problem_id AS "problemId", pr.number AS "problemNumber", pr.title AS "problemTitle",
+  ar.status AS "approvalStatus", ar.approver_name AS "approvalApprover",
   t.created_by_name AS "createdByName",
   t.resolution_code AS "resolutionCode", t.resolution_note AS "resolutionNote",
   t.csat_rating AS "csatRating", t.csat_comment AS "csatComment",
@@ -183,7 +184,8 @@ const FROM_JOINS = `
   LEFT JOIN employees re ON t.requester_employee_id = re.id
   LEFT JOIN users au     ON t.assignee_user_id = au.id
   LEFT JOIN assets a     ON t.asset_id = a.id
-  LEFT JOIN problems pr  ON t.problem_id = pr.id`;
+  LEFT JOIN problems pr  ON t.problem_id = pr.id
+  LEFT JOIN approval_requests ar ON t.approval_request_id = ar.id`;
 
 /** Resolve the employee row that owns a self-service (Portal) session, by email. */
 async function employeeForUser(user) {
@@ -522,11 +524,48 @@ async function addComment(id, body, user, { ownEmployeeId = null } = {}) {
 async function createMyTicket(body, user) {
   const emp = await employeeForUser(user);
   if (!emp) throw HttpError.forbidden('No employee record is linked to your account');
-  // Employees may only open incidents/requests for themselves, at normal priority.
-  return createTicket(
-    { type: body && body.type, subject: body && body.subject, description: body && body.description },
-    user, { asEmployee: emp }
-  );
+  // Optional service-request template: forces type=request, carries a category and
+  // an approval chain that must clear before the desk fulfils it.
+  let template = null;
+  if (body && body.templateId) {
+    template = await require('./requestTemplateService').getTemplate(body.templateId).catch(() => null);
+    if (!template || !template.enabled) throw HttpError.badRequest('Invalid request template');
+  }
+  const ticket = await createTicket({
+    type: template ? 'request' : (body && body.type),
+    subject: body && body.subject,
+    description: body && body.description,
+    category: template ? template.category : undefined,
+  }, user, { asEmployee: emp });
+
+  if (template && Array.isArray(template.approvalLevels) && template.approvalLevels.length) {
+    const approval = await require('./approvalService').createRequest({
+      type: 'ticket_request',
+      requesterEmployeeId: emp.id,
+      requesterName: emp.full_name,
+      payload: { ticketId: ticket.id },
+      resourceRef: ticket.number,
+      summary: `${template.name}: ${ticket.subject}`,
+      levels: template.approvalLevels,
+    }).catch(() => ({ required: false }));
+    if (approval && approval.required && approval.request) {
+      await query('UPDATE tickets SET approval_request_id = $1 WHERE id = $2', [approval.request.id, ticket.id]);
+      logActivity(ticket.id, { name: 'system' }, 'approval_requested', `Pending ${template.approvalLevels.join(' → ')}`).catch(() => {});
+    }
+  }
+  return getMyTicket(ticket.id, user);
+}
+
+/** Called by approvalService.dispatch when a service-request approval clears. */
+async function onRequestApproved({ ticketId }, actor) {
+  if (!isUuid(ticketId)) return;
+  await logActivity(ticketId, { name: (actor && actor.name) || 'Approval' }, 'request_approved', 'Approved — ready to fulfil').catch(() => {});
+}
+/** Called by approvalService on rejection — cancel the held request ticket. */
+async function onRequestRejected({ ticketId }, actor) {
+  if (!isUuid(ticketId)) return;
+  await query("UPDATE tickets SET status='cancelled', updated_at=now() WHERE id = $1 AND status NOT IN ('resolved','closed','cancelled')", [ticketId]);
+  await logActivity(ticketId, { name: (actor && actor.name) || 'Approval' }, 'request_rejected', 'Rejected — request cancelled').catch(() => {});
 }
 
 async function listMyTickets(user) {
@@ -686,6 +725,7 @@ function audit(action, summary, a, entityId, label) {
 module.exports = {
   createTicket, getTicket, listTickets, updateTicket, addComment,
   createMyTicket, listMyTickets, getMyTicket, addMyComment, submitMyCsat,
+  onRequestApproved, onRequestRejected,
   sweepSlaBreaches, SLA_TARGETS, stats, getSlaConfig, saveSlaConfig, categories,
   getCannedResponses, saveCannedResponses,
 };

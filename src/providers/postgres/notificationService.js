@@ -603,6 +603,34 @@ async function sendTicketNotification({ to, ticketNumber, subject, event, actorN
   }
 }
 
+/**
+ * Notify the current approver that a request awaits their decision. Best-effort:
+ * resolves the approver's email from their employee record and never throws.
+ */
+async function sendApprovalNotice(request) {
+  try {
+    if (!request || !request.approverEmployeeId) return { skipped: true, reason: 'no approver' };
+    const { rows } = await query('SELECT email, full_name FROM employees WHERE id = $1', [request.approverEmployeeId]);
+    const to = rows[0] && rows[0].email;
+    if (!to) return { skipped: true, reason: 'approver has no email' };
+    const { smtp, companyName, notify } = await getMailConfig();
+    if (!smtp.host) return { skipped: true, reason: 'no smtp host' };
+    const base = appBaseUrl(notify);
+    const safe = (s) => String(s || '').replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
+    const summary = request.summary || 'Approval needed';
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"></head>`
+      + `<body style="font-family:system-ui,-apple-system,sans-serif;line-height:1.5;color:#1a1a1a;max-width:640px;margin:0 auto;padding:24px">`
+      + `<p style="margin:0 0 6px;color:#64748b;font-size:13px">${safe(companyName)} · Approvals</p>`
+      + `<h2 style="margin:0 0 10px;font-size:18px">${safe(summary)}</h2>`
+      + `<p style="margin:0 0 12px">${safe(request.requesterName || 'A requester')} needs your approval${request.resourceRef ? ` (${safe(request.resourceRef)})` : ''}.</p>`
+      + (base ? `<p style="margin:0"><a href="${safe(base)}" style="color:#4f46e5">Review the request</a></p>` : '')
+      + `</body></html>`;
+    return await sendMail({ to, subject: `[Approval] ${summary}`, text: `${request.requesterName || 'A requester'} needs your approval: ${summary}${base ? '\n' + base : ''}`, html });
+  } catch (err) {
+    return { skipped: true, reason: err.message };
+  }
+}
+
 async function sendPortalAccessEmail({ to, username, tempPassword }) {
   const [{ companyName }, templates] = await Promise.all([getMailConfig(), getEmailTemplates()]);
   const tpl = templates.portal_access;
@@ -682,7 +710,7 @@ async function sendHrRequestNotice(request) {
 module.exports = {
   getMailConfig, saveMailConfig, clearMailConfig, sendTestEmail, runAlertDigest, runScheduledDigest, notifyHandoverCompleted, sendMail,
   getEmailTemplates, saveEmailTemplates, sendOnboardingWelcomeEmail, sendPortalAccessEmail, sendHrRequestNotice,
-  sendTicketNotification,
+  sendTicketNotification, sendApprovalNotice,
   sendOwnerTransferEmail,
   DEFAULT_NOTIFY, TEMPLATE_KEYS, PLACEHOLDERS,
 };
