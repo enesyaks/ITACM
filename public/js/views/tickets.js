@@ -91,24 +91,25 @@ Views.tickets = async function (el, params = {}) {
 
   const canBulk = canUpdate || canAssign;
   const pill = (cls, label) => `<span class="pill ${cls}">${esc(label)}</span>`;
-  const rowHtml = (tk) => `<tr data-open="${esc(tk.id)}" style="cursor:pointer">
+  const avatar = (name) => `<span class="tk-assignee"><span class="tk-avatar">${esc(initials(name))}</span><span>${esc(name)}</span></span>`;
+  const rowHtml = (tk) => `<tr data-open="${esc(tk.id)}" class="tk-row prio-${esc(tk.priority)}" style="cursor:pointer">
       ${canBulk ? `<td class="tk-selcell"><input type="checkbox" class="tk-sel" data-id="${esc(tk.id)}"></td>` : ''}
-      <td class="mono">${esc(tk.number)}</td>
-      <td>${pill('pill-slate', tkTypeLabel(tk.type))}</td>
-      <td><div class="cell-title">${esc(tk.subject)}</div>${tk.assetTag ? `<div class="cell-sub">${esc(tk.assetTag)}</div>` : ''}</td>
+      <td class="mono tk-num">${esc(tk.number)}</td>
+      <td><span class="tk-type"><span class="ms ms-sm">${tk.type === 'request' ? 'assignment' : 'bolt'}</span>${esc(tkTypeLabel(tk.type))}</span></td>
+      <td><div class="cell-title">${esc(tk.subject)}</div>${tk.assetTag ? `<div class="cell-sub"><span class="ms ms-sm" style="vertical-align:-3px">devices</span> ${esc(tk.assetTag)}</div>` : ''}</td>
       <td>${pill(TK_STATUS_PILL[tk.status], tkStatusLabel(tk.status))}</td>
       <td>${pill(TK_PRIORITY_PILL[tk.priority], tkPriorityLabel(tk.priority))}</td>
       <td>${tkSlaBadge(tk.sla && tk.sla.resolve)}</td>
       <td class="cell-sub">${esc(tk.requesterName || '—')}</td>
-      <td class="cell-sub">${esc(tk.assigneeName || t('tk.unassigned'))}</td>
-      <td class="cell-sub">${esc(String(tk.createdAt || '').slice(0, 10))}</td>
+      <td>${tk.assigneeName ? avatar(tk.assigneeName) : `<span class="tk-unassigned">${esc(t('tk.unassigned'))}</span>`}</td>
+      <td class="cell-sub tk-date">${esc(String(tk.createdAt || '').slice(0, 10))}</td>
     </tr>`;
 
   const sortTh = (key, label) => {
     const arrow = sortKey === key ? (sortOrder === 'asc' ? ' ▲' : ' ▼') : '';
     return `<th class="tk-sortable${sortKey === key ? ' active' : ''}" data-sort="${key}">${esc(label)}${arrow}</th>`;
   };
-  const tableHtml = (list) => `<div class="card" style="overflow-x:auto"><table class="table">
+  const tableHtml = (list) => `<div class="card table-wrap"><table class="data tk-list">
       <thead><tr>
         ${canBulk ? '<th class="tk-selcell"><input type="checkbox" id="tk-sel-all"></th>' : ''}
         ${sortTh('number', '#')}<th>${esc(t('tk.type'))}</th>${sortTh('subject', t('tk.subject'))}
@@ -444,7 +445,7 @@ Views.tickets = async function (el, params = {}) {
     openModal({
       title: t('tk.slaSettings'),
       body: `<p class="cell-sub" style="margin:0 0 12px">${esc(t('tk.slaHint'))}</p>
-        <table class="table"><thead><tr>
+        <table class="data"><thead><tr>
           <th>${esc(t('tk.priorityCol'))}</th>
           <th>${esc(t('tk.sla.response'))} <span class="cell-sub">(${esc(t('tk.mins'))})</span></th>
           <th>${esc(t('tk.sla.resolution'))} <span class="cell-sub">(${esc(t('tk.mins'))})</span></th>

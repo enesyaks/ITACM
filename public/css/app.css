@@ -5826,6 +5826,26 @@ body.ai-open .ai-panel { opacity: 1; visibility: visible; transform: none; }
 .tk-sla { display: flex; flex-wrap: wrap; gap: 8px 22px; align-items: center; }
 .tk-sla > span { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
 
+/* Service-desk list — priority accent, avatars, refined cells */
+.tk-list td:first-child { position: relative; }
+.tk-list tr.tk-row > td:first-child::before {
+  content: ''; position: absolute; left: 0; top: 6px; bottom: 6px; width: 3px; border-radius: 0 3px 3px 0; background: var(--slate-500);
+}
+.tk-list tr.prio-urgent > td:first-child::before { background: var(--rose-600); }
+.tk-list tr.prio-high > td:first-child::before { background: var(--amber-600); }
+.tk-list tr.prio-medium > td:first-child::before { background: var(--blue-700); }
+.tk-list tr.prio-low > td:first-child::before { background: var(--slate-500); }
+.tk-list tbody tr:hover td { background: var(--surface-low); }
+.tk-list .cell-title { font-size: 14px; font-weight: 600; line-height: 1.3; }
+.tk-list .tk-num { color: var(--on-surface-variant); font-size: 12.5px; }
+.tk-list .tk-date { white-space: nowrap; }
+.tk-type { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--on-surface-variant); }
+.tk-type .ms-sm { font-size: 15px; opacity: .8; }
+.tk-assignee { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; white-space: nowrap; }
+.tk-avatar { width: 26px; height: 26px; flex: none; border-radius: 50%; background: var(--primary-container); color: var(--primary); display: inline-flex; align-items: center; justify-content: center; font-size: 10.5px; font-weight: 700; letter-spacing: .02em; }
+.tk-unassigned { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--outline); }
+.tk-unassigned::before { content: ''; width: 26px; height: 26px; border-radius: 50%; border: 1px dashed var(--outline-variant); }
+
 /* Bulk-action bar */
 .tk-bulk { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px;
   padding: 10px 14px; border-radius: 12px; background: var(--primary-container); border: 1px solid var(--outline-variant); }
