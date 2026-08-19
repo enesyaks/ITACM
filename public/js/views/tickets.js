@@ -15,6 +15,8 @@ const TK_PRIORITY_MATRIX = {
   low: { high: 'medium', medium: 'low', low: 'low' },
 };
 const tkDerivePriority = (impact, urgency) => (TK_PRIORITY_MATRIX[impact] && TK_PRIORITY_MATRIX[impact][urgency]) || null;
+const TK_RESOLUTION_CODES = ['fixed', 'workaround', 'no_fault', 'duplicate', 'not_reproducible', 'user_education'];
+const tkStars = (n) => `<span class="tk-stars" title="${n}/5">${'★'.repeat(n)}<span class="tk-stars-off">${'★'.repeat(5 - n)}</span></span>`;
 const tkStatusLabel = (s) => t('tk.status.' + s) || s;
 const tkPriorityLabel = (p) => t('tk.priority.' + p) || p;
 const tkTypeLabel = (ty) => t('tk.type.' + ty) || ty;
@@ -606,6 +608,12 @@ Views.tickets = async function (el, params = {}) {
             </div></div>
           <div class="form-field full"><label>${esc(t('tk.description'))}</label>
             <div class="tk-desc">${esc(tk.description || '—').replace(/\n/g, '<br>')}</div></div>
+          <div class="form-field"><label>${esc(t('tk.resolutionCode'))}</label>
+            <select id="tk-d-rescode" ${canUpdate ? '' : 'disabled'}><option value="">—</option>${TK_RESOLUTION_CODES.map((rc) => `<option value="${rc}"${rc === tk.resolutionCode ? ' selected' : ''}>${esc(t('tk.rescode.' + rc))}</option>`).join('')}</select></div>
+          <div class="form-field"><label>${esc(t('tk.csat'))}</label>
+            <div style="padding-top:6px">${tk.csatRating ? `${tkStars(tk.csatRating)}${tk.csatComment ? ` <span class="cell-sub">“${esc(tk.csatComment)}”</span>` : ''}` : `<span class="cell-sub">${esc(t('tk.csatNone'))}</span>`}</div></div>
+          <div class="form-field full"><label>${esc(t('tk.resolutionNote'))}</label>
+            <textarea id="tk-d-resnote" rows="2" ${canUpdate ? '' : 'disabled'} placeholder="${esc(t('tk.resolutionNotePh'))}">${esc(tk.resolutionNote || '')}</textarea></div>
         </div>
         <h3 style="margin:16px 0 8px">${esc(t('tk.worklog'))}</h3>
         <div class="tk-comments">${comments}</div>
@@ -640,6 +648,8 @@ Views.tickets = async function (el, params = {}) {
         $('#tk-d-urgency', ov)?.addEventListener('change', (e) => patch({ urgency: e.target.value || null }));
         $('#tk-d-assignee', ov)?.addEventListener('change', (e) => patch({ assigneeUserId: e.target.value || null }));
         $('#tk-d-cat', ov)?.addEventListener('change', (e) => patch({ category: e.target.value.trim() }));
+        $('#tk-d-rescode', ov)?.addEventListener('change', (e) => patch({ resolutionCode: e.target.value || null }));
+        $('#tk-d-resnote', ov)?.addEventListener('change', (e) => patch({ resolutionNote: e.target.value.trim() }));
         $('#tk-d-asset', ov)?.addEventListener('change', (e) => {
           const v = e.target.value.trim();
           if (!v) { patch({ assetId: null }); return; }

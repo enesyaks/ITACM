@@ -40,6 +40,9 @@ router.get('/tickets/:id', requireTicketing, asyncHandler(async (req, res) => {
 router.post('/tickets/:id/comments', requireTicketing, asyncHandler(async (req, res) => {
   res.status(201).json({ success: true, data: await ticketService.addMyComment(req.params.id, req.body || {}, req.user) });
 }));
+router.post('/tickets/:id/csat', requireTicketing, asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await ticketService.submitMyCsat(req.params.id, req.body || {}, req.user) });
+}));
 
 /* Own-ticket attachments. getMyTicket enforces ownership (403 if not the
    requester); the Portal only ever sees/uploads NON-internal files. */

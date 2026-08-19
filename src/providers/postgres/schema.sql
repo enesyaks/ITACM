@@ -1016,3 +1016,11 @@ CREATE SEQUENCE IF NOT EXISTS change_seq START 1001;
 -- Impact × Urgency prioritization (064).
 ALTER TABLE tickets ADD COLUMN IF NOT EXISTS impact  TEXT CHECK (impact  IN ('low', 'medium', 'high'));
 ALTER TABLE tickets ADD COLUMN IF NOT EXISTS urgency TEXT CHECK (urgency IN ('low', 'medium', 'high'));
+
+-- ITIL closure: resolution categorization + note, and requester CSAT (065).
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS resolution_code TEXT
+  CHECK (resolution_code IN ('fixed', 'workaround', 'no_fault', 'duplicate', 'not_reproducible', 'user_education'));
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS resolution_note TEXT;
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS csat_rating  SMALLINT CHECK (csat_rating BETWEEN 1 AND 5);
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS csat_comment TEXT;
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS csat_at      TIMESTAMPTZ;

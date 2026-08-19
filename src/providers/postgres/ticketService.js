@@ -17,6 +17,7 @@ const PRIORITIES = new Set(['low', 'medium', 'high', 'urgent']);
 const STATUSES = new Set(['new', 'open', 'in_progress', 'pending', 'resolved', 'closed', 'cancelled']);
 const TERMINAL = new Set(['resolved', 'closed', 'cancelled']);
 const LEVELS = new Set(['low', 'medium', 'high']);
+const RESOLUTION_CODES = new Set(['fixed', 'workaround', 'no_fault', 'duplicate', 'not_reproducible', 'user_education']);
 
 // ITIL priority = Impact × Urgency (rows = impact, cols = urgency).
 const PRIORITY_MATRIX = Object.freeze({
@@ -122,8 +123,10 @@ function decorateSla(row) {
 }
 function stripSla(row) {
   for (const k of SLA_RAW) delete row[k];
-  // Portal payloads don't expose internal problem linkage.
+  // Portal payloads don't expose internal problem linkage or the resolution code
+  // (the plain-language resolution note + the requester's own CSAT stay visible).
   delete row.problemId; delete row.problemNumber; delete row.problemTitle;
+  delete row.resolutionCode;
   return row;
 }
 
@@ -168,6 +171,8 @@ const SELECT_COLS = `
   t.asset_id AS "assetId", a.asset_tag AS "assetTag",
   t.problem_id AS "problemId", pr.number AS "problemNumber", pr.title AS "problemTitle",
   t.created_by_name AS "createdByName",
+  t.resolution_code AS "resolutionCode", t.resolution_note AS "resolutionNote",
+  t.csat_rating AS "csatRating", t.csat_comment AS "csatComment",
   t.first_response_at AS "firstResponseAt", t.resolved_at AS "resolvedAt", t.closed_at AS "closedAt",
   t.response_due_at AS "responseDueAt", t.resolve_due_at AS "resolveDueAt",
   t.response_breached_at AS "responseBreachedAt", t.resolve_breached_at AS "resolveBreachedAt",
@@ -412,6 +417,11 @@ async function updateTicket(id, patch, user) {
       if (!cur.resolved_at) { resolveDueNext = due.resolveDueAt; set('resolve_breached_at', null); }
     }
     if (patch.category !== undefined) set('category', patch.category ? String(patch.category).trim().slice(0, 120) : null);
+    if (patch.resolutionCode !== undefined) {
+      if (patch.resolutionCode && !RESOLUTION_CODES.has(patch.resolutionCode)) throw HttpError.badRequest('Invalid resolutionCode');
+      set('resolution_code', patch.resolutionCode || null);
+    }
+    if (patch.resolutionNote !== undefined) set('resolution_note', patch.resolutionNote ? String(patch.resolutionNote).trim().slice(0, 8000) : null);
     if (patch.assetId !== undefined) {
       const next = patch.assetId || null;
       if (next && !isUuid(next)) throw HttpError.badRequest('Invalid assetId');
@@ -541,6 +551,22 @@ async function addMyComment(id, body, user) {
   return addComment(id, body, user, { ownEmployeeId: emp.id });
 }
 
+/** Requester CSAT (1-5 + optional comment) on their own resolved/closed ticket. */
+async function submitMyCsat(id, body, user) {
+  const emp = await employeeForUser(user);
+  if (!emp) throw HttpError.forbidden('No employee record is linked to your account');
+  await getTicket(id, user, { ownEmployeeId: emp.id }); // ownership gate (throws otherwise)
+  const rating = Math.round(Number(body && body.rating));
+  if (!(rating >= 1 && rating <= 5)) throw HttpError.badRequest('Rating must be 1-5');
+  const { rows } = await query('SELECT status FROM tickets WHERE id = $1', [id]);
+  if (!['resolved', 'closed'].includes(rows[0] && rows[0].status)) {
+    throw HttpError.badRequest('You can only rate a resolved ticket');
+  }
+  const comment = body && body.comment ? String(body.comment).trim().slice(0, 4000) : null;
+  await query('UPDATE tickets SET csat_rating = $1, csat_comment = $2, csat_at = now() WHERE id = $3', [rating, comment, id]);
+  return getMyTicket(id, user);
+}
+
 /**
  * Stamp newly-breached SLA legs (once each) and log them to ticket_activity.
  * Called from the 1-minute scheduler tick. The `<> breached_at IS NULL` guard
@@ -636,7 +662,7 @@ function audit(action, summary, a, entityId, label) {
 
 module.exports = {
   createTicket, getTicket, listTickets, updateTicket, addComment,
-  createMyTicket, listMyTickets, getMyTicket, addMyComment,
+  createMyTicket, listMyTickets, getMyTicket, addMyComment, submitMyCsat,
   sweepSlaBreaches, SLA_TARGETS, stats, getSlaConfig, saveSlaConfig, categories,
   getCannedResponses, saveCannedResponses,
 };

@@ -5846,6 +5846,14 @@ body.ai-open .ai-panel { opacity: 1; visibility: visible; transform: none; }
 .tk-unassigned { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--outline); }
 .tk-unassigned::before { content: ''; width: 26px; height: 26px; border-radius: 50%; border: 1px dashed var(--outline-variant); }
 
+/* CSAT stars */
+.tk-stars { color: var(--amber-600); letter-spacing: 1px; }
+.tk-stars-off { color: var(--outline-variant); }
+.mtk-stars { display: inline-flex; gap: 2px; }
+.mtk-star { background: none; border: none; cursor: pointer; font-size: 26px; line-height: 1; padding: 0 2px; color: var(--outline-variant); transition: color .1s; }
+.mtk-star.on { color: var(--amber-600); }
+.mtk-star:hover { color: var(--amber-600); }
+
 /* Ticket attachments */
 .tk-docs { display: flex; flex-direction: column; gap: 6px; }
 .tk-doc { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border: 1px solid var(--outline-variant); border-radius: 8px; }

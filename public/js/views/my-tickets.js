@@ -81,6 +81,15 @@ Views.myTickets = async function (el) {
         </div>
         <div class="form-field full" style="margin-bottom:12px"><label>${esc(t('tk.description'))}</label>
           <div class="tk-desc">${esc(tk.description || '—').replace(/\n/g, '<br>')}</div></div>
+        ${tk.resolutionNote ? `<div class="form-field full" style="margin-bottom:12px"><label>${esc(t('mtk.resolution'))}</label>
+          <div class="tk-desc">${esc(tk.resolutionNote).replace(/\n/g, '<br>')}</div></div>` : ''}
+        ${['resolved', 'closed'].includes(tk.status) ? `<div class="mtk-csat" style="margin-bottom:12px">
+          <label class="form-label">${esc(t('mtk.rateTitle'))}</label>
+          ${tk.csatRating ? `<div style="padding-top:4px">${'★'.repeat(tk.csatRating)}<span class="tk-stars-off">${'★'.repeat(5 - tk.csatRating)}</span> <span class="cell-sub">${esc(t('mtk.rateThanks'))}</span></div>`
+            : `<div class="mtk-stars" style="margin-top:4px">${[1, 2, 3, 4, 5].map((n) => `<button type="button" class="mtk-star" data-star="${n}" aria-label="${n}">★</button>`).join('')}</div>
+               <textarea id="mtk-csat-comment" rows="2" placeholder="${esc(t('mtk.rateComment'))}" style="margin-top:6px"></textarea>
+               <div><button class="btn btn-outline btn-sm" id="mtk-csat-send" style="margin-top:6px" disabled>${esc(t('mtk.rateSubmit'))}</button></div>`}
+        </div>` : ''}
         <h3 style="margin:12px 0 8px">${esc(t('mtk.updates'))}</h3>
         <div class="tk-comments">${comments}</div>
         ${open ? `<div style="margin-top:10px">
@@ -101,6 +110,18 @@ Views.myTickets = async function (el) {
           try {
             await api('/me/tickets/' + encodeURIComponent(id) + '/comments', { method: 'POST', body: { body } });
             closeModal(); openMine(id);
+          } catch (err) { toast(err.message, 'error'); }
+        });
+        // CSAT: pick a star rating, then submit.
+        let csatValue = 0;
+        const stars = [...ov.querySelectorAll('.mtk-star')];
+        const paint = () => stars.forEach((s) => s.classList.toggle('on', Number(s.dataset.star) <= csatValue));
+        stars.forEach((s) => s.addEventListener('click', () => { csatValue = Number(s.dataset.star); paint(); const b = $('#mtk-csat-send', ov); if (b) b.disabled = false; }));
+        $('#mtk-csat-send', ov)?.addEventListener('click', async () => {
+          if (!csatValue) return;
+          try {
+            await api('/me/tickets/' + encodeURIComponent(id) + '/csat', { method: 'POST', body: { rating: csatValue, comment: $('#mtk-csat-comment', ov).value.trim() } });
+            toast(t('mtk.rateThanks'), 'success'); closeModal(); openMine(id);
           } catch (err) { toast(err.message, 'error'); }
         });
         // Own-ticket attachments (public only — server filters internal).
