@@ -934,3 +934,6 @@ CREATE INDEX IF NOT EXISTS idx_tickets_resolve_due ON tickets (resolve_due_at)
 
 -- Configurable SLA targets (057): { priority: { responseMins, resolveMins } }.
 ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS sla_json JSONB NOT NULL DEFAULT '{}'::jsonb;
+
+-- Canned responses (058): array of { title, body }.
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS ticket_canned_json JSONB NOT NULL DEFAULT '[]'::jsonb;

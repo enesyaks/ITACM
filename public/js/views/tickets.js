@@ -43,15 +43,17 @@ Views.tickets = async function (el, params = {}) {
   const canManage = Auth.canIam('ticket', 'manage');
   let mode = localStorage.getItem('tk_mode') === 'board' ? 'board' : 'list';
 
-  const [tickets, staff, empRes, assetRes, stats0, catsRes] = await Promise.all([
+  const [tickets, staff, empRes, assetRes, stats0, catsRes, cannedRes] = await Promise.all([
     api('/tickets?open=1').catch(() => []),
     api('/auth/users').catch(() => []),
     api('/employees?status=Active&limit=1000').catch(() => ({ items: [] })),
     api('/assets?limit=1000').catch(() => ({ items: [] })),
     api('/tickets/stats').catch(() => null),
     api('/tickets/categories').catch(() => []),
+    api('/tickets/canned').catch(() => []),
   ]);
   const catList = Array.isArray(catsRes) ? catsRes : [];
+  let canned = Array.isArray(cannedRes) ? cannedRes : [];
   let sortKey = 'created';
   let sortOrder = 'desc';
   let searchTerm = '';
@@ -378,6 +380,39 @@ Views.tickets = async function (el, params = {}) {
     });
   }
 
+  function openCannedEditor() {
+    const rowHtml = (c) => `<div class="tk-canned-row" style="display:flex;gap:8px;margin-bottom:8px;align-items:flex-start">
+      <input class="tk-cn-title" placeholder="${esc(t('tk.cannedTitle'))}" maxlength="120" value="${esc((c && c.title) || '')}" style="flex:0 0 190px">
+      <textarea class="tk-cn-body" rows="2" placeholder="${esc(t('tk.cannedBody'))}" maxlength="4000" style="flex:1">${esc((c && c.body) || '')}</textarea>
+      <button class="btn btn-outline btn-sm tk-cn-del" type="button" title="${esc(t('common.remove') || 'Remove')}"><span class="ms ms-sm">delete</span></button>
+    </div>`;
+    openModal({
+      title: t('tk.cannedManage'),
+      wide: true,
+      body: `<p class="cell-sub" style="margin:0 0 12px">${esc(t('tk.cannedHint'))}</p>
+        <div id="tk-cn-list">${(canned.length ? canned : [{ title: '', body: '' }]).map(rowHtml).join('')}</div>
+        <button class="btn btn-outline btn-sm" id="tk-cn-add" type="button"><span class="ms ms-sm">add</span> ${esc(t('tk.cannedAdd'))}</button>`,
+      foot: `<button class="btn btn-outline" data-close>${esc(t('common.cancel'))}</button>
+             <button class="btn btn-primary" id="tk-cn-save">${esc(t('common.save'))}</button>`,
+      onMount(ov) {
+        const list = $('#tk-cn-list', ov);
+        const wireDel = () => list.querySelectorAll('.tk-cn-del').forEach((b) => { b.onclick = () => b.closest('.tk-canned-row').remove(); });
+        wireDel();
+        $('#tk-cn-add', ov).addEventListener('click', () => { list.insertAdjacentHTML('beforeend', rowHtml()); wireDel(); });
+        $('#tk-cn-save', ov).addEventListener('click', async () => {
+          const items = [...list.querySelectorAll('.tk-canned-row')]
+            .map((r) => ({ title: r.querySelector('.tk-cn-title').value.trim(), body: r.querySelector('.tk-cn-body').value.trim() }))
+            .filter((x) => x.title && x.body);
+          try {
+            const saved = await api('/tickets/canned', { method: 'PUT', body: { items } });
+            canned = Array.isArray(saved) ? saved : items;
+            closeModal(); toast(t('tk.saved'), 'success');
+          } catch (err) { toast(err.message, 'error'); }
+        });
+      },
+    });
+  }
+
   function openCreate() {
     openModal({
       title: t('tk.new'),
@@ -461,6 +496,11 @@ Views.tickets = async function (el, params = {}) {
         <h3 style="margin:16px 0 8px">${esc(t('tk.worklog'))}</h3>
         <div class="tk-comments">${comments}</div>
         ${canUpdate ? `<div style="margin-top:10px">
+          ${(canned.length || canManage) ? `<select id="tk-d-canned" class="ops-select" style="margin-bottom:6px">
+            <option value="">${esc(t('tk.cannedPick'))}</option>
+            ${canned.map((c, i) => `<option value="${i}">${esc(c.title)}</option>`).join('')}
+            ${canManage ? `<option value="__manage__">— ${esc(t('tk.cannedManage'))} —</option>` : ''}
+          </select>` : ''}
           <textarea id="tk-d-comment" rows="2" placeholder="${esc(t('tk.addComment'))}"></textarea>
           <label style="display:inline-flex;align-items:center;gap:6px;margin-top:6px;font-size:13px">
             <input type="checkbox" id="tk-d-internal"> ${esc(t('tk.internalNote'))}</label>
@@ -483,6 +523,18 @@ Views.tickets = async function (el, params = {}) {
           if (!v) { patch({ assetId: null }); return; }
           const id = assetIdByLabel.get(v);
           if (id) patch({ assetId: id }); else toast(t('tk.assetUnknown'), 'error');
+        });
+        $('#tk-d-canned', ov)?.addEventListener('change', (e) => {
+          const v = e.target.value;
+          if (v === '__manage__') { e.target.value = ''; openCannedEditor(); return; }
+          if (v === '') return;
+          const tpl = canned[Number(v)];
+          if (tpl) {
+            const ta = $('#tk-d-comment', ov);
+            ta.value = ta.value.trim() ? ta.value.trim() + '\n' + tpl.body : tpl.body;
+            ta.focus();
+          }
+          e.target.value = '';
         });
         $('#tk-d-addcomment', ov)?.addEventListener('click', async () => {
           const body = $('#tk-d-comment', ov).value.trim();

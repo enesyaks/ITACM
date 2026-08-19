@@ -58,6 +58,14 @@ router.get('/categories', requirePermission('ticket', 'read'), asyncHandler(asyn
   res.json({ success: true, data: await ticketService.categories() });
 }));
 
+// GET/PUT /api/tickets/canned — quick-reply templates (before /:id)
+router.get('/canned', requirePermission('ticket', 'read'), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await ticketService.getCannedResponses() });
+}));
+router.put('/canned', requirePermission('ticket', 'manage'), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await ticketService.saveCannedResponses(req.body && req.body.items) });
+}));
+
 // GET /api/tickets/:id — detail + comments + activity
 router.get('/:id', requirePermission('ticket', 'read'), asyncHandler(async (req, res) => {
   res.json({ success: true, data: await ticketService.getTicket(req.params.id, req.user) });

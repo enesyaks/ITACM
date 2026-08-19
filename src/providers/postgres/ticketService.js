@@ -270,6 +270,29 @@ async function listTickets(opts = {}) {
   return rows.map(decorateSla);
 }
 
+/* -------------------------- canned responses -------------------------- */
+
+async function getCannedResponses() {
+  try {
+    const { rows } = await query('SELECT ticket_canned_json FROM app_settings WHERE id = 1');
+    const raw = rows[0] && Array.isArray(rows[0].ticket_canned_json) ? rows[0].ticket_canned_json : [];
+    return raw
+      .filter((r) => r && typeof r === 'object')
+      .map((r) => ({ title: String(r.title || '').slice(0, 120), body: String(r.body || '').slice(0, 4000) }))
+      .filter((r) => r.title && r.body);
+  } catch { return []; }
+}
+
+async function saveCannedResponses(input) {
+  const list = Array.isArray(input) ? input : [];
+  const out = list
+    .map((r) => ({ title: String((r && r.title) || '').trim().slice(0, 120), body: String((r && r.body) || '').trim().slice(0, 4000) }))
+    .filter((r) => r.title && r.body)
+    .slice(0, 100);
+  await query('UPDATE app_settings SET ticket_canned_json = $1::jsonb WHERE id = 1', [JSON.stringify(out)]);
+  return out;
+}
+
 async function categories() {
   const { rows } = await query(
     "SELECT DISTINCT category FROM tickets WHERE category IS NOT NULL AND category <> '' ORDER BY category LIMIT 200"
@@ -526,4 +549,5 @@ module.exports = {
   createTicket, getTicket, listTickets, updateTicket, addComment,
   createMyTicket, listMyTickets, getMyTicket, addMyComment,
   sweepSlaBreaches, SLA_TARGETS, stats, getSlaConfig, saveSlaConfig, categories,
+  getCannedResponses, saveCannedResponses,
 };
