@@ -170,7 +170,7 @@ Views.tickets = async function (el, params = {}) {
     box.querySelectorAll('.tk-card').forEach((card) => {
       card.addEventListener('click', () => { if (!card.dataset.dragging) openTicket(card.dataset.id); });
       card.addEventListener('dragstart', (e) => { card.dataset.dragging = '1'; card.classList.add('dragging'); e.dataTransfer.setData('text/plain', card.dataset.id); e.dataTransfer.effectAllowed = 'move'; });
-      card.addEventListener('dragend', () => { card.classList.add('dragging'); delete card.dataset.dragging; card.classList.remove('dragging'); });
+      card.addEventListener('dragend', () => { delete card.dataset.dragging; card.classList.remove('dragging'); });
     });
     box.querySelectorAll('.tk-col-body').forEach((col) => {
       col.addEventListener('dragover', (e) => { e.preventDefault(); col.classList.add('drop-target'); });

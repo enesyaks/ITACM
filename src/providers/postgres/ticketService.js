@@ -323,6 +323,12 @@ async function stats() {
 async function updateTicket(id, patch, user) {
   if (!isUuid(id)) throw HttpError.notFound('Ticket not found');
   const a = actor(user);
+  // `assign` is a distinct IAM action from `update`; the PATCH route only gates
+  // on `update`, so enforce assign here whenever the patch touches the assignee.
+  if (patch.assigneeUserId !== undefined) {
+    const canAssign = await require('./permissionService').hasResourceAction(user, 'ticket', 'assign');
+    if (!canAssign) throw HttpError.forbidden('You do not have permission to (re)assign tickets');
+  }
   const slaTargets = await getSlaConfig(); // read before the tx (separate connection)
   let plan = null;
   await withTransaction(async (t) => {
@@ -343,9 +349,11 @@ async function updateTicket(id, patch, user) {
         set('priority', patch.priority);
         acts.push(['priority', `${cur.priority} → ${patch.priority}`]);
         // Re-target the SLA clocks that haven't completed yet (relative to creation).
+        // Clear the matching breach marker too, so the sweep can re-flag against the
+        // new deadline (its guard is `<col> IS NULL`) and log it once for that target.
         const due = slaDueDates(slaTargets, patch.priority, cur.created_at);
-        if (!cur.first_response_at) set('response_due_at', due.responseDueAt);
-        if (!cur.resolved_at) set('resolve_due_at', due.resolveDueAt);
+        if (!cur.first_response_at) { set('response_due_at', due.responseDueAt); set('response_breached_at', null); }
+        if (!cur.resolved_at) { set('resolve_due_at', due.resolveDueAt); set('resolve_breached_at', null); }
       }
     }
     if (patch.category !== undefined) set('category', patch.category ? String(patch.category).trim().slice(0, 120) : null);
@@ -411,8 +419,9 @@ async function addComment(id, body, user, { ownEmployeeId = null } = {}) {
     'INSERT INTO ticket_comments (ticket_id, author_user_id, author_name, body, internal) VALUES ($1,$2,$3,$4,$5)',
     [id, a.id, a.name, text, internal]
   );
-  // First staff reply stamps the response time.
-  if (!ownEmployeeId) {
+  // First customer-facing staff reply stamps the response time. Internal notes
+  // are hidden from the requester, so they must not satisfy the response SLA.
+  if (!ownEmployeeId && !internal) {
     await query('UPDATE tickets SET first_response_at = COALESCE(first_response_at, now()), updated_at = now() WHERE id = $1', [id]);
   }
   notifyComment({ id, ownEmployeeId, internal, snippet: text.slice(0, 200), actorName: a.name });

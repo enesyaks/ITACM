@@ -214,7 +214,6 @@ function createApp() {
         onboardingVideoUrl,
         ownerMfaRequired,
         sso,
-        ticketing: { enabled: !!settings.ticketingEnabled },
         ...settings,
       },
     });

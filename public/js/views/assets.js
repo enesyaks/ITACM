@@ -1939,7 +1939,7 @@ async function showAssetDetail(id, onChange) {
           <div class="ad-sec-head"><strong>${esc(t('hw.d.secRepair'))}</strong><span>${repairs.length}</span></div>
           <div class="ad-timeline">${repairHtml}</div>
         </section>
-        ${(AppConfig.ticketing && AppConfig.ticketing.enabled && Auth.canIam('ticket', 'read')) ? `
+        ${(AppConfig.ticketingEnabled && Auth.canIam('ticket', 'read')) ? `
         <section class="ad-sec">
           <div class="ad-sec-head"><strong>${esc(t('tk.relatedTickets'))}</strong></div>
           <div class="ad-timeline" id="ad-tickets"><div class="ad-empty-block">${esc(t('common.loading') || '…')}</div></div>

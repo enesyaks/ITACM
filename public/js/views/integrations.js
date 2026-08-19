@@ -556,6 +556,7 @@ GET /api/integrations/licenses/:id/sam
             enabled: $('#int-notify-on', el).checked,
             to: toList,
             handoverCompleted: $('#int-notify-ho', el).checked,
+            ticketUpdates: $('#int-notify-tickets', el).checked,
             schedule: $('#int-notify-schedule', el).value,
             hour: Number($('#int-notify-hour', el).value),
             weekday: Number($('#int-notify-weekday', el).value),
