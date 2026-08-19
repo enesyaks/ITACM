@@ -1396,6 +1396,10 @@ async function openOffboardWizard(emp) {
 }
 
 async function employeeForm(emp, done) {
+  // Hydrate the manager (name) when editing from a list row that lacks it.
+  if (emp && emp.id && emp.managerEmployeeId && !emp.manager) {
+    emp = await api('/employees/' + encodeURIComponent(emp.id)).catch(() => emp);
+  }
   const { defs: cfDefs, values: cfValues } = await fetchCustomFields('employee', emp?.id);
   // Offer a Portal login only on create (existing employees get the button in
   // their detail view) and only to users allowed to create accounts.
@@ -1412,6 +1416,8 @@ async function employeeForm(emp, done) {
           ...(emp?.department && !(AppConfig.departments || []).includes(emp.department) ? [emp.department] : []),
           ...(AppConfig.departments || [])] },
       { name: 'title', label: 'Title', value: emp?.title },
+      { name: 'managerEmployeeId', label: t('emp.manager') || 'Manager (reports to)', type: 'employeeSearch', full: true,
+        selected: emp?.manager || null, selectedLabel: emp?.manager?.fullName || '' },
       { name: 'status', label: 'Status', type: 'select', value: emp?.status || 'Active', options: ['Active', 'Inactive'] },
       ...customFieldsAsFormFields(cfDefs, cfValues),
       ...(offerGrant ? [{
