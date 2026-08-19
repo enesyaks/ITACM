@@ -325,6 +325,10 @@ async function navigate() {
   const portalOk = hash === PORTAL_HASH || (hash === '#/my-tickets' && moduleOn('ticketing'));
   if (isPortalUser() && !portalOk) { location.hash = PORTAL_HASH; return; }
   if (isHrConfined() && !HR_ALLOWED_HASHES.has(hash)) { location.hash = HR_HOME_HASH; return; }
+  // Mirror permittedNavEntries: a portalOnly route or a disabled optional module
+  // must bounce home on direct-URL / stale-bookmark hits (the sidebar hides them).
+  if (route.portalOnly && !isPortalUser()) { location.hash = homeHash; return; }
+  if (route.module && !moduleOn(route.module)) { location.hash = homeHash; return; }
   // Typing #/hr by hand must not work for IT either — approving happens on the
   // Dashboard, and this page is scoped to the people who file the tickets.
   if (route.hrOnly && !isHrUser()) { location.hash = homeHash; return; }

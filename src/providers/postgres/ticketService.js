@@ -384,6 +384,9 @@ async function updateTicket(id, patch, user) {
     let effImpact = cur.impact;
     let effUrgency = cur.urgency;
     let iuChanged = false;
+    // Single source of truth for resolve_due_at across the priority re-target and
+    // the SLA-pause resume, so it's written at most once (no duplicate-column SQL).
+    let resolveDueNext;
     if (patch.impact !== undefined) {
       if (patch.impact !== null && !LEVELS.has(patch.impact)) throw HttpError.badRequest('Invalid impact');
       if (String(patch.impact || '') !== String(cur.impact || '')) { set('impact', patch.impact || null); effImpact = patch.impact || null; iuChanged = true; }
@@ -406,7 +409,7 @@ async function updateTicket(id, patch, user) {
       // new deadline (its guard is `<col> IS NULL`) and log it once for that target.
       const due = slaDueDates(slaTargets, newPriority, cur.created_at);
       if (!cur.first_response_at) { set('response_due_at', due.responseDueAt); set('response_breached_at', null); }
-      if (!cur.resolved_at) { set('resolve_due_at', due.resolveDueAt); set('resolve_breached_at', null); }
+      if (!cur.resolved_at) { resolveDueNext = due.resolveDueAt; set('resolve_breached_at', null); }
     }
     if (patch.category !== undefined) set('category', patch.category ? String(patch.category).trim().slice(0, 120) : null);
     if (patch.assetId !== undefined) {
@@ -449,18 +452,22 @@ async function updateTicket(id, patch, user) {
         else if (['open', 'in_progress'].includes(patch.status)) { set('resolved_at', null); set('closed_at', null); }
 
         // SLA clock-stop: pause the resolution clock while 'pending' (waiting on
-        // the requester); on resume, push resolve_due_at forward by the paused span.
+        // the requester). On ANY non-cancelled exit (resume to open/in_progress,
+        // or pending→resolved) credit the paused span back — onto the priority-
+        // re-targeted due date if one was computed this same PATCH.
         if (patch.status === 'pending' && !cur.resolved_at && !cur.sla_paused_at) {
           set('sla_paused_at', new Date());
         } else if (cur.status === 'pending' && cur.sla_paused_at) {
-          if (['open', 'in_progress'].includes(patch.status) && cur.resolve_due_at && !cur.resolved_at) {
+          if (patch.status !== 'cancelled' && cur.resolve_due_at && !cur.resolved_at) {
+            const base = resolveDueNext !== undefined ? resolveDueNext : new Date(cur.resolve_due_at);
             const pausedMs = Date.now() - new Date(cur.sla_paused_at).getTime();
-            set('resolve_due_at', new Date(new Date(cur.resolve_due_at).getTime() + pausedMs));
+            resolveDueNext = new Date(new Date(base).getTime() + pausedMs);
           }
           set('sla_paused_at', null); // cleared on resume and on terminal exits
         }
       }
     }
+    if (resolveDueNext !== undefined) set('resolve_due_at', resolveDueNext);
     if (!sets.length) return;
 
     set('updated_at', new Date());

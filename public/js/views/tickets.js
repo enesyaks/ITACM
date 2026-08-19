@@ -8,6 +8,13 @@ const TK_STATUS_PILL = {
   resolved: 'pill-emerald', closed: 'pill-slate', cancelled: 'pill-rose',
 };
 const TK_PRIORITY_PILL = { low: 'pill-slate', medium: 'pill-blue', high: 'pill-amber', urgent: 'pill-rose' };
+// Mirror of the server's Impact × Urgency matrix (ticketService.derivePriority).
+const TK_PRIORITY_MATRIX = {
+  high: { high: 'urgent', medium: 'high', low: 'medium' },
+  medium: { high: 'high', medium: 'medium', low: 'low' },
+  low: { high: 'medium', medium: 'low', low: 'low' },
+};
+const tkDerivePriority = (impact, urgency) => (TK_PRIORITY_MATRIX[impact] && TK_PRIORITY_MATRIX[impact][urgency]) || null;
 const tkStatusLabel = (s) => t('tk.status.' + s) || s;
 const tkPriorityLabel = (p) => t('tk.priority.' + p) || p;
 const tkTypeLabel = (ty) => t('tk.type.' + ty) || ty;
@@ -576,7 +583,7 @@ Views.tickets = async function (el, params = {}) {
           <div class="form-field"><label>${esc(t('tk.urgency'))}</label>
             <select id="tk-d-urgency" ${canUpdate ? '' : 'disabled'}><option value="">—</option>${['low', 'medium', 'high'].map((l) => `<option value="${l}"${l === tk.urgency ? ' selected' : ''}>${esc(tkPriorityLabel(l))}</option>`).join('')}</select></div>
           <div class="form-field"><label>${esc(t('tk.priorityCol'))}</label>
-            <div style="padding-top:6px">${pill(TK_PRIORITY_PILL[tk.priority], tkPriorityLabel(tk.priority))} <span class="cell-sub">${esc(t('tk.derived'))}</span></div></div>
+            <div style="padding-top:6px">${pill(TK_PRIORITY_PILL[tk.priority], tkPriorityLabel(tk.priority))}${(tk.impact && tk.urgency && tkDerivePriority(tk.impact, tk.urgency) === tk.priority) ? ` <span class="cell-sub">${esc(t('tk.derived'))}</span>` : ''}</div></div>
           <div class="form-field"><label>${esc(t('tk.assignee'))}</label>
             <select id="tk-d-assignee" ${canAssign ? '' : 'disabled'}>${assignOpts}</select></div>
           <div class="form-field"><label>${esc(t('tk.category'))}</label>

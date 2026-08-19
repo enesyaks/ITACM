@@ -14,7 +14,15 @@ const CH_RISK_PILL = { low: 'pill-slate', medium: 'pill-amber', high: 'pill-rose
 const chStatusLabel = (s) => t('ch.status.' + s) || s;
 const chTypeLabel = (x) => t('ch.type.' + x) || x;
 const chRiskLabel = (r) => t('ch.risk.' + r) || r;
-const chDt = (v) => (v ? String(v).replace('T', ' ').slice(0, 16) : '');
+// datetime-local carries no timezone, so convert on both sides: render UTC as
+// local wall-clock, and send the local input back as an unambiguous UTC ISO.
+const chToLocalInput = (iso) => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+};
+const chFromLocalInput = (v) => (v ? new Date(v).toISOString() : null);
+const chDt = (v) => chToLocalInput(v).replace('T', ' '); // local wall-clock for display
 
 Views.changes = async function (el) {
   const canCreate = Auth.canIam('change', 'create') || Auth.canIam('change', 'manage');
@@ -109,9 +117,9 @@ Views.changes = async function (el) {
           <div class="form-field"><label>${esc(t('tk.assignee'))}</label>
             <select id="ch-d-assignee" ${canUpdate ? '' : 'disabled'}>${assignOpts}</select></div>
           <div class="form-field"><label>${esc(t('ch.start'))}</label>
-            <input type="datetime-local" id="ch-d-start" value="${esc(chDt(c.scheduledStart).replace(' ', 'T'))}" ${canUpdate ? '' : 'disabled'}></div>
+            <input type="datetime-local" id="ch-d-start" value="${esc(chToLocalInput(c.scheduledStart))}" ${canUpdate ? '' : 'disabled'}></div>
           <div class="form-field"><label>${esc(t('ch.end'))}</label>
-            <input type="datetime-local" id="ch-d-end" value="${esc(chDt(c.scheduledEnd).replace(' ', 'T'))}" ${canUpdate ? '' : 'disabled'}></div>
+            <input type="datetime-local" id="ch-d-end" value="${esc(chToLocalInput(c.scheduledEnd))}" ${canUpdate ? '' : 'disabled'}></div>
           <div class="form-field full"><label>${esc(t('tk.description'))}</label>
             <div class="tk-desc">${esc(c.description || '—').replace(/\n/g, '<br>')}</div></div>
           <div class="form-field full"><label>${esc(t('ch.implPlan'))}</label>
@@ -135,8 +143,8 @@ Views.changes = async function (el) {
         $('#ch-d-status', ov)?.addEventListener('change', (e) => { patch({ status: e.target.value }); });
         $('#ch-d-risk', ov)?.addEventListener('change', (e) => patch({ risk: e.target.value }));
         $('#ch-d-assignee', ov)?.addEventListener('change', (e) => patch({ assigneeUserId: e.target.value || null }));
-        $('#ch-d-start', ov)?.addEventListener('change', (e) => patch({ scheduledStart: e.target.value || null }));
-        $('#ch-d-end', ov)?.addEventListener('change', (e) => patch({ scheduledEnd: e.target.value || null }));
+        $('#ch-d-start', ov)?.addEventListener('change', (e) => patch({ scheduledStart: chFromLocalInput(e.target.value) }));
+        $('#ch-d-end', ov)?.addEventListener('change', (e) => patch({ scheduledEnd: chFromLocalInput(e.target.value) }));
         $('#ch-d-impl', ov)?.addEventListener('change', (e) => patch({ implementationPlan: e.target.value.trim() }));
         $('#ch-d-roll', ov)?.addEventListener('change', (e) => patch({ rollbackPlan: e.target.value.trim() }));
         const decide = async (decision) => {
