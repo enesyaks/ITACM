@@ -463,11 +463,20 @@ Views.tickets = async function (el, params = {}) {
     const loaded = Array.isArray(tpls) ? tpls : [];
     const rowHtml = (tp) => {
       const lv = (tp && tp.approvalLevels) || [];
+      const parStep = lv.find((x) => x && typeof x === 'object');
+      const mgrOn = parStep ? parStep.levels.includes('manager') : lv.includes('manager');
+      const deptOn = parStep ? parStep.levels.includes('department') : lv.includes('department');
+      const mode = parStep ? ('parallel-' + parStep.mode) : 'sequential';
       return `<div class="rt-row" data-id="${esc((tp && tp.id) || '')}" style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
-        <input class="rt-name" placeholder="${esc(t('rt.name'))}" value="${esc((tp && tp.name) || '')}" style="flex:0 0 180px">
-        <input class="rt-cat" placeholder="${esc(t('tk.category'))}" value="${esc((tp && tp.category) || '')}" style="flex:0 0 130px">
-        <label style="font-size:13px;display:inline-flex;gap:4px;align-items:center"><input type="checkbox" class="rt-mgr" ${lv.includes('manager') ? 'checked' : ''}> ${esc(t('rt.manager'))}</label>
-        <label style="font-size:13px;display:inline-flex;gap:4px;align-items:center"><input type="checkbox" class="rt-dept" ${lv.includes('department') ? 'checked' : ''}> ${esc(t('rt.department'))}</label>
+        <input class="rt-name" placeholder="${esc(t('rt.name'))}" value="${esc((tp && tp.name) || '')}" style="flex:0 0 150px">
+        <input class="rt-cat" placeholder="${esc(t('tk.category'))}" value="${esc((tp && tp.category) || '')}" style="flex:0 0 110px">
+        <label style="font-size:13px;display:inline-flex;gap:4px;align-items:center"><input type="checkbox" class="rt-mgr" ${mgrOn ? 'checked' : ''}> ${esc(t('rt.manager'))}</label>
+        <label style="font-size:13px;display:inline-flex;gap:4px;align-items:center"><input type="checkbox" class="rt-dept" ${deptOn ? 'checked' : ''}> ${esc(t('rt.department'))}</label>
+        <select class="rt-mode ops-select" style="font-size:12px">
+          <option value="sequential" ${mode === 'sequential' ? 'selected' : ''}>${esc(t('rt.seq'))}</option>
+          <option value="parallel-all" ${mode === 'parallel-all' ? 'selected' : ''}>${esc(t('rt.parAll'))}</option>
+          <option value="parallel-any" ${mode === 'parallel-any' ? 'selected' : ''}>${esc(t('rt.parAny'))}</option>
+        </select>
         <label style="font-size:13px;display:inline-flex;gap:4px;align-items:center"><input type="checkbox" class="rt-en" ${(tp && tp.enabled !== false) ? 'checked' : ''}> ${esc(t('rt.enabled'))}</label>
         <button class="btn btn-outline btn-sm rt-del" type="button" title="${esc(t('common.remove') || 'Remove')}"><span class="ms ms-sm">delete</span></button>
       </div>`;
@@ -490,13 +499,14 @@ Views.tickets = async function (el, params = {}) {
         $('#rt-save', ov).addEventListener('click', async () => {
           try {
             await api('/approvals/config', { method: 'PUT', body: { enabled: $('#rt-approvals-on', ov).checked } });
-            const rows = [...listEl.querySelectorAll('.rt-row')].map((r) => ({
-              id: r.dataset.id || null,
-              name: r.querySelector('.rt-name').value.trim(),
-              category: r.querySelector('.rt-cat').value.trim(),
-              approvalLevels: [].concat(r.querySelector('.rt-mgr').checked ? ['manager'] : [], r.querySelector('.rt-dept').checked ? ['department'] : []),
-              enabled: r.querySelector('.rt-en').checked,
-            }));
+            const rows = [...listEl.querySelectorAll('.rt-row')].map((r) => {
+              const checked = [].concat(r.querySelector('.rt-mgr').checked ? ['manager'] : [], r.querySelector('.rt-dept').checked ? ['department'] : []);
+              const modeVal = r.querySelector('.rt-mode').value;
+              const approvalLevels = (modeVal === 'sequential' || checked.length < 2)
+                ? checked // sequential (or a single level — parallel is moot with one approver)
+                : [{ levels: checked, mode: modeVal === 'parallel-all' ? 'all' : 'any' }];
+              return { id: r.dataset.id || null, name: r.querySelector('.rt-name').value.trim(), category: r.querySelector('.rt-cat').value.trim(), approvalLevels, enabled: r.querySelector('.rt-en').checked };
+            });
             for (const orig of loaded) if (orig.id && !rows.find((x) => x.id === orig.id)) await api('/request-templates/' + orig.id, { method: 'DELETE' });
             for (const row of rows) {
               if (!row.name) continue;

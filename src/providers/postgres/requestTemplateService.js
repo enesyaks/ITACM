@@ -13,9 +13,20 @@ const { HttpError } = require('../../utils/httpError');
 // Approval levels that resolveApprover understands.
 const LEVELS = new Set(['manager', 'department']);
 
+// An element is an org-level string ('manager') → single-approver step, or an
+// object { levels:[...], mode:'any'|'all' } → parallel step.
 function cleanLevels(input) {
   if (!Array.isArray(input)) return [];
-  return input.map((l) => String(l)).filter((l) => LEVELS.has(l)).slice(0, 5);
+  const out = [];
+  for (const el of input.slice(0, 5)) {
+    if (el && typeof el === 'object' && Array.isArray(el.levels)) {
+      const levels = el.levels.map(String).filter((l) => LEVELS.has(l));
+      if (levels.length) out.push({ levels, mode: el.mode === 'all' ? 'all' : 'any' });
+    } else if (LEVELS.has(String(el))) {
+      out.push(String(el));
+    }
+  }
+  return out;
 }
 
 async function listTemplates({ enabledOnly = false } = {}) {

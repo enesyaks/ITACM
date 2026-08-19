@@ -1038,3 +1038,7 @@ CREATE TABLE IF NOT EXISTS request_templates (
 );
 CREATE INDEX IF NOT EXISTS idx_request_templates_enabled ON request_templates (enabled, sort_order);
 ALTER TABLE tickets ADD COLUMN IF NOT EXISTS approval_request_id UUID REFERENCES approval_requests(id) ON DELETE SET NULL;
+
+-- Parallel approvers within one step (067).
+ALTER TABLE approval_requests ADD COLUMN IF NOT EXISTS step_state JSONB;
+ALTER TABLE approval_requests ADD COLUMN IF NOT EXISTS step_mode  TEXT CHECK (step_mode IN ('any', 'all'));

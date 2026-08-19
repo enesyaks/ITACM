@@ -49,6 +49,52 @@ function levelsFor(config, type) {
   return Array.isArray(lv) && lv.length ? lv : null;
 }
 
+/* --------------------------- steps (seq + parallel) --------------------------- */
+// A `levels` element is either an org-level string ('manager') → single-approver
+// step, or an object { levels:[...], mode:'any'|'all' } → parallel step.
+function normalizeStep(element) {
+  if (element && typeof element === 'object' && Array.isArray(element.levels)) {
+    return { orgLevels: element.levels.map(String), mode: element.mode === 'all' ? 'all' : 'any' };
+  }
+  return { orgLevels: [String(element)], mode: 'any' };
+}
+
+/** Resolve a step's org levels to distinct approvers (order preserved, deduped). */
+async function resolveStepApprovers(requesterEmployeeId, element) {
+  const step = normalizeStep(element);
+  const out = [];
+  const seen = new Set();
+  for (const lvl of step.orgLevels) {
+    const a = await orgService.resolveApprover(requesterEmployeeId, lvl);
+    if (a && !seen.has(a.id)) { seen.add(a.id); out.push(a); }
+  }
+  return { approvers: out, mode: step.mode };
+}
+
+/**
+ * Point an existing request at step `index`: a single approver goes to
+ * approver_employee_id (step_state cleared), multiple to step_state/step_mode.
+ * Returns false when the step can't be resolved (advance should finalize).
+ */
+async function setupStep(requestId, requesterEmployeeId, levels, index) {
+  if (index >= levels.length) return false;
+  const { approvers, mode } = await resolveStepApprovers(requesterEmployeeId, levels[index]);
+  if (!approvers.length) return false;
+  if (approvers.length === 1) {
+    await query(
+      `UPDATE approval_requests SET current_level=$2, approver_employee_id=$3, approver_name=$4, step_state=NULL, step_mode=NULL WHERE id=$1`,
+      [requestId, index, approvers[0].id, approvers[0].fullName]
+    );
+  } else {
+    const state = approvers.map((a) => ({ employeeId: a.id, name: a.fullName, status: 'pending' }));
+    await query(
+      `UPDATE approval_requests SET current_level=$2, approver_employee_id=NULL, approver_name=NULL, step_state=$3::jsonb, step_mode=$4 WHERE id=$1`,
+      [requestId, index, JSON.stringify(state), mode]
+    );
+  }
+  return true;
+}
+
 /**
  * Open an approval request for an action, if policy requires one.
  * @returns {Promise<{required:false} | {required:true, request:object}>}
@@ -56,24 +102,25 @@ function levelsFor(config, type) {
 async function createRequest({ type, requesterEmployeeId, requesterName, payload = {}, resourceRef = null, summary = null, levels: explicitLevels = null }) {
   const config = await getConfig();
   if (!config.enabled) return { required: false };
-  // A caller (e.g. a request template) may pass its own ordered levels; otherwise
-  // fall back to the per-type policy in settings.
   const levels = (Array.isArray(explicitLevels) && explicitLevels.length) ? explicitLevels : levelsFor(config, type);
   if (!levels) return { required: false };
   if (!isUuid(requesterEmployeeId)) return { required: false }; // no requester → cannot route
 
-  const approver = await orgService.resolveApprover(requesterEmployeeId, levels[0]);
-  if (!approver) return { required: false }; // org not configured → don't block
+  // Resolve step 0 (single or parallel). If the org chart yields no approver, skip.
+  const step0 = await resolveStepApprovers(requesterEmployeeId, levels[0]);
+  if (!step0.approvers.length) return { required: false };
+  const single = step0.approvers.length === 1 ? step0.approvers[0] : null;
+  const stepState = single ? null : JSON.stringify(step0.approvers.map((a) => ({ employeeId: a.id, name: a.fullName, status: 'pending' })));
 
   const { rows } = await query(
     `INSERT INTO approval_requests
        (type, requester_employee_id, requester_name, approver_employee_id, approver_name,
-        levels, current_level, payload, resource_ref, summary)
-     VALUES ($1,$2,$3,$4,$5,$6,0,$7,$8,$9)
+        levels, current_level, payload, resource_ref, summary, step_state, step_mode)
+     VALUES ($1,$2,$3,$4,$5,$6,0,$7,$8,$9,$10::jsonb,$11)
      RETURNING *`,
-    [type, requesterEmployeeId, requesterName || null, approver.id, approver.fullName,
+    [type, requesterEmployeeId, requesterName || null, single ? single.id : null, single ? single.fullName : null,
       JSON.stringify(levels), JSON.stringify(payload), resourceRef,
-      summary || TYPE_LABELS[type] || type]
+      summary || TYPE_LABELS[type] || type, stepState, single ? null : step0.mode]
   );
   const request = mapRow(rows[0]);
   notify(request).catch(() => {});
@@ -91,7 +138,11 @@ async function listPending(approverEmployeeId) {
   if (!isUuid(approverEmployeeId)) return [];
   const { rows } = await query(
     `SELECT * FROM approval_requests
-     WHERE status = 'pending' AND approver_employee_id = $1
+     WHERE status = 'pending' AND (
+       approver_employee_id = $1::uuid
+       OR EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(step_state, '[]'::jsonb)) e
+                  WHERE e->>'employeeId' = $1::text AND e->>'status' = 'pending')
+     )
      ORDER BY created_at DESC`, [approverEmployeeId]
   );
   return mapRows(rows);
@@ -122,50 +173,57 @@ async function listAllPending() {
 async function decide(id, { decision, note = '', deciderName = '', deciderEmployeeId = null, isAdmin = false }) {
   const req = await getRequest(id);
   if (req.status !== 'pending') throw HttpError.badRequest('This request has already been decided');
-  // Only the assigned approver (or an admin override) may decide. A non-admin
-  // caller MUST resolve to an employee that matches the request's approver — a
-  // null deciderEmployeeId (no linked employee record) is never authorized.
-  if (!isAdmin && (!deciderEmployeeId || deciderEmployeeId !== req.approverEmployeeId)) {
-    throw HttpError.forbidden('You are not the approver for this request');
+  // The current step is either single (approver_employee_id) or parallel (step_state).
+  const parallel = Array.isArray(req.stepState) && req.stepState.length > 0;
+  const myEntry = parallel ? req.stepState.find((e) => e.employeeId === deciderEmployeeId && e.status === 'pending') : null;
+  if (!isAdmin) {
+    const authorized = parallel ? !!myEntry : (deciderEmployeeId && deciderEmployeeId === req.approverEmployeeId);
+    if (!authorized) throw HttpError.forbidden('You are not the approver for this request');
   }
 
   if (decision === 'rejected') {
+    // Any single rejection rejects the whole request (both step modes).
     await query(
-      `UPDATE approval_requests
-         SET status='rejected', decided_by=$2, decided_at=now(), decision_note=$3
-       WHERE id=$1`, [id, deciderName || null, String(note || '').slice(0, 1000)]
+      `UPDATE approval_requests SET status='rejected', decided_by=$2, decided_at=now(), decision_note=$3 WHERE id=$1`,
+      [id, deciderName || null, String(note || '').slice(0, 1000)]
     );
-    await dispatchReject(req, { deciderName }); // let the underlying resource react (e.g. cancel the ticket)
+    await dispatchReject(req, { deciderName });
     return getRequest(id);
   }
   if (decision !== 'approved') throw HttpError.badRequest("decision must be 'approved' or 'rejected'");
 
+  if (parallel) {
+    const target = myEntry || req.stepState.find((e) => e.status === 'pending'); // admin approves the first pending
+    const newState = req.stepState.map((e) => (target && e.employeeId === target.employeeId ? { ...e, status: 'approved' } : e));
+    const stepDone = req.stepMode === 'all' ? newState.every((e) => e.status === 'approved') : newState.some((e) => e.status === 'approved');
+    if (!stepDone) {
+      await query(`UPDATE approval_requests SET step_state=$2::jsonb WHERE id=$1`, [id, JSON.stringify(newState)]);
+      return getRequest(id); // still waiting on the other approver(s) at this step
+    }
+    // step complete → advance below
+  }
+  return advance(await getRequest(id), { note, deciderName });
+}
+
+/** Move a request to its next step, or finalize (dispatch + approved) if none. */
+async function advance(req, { note = '', deciderName = '' } = {}) {
   const levels = Array.isArray(req.levels) ? req.levels : [];
-  const nextLevel = req.currentLevel + 1;
-  if (nextLevel < levels.length) {
-    // Advance to the next approver in the chain.
-    const nextApprover = await orgService.resolveApprover(req.requesterEmployeeId, levels[nextLevel]);
-    if (nextApprover) {
-      await query(
-        `UPDATE approval_requests
-           SET current_level=$2, approver_employee_id=$3, approver_name=$4
-         WHERE id=$1`, [id, nextLevel, nextApprover.id, nextApprover.fullName]
-      );
-      const advanced = await getRequest(id);
+  const nextIndex = req.currentLevel + 1;
+  if (nextIndex < levels.length) {
+    const ok = await setupStep(req.id, req.requesterEmployeeId, levels, nextIndex);
+    if (ok) {
+      const advanced = await getRequest(req.id);
       notify(advanced).catch(() => {});
       return advanced;
     }
-    // No next approver resolvable → treat this approval as final.
+    // next step unresolvable → finalize as if this were the last step
   }
-
-  // Final approval: replay the action, then mark approved.
   await dispatch(req, { deciderName });
   await query(
-    `UPDATE approval_requests
-       SET status='approved', decided_by=$2, decided_at=now(), decision_note=$3
-     WHERE id=$1`, [id, deciderName || null, String(note || '').slice(0, 1000)]
+    `UPDATE approval_requests SET status='approved', decided_by=$2, decided_at=now(), decision_note=$3, step_state=NULL WHERE id=$1`,
+    [req.id, deciderName || null, String(note || '').slice(0, 1000)]
   );
-  return getRequest(id);
+  return getRequest(req.id);
 }
 
 async function cancel(id) {
