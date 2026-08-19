@@ -580,22 +580,45 @@ async function sweepSlaBreaches() {
     { col: 'resolve_breached_at', done: 'resolved_at', due: 'resolve_due_at', action: 'sla_resolve', detail: 'Resolution SLA breached', extra: ' AND sla_paused_at IS NULL' },
   ];
   let flagged = 0;
+  const breached = new Map(); // dedup escalation to one email per ticket per sweep
   for (const l of legs) {
     const { rows } = await query(
       `UPDATE tickets SET ${l.col} = now()
         WHERE ${l.col} IS NULL AND ${l.done} IS NULL AND ${l.due} IS NOT NULL AND ${l.due} < now()
           AND status NOT IN ('resolved','closed','cancelled')${l.extra}
-        RETURNING id, number`
+        RETURNING id, number, subject, assignee_user_id AS "assigneeUserId"`
     );
     for (const r of rows) {
       await query(
         'INSERT INTO ticket_activity (ticket_id, actor_name, action, detail) VALUES ($1,$2,$3,$4)',
         [r.id, 'system', l.action, l.detail]
       );
+      breached.set(r.id, r);
       flagged += 1;
     }
   }
+  for (const tk of breached.values()) escalateBreach(tk); // fire-and-forget notifications
   return flagged;
+}
+
+// Auto-escalation: on a fresh SLA breach, notify the assignee — or the ops
+// recipients (notify.to) when the ticket is unassigned. Never throws.
+function escalateBreach(tk) {
+  (async () => {
+    let to = null;
+    if (tk.assigneeUserId) {
+      const r = await query('SELECT email FROM users WHERE id = $1', [tk.assigneeUserId]);
+      to = (r.rows[0] && r.rows[0].email) || null;
+    }
+    if (!to) {
+      const cfg = await require('./notificationService').getMailConfig();
+      to = (cfg.notify && cfg.notify.to && cfg.notify.to.length) ? cfg.notify.to : null;
+    }
+    if (!to) return;
+    const recipients = Array.isArray(to) ? to.join(', ') : to;
+    await query("INSERT INTO ticket_activity (ticket_id, actor_name, action, detail) VALUES ($1,'system','escalated',$2)", [tk.id, 'Notified ' + recipients]);
+    mail({ to, ticketNumber: tk.number, subject: tk.subject, event: 'SLA breached — needs attention', actorName: 'System' });
+  })().catch(() => {});
 }
 
 /* --------------------------- email notifications --------------------------- */
