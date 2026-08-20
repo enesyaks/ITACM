@@ -52,7 +52,7 @@ Views.approvals = async function (el) {
 
   function pendingRow(r) {
     return `
-      <tr>
+      <tr data-open="${esc(r.id)}" style="cursor:pointer">
         <td><div class="cell-title">${esc(r.summary || typeLabel(r.type))}</div>
           <div class="cell-sub"><span class="pill pill-blue">${esc(typeLabel(r.type))}</span>${r.resourceRef ? ` <span class="mono">${esc(r.resourceRef)}</span>` : ''} ${chainPos(r)}</div></td>
         <td>${esc(r.requesterName || '—')}</td>
@@ -65,7 +65,7 @@ Views.approvals = async function (el) {
   }
   function mineRow(r) {
     return `
-      <tr>
+      <tr data-open="${esc(r.id)}" style="cursor:pointer">
         <td><div class="cell-title">${esc(r.summary || typeLabel(r.type))}</div>
           <div class="cell-sub"><span class="pill pill-blue">${esc(typeLabel(r.type))}</span>${r.resourceRef ? ` <span class="mono">${esc(r.resourceRef)}</span>` : ''}</div></td>
         <td>${esc(r.approverName || '—')}</td>
@@ -103,8 +103,54 @@ Views.approvals = async function (el) {
         </table></div>
       </div>`;
 
-    el.querySelectorAll('[data-approve]').forEach((b) => b.addEventListener('click', () => decide(b.dataset.approve, 'approved')));
-    el.querySelectorAll('[data-reject]').forEach((b) => b.addEventListener('click', () => decide(b.dataset.reject, 'rejected')));
+    el.querySelectorAll('[data-approve]').forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); decide(b.dataset.approve, 'approved'); }));
+    el.querySelectorAll('[data-reject]').forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); decide(b.dataset.reject, 'rejected'); }));
+    const byId = new Map([...pending, ...mine].map((r) => [r.id, r]));
+    el.querySelectorAll('tr[data-open]').forEach((tr) => tr.addEventListener('click', () => {
+      const r = byId.get(tr.dataset.open);
+      if (r) openDetail(r);
+    }));
+  }
+
+  /* Read-only detail for a request: summary, amount, chain position, the current
+     approver(s), and the full decision trail — plus quick approve/reject when it's
+     still pending and routed to me. */
+  function openDetail(r) {
+    const amount = r.payload && r.payload.amount;
+    const pendingNow = r.status === 'pending';
+    const waiting = Array.isArray(r.stepState) && r.stepState.length
+      ? r.stepState.filter((e) => e.status === 'pending').map((e) => e.name)
+      : (r.approverName ? [r.approverName] : []);
+    const field = (label, val) => `<div class="form-field"><label>${esc(label)}</label><div style="padding-top:4px">${val}</div></div>`;
+    openModal({
+      title: r.summary || typeLabel(r.type),
+      wide: true,
+      body: `
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px">
+          <span class="pill pill-blue">${esc(typeLabel(r.type))}</span>
+          ${statusPill(r.status)}
+          ${r.resourceRef ? `<span class="pill pill-slate"><span class="mono">${esc(r.resourceRef)}</span></span>` : ''}
+          ${chainPos(r)}
+        </div>
+        <div class="form-grid">
+          ${field(T('Requester', 'Talep eden'), esc(r.requesterName || '—'))}
+          ${amount != null ? field(T('Amount', 'Tutar'), `<strong>₺${esc(Number(amount).toLocaleString('tr-TR'))}</strong>`) : ''}
+          ${field(T('Opened', 'Açılış'), `<span class="cell-sub">${esc(when(r.createdAt))}</span>`)}
+          ${pendingNow && waiting.length ? field(T('Waiting on', 'Bekleyen onay'), waiting.map((n) => esc(n)).join(', ')) : ''}
+          ${!pendingNow && r.decidedBy ? field(T('Decided by', 'Karar veren'), `${esc(r.decidedBy)} <span class="cell-sub">· ${esc(when(r.decidedAt))}</span>`) : ''}
+        </div>
+        ${r.decisionNote ? `<div class="form-field full"><label>${esc(T('Decision note', 'Karar notu'))}</label><div class="tk-desc">${esc(r.decisionNote)}</div></div>` : ''}
+        ${typeof renderApprovalTimeline === 'function' ? renderApprovalTimeline(r.history) : ''}`,
+      foot: pendingNow
+        ? `<button class="btn btn-outline" data-close>${esc(T('Close', 'Kapat'))}</button>
+           <button class="btn btn-outline" id="ap-reject" style="color:var(--rose-700)"><span class="ms ms-sm">close</span> ${esc(T('Reject', 'Reddet'))}</button>
+           <button class="btn btn-primary" id="ap-approve"><span class="ms ms-sm">check</span> ${esc(T('Approve', 'Onayla'))}</button>`
+        : `<button class="btn btn-outline" data-close>${esc(T('Close', 'Kapat'))}</button>`,
+      onMount(ov) {
+        $('#ap-approve', ov)?.addEventListener('click', () => { closeModal(); decide(r.id, 'approved'); });
+        $('#ap-reject', ov)?.addEventListener('click', () => { closeModal(); decide(r.id, 'rejected'); });
+      },
+    });
   }
 
   async function load() {
