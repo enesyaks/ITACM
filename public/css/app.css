@@ -5925,6 +5925,25 @@ body.ai-open .ai-panel { opacity: 1; visibility: visible; transform: none; }
 .rt-amount-field { flex: 0 0 130px; }
 .rt-amount-field input { width: 100%; }
 
+/* --- Searchable combobox (styled datalist replacement) --- */
+.combo { position: relative; }
+.combo-box { position: relative; display: flex; align-items: center; }
+.combo-box .combo-ic { position: absolute; left: 10px; color: var(--on-surface-variant); pointer-events: none; }
+.combo-input { width: 100%; padding-left: 32px !important; padding-right: 30px !important; }
+.combo-clear { position: absolute; right: 6px; display: none; align-items: center; justify-content: center;
+  width: 22px; height: 22px; padding: 0; border: 0; border-radius: 50%; background: none; cursor: pointer; color: var(--on-surface-variant); }
+.combo-clear:hover { background: var(--surface-container, rgba(0,0,0,.06)); }
+.combo.has-value .combo-clear { display: inline-flex; }
+.combo-menu { margin-top: 4px; max-height: 240px; overflow-y: auto;
+  border: 1px solid var(--outline-variant); border-radius: var(--radius-md); background: var(--surface); box-shadow: var(--shadow-card); }
+.combo-item { display: flex; flex-direction: column; gap: 1px; width: 100%; text-align: left; padding: 8px 12px;
+  border: 0; border-bottom: 1px solid var(--outline-variant); background: none; cursor: pointer; }
+.combo-item:last-child { border-bottom: 0; }
+.combo-item:hover, .combo-item.active { background: var(--surface-low); }
+.combo-item-main { font-size: 14px; color: var(--on-surface); }
+.combo-item-sub { font-size: 12px; color: var(--on-surface-variant); }
+.combo-empty { padding: 12px; text-align: center; color: var(--on-surface-variant); font-size: 13px; }
+
 /* Ticket attachments */
 .tk-docs { display: flex; flex-direction: column; gap: 6px; }
 .tk-doc { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border: 1px solid var(--outline-variant); border-radius: 8px; }

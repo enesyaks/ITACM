@@ -88,12 +88,10 @@ Views.tickets = async function (el, params = {}) {
     api('/tickets/stats').catch(() => null),
     api('/tickets/categories').catch(() => []),
     api('/tickets/canned').catch(() => []),
-    canLinkProblem ? api('/problems?open=1&limit=500').catch(() => []) : Promise.resolve([]),
+    canLinkProblem ? api('/problems?limit=500').catch(() => []) : Promise.resolve([]),
   ]);
   const problemsList = Array.isArray(problemsRes) ? problemsRes : [];
   const probLabel = (p) => `${p.number} · ${p.title}`;
-  const probIdByLabel = new Map(problemsList.map((p) => [probLabel(p), p.id]));
-  const probOptions = problemsList.map((p) => `<option value="${esc(probLabel(p))}">`).join('');
   const catList = Array.isArray(catsRes) ? catsRes : [];
   let canned = Array.isArray(cannedRes) ? cannedRes : [];
   let sortKey = 'created';
@@ -130,12 +128,7 @@ Views.tickets = async function (el, params = {}) {
   const assets = Array.isArray(assetRes) ? assetRes : (assetRes.items || []);
   const empLabel = (e) => [e.fullName, e.department || e.title].filter(Boolean).join(' · ') || e.fullName || '—';
   const assetLabel = (x) => [x.assetTag, [x.brand, x.model].filter(Boolean).join(' ')].filter(Boolean).join(' · ');
-  const empById = new Map(emps.map((e) => [e.id, e]));
   const assetById = new Map(assets.map((x) => [x.id, x]));
-  const empIdByLabel = new Map(emps.map((e) => [empLabel(e), e.id]));
-  const assetIdByLabel = new Map(assets.map((x) => [assetLabel(x), x.id]));
-  const empOptions = emps.map((e) => `<option value="${esc(empLabel(e))}">`).join('');
-  const assetOptions = assets.map((x) => `<option value="${esc(assetLabel(x))}">`).join('');
 
   const canBulk = canUpdate || canAssign;
   const pill = (cls, label) => `<span class="pill ${cls}">${esc(label)}</span>`;
@@ -676,13 +669,15 @@ Views.tickets = async function (el, params = {}) {
         <div class="form-field full"><label>${esc(t('tk.description'))}</label><textarea id="tk-c-desc" rows="4"></textarea></div>
         <div class="form-field"><label>${esc(t('tk.category'))}</label><input id="tk-c-cat" maxlength="120" placeholder="${esc(t('tk.categoryPh'))}"></div>
         <div class="form-field"><label>${esc(t('tk.requester'))}</label>
-          <input id="tk-c-requester" list="tk-emp-list" autocomplete="off" placeholder="${esc(t('tk.searchPh'))}"><datalist id="tk-emp-list">${empOptions}</datalist></div>
+          <div id="tk-c-requester-host"></div></div>
         <div class="form-field"><label>${esc(t('tk.asset'))}</label>
-          <input id="tk-c-asset" list="tk-asset-list" autocomplete="off" placeholder="${esc(t('tk.searchPh'))}"><datalist id="tk-asset-list">${assetOptions}</datalist></div>
+          <div id="tk-c-asset-host"></div></div>
       </div>`,
       foot: `<button class="btn btn-outline" data-close>${esc(t('common.cancel'))}</button>
              <button class="btn btn-primary" id="tk-c-save">${esc(t('tk.create'))}</button>`,
       onMount(ov) {
+        const reqPicker = mountCombobox($('#tk-c-requester-host', ov), { items: emps, labelOf: empLabel, subOf: (e) => e.email || '', placeholder: t('tk.searchPh') });
+        const assetCPicker = mountCombobox($('#tk-c-asset-host', ov), { items: assets, labelOf: assetLabel, subOf: (x) => x.serialNo || x.status || '', placeholder: t('tk.searchPh') });
         $('#tk-c-save', ov).addEventListener('click', async () => {
           try {
             await api('/tickets', { method: 'POST', body: {
@@ -692,8 +687,8 @@ Views.tickets = async function (el, params = {}) {
               subject: $('#tk-c-subject', ov).value.trim(),
               description: $('#tk-c-desc', ov).value.trim(),
               category: $('#tk-c-cat', ov).value.trim(),
-              requesterEmployeeId: empIdByLabel.get($('#tk-c-requester', ov).value.trim()) || null,
-              assetId: assetIdByLabel.get($('#tk-c-asset', ov).value.trim()) || null,
+              requesterEmployeeId: reqPicker.getId(),
+              assetId: assetCPicker.getId(),
             } });
             closeModal();
             toast(t('tk.created'), 'success');
@@ -741,13 +736,9 @@ Views.tickets = async function (el, params = {}) {
             <div style="padding-top:6px">${pill({ pending: 'pill-amber', approved: 'pill-emerald', rejected: 'pill-rose' }[tk.approvalStatus] || 'pill-slate', t('mtk.ap' + tk.approvalStatus.charAt(0).toUpperCase() + tk.approvalStatus.slice(1)))}${tk.approvalStatus === 'pending' && tk.approvalApprover ? ` <span class="cell-sub">· ${esc(tk.approvalApprover)}</span>` : ''}</div></div>` : ''}
           ${renderApprovalTimeline(tk.approvalHistory)}
           <div class="form-field"><label>${esc(t('tk.asset'))}</label>
-            <input id="tk-d-asset" list="tk-asset-list" autocomplete="off" ${canUpdate ? '' : 'disabled'}
-              value="${esc(tk.assetId && assetById.has(tk.assetId) ? assetLabel(assetById.get(tk.assetId)) : (tk.assetTag || ''))}"
-              placeholder="${esc(t('tk.searchPh'))}"><datalist id="tk-asset-list">${assetOptions}</datalist></div>
+            <div id="tk-d-asset-host"></div></div>
           ${canLinkProblem ? `<div class="form-field"><label>${esc(t('pr.problemLink'))}</label>
-            <input id="tk-d-problem" list="tk-prob-list" autocomplete="off"
-              value="${esc(tk.problemNumber ? tk.problemNumber + ' · ' + (tk.problemTitle || '') : '')}"
-              placeholder="${esc(t('pr.searchPh'))}"><datalist id="tk-prob-list">${probOptions}</datalist></div>`
+            <div id="tk-d-problem-host"></div></div>`
           : (tk.problemNumber ? `<div class="form-field"><label>${esc(t('pr.problemLink'))}</label><div style="padding-top:6px" class="mono">${esc(tk.problemNumber)}</div></div>` : '')}
           <div class="form-field full"><label>${esc(t('tk.slaCol'))}</label>
             <div class="tk-sla">
@@ -798,18 +789,24 @@ Views.tickets = async function (el, params = {}) {
         $('#tk-d-cat', ov)?.addEventListener('change', (e) => patch({ category: e.target.value.trim() }));
         $('#tk-d-rescode', ov)?.addEventListener('change', (e) => patch({ resolutionCode: e.target.value || null }));
         $('#tk-d-resnote', ov)?.addEventListener('change', (e) => patch({ resolutionNote: e.target.value.trim() }));
-        $('#tk-d-asset', ov)?.addEventListener('change', (e) => {
-          const v = e.target.value.trim();
-          if (!v) { patch({ assetId: null }); return; }
-          const id = assetIdByLabel.get(v);
-          if (id) patch({ assetId: id }); else toast(t('tk.assetUnknown'), 'error');
-        });
-        $('#tk-d-problem', ov)?.addEventListener('change', (e) => {
-          const v = e.target.value.trim();
-          if (!v) { patch({ problemId: null }); return; }
-          const pid = probIdByLabel.get(v);
-          if (pid) patch({ problemId: pid }); else toast(t('pr.pickIncident'), 'error');
-        });
+        const assetHost = $('#tk-d-asset-host', ov);
+        if (assetHost) {
+          const assetVal = tk.assetId ? (assetById.get(tk.assetId) || { id: tk.assetId, assetTag: tk.assetTag || tk.assetId }) : null;
+          mountCombobox(assetHost, {
+            items: assets, labelOf: assetLabel, subOf: (x) => x.serialNo || x.status || '', value: assetVal,
+            disabled: !canUpdate, placeholder: t('tk.searchPh'),
+            onSelect: (it) => patch({ assetId: it ? it.id : null }),
+          });
+        }
+        const probHost = $('#tk-d-problem-host', ov);
+        if (probHost) {
+          const probVal = tk.problemId ? { id: tk.problemId, number: tk.problemNumber, title: tk.problemTitle } : null;
+          mountCombobox(probHost, {
+            items: problemsList, labelOf: probLabel, subOf: (p) => (p.status ? (t('pr.status.' + p.status) || p.status) : ''),
+            value: probVal, placeholder: t('pr.searchPh'), emptyText: t('pr.noneToLink'),
+            onSelect: (it) => patch({ problemId: it ? it.id : null }),
+          });
+        }
         // Attachments (reuse the vetted document store).
         if (canDocRead) {
           const fmtSize = (b) => (b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB');

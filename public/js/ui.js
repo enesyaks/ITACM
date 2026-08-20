@@ -818,6 +818,81 @@ function mountEmployeeSearchField(container, {
   };
 }
 
+/**
+ * Lightweight searchable combobox over an in-memory list — a styled replacement
+ * for a native <datalist> (which renders an un-styleable dropdown and only
+ * resolves on an exact match). Filters client-side by label + sub text, supports
+ * keyboard nav, clear, and a preselected value. Returns { getSelected, getId,
+ * setSelected, clear }. onSelect(item|null) fires on every pick.
+ */
+function mountCombobox(container, {
+  items = [], labelOf = (x) => String(x), subOf = () => '', idOf = (x) => x.id,
+  value = null, placeholder = '', emptyText = null, onSelect = null, disabled = false,
+} = {}) {
+  let current = value || null;
+  const ph = placeholder || (t('common.search') || 'Search…');
+  container.classList.add('combo');
+  container.innerHTML = `
+    <div class="combo-box">
+      <span class="ms ms-sm combo-ic">search</span>
+      <input type="text" class="combo-input" autocomplete="off" spellcheck="false" placeholder="${esc(ph)}" ${disabled ? 'disabled' : ''} value="${current ? esc(labelOf(current)) : ''}">
+      <button type="button" class="combo-clear" tabindex="-1" title="${esc(t('common.remove') || 'Clear')}"><span class="ms ms-sm">close</span></button>
+    </div>
+    <div class="combo-menu" hidden></div>`;
+  const input = container.querySelector('.combo-input');
+  const menu = container.querySelector('.combo-menu');
+  const clearBtn = container.querySelector('.combo-clear');
+  const setHasValue = () => container.classList.toggle('has-value', !!current);
+  setHasValue();
+
+  let activeIdx = -1;
+  let filtered = [];
+  const pick = (it) => {
+    current = it || null;
+    input.value = it ? labelOf(it) : '';
+    setHasValue();
+    menu.hidden = true;
+    if (typeof onSelect === 'function') onSelect(current);
+  };
+  const renderMenu = () => {
+    const q = input.value.trim().toLowerCase();
+    filtered = items.filter((it) => !q || (labelOf(it) + ' ' + subOf(it)).toLowerCase().includes(q)).slice(0, 60);
+    activeIdx = -1;
+    if (!filtered.length) {
+      menu.innerHTML = `<div class="combo-empty">${esc(emptyText || t('common.noResults') || 'No results')}</div>`;
+      return;
+    }
+    menu.innerHTML = filtered.map((it, i) => {
+      const sub = subOf(it);
+      return `<button type="button" class="combo-item" data-i="${i}">
+        <span class="combo-item-main">${esc(labelOf(it))}</span>${sub ? `<span class="combo-item-sub">${esc(sub)}</span>` : ''}</button>`;
+    }).join('');
+    menu.querySelectorAll('.combo-item').forEach((btn) => {
+      // mousedown (not click) so it fires before the input's blur closes the menu.
+      btn.addEventListener('mousedown', (e) => { e.preventDefault(); pick(filtered[Number(btn.dataset.i)]); });
+    });
+  };
+  const openMenu = () => { if (disabled) return; renderMenu(); menu.hidden = false; };
+
+  input.addEventListener('focus', openMenu);
+  input.addEventListener('input', openMenu);
+  input.addEventListener('keydown', (e) => {
+    if (menu.hidden) return;
+    const opts = menu.querySelectorAll('.combo-item');
+    if (e.key === 'ArrowDown') { e.preventDefault(); activeIdx = Math.min(activeIdx + 1, opts.length - 1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); activeIdx = Math.max(activeIdx - 1, 0); }
+    else if (e.key === 'Enter') { if (activeIdx >= 0 && filtered[activeIdx]) { e.preventDefault(); pick(filtered[activeIdx]); } return; }
+    else if (e.key === 'Escape') { menu.hidden = true; return; }
+    else return;
+    opts.forEach((b, i) => b.classList.toggle('active', i === activeIdx));
+    if (opts[activeIdx]) opts[activeIdx].scrollIntoView({ block: 'nearest' });
+  });
+  input.addEventListener('blur', () => { setTimeout(() => { menu.hidden = true; input.value = current ? labelOf(current) : ''; }, 120); });
+  clearBtn.addEventListener('click', () => { pick(null); input.focus(); });
+
+  return { getSelected: () => current, getId: () => (current ? idOf(current) : null), setSelected: pick, clear: () => pick(null) };
+}
+
 function confirmModal(message, onYes) {
   openModal({
     title: t('common.confirm'),
