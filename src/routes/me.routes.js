@@ -9,7 +9,7 @@ const express = require('express');
 const router = express.Router();
 const { authenticate } = require('../middleware/auth');
 const { asyncHandler } = require('../utils/asyncHandler');
-const { selfService, ticketService, settingsService, documentService, requestTemplateService, approvalService } = require('../services');
+const { selfService, ticketService, settingsService, documentService, requestTemplateService, approvalService, kbService } = require('../services');
 const { validateUpload } = require('../utils/uploadGuard');
 const { contentDisposition } = require('../utils/contentDisposition');
 const { query } = require('../providers/postgres/pool');
@@ -108,6 +108,14 @@ router.post('/approvals/:id/decide', asyncHandler(async (req, res) => {
     deciderEmployeeId: emp && emp.id,
     isAdmin: false,
   }) });
+}));
+
+/* Knowledge base — employees read/search the PUBLISHED articles only. */
+router.get('/kb', requireTicketing, asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await kbService.listArticles({ publishedOnly: true, search: req.query.search, category: req.query.category }) });
+}));
+router.get('/kb/:id', requireTicketing, asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await kbService.getArticle(req.params.id, { publishedOnly: true, countView: true }) });
 }));
 
 module.exports = router;

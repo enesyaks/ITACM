@@ -9,6 +9,7 @@ const ROUTES = {
   '#/dashboard': { title: 'Dashboard', view: 'dashboard', icon: 'dashboard' },
   '#/zimmetlerim': { title: 'My Assets', view: 'myZimmet', icon: 'inventory_2' },
   '#/my-tickets': { title: 'My Tickets', view: 'myTickets', icon: 'support_agent', module: 'ticketing', portalOnly: true },
+  '#/my-kb': { title: 'Help Center', view: 'myKb', icon: 'menu_book', module: 'ticketing', portalOnly: true },
   // HR-only screen. IT never opens this page — they review and approve tickets
   // from the Dashboard HR card, so the filing surface and the approving surface
   // stay separate.
@@ -42,6 +43,10 @@ const ROUTES = {
   '#/changes': {
     title: 'Changes', view: 'changes', icon: 'published_with_changes',
     iam: [['change', 'read']], module: 'ticketing',
+  },
+  '#/kb': {
+    title: 'Knowledge Base', view: 'kb', icon: 'menu_book',
+    iam: [['ticket', 'read']], module: 'ticketing',
   },
   '#/stockcount': { title: 'Stock Count', view: 'stockcount', icon: 'fact_check' },
   '#/reports': { title: 'Reports', view: 'reports', icon: 'summarize' },
@@ -109,7 +114,7 @@ function saveNavPref() {
 /** Every route this account may open, in declaration order. */
 function permittedNavEntries() {
   return Object.entries(ROUTES).filter(([hash, r]) => {
-    if (isPortalUser()) return hash === PORTAL_HASH || (hash === '#/my-tickets' && moduleOn('ticketing'));
+    if (isPortalUser()) return hash === PORTAL_HASH || (['#/my-tickets', '#/my-kb'].includes(hash) && moduleOn('ticketing'));
     if (isHrConfined()) return HR_ALLOWED_HASHES.has(hash);
     if (r.portalOnly) return false; // self-service-only routes never show for staff
     // Optional module (e.g. Service Desk): hidden unless the Owner enabled it.
@@ -322,7 +327,7 @@ async function navigate() {
   const hash = ROUTES[rawHash] ? rawHash : homeHash;
   const route = ROUTES[hash];
   // Portal accounts are confined to their own zimmet page (+ their own tickets).
-  const portalOk = hash === PORTAL_HASH || (hash === '#/my-tickets' && moduleOn('ticketing'));
+  const portalOk = hash === PORTAL_HASH || (['#/my-tickets', '#/my-kb'].includes(hash) && moduleOn('ticketing'));
   if (isPortalUser() && !portalOk) { location.hash = PORTAL_HASH; return; }
   if (isHrConfined() && !HR_ALLOWED_HASHES.has(hash)) { location.hash = HR_HOME_HASH; return; }
   // Mirror permittedNavEntries: a portalOnly route or a disabled optional module

@@ -938,6 +938,20 @@ ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS sla_json JSONB NOT NULL DEFAUL
 -- Canned responses (058): array of { title, body }.
 ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS ticket_canned_json JSONB NOT NULL DEFAULT '[]'::jsonb;
 
+-- Knowledge base (068).
+CREATE TABLE IF NOT EXISTS kb_articles (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title        TEXT NOT NULL,
+  body         TEXT,
+  category     TEXT,
+  published    BOOLEAN NOT NULL DEFAULT false,
+  author_name  TEXT,
+  views        INTEGER NOT NULL DEFAULT 0,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_kb_published ON kb_articles (published, updated_at DESC);
+
 -- SLA clock-stop while 'pending' (059).
 ALTER TABLE tickets ADD COLUMN IF NOT EXISTS sla_paused_at TIMESTAMPTZ;
 
