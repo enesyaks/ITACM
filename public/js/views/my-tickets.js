@@ -114,13 +114,14 @@ Views.myTickets = async function (el) {
           const top = (Array.isArray(arts) ? arts : []).slice(0, 3);
           if (!top.length) { suggestBox.innerHTML = ''; return; }
           suggestBox.innerHTML = `<div class="mtk-deflect">
-              <div class="cell-sub" style="margin-bottom:6px"><span class="ms ms-sm" style="vertical-align:-3px">lightbulb</span> ${esc(t('mtk.maybeHelp'))}</div>
-              ${top.map((a) => `<div class="mtk-sug" data-a="${esc(a.id)}"><span class="ms ms-sm">menu_book</span> <span>${esc(a.title)}</span></div>
+              <div class="mtk-deflect-head"><span class="ms ms-sm">lightbulb</span> ${esc(t('mtk.maybeHelp'))}</div>
+              ${top.map((a) => `<div class="mtk-sug" data-a="${esc(a.id)}"><span class="ms ms-sm">menu_book</span> <span class="mtk-sug-title">${esc(a.title)}</span><span class="ms ms-sm mtk-sug-chev">expand_more</span></div>
                 <div class="mtk-sug-body" data-body="${esc(a.id)}" style="display:none"></div>`).join('')}</div>`;
           suggestBox.querySelectorAll('.mtk-sug').forEach((row) => row.addEventListener('click', async () => {
             const id = row.dataset.a;
             const panel = suggestBox.querySelector(`[data-body="${id}"]`);
-            if (panel.style.display === 'block') { panel.style.display = 'none'; return; }
+            if (panel.style.display === 'block') { panel.style.display = 'none'; row.classList.remove('open'); return; }
+            row.classList.add('open');
             if (!panel.dataset.loaded) {
               const a = await api('/me/kb/' + encodeURIComponent(id)).catch(() => null);
               if (a) {

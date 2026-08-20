@@ -501,55 +501,62 @@ Views.tickets = async function (el, params = {}) {
       const finalId = empTok ? empTok.slice(4) : '';
       const threshold = (tp && tp.amountThreshold != null) ? tp.amountThreshold : '';
       const mode = parStep ? ('parallel-' + parStep.mode) : 'sequential';
-      return `<div class="rt-row" data-id="${esc((tp && tp.id) || '')}" data-final="${esc(finalId)}"
-          style="border:1px solid var(--outline-variant);border-radius:10px;padding:10px;margin-bottom:10px">
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <input class="rt-name" placeholder="${esc(t('rt.name'))}" value="${esc((tp && tp.name) || '')}" style="flex:0 0 150px">
-          <input class="rt-cat" placeholder="${esc(t('tk.category'))}" value="${esc((tp && tp.category) || '')}" style="flex:0 0 110px">
-          <label style="font-size:13px;display:inline-flex;gap:4px;align-items:center"><input type="checkbox" class="rt-mgr" ${mgrOn ? 'checked' : ''}> ${esc(t('rt.manager'))}</label>
-          <label style="font-size:13px;display:inline-flex;gap:4px;align-items:center"><input type="checkbox" class="rt-mgr2" ${mgr2On ? 'checked' : ''}> ${esc(t('rt.manager2'))}</label>
-          <label style="font-size:13px;display:inline-flex;gap:4px;align-items:center"><input type="checkbox" class="rt-dept" ${deptOn ? 'checked' : ''}> ${esc(t('rt.department'))}</label>
-          <select class="rt-mode ops-select" style="font-size:12px">
-            <option value="sequential" ${mode === 'sequential' ? 'selected' : ''}>${esc(t('rt.seq'))}</option>
-            <option value="parallel-all" ${mode === 'parallel-all' ? 'selected' : ''}>${esc(t('rt.parAll'))}</option>
-            <option value="parallel-any" ${mode === 'parallel-any' ? 'selected' : ''}>${esc(t('rt.parAny'))}</option>
-          </select>
-          <label style="font-size:13px;display:inline-flex;gap:4px;align-items:center"><input type="checkbox" class="rt-en" ${(tp && tp.enabled !== false) ? 'checked' : ''}> ${esc(t('rt.enabled'))}</label>
-          <button class="btn btn-outline btn-sm rt-del" type="button" title="${esc(t('common.remove') || 'Remove')}"><span class="ms ms-sm">delete</span></button>
+      return `<div class="rt-card" data-id="${esc((tp && tp.id) || '')}" data-final="${esc(finalId)}">
+        <div class="rt-card-head">
+          <div class="rt-field rt-grow"><label class="rt-lbl">${esc(t('rt.name'))}</label>
+            <input class="rt-name" placeholder="${esc(t('rt.namePh'))}" value="${esc((tp && tp.name) || '')}"></div>
+          <div class="rt-field rt-cat-field"><label class="rt-lbl">${esc(t('tk.category'))}</label>
+            <input class="rt-cat" placeholder="${esc(t('rt.catPh'))}" value="${esc((tp && tp.category) || '')}"></div>
+          <label class="rt-toggle"><input type="checkbox" class="rt-en" ${(tp && tp.enabled !== false) ? 'checked' : ''}> ${esc(t('rt.enabled'))}</label>
+          <button class="btn btn-ghost btn-sm rt-del" type="button" title="${esc(t('common.remove') || 'Remove')}"><span class="ms">delete</span></button>
         </div>
-        <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
-          <span class="cell-sub" style="flex:0 0 auto"><span class="ms ms-sm" style="vertical-align:-3px">account_balance</span> ${esc(t('rt.finalApprover'))}:</span>
-          <div class="rt-final-host" style="flex:1;min-width:220px"></div>
-          <label class="cell-sub" style="flex:0 0 auto;display:inline-flex;gap:4px;align-items:center" title="${esc(t('rt.amountThresholdHint'))}">
-            ${esc(t('rt.amountThreshold'))}
-            <input class="rt-amount" type="number" min="0" step="0.01" value="${esc(threshold)}" placeholder="—" style="width:110px">
-          </label>
+        <div class="rt-section">
+          <span class="rt-lbl">${esc(t('rt.chainLabel'))}</span>
+          <div class="rt-chips">
+            <label class="rt-chip"><input type="checkbox" class="rt-mgr" ${mgrOn ? 'checked' : ''}><span class="ms ms-sm">person</span> ${esc(t('rt.manager'))}</label>
+            <label class="rt-chip"><input type="checkbox" class="rt-mgr2" ${mgr2On ? 'checked' : ''}><span class="ms ms-sm">supervisor_account</span> ${esc(t('rt.manager2'))}</label>
+            <label class="rt-chip"><input type="checkbox" class="rt-dept" ${deptOn ? 'checked' : ''}><span class="ms ms-sm">apartment</span> ${esc(t('rt.department'))}</label>
+            <select class="rt-mode ops-select">
+              <option value="sequential" ${mode === 'sequential' ? 'selected' : ''}>${esc(t('rt.seq'))}</option>
+              <option value="parallel-all" ${mode === 'parallel-all' ? 'selected' : ''}>${esc(t('rt.parAll'))}</option>
+              <option value="parallel-any" ${mode === 'parallel-any' ? 'selected' : ''}>${esc(t('rt.parAny'))}</option>
+            </select>
+          </div>
+        </div>
+        <div class="rt-section">
+          <span class="rt-lbl"><span class="ms ms-sm" style="vertical-align:-3px">account_balance</span> ${esc(t('rt.finalApprover'))}</span>
+          <div class="rt-final-row">
+            <div class="rt-final-host"></div>
+            <div class="rt-field rt-amount-field"><label class="rt-lbl" title="${esc(t('rt.amountThresholdHint'))}">${esc(t('rt.amountThreshold'))}</label>
+              <input class="rt-amount" type="number" min="0" step="0.01" value="${esc(threshold)}" placeholder="—"></div>
+          </div>
         </div>
       </div>`;
     };
     openModal({
       title: t('rt.title'),
       wide: true,
-      body: `<div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;flex-wrap:wrap">
-          <label style="display:inline-flex;align-items:center;gap:8px;font-size:14px">
-            <input type="checkbox" id="rt-approvals-on" ${cfg.enabled ? 'checked' : ''}> <strong>${esc(t('rt.enableApprovals'))}</strong></label>
-          <label class="cell-sub" style="display:inline-flex;align-items:center;gap:6px" title="${esc(t('rt.reminderHint'))}">
+      body: `<div class="rt-config">
+          <label class="rt-config-main">
+            <input type="checkbox" id="rt-approvals-on" ${cfg.enabled ? 'checked' : ''}>
+            <strong>${esc(t('rt.enableApprovals'))}</strong></label>
+          <label class="rt-config-rem" title="${esc(t('rt.reminderHint'))}">
             <span class="ms ms-sm" style="vertical-align:-3px">notifications_active</span> ${esc(t('rt.reminderDays'))}
-            <input type="number" id="rt-reminder-days" min="0" max="90" step="1" value="${esc(cfg.reminderDays || 0)}" style="width:70px"></label>
+            <input type="number" id="rt-reminder-days" min="0" max="90" step="1" value="${esc(cfg.reminderDays || 0)}"></label>
         </div>
-        <p class="cell-sub" style="margin:0 0 12px">${esc(t('rt.hint'))}</p>
+        <p class="cell-sub rt-hint">${esc(t('rt.enableApprovalsSub'))} ${esc(t('rt.hint'))}</p>
         <div id="rt-list">${(loaded.length ? loaded : [null]).map(rowHtml).join('')}</div>
-        <button class="btn btn-outline btn-sm" id="rt-add" type="button"><span class="ms ms-sm">add</span> ${esc(t('rt.add'))}</button>`,
+        <button class="btn btn-outline btn-sm rt-add-btn" id="rt-add" type="button"><span class="ms ms-sm">add</span> ${esc(t('rt.add'))}</button>`,
       foot: `<button class="btn btn-outline" data-close>${esc(t('common.cancel'))}</button>
              <button class="btn btn-primary" id="rt-save">${esc(t('common.save'))}</button>`,
       onMount(ov) {
         const listEl = $('#rt-list', ov);
-        const wireDel = () => listEl.querySelectorAll('.rt-del').forEach((b) => { b.onclick = () => b.closest('.rt-row').remove(); });
+        const wireDel = () => listEl.querySelectorAll('.rt-del').forEach((b) => { b.onclick = () => b.closest('.rt-card').remove(); });
         // Mount the fixed-person picker (finance sign-off etc.) on any un-wired row.
         const mountPickers = () => listEl.querySelectorAll('.rt-final-host').forEach((host) => {
           if (host._picker) return;
           host._picker = mountEmployeeSearchField(host, { name: 'rt-final', placeholder: t('rt.finalApproverPh') });
-          const finalId = host.closest('.rt-row').dataset.final || '';
+          const finalId = host.closest('.rt-card').dataset.final || '';
           if (finalId) api('/employees/' + encodeURIComponent(finalId))
             .then((e) => { if (e) host._picker.setSelected({ id: e.id, fullName: e.fullName, department: e.department, email: e.email }); })
             .catch(() => {});
@@ -559,7 +566,7 @@ Views.tickets = async function (el, params = {}) {
         $('#rt-save', ov).addEventListener('click', async () => {
           try {
             await api('/approvals/config', { method: 'PUT', body: { enabled: $('#rt-approvals-on', ov).checked, reminderDays: Number($('#rt-reminder-days', ov).value) || 0 } });
-            const rows = [...listEl.querySelectorAll('.rt-row')].map((r) => {
+            const rows = [...listEl.querySelectorAll('.rt-card')].map((r) => {
               const checked = [].concat(
                 r.querySelector('.rt-mgr').checked ? ['manager'] : [],
                 r.querySelector('.rt-mgr2').checked ? ['manager2'] : [],
