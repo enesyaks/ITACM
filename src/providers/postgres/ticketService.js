@@ -170,7 +170,7 @@ const SELECT_COLS = `
   t.assignee_user_id AS "assigneeUserId", au.username AS "assigneeName",
   t.asset_id AS "assetId", a.asset_tag AS "assetTag",
   t.problem_id AS "problemId", pr.number AS "problemNumber", pr.title AS "problemTitle",
-  ar.status AS "approvalStatus", ar.approver_name AS "approvalApprover",
+  ar.status AS "approvalStatus", ar.approver_name AS "approvalApprover", ar.history AS "approvalHistory",
   t.created_by_name AS "createdByName",
   t.resolution_code AS "resolutionCode", t.resolution_note AS "resolutionNote",
   t.csat_rating AS "csatRating", t.csat_comment AS "csatComment",

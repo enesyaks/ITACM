@@ -1070,3 +1070,4 @@ ALTER TABLE tickets ADD COLUMN IF NOT EXISTS approval_request_id UUID REFERENCES
 -- Parallel approvers within one step (067).
 ALTER TABLE approval_requests ADD COLUMN IF NOT EXISTS step_state JSONB;
 ALTER TABLE approval_requests ADD COLUMN IF NOT EXISTS step_mode  TEXT CHECK (step_mode IN ('any', 'all'));
+ALTER TABLE approval_requests ADD COLUMN IF NOT EXISTS history    JSONB NOT NULL DEFAULT '[]'::jsonb;

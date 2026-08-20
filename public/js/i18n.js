@@ -1500,6 +1500,8 @@
     'rt.parAll': L('Parallel — all', 'Paralel — hepsi'),
     'rt.parAny': L('Parallel — any', 'Paralel — herhangi'),
     'rt.approval': L('Approval', 'Onay'),
+    'tk.approvalTrail': L('Approval trail', 'Onay geçmişi'),
+    'mtk.apFor': L('on behalf of', 'adına'),
     'rt.finalApprover': L('Final approver (person)', 'Son onay (kişi)'),
     'rt.finalApproverPh': L('e.g. finance sign-off…', 'ör. finans onayı…'),
     'rt.amountThreshold': L('Threshold (₺)', 'Eşik (₺)'),

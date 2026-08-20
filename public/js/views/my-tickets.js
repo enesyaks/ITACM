@@ -173,6 +173,7 @@ Views.myTickets = async function (el) {
           ${tk.approvalStatus ? apPill(tk.approvalStatus) : ''}
         </div>
         ${tk.approvalStatus === 'pending' && tk.approvalApprover ? `<p class="cell-sub" style="margin:-6px 0 12px">${esc(t('mtk.apWaiting'))} <strong>${esc(tk.approvalApprover)}</strong></p>` : ''}
+        ${renderApprovalTimeline(tk.approvalHistory)}
         <div class="form-field full" style="margin-bottom:12px"><label>${esc(t('tk.description'))}</label>
           <div class="tk-desc">${esc(tk.description || '—').replace(/\n/g, '<br>')}</div></div>
         ${tk.resolutionNote ? `<div class="form-field full" style="margin-bottom:12px"><label>${esc(t('mtk.resolution'))}</label>

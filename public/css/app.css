@@ -1230,6 +1230,13 @@ table.data.net-list .net-col-actions .btn .ms { font-size: 18px; }
 .cell-sub { color: var(--on-surface-variant); opacity: .75; font-size: 12px; }
 .cell-title { font-weight: 600; font-size: 14px; }
 .mtk-status { display: inline-flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.tk-appr-timeline { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.tk-appr-ev { display: flex; gap: 8px; align-items: flex-start; }
+.tk-appr-ev .tk-appr-ok { color: var(--emerald-600, #059669); margin-top: 1px; }
+.tk-appr-ev .tk-appr-no { color: var(--rose-600, #e11d48); margin-top: 1px; }
+.tk-appr-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.tk-appr-line { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.tk-appr-note { font-style: italic; color: var(--on-surface-variant); font-size: 13px; }
 .mtk-list td { white-space: nowrap; }
 .mtk-list td:nth-child(3) { white-space: normal; }
 .table-foot { display: flex; align-items: center; gap: 8px; padding: 12px 16px; color: var(--on-surface-variant); font-size: 13px; }

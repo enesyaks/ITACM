@@ -21,6 +21,29 @@ const tkStatusLabel = (s) => t('tk.status.' + s) || s;
 const tkPriorityLabel = (p) => t('tk.priority.' + p) || p;
 const tkTypeLabel = (ty) => t('tk.type.' + ty) || ty;
 
+/* Approval decision trail. `history` = [{ at, decision, deciderName, approverName, note }].
+   Shared by the staff and portal ticket detail; returns '' when there's nothing to show. */
+function renderApprovalTimeline(history) {
+  const rows = Array.isArray(history) ? history : [];
+  if (!rows.length) return '';
+  const items = rows.map((h) => {
+    const ok = h.decision === 'approved';
+    const when = String(h.at || '').replace('T', ' ').slice(0, 16);
+    const who = h.deciderName || h.approverName || '—';
+    const asSlot = h.approverName && h.deciderName && h.approverName !== h.deciderName ? ` <span class="cell-sub">(${esc(t('mtk.apFor'))} ${esc(h.approverName)})</span>` : '';
+    return `<li class="tk-appr-ev">
+        <span class="ms ms-sm ${ok ? 'tk-appr-ok' : 'tk-appr-no'}">${ok ? 'check_circle' : 'cancel'}</span>
+        <div class="tk-appr-body">
+          <div class="tk-appr-line"><strong>${esc(who)}</strong>${asSlot}
+            <span class="pill ${ok ? 'pill-emerald' : 'pill-rose'}">${esc(ok ? t('mtk.apApproved') : t('mtk.apRejected'))}</span></div>
+          <div class="cell-sub">${esc(when)}</div>
+          ${h.note ? `<div class="tk-appr-note">“${esc(h.note)}”</div>` : ''}</div>
+      </li>`;
+  }).join('');
+  return `<div class="form-field full"><label>${esc(t('tk.approvalTrail'))}</label>
+    <ul class="tk-appr-timeline">${items}</ul></div>`;
+}
+
 /* --- SLA badges (staff views only — portal payloads carry no `sla`) --- */
 const TK_SLA_PILL = { due: 'pill-blue', breached: 'pill-rose', met: 'pill-emerald', paused: 'pill-slate', na: 'pill-slate', none: 'pill-slate' };
 function tkFmtRemaining(ms) {
@@ -704,6 +727,7 @@ Views.tickets = async function (el, params = {}) {
             <div style="padding-top:6px">${esc(tk.requesterName || '—')}</div></div>
           ${tk.approvalStatus ? `<div class="form-field"><label>${esc(t('rt.approval'))}</label>
             <div style="padding-top:6px">${pill({ pending: 'pill-amber', approved: 'pill-emerald', rejected: 'pill-rose' }[tk.approvalStatus] || 'pill-slate', t('mtk.ap' + tk.approvalStatus.charAt(0).toUpperCase() + tk.approvalStatus.slice(1)))}${tk.approvalStatus === 'pending' && tk.approvalApprover ? ` <span class="cell-sub">· ${esc(tk.approvalApprover)}</span>` : ''}</div></div>` : ''}
+          ${renderApprovalTimeline(tk.approvalHistory)}
           <div class="form-field"><label>${esc(t('tk.asset'))}</label>
             <input id="tk-d-asset" list="tk-asset-list" autocomplete="off" ${canUpdate ? '' : 'disabled'}
               value="${esc(tk.assetId && assetById.has(tk.assetId) ? assetLabel(assetById.get(tk.assetId)) : (tk.assetTag || ''))}"

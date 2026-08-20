@@ -194,9 +194,17 @@ async function listAllPending() {
   return mapRows(rows);
 }
 
+/** Append one decision to the request's audit trail (best-effort, never throws). */
+async function appendHistory(id, entry) {
+  const row = { at: new Date().toISOString(), ...entry };
+  await query('UPDATE approval_requests SET history = COALESCE(history, \'[]\'::jsonb) || $2::jsonb WHERE id=$1',
+    [id, JSON.stringify([row])]).catch(() => {});
+}
+
 /**
  * Decide a pending request. On the final approval level the underlying action is
  * replayed via dispatch(). Multi-level policies advance to the next approver.
+ * Every individual approve/reject is appended to history for the audit trail.
  */
 async function decide(id, { decision, note = '', deciderName = '', deciderEmployeeId = null, isAdmin = false }) {
   const req = await getRequest(id);
@@ -210,6 +218,8 @@ async function decide(id, { decision, note = '', deciderName = '', deciderEmploy
   }
 
   if (decision === 'rejected') {
+    const rejSlot = parallel ? (myEntry || req.stepState.find((e) => e.status === 'pending')) : null;
+    await appendHistory(id, { level: req.currentLevel, decision: 'rejected', deciderName: deciderName || null, deciderEmployeeId: deciderEmployeeId || null, approverName: (rejSlot ? rejSlot.name : req.approverName) || null, note: String(note || '').slice(0, 1000) || null });
     // Any single rejection rejects the whole request (both step modes).
     await query(
       `UPDATE approval_requests SET status='rejected', decided_by=$2, decided_at=now(), decision_note=$3 WHERE id=$1`,
@@ -222,6 +232,7 @@ async function decide(id, { decision, note = '', deciderName = '', deciderEmploy
 
   if (parallel) {
     const target = myEntry || req.stepState.find((e) => e.status === 'pending'); // admin approves the first pending
+    await appendHistory(id, { level: req.currentLevel, decision: 'approved', deciderName: deciderName || null, deciderEmployeeId: deciderEmployeeId || null, approverName: (target ? target.name : null), note: String(note || '').slice(0, 1000) || null });
     const newState = req.stepState.map((e) => (target && e.employeeId === target.employeeId ? { ...e, status: 'approved' } : e));
     const stepDone = req.stepMode === 'all' ? newState.every((e) => e.status === 'approved') : newState.some((e) => e.status === 'approved');
     if (!stepDone) {
@@ -229,6 +240,8 @@ async function decide(id, { decision, note = '', deciderName = '', deciderEmploy
       return getRequest(id); // still waiting on the other approver(s) at this step
     }
     // step complete → advance below
+  } else {
+    await appendHistory(id, { level: req.currentLevel, decision: 'approved', deciderName: deciderName || null, deciderEmployeeId: deciderEmployeeId || null, approverName: req.approverName || null, note: String(note || '').slice(0, 1000) || null });
   }
   return advance(await getRequest(id), { note, deciderName });
 }
