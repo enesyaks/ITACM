@@ -13,16 +13,25 @@ const { HttpError } = require('../../utils/httpError');
 // Approval levels that resolveApprover understands.
 const LEVELS = new Set(['manager', 'manager2', 'department']);
 
-// An element is an org-level string ('manager') → single-approver step, or an
-// object { levels:[...], mode:'any'|'all' } → parallel step.
+// A level is an org-level string ('manager') OR a fixed-person token 'emp:<uuid>'
+// (used to route a step to a specific approver, e.g. the finance sign-off).
+function isValidLevel(l) {
+  const s = String(l);
+  if (LEVELS.has(s)) return true;
+  if (s.startsWith('emp:')) return isUuid(s.slice(4));
+  return false;
+}
+
+// An element is a level string ('manager' / 'emp:<uuid>') → single-approver step,
+// or an object { levels:[...], mode:'any'|'all' } → parallel step.
 function cleanLevels(input) {
   if (!Array.isArray(input)) return [];
   const out = [];
-  for (const el of input.slice(0, 5)) {
+  for (const el of input.slice(0, 6)) {
     if (el && typeof el === 'object' && Array.isArray(el.levels)) {
-      const levels = el.levels.map(String).filter((l) => LEVELS.has(l));
+      const levels = el.levels.map(String).filter(isValidLevel);
       if (levels.length) out.push({ levels, mode: el.mode === 'all' ? 'all' : 'any' });
-    } else if (LEVELS.has(String(el))) {
+    } else if (isValidLevel(el)) {
       out.push(String(el));
     }
   }

@@ -474,20 +474,29 @@ Views.tickets = async function (el, params = {}) {
       const mgrOn = parStep ? parStep.levels.includes('manager') : lv.includes('manager');
       const mgr2On = parStep ? parStep.levels.includes('manager2') : lv.includes('manager2');
       const deptOn = parStep ? parStep.levels.includes('department') : lv.includes('department');
+      const empTok = lv.find((x) => typeof x === 'string' && x.startsWith('emp:'));
+      const finalId = empTok ? empTok.slice(4) : '';
       const mode = parStep ? ('parallel-' + parStep.mode) : 'sequential';
-      return `<div class="rt-row" data-id="${esc((tp && tp.id) || '')}" style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
-        <input class="rt-name" placeholder="${esc(t('rt.name'))}" value="${esc((tp && tp.name) || '')}" style="flex:0 0 150px">
-        <input class="rt-cat" placeholder="${esc(t('tk.category'))}" value="${esc((tp && tp.category) || '')}" style="flex:0 0 110px">
-        <label style="font-size:13px;display:inline-flex;gap:4px;align-items:center"><input type="checkbox" class="rt-mgr" ${mgrOn ? 'checked' : ''}> ${esc(t('rt.manager'))}</label>
-        <label style="font-size:13px;display:inline-flex;gap:4px;align-items:center"><input type="checkbox" class="rt-mgr2" ${mgr2On ? 'checked' : ''}> ${esc(t('rt.manager2'))}</label>
-        <label style="font-size:13px;display:inline-flex;gap:4px;align-items:center"><input type="checkbox" class="rt-dept" ${deptOn ? 'checked' : ''}> ${esc(t('rt.department'))}</label>
-        <select class="rt-mode ops-select" style="font-size:12px">
-          <option value="sequential" ${mode === 'sequential' ? 'selected' : ''}>${esc(t('rt.seq'))}</option>
-          <option value="parallel-all" ${mode === 'parallel-all' ? 'selected' : ''}>${esc(t('rt.parAll'))}</option>
-          <option value="parallel-any" ${mode === 'parallel-any' ? 'selected' : ''}>${esc(t('rt.parAny'))}</option>
-        </select>
-        <label style="font-size:13px;display:inline-flex;gap:4px;align-items:center"><input type="checkbox" class="rt-en" ${(tp && tp.enabled !== false) ? 'checked' : ''}> ${esc(t('rt.enabled'))}</label>
-        <button class="btn btn-outline btn-sm rt-del" type="button" title="${esc(t('common.remove') || 'Remove')}"><span class="ms ms-sm">delete</span></button>
+      return `<div class="rt-row" data-id="${esc((tp && tp.id) || '')}" data-final="${esc(finalId)}"
+          style="border:1px solid var(--outline-variant);border-radius:10px;padding:10px;margin-bottom:10px">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input class="rt-name" placeholder="${esc(t('rt.name'))}" value="${esc((tp && tp.name) || '')}" style="flex:0 0 150px">
+          <input class="rt-cat" placeholder="${esc(t('tk.category'))}" value="${esc((tp && tp.category) || '')}" style="flex:0 0 110px">
+          <label style="font-size:13px;display:inline-flex;gap:4px;align-items:center"><input type="checkbox" class="rt-mgr" ${mgrOn ? 'checked' : ''}> ${esc(t('rt.manager'))}</label>
+          <label style="font-size:13px;display:inline-flex;gap:4px;align-items:center"><input type="checkbox" class="rt-mgr2" ${mgr2On ? 'checked' : ''}> ${esc(t('rt.manager2'))}</label>
+          <label style="font-size:13px;display:inline-flex;gap:4px;align-items:center"><input type="checkbox" class="rt-dept" ${deptOn ? 'checked' : ''}> ${esc(t('rt.department'))}</label>
+          <select class="rt-mode ops-select" style="font-size:12px">
+            <option value="sequential" ${mode === 'sequential' ? 'selected' : ''}>${esc(t('rt.seq'))}</option>
+            <option value="parallel-all" ${mode === 'parallel-all' ? 'selected' : ''}>${esc(t('rt.parAll'))}</option>
+            <option value="parallel-any" ${mode === 'parallel-any' ? 'selected' : ''}>${esc(t('rt.parAny'))}</option>
+          </select>
+          <label style="font-size:13px;display:inline-flex;gap:4px;align-items:center"><input type="checkbox" class="rt-en" ${(tp && tp.enabled !== false) ? 'checked' : ''}> ${esc(t('rt.enabled'))}</label>
+          <button class="btn btn-outline btn-sm rt-del" type="button" title="${esc(t('common.remove') || 'Remove')}"><span class="ms ms-sm">delete</span></button>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+          <span class="cell-sub" style="flex:0 0 auto"><span class="ms ms-sm" style="vertical-align:-3px">account_balance</span> ${esc(t('rt.finalApprover'))}:</span>
+          <div class="rt-final-host" style="flex:1;min-width:220px"></div>
+        </div>
       </div>`;
     };
     openModal({
@@ -503,8 +512,17 @@ Views.tickets = async function (el, params = {}) {
       onMount(ov) {
         const listEl = $('#rt-list', ov);
         const wireDel = () => listEl.querySelectorAll('.rt-del').forEach((b) => { b.onclick = () => b.closest('.rt-row').remove(); });
-        wireDel();
-        $('#rt-add', ov).addEventListener('click', () => { listEl.insertAdjacentHTML('beforeend', rowHtml(null)); wireDel(); });
+        // Mount the fixed-person picker (finance sign-off etc.) on any un-wired row.
+        const mountPickers = () => listEl.querySelectorAll('.rt-final-host').forEach((host) => {
+          if (host._picker) return;
+          host._picker = mountEmployeeSearchField(host, { name: 'rt-final', placeholder: t('rt.finalApproverPh') });
+          const finalId = host.closest('.rt-row').dataset.final || '';
+          if (finalId) api('/employees/' + encodeURIComponent(finalId))
+            .then((e) => { if (e) host._picker.setSelected({ id: e.id, fullName: e.fullName, department: e.department, email: e.email }); })
+            .catch(() => {});
+        });
+        wireDel(); mountPickers();
+        $('#rt-add', ov).addEventListener('click', () => { listEl.insertAdjacentHTML('beforeend', rowHtml(null)); wireDel(); mountPickers(); });
         $('#rt-save', ov).addEventListener('click', async () => {
           try {
             await api('/approvals/config', { method: 'PUT', body: { enabled: $('#rt-approvals-on', ov).checked } });
@@ -515,10 +533,14 @@ Views.tickets = async function (el, params = {}) {
                 r.querySelector('.rt-dept').checked ? ['department'] : []
               );
               const modeVal = r.querySelector('.rt-mode').value;
-              const approvalLevels = (modeVal === 'sequential' || checked.length < 2)
-                ? checked // sequential (or a single level — parallel is moot with one approver)
+              const steps = (modeVal === 'sequential' || checked.length < 2)
+                ? checked.slice() // sequential (or a single level — parallel is moot with one approver)
                 : [{ levels: checked, mode: modeVal === 'parallel-all' ? 'all' : 'any' }];
-              return { id: r.dataset.id || null, name: r.querySelector('.rt-name').value.trim(), category: r.querySelector('.rt-cat').value.trim(), approvalLevels, enabled: r.querySelector('.rt-en').checked };
+              // A fixed final approver (e.g. finance) is always the LAST, sequential step.
+              const host = r.querySelector('.rt-final-host');
+              const finalId = host && host._picker ? host._picker.getId() : null;
+              if (finalId) steps.push('emp:' + finalId);
+              return { id: r.dataset.id || null, name: r.querySelector('.rt-name').value.trim(), category: r.querySelector('.rt-cat').value.trim(), approvalLevels: steps, enabled: r.querySelector('.rt-en').checked };
             });
             for (const orig of loaded) if (orig.id && !rows.find((x) => x.id === orig.id)) await api('/request-templates/' + orig.id, { method: 'DELETE' });
             for (const row of rows) {

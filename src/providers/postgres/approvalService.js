@@ -50,8 +50,8 @@ function levelsFor(config, type) {
 }
 
 /* --------------------------- steps (seq + parallel) --------------------------- */
-// A `levels` element is either an org-level string ('manager') → single-approver
-// step, or an object { levels:[...], mode:'any'|'all' } → parallel step.
+// A `levels` element is either a level string ('manager' or 'emp:<uuid>') →
+// single-approver step, or an object { levels:[...], mode:'any'|'all' } → parallel.
 function normalizeStep(element) {
   if (element && typeof element === 'object' && Array.isArray(element.levels)) {
     return { orgLevels: element.levels.map(String), mode: element.mode === 'all' ? 'all' : 'any' };
@@ -59,13 +59,30 @@ function normalizeStep(element) {
   return { orgLevels: [String(element)], mode: 'any' };
 }
 
-/** Resolve a step's org levels to distinct approvers (order preserved, deduped). */
+/**
+ * Resolve a single level token to one approver.
+ *  - 'emp:<uuid>' → that specific active employee (fixed approver, e.g. finance).
+ *  - any other string → walked through the org chart by orgService.resolveApprover.
+ * A fixed approver that resolves to the requester is dropped (no self-approval).
+ */
+async function resolveLevel(requesterEmployeeId, lvl) {
+  const s = String(lvl);
+  if (s.startsWith('emp:')) {
+    const id = s.slice(4);
+    if (!isUuid(id) || id === requesterEmployeeId) return null;
+    const r = await query("SELECT id, full_name FROM employees WHERE id = $1 AND status = 'Active'", [id]);
+    return r.rows[0] ? { id: r.rows[0].id, fullName: r.rows[0].full_name } : null;
+  }
+  return orgService.resolveApprover(requesterEmployeeId, s);
+}
+
+/** Resolve a step's levels to distinct approvers (order preserved, deduped). */
 async function resolveStepApprovers(requesterEmployeeId, element) {
   const step = normalizeStep(element);
   const out = [];
   const seen = new Set();
   for (const lvl of step.orgLevels) {
-    const a = await orgService.resolveApprover(requesterEmployeeId, lvl);
+    const a = await resolveLevel(requesterEmployeeId, lvl);
     if (a && !seen.has(a.id)) { seen.add(a.id); out.push(a); }
   }
   return { approvers: out, mode: step.mode };
