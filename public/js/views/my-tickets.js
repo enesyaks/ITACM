@@ -19,7 +19,7 @@ Views.myTickets = async function (el) {
       <td class="mono">${esc(tk.number)}</td>
       <td>${pill('pill-slate', tkTypeLabel(tk.type))}</td>
       <td><div class="cell-title">${esc(tk.subject)}</div></td>
-      <td>${pill(TK_STATUS_PILL[tk.status], tkStatusLabel(tk.status))}${tk.approvalStatus ? ' ' + apPill(tk.approvalStatus) : ''}</td>
+      <td><span class="mtk-status">${pill(TK_STATUS_PILL[tk.status], tkStatusLabel(tk.status))}${tk.approvalStatus ? apPill(tk.approvalStatus) : ''}</span></td>
       <td>${pill(TK_PRIORITY_PILL[tk.priority], tkPriorityLabel(tk.priority))}</td>
       <td class="cell-sub">${esc(String(tk.createdAt || '').slice(0, 10))}</td>
     </tr>`;
@@ -37,7 +37,7 @@ Views.myTickets = async function (el) {
     ${approvals.length ? `<div class="card card-pad" style="margin-bottom:14px">
       <h3 style="margin:0 0 10px">${esc(t('mtk.approvalsTitle'))} <span class="pill pill-amber">${approvals.length}</span></h3>
       <div class="tk-docs">${approvals.map(apprCard).join('')}</div></div>` : ''}
-    <div class="card" style="overflow-x:auto"><table class="table">
+    <div class="card table-wrap"><table class="data mtk-list">
       <thead><tr>
         <th>#</th><th>${esc(t('tk.type'))}</th><th>${esc(t('tk.subject'))}</th>
         <th>${esc(t('tk.statusCol'))}</th><th>${esc(t('tk.priorityCol'))}</th><th>${esc(t('tk.createdCol'))}</th>
@@ -69,6 +69,7 @@ Views.myTickets = async function (el) {
           </select>
           <div class="cell-sub" id="mtk-c-hint" style="margin-top:4px"></div></div>
         <div class="form-field full"><label>${esc(t('tk.subject'))} *</label><input id="mtk-c-subject" maxlength="300"></div>
+        <div id="mtk-suggest"></div>
         <div class="form-field full"><label>${esc(t('tk.description'))}</label><textarea id="mtk-c-desc" rows="4" placeholder="${esc(t('mtk.descPh'))}"></textarea></div>
       </div>`,
       foot: `<button class="btn btn-outline" data-close>${esc(t('common.cancel'))}</button>
@@ -88,6 +89,37 @@ Views.myTickets = async function (el) {
           hint.innerHTML = `${tp && tp.description ? esc(tp.description) : ''}${chain ? `<div style="margin-top:2px"><span class="ms ms-sm" style="vertical-align:-3px">how_to_reg</span> ${esc(t('mtk.approvalChain'))}: ${esc(chain)}</div>` : ''}`;
         };
         kind.addEventListener('change', showHint); showHint();
+        // Self-service deflection: suggest matching KB articles as the subject is typed.
+        const subj = $('#mtk-c-subject', ov);
+        const suggestBox = $('#mtk-suggest', ov);
+        let sugTimer = null;
+        const renderSuggest = async () => {
+          const q = subj.value.trim();
+          if (q.length < 3) { suggestBox.innerHTML = ''; return; }
+          const arts = await api('/me/kb?search=' + encodeURIComponent(q)).catch(() => []);
+          const top = (Array.isArray(arts) ? arts : []).slice(0, 3);
+          if (!top.length) { suggestBox.innerHTML = ''; return; }
+          suggestBox.innerHTML = `<div class="mtk-deflect">
+              <div class="cell-sub" style="margin-bottom:6px"><span class="ms ms-sm" style="vertical-align:-3px">lightbulb</span> ${esc(t('mtk.maybeHelp'))}</div>
+              ${top.map((a) => `<div class="mtk-sug" data-a="${esc(a.id)}"><span class="ms ms-sm">menu_book</span> <span>${esc(a.title)}</span></div>
+                <div class="mtk-sug-body" data-body="${esc(a.id)}" style="display:none"></div>`).join('')}</div>`;
+          suggestBox.querySelectorAll('.mtk-sug').forEach((row) => row.addEventListener('click', async () => {
+            const id = row.dataset.a;
+            const panel = suggestBox.querySelector(`[data-body="${id}"]`);
+            if (panel.style.display === 'block') { panel.style.display = 'none'; return; }
+            if (!panel.dataset.loaded) {
+              const a = await api('/me/kb/' + encodeURIComponent(id)).catch(() => null);
+              if (a) {
+                panel.innerHTML = `<div class="tk-desc" style="line-height:1.5">${esc(a.body || '—').replace(/\n/g, '<br>')}</div><div class="kb-attach" style="margin-top:8px"></div>`;
+                const docs = await api('/me/kb/' + encodeURIComponent(id) + '/documents').catch(() => []);
+                kbRenderAttachments(panel.querySelector('.kb-attach'), Array.isArray(docs) ? docs : [], (docId) => '/api/me/kb/' + encodeURIComponent(id) + '/documents/' + docId + '/download');
+                panel.dataset.loaded = '1';
+              }
+            }
+            panel.style.display = 'block';
+          }));
+        };
+        subj.addEventListener('input', () => { clearTimeout(sugTimer); sugTimer = setTimeout(renderSuggest, 350); });
         $('#mtk-c-save', ov).addEventListener('click', async () => {
           const v = kind.value;
           const body = { subject: $('#mtk-c-subject', ov).value.trim(), description: $('#mtk-c-desc', ov).value.trim() };

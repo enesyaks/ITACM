@@ -1229,6 +1229,9 @@ table.data.net-list .net-col-actions .btn .ms { font-size: 18px; }
 .table-empty { padding: 32px; text-align: center; color: var(--outline); }
 .cell-sub { color: var(--on-surface-variant); opacity: .75; font-size: 12px; }
 .cell-title { font-weight: 600; font-size: 14px; }
+.mtk-status { display: inline-flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.mtk-list td { white-space: nowrap; }
+.mtk-list td:nth-child(3) { white-space: normal; }
 .table-foot { display: flex; align-items: center; gap: 8px; padding: 12px 16px; color: var(--on-surface-variant); font-size: 13px; }
 .table-foot .spacer { flex: 1; }
 .qr-cell .ms { color: var(--on-surface-variant); opacity: .8; }
@@ -5853,6 +5856,12 @@ body.ai-open .ai-panel { opacity: 1; visibility: visible; transform: none; }
 .mtk-star { background: none; border: none; cursor: pointer; font-size: 26px; line-height: 1; padding: 0 2px; color: var(--outline-variant); transition: color .1s; }
 .mtk-star.on { color: var(--amber-600); }
 .mtk-star:hover { color: var(--amber-600); }
+
+/* KB deflection in the portal new-request modal */
+.mtk-deflect { margin: 4px 0 12px; padding: 10px 12px; border: 1px solid var(--amber-200, var(--outline-variant)); background: var(--amber-100, var(--surface-low)); border-radius: 10px; }
+.mtk-sug { display: flex; align-items: center; gap: 8px; padding: 6px 4px; cursor: pointer; font-size: 13.5px; color: var(--primary); border-radius: 6px; }
+.mtk-sug:hover { background: rgba(0,0,0,.04); }
+.mtk-sug-body { padding: 8px 6px 4px; font-size: 13px; }
 
 /* KB article attachments (images inline + file links) */
 .kb-attach { display: flex; flex-direction: column; gap: 10px; }

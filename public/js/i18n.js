@@ -1502,6 +1502,7 @@
     'rt.approval': L('Approval', 'Onay'),
     'mtk.kind': L('Request type', 'Talep türü'),
     'mtk.approvalChain': L('Approval', 'Onay'),
+    'mtk.maybeHelp': L('These help articles might answer your question:', 'Bu yardım makaleleri sorunuzu yanıtlayabilir:'),
     'mtk.apPending': L('Awaiting approval', 'Onay bekliyor'),
     'mtk.apApproved': L('Approved', 'Onaylandı'),
     'mtk.apRejected': L('Rejected', 'Reddedildi'),

@@ -17,9 +17,16 @@ async function listArticles({ publishedOnly = false, search = '', category = '',
   if (publishedOnly) where.push('published = true');
   if (category) { params.push(String(category).slice(0, 120)); where.push(`category = $${params.length}`); }
   if (search && String(search).trim()) {
-    params.push(`%${String(search).trim().slice(0, 160)}%`);
-    const p = '$' + params.length;
-    where.push(`(title ILIKE ${p} OR body ILIKE ${p} OR category ILIKE ${p})`);
+    // Word-based: an article matches if ANY search word appears (forgiving for
+    // self-service deflection where the subject is a full sentence).
+    const words = String(search).trim().split(/\s+/).filter((w) => w.length >= 2).slice(0, 6);
+    const ors = [];
+    for (const w of words) {
+      params.push(`%${w.slice(0, 60)}%`);
+      const p = '$' + params.length;
+      ors.push(`(title ILIKE ${p} OR body ILIKE ${p} OR category ILIKE ${p})`);
+    }
+    if (ors.length) where.push('(' + ors.join(' OR ') + ')');
   }
   const whereSql = where.length ? 'WHERE ' + where.join(' AND ') : '';
   params.push(Math.min(Math.max(Number(limit) || 200, 1), 500));
