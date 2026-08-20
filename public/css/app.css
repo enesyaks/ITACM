@@ -5854,6 +5854,10 @@ body.ai-open .ai-panel { opacity: 1; visibility: visible; transform: none; }
 .mtk-star.on { color: var(--amber-600); }
 .mtk-star:hover { color: var(--amber-600); }
 
+/* KB article attachments (images inline + file links) */
+.kb-attach { display: flex; flex-direction: column; gap: 10px; }
+.kb-attach .kb-img { max-width: 100%; border-radius: 10px; display: block; border: 1px solid var(--outline-variant); box-shadow: var(--shadow-card); }
+
 /* Ticket attachments */
 .tk-docs { display: flex; flex-direction: column; gap: 6px; }
 .tk-doc { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border: 1px solid var(--outline-variant); border-radius: 8px; }

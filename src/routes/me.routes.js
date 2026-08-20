@@ -117,5 +117,18 @@ router.get('/kb', requireTicketing, asyncHandler(async (req, res) => {
 router.get('/kb/:id', requireTicketing, asyncHandler(async (req, res) => {
   res.json({ success: true, data: await kbService.getArticle(req.params.id, { publishedOnly: true, countView: true }) });
 }));
+// Attachments on a PUBLISHED article (images inline, PDFs as links).
+router.get('/kb/:id/documents', requireTicketing, asyncHandler(async (req, res) => {
+  await kbService.getArticle(req.params.id, { publishedOnly: true }); // 404 if unpublished
+  res.json({ success: true, data: await documentService.listKbDocs(req.params.id) });
+}));
+router.get('/kb/:id/documents/:docId/download', requireTicketing, asyncHandler(async (req, res) => {
+  await kbService.getArticle(req.params.id, { publishedOnly: true });
+  const doc = await documentService.getKbDoc(req.params.docId);
+  if (String(doc.articleId) !== String(req.params.id)) throw HttpError.notFound('Attachment not found');
+  res.setHeader('Content-Type', doc.mime || 'application/octet-stream');
+  res.setHeader('Content-Disposition', contentDisposition(doc.filename, { inline: true }));
+  res.send(doc.buffer);
+}));
 
 module.exports = router;

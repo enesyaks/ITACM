@@ -225,6 +225,53 @@ async function deleteTicketDoc(docId) {
   return { id: docId, deleted: true };
 }
 
+/* ---- Knowledge-base attachments ---- */
+
+async function saveKbDoc({ articleId, filename, mime, buffer, uploadedBy, uploadedByName }) {
+  if (!articleId || !filename || !buffer) throw HttpError.badRequest('articleId, filename and file content are required');
+  const { rows } = await query(
+    `INSERT INTO kb_documents (article_id, filename, mime, byte_size, content, storage_path, uploaded_by, uploaded_by_name)
+     VALUES ($1,$2,$3,$4,NULL,NULL,$5,$6) RETURNING id`,
+    [articleId, filename, mime || 'application/octet-stream', buffer.length, uploadedBy || null, uploadedByName || null]
+  );
+  const id = rows[0].id;
+  let storagePath;
+  try {
+    storagePath = docStorage.writeBuffer('kb', id, buffer, { label: 'kb', ownerId: articleId, ownerLabel: 'kb', originalFilename: filename });
+    await query('UPDATE kb_documents SET storage_path = $2 WHERE id = $1', [id, storagePath]);
+  } catch (err) {
+    await query('DELETE FROM kb_documents WHERE id = $1', [id]).catch(() => {});
+    throw err;
+  }
+  return { id, articleId, filename, mime: mime || 'application/octet-stream', byteSize: buffer.length, uploadedBy, uploadedByName, createdAt: new Date().toISOString() };
+}
+
+async function listKbDocs(articleId) {
+  if (!isUuid(articleId)) return [];
+  const { rows } = await query(
+    'SELECT id, article_id, filename, mime, byte_size, uploaded_by_name, created_at FROM kb_documents WHERE article_id = $1 ORDER BY created_at',
+    [articleId]
+  );
+  return mapRows(rows);
+}
+
+async function getKbDoc(docId) {
+  if (!isUuid(docId)) throw HttpError.notFound(`Document ${docId} not found`);
+  const { rows } = await query('SELECT * FROM kb_documents WHERE id = $1', [docId]);
+  if (!rows[0]) throw HttpError.notFound(`Document ${docId} not found`);
+  const buffer = loadBuffer(rows[0]);
+  if (!buffer) throw HttpError.notFound(`Document file missing for ${docId}`);
+  return { ...mapRow(rows[0]), buffer };
+}
+
+async function deleteKbDoc(docId) {
+  if (!isUuid(docId)) throw HttpError.notFound(`Document ${docId} not found`);
+  const { rows } = await query('DELETE FROM kb_documents WHERE id = $1 RETURNING storage_path', [docId]);
+  if (!rows[0]) throw HttpError.notFound(`Document ${docId} not found`);
+  docStorage.deleteFile(rows[0].storage_path);
+  return { id: docId, deleted: true };
+}
+
 /* ---- Provider & contract paperwork ---- */
 
 async function saveProviderDoc({
@@ -524,4 +571,5 @@ module.exports = {
   getContractDoc, deleteContractDoc,
   saveLicenseDoc, listLicenseDocs, getLicenseDoc, deleteLicenseDoc,
   saveTicketDoc, listTicketDocs, getTicketDoc, deleteTicketDoc,
+  saveKbDoc, listKbDocs, getKbDoc, deleteKbDoc,
 };

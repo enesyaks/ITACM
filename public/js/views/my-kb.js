@@ -34,8 +34,13 @@ Views.myKb = async function (el) {
       title: a.title,
       wide: true,
       body: `${a.category ? `<div style="margin-bottom:12px"><span class="pill pill-slate">${esc(a.category)}</span></div>` : ''}
-        <div class="tk-desc" style="line-height:1.6">${esc(a.body || '—').replace(/\n/g, '<br>')}</div>`,
+        <div class="tk-desc" style="line-height:1.6">${esc(a.body || '—').replace(/\n/g, '<br>')}</div>
+        <div id="mkb-attach" class="kb-attach" style="margin-top:12px"></div>`,
       foot: `<button class="btn btn-outline" data-close>${esc(t('common.close'))}</button>`,
+      async onMount(ov) {
+        const docs = await api('/me/kb/' + encodeURIComponent(id) + '/documents').catch(() => []);
+        kbRenderAttachments($('#mkb-attach', ov), Array.isArray(docs) ? docs : [], (docId) => '/api/me/kb/' + encodeURIComponent(id) + '/documents/' + docId + '/download');
+      },
     });
   }
 };

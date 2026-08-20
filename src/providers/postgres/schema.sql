@@ -951,6 +951,19 @@ CREATE TABLE IF NOT EXISTS kb_articles (
   updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_kb_published ON kb_articles (published, updated_at DESC);
+CREATE TABLE IF NOT EXISTS kb_documents (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  article_id       UUID NOT NULL REFERENCES kb_articles(id) ON DELETE CASCADE,
+  filename         TEXT NOT NULL,
+  mime             TEXT NOT NULL,
+  byte_size        INTEGER NOT NULL,
+  content          BYTEA,
+  storage_path     TEXT,
+  uploaded_by      TEXT,
+  uploaded_by_name TEXT,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_kb_documents ON kb_documents (article_id, created_at);
 
 -- SLA clock-stop while 'pending' (059).
 ALTER TABLE tickets ADD COLUMN IF NOT EXISTS sla_paused_at TIMESTAMPTZ;

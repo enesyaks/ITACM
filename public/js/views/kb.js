@@ -1,5 +1,26 @@
 /* ===================== KNOWLEDGE BASE (staff) ===================== */
 
+/* Fetch an authed image and show it inline (the <img> tag can't send the token). */
+async function kbAuthedImage(imgEl, url) {
+  try {
+    const tok = localStorage.getItem('itacm_token');
+    const res = await fetch(url, { headers: { authorization: 'Bearer ' + tok } });
+    if (!res.ok) return;
+    imgEl.src = URL.createObjectURL(await res.blob());
+  } catch { /* leave the broken image */ }
+}
+
+/* Render an article's attachments: images inline, other files as download links. */
+function kbRenderAttachments(box, docs, urlFor) {
+  if (!box) return;
+  if (!docs.length) { box.innerHTML = ''; return; }
+  box.innerHTML = docs.map((d) => ((d.mime || '').startsWith('image/')
+    ? `<img class="kb-img" data-img="${esc(d.id)}" alt="${esc(d.filename)}">`
+    : `<div class="tk-doc"><span class="ms ms-sm">description</span><a href="#" data-dl="${esc(d.id)}" class="tk-doc-name">${esc(d.filename)}</a></div>`)).join('');
+  box.querySelectorAll('.kb-img').forEach((img) => kbAuthedImage(img, urlFor(img.dataset.img)));
+  box.querySelectorAll('[data-dl]').forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); viewAuthed(urlFor(a.dataset.dl)); }));
+}
+
 Views.kb = async function (el) {
   const canManage = Auth.canIam('ticket', 'manage');
   let searchTerm = '';
@@ -46,7 +67,13 @@ Views.kb = async function (el) {
         <div class="form-field"><label>${esc(t('tk.category'))}</label><input id="kb-e-cat" maxlength="120" value="${esc((a && a.category) || '')}"></div>
         <div class="form-field"><label>&nbsp;</label><label style="display:inline-flex;gap:6px;align-items:center;padding-top:8px"><input type="checkbox" id="kb-e-pub" ${a && a.published ? 'checked' : ''}> ${esc(t('kb.publish'))}</label></div>
         <div class="form-field full"><label>${esc(t('kb.body'))}</label><textarea id="kb-e-body" rows="10" placeholder="${esc(t('kb.bodyPh'))}">${esc((a && a.body) || '')}</textarea></div>
-      </div>`,
+      </div>
+      ${a ? `<h3 style="margin:14px 0 8px">${esc(t('kb.attachments'))}</h3>
+        <div id="kb-e-attach" class="kb-attach"></div>
+        <div style="margin-top:8px"><label class="btn btn-outline btn-sm" style="margin:0">
+          <span class="ms ms-sm">image</span> ${esc(t('kb.addImage'))}<input type="file" id="kb-e-file" style="display:none"></label>
+          <span class="cell-sub" style="margin-left:8px">${esc(t('tk.attachHint'))}</span></div>`
+        : `<p class="cell-sub" style="margin-top:10px">${esc(t('kb.saveFirst'))}</p>`}`,
       foot: `${a ? `<button class="btn btn-outline" id="kb-e-del" style="color:var(--rose-700);margin-right:auto">${esc(t('common.delete') || 'Delete')}</button>` : ''}
              <button class="btn btn-outline" data-close>${esc(t('common.cancel'))}</button>
              <button class="btn btn-primary" id="kb-e-save">${esc(t('common.save'))}</button>`,
@@ -64,6 +91,34 @@ Views.kb = async function (el) {
           try { await api('/kb/' + encodeURIComponent(a.id), { method: 'DELETE' }); closeModal(); toast(t('tk.saved'), 'success'); refresh(); }
           catch (err) { toast(err.message, 'error'); }
         });
+        // Attachment management (edit mode only).
+        if (a) {
+          const attachBox = $('#kb-e-attach', ov);
+          const loadDocs = async () => {
+            const docs = await api('/kb/' + encodeURIComponent(a.id) + '/documents').catch(() => []);
+            const list = Array.isArray(docs) ? docs : [];
+            if (!list.length) { attachBox.innerHTML = `<p class="cell-sub">${esc(t('tk.noAttachments'))}</p>`; return; }
+            attachBox.innerHTML = list.map((d) => `<div class="tk-doc">
+                <span class="ms ms-sm">${(d.mime || '').startsWith('image/') ? 'image' : 'description'}</span>
+                <span class="tk-doc-name" style="flex:1">${esc(d.filename)}</span>
+                <button class="btn btn-outline btn-sm kb-doc-del" data-id="${esc(d.id)}"><span class="ms ms-sm">delete</span></button>
+              </div>`).join('');
+            attachBox.querySelectorAll('.kb-doc-del').forEach((b) => b.addEventListener('click', async () => {
+              try { await api('/kb/documents/' + b.dataset.id, { method: 'DELETE' }); loadDocs(); } catch (err) { toast(err.message, 'error'); }
+            }));
+          };
+          loadDocs();
+          $('#kb-e-file', ov)?.addEventListener('change', (e) => {
+            const file = e.target.files && e.target.files[0]; if (!file) return;
+            const reader = new FileReader();
+            reader.onload = async () => {
+              try { await api('/kb/' + encodeURIComponent(a.id) + '/documents', { method: 'POST', body: { base64: String(reader.result).split(',')[1] || '', filename: file.name } }); toast(t('tk.attached'), 'success'); loadDocs(); }
+              catch (err) { toast(err.message, 'error'); }
+              e.target.value = '';
+            };
+            reader.readAsDataURL(file);
+          });
+        }
       },
     });
   }
@@ -79,10 +134,15 @@ Views.kb = async function (el) {
           ${a.published ? `<span class="pill pill-emerald">${esc(t('kb.published'))}</span>` : `<span class="pill pill-slate">${esc(t('kb.draft'))}</span>`}
           <span class="cell-sub">${esc(String(a.views || 0))} ${esc(t('kb.views'))}</span>
         </div>
-        <div class="tk-desc" style="line-height:1.6">${esc(a.body || '—').replace(/\n/g, '<br>')}</div>`,
+        <div class="tk-desc" style="line-height:1.6">${esc(a.body || '—').replace(/\n/g, '<br>')}</div>
+        <div id="kb-v-attach" class="kb-attach" style="margin-top:12px"></div>`,
       foot: `<button class="btn btn-outline" data-close>${esc(t('common.close'))}</button>
              ${canManage ? `<button class="btn btn-primary" id="kb-v-edit"><span class="ms">edit</span> ${esc(t('common.edit'))}</button>` : ''}`,
-      onMount(ov) { $('#kb-v-edit', ov)?.addEventListener('click', () => { closeModal(); openEditor(a); }); },
+      async onMount(ov) {
+        $('#kb-v-edit', ov)?.addEventListener('click', () => { closeModal(); openEditor(a); });
+        const docs = await api('/kb/' + encodeURIComponent(a.id) + '/documents').catch(() => []);
+        kbRenderAttachments($('#kb-v-attach', ov), Array.isArray(docs) ? docs : [], (docId) => '/api/kb/documents/' + docId + '/download');
+      },
     });
   }
 };
