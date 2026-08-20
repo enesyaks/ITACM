@@ -111,6 +111,13 @@ async function getEmployee(id) {
   } else {
     emp.manager = null;
   }
+  // Approval delegate (out-of-office): resolve the name for the profile UI.
+  if (emp.approvalDelegateId) {
+    const { rows: del } = await query('SELECT id, full_name FROM employees WHERE id = $1', [emp.approvalDelegateId]);
+    emp.approvalDelegate = del[0] ? { id: del[0].id, fullName: del[0].full_name } : null;
+  } else {
+    emp.approvalDelegate = null;
+  }
   const { rows: reports } = await query(
     "SELECT id, full_name AS \"fullName\", title, department FROM employees WHERE manager_employee_id = $1 AND status = 'Active' ORDER BY full_name",
     [emp.id]
@@ -183,10 +190,28 @@ async function updateEmployee(id, body) {
     fullName: 'full_name', email: 'email', department: 'department',
     title: 'title', status: 'status', startDate: 'start_date',
     managerEmployeeId: 'manager_employee_id',
+    approvalDelegateId: 'approval_delegate_id', approvalDelegateUntil: 'approval_delegate_until',
   };
   const data = {};
   for (const [key, col] of Object.entries(colMap)) {
     if (body[key] !== undefined) data[col] = body[key];
+  }
+  // Approval delegate (out-of-office): a specific active employee, not self.
+  if (data.approval_delegate_id !== undefined) {
+    const d = data.approval_delegate_id || null;
+    if (d) {
+      if (!isUuid(d)) throw HttpError.badRequest('Invalid approvalDelegateId');
+      if (d === id) throw HttpError.badRequest('An employee cannot delegate approvals to themselves');
+    }
+    data.approval_delegate_id = d;
+  }
+  if (data.approval_delegate_until !== undefined) {
+    const u = data.approval_delegate_until;
+    if (u === null || u === '') data.approval_delegate_until = null;
+    else {
+      data.approval_delegate_until = String(u).slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(data.approval_delegate_until)) throw HttpError.badRequest('approvalDelegateUntil must be YYYY-MM-DD');
+    }
   }
   // Manager (reports-to): validate uuid, forbid self, and reject reporting cycles.
   if (data.manager_employee_id !== undefined) {

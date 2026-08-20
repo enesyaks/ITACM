@@ -63,20 +63,44 @@ function normalizeStep(element) {
 }
 
 /**
- * Resolve a single level token to one approver.
+ * If `approver` has an active out-of-office delegate (set, active employee, and
+ * not past approval_delegate_until), return the delegate instead — a single hop,
+ * and never the requester (that would allow self-approval). Otherwise unchanged.
+ */
+async function applyDelegate(approver, requesterEmployeeId) {
+  if (!approver || !approver.id) return approver;
+  const { rows } = await query(
+    `SELECT d.id, d.full_name FROM employees e
+       JOIN employees d ON d.id = e.approval_delegate_id
+      WHERE e.id = $1 AND d.status = 'Active'
+        AND (e.approval_delegate_until IS NULL OR e.approval_delegate_until >= CURRENT_DATE)`,
+    [approver.id]
+  );
+  const del = rows[0];
+  if (del && del.id !== approver.id && del.id !== requesterEmployeeId) {
+    return { id: del.id, fullName: del.full_name };
+  }
+  return approver;
+}
+
+/**
+ * Resolve a single level token to one approver (delegate-substituted).
  *  - 'emp:<uuid>' → that specific active employee (fixed approver, e.g. finance).
  *  - any other string → walked through the org chart by orgService.resolveApprover.
  * A fixed approver that resolves to the requester is dropped (no self-approval).
  */
 async function resolveLevel(requesterEmployeeId, lvl) {
   const s = String(lvl);
+  let base = null;
   if (s.startsWith('emp:')) {
     const id = s.slice(4);
     if (!isUuid(id) || id === requesterEmployeeId) return null;
     const r = await query("SELECT id, full_name FROM employees WHERE id = $1 AND status = 'Active'", [id]);
-    return r.rows[0] ? { id: r.rows[0].id, fullName: r.rows[0].full_name } : null;
+    base = r.rows[0] ? { id: r.rows[0].id, fullName: r.rows[0].full_name } : null;
+  } else {
+    base = await orgService.resolveApprover(requesterEmployeeId, s);
   }
-  return orgService.resolveApprover(requesterEmployeeId, s);
+  return applyDelegate(base, requesterEmployeeId);
 }
 
 /** Resolve a step's levels to distinct approvers (order preserved, deduped). */

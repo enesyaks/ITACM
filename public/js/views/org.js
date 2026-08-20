@@ -651,11 +651,19 @@ Views.org = async function (el) {
         const emp = await api('/employees/' + encodeURIComponent(id)).catch(() => null);
         if (!emp) return;
         formModal({
-          title: `${T('Set manager', 'Yönetici ata')} — ${emp.fullName}`,
-          fields: [{ name: 'managerEmployeeId', label: T('Manager (reports to)', 'Yönetici (bağlı olduğu)'), type: 'employeeSearch', full: true, selected: emp.manager || null, selectedLabel: (emp.manager && emp.manager.fullName) || '' }],
+          title: `${T('Manager & approvals', 'Yönetici & onay')} — ${emp.fullName}`,
+          fields: [
+            { name: 'managerEmployeeId', label: T('Manager (reports to)', 'Yönetici (bağlı olduğu)'), type: 'employeeSearch', full: true, selected: emp.manager || null, selectedLabel: (emp.manager && emp.manager.fullName) || '' },
+            { name: 'approvalDelegateId', label: T('Approval delegate (out of office)', 'Onay vekili (izinli)'), type: 'employeeSearch', full: true, selected: emp.approvalDelegate || null, selectedLabel: (emp.approvalDelegate && emp.approvalDelegate.fullName) || '', excludeIds: [id] },
+            { name: 'approvalDelegateUntil', label: T('Delegate until (optional)', 'Vekâlet bitişi (opsiyonel)'), type: 'date', value: emp.approvalDelegateUntil || '' },
+          ],
           submitLabel: T('Save', 'Kaydet'),
           async onSubmit(d) {
-            await api('/employees/' + encodeURIComponent(id), { method: 'PUT', body: { managerEmployeeId: d.managerEmployeeId || null } });
+            await api('/employees/' + encodeURIComponent(id), { method: 'PUT', body: {
+              managerEmployeeId: d.managerEmployeeId || null,
+              approvalDelegateId: d.approvalDelegateId || null,
+              approvalDelegateUntil: d.approvalDelegateId ? (d.approvalDelegateUntil || null) : null,
+            } });
             toast(T('Saved', 'Kaydedildi'), 'success'); closeModal(); await load();
           },
         });

@@ -782,6 +782,8 @@ CREATE TABLE IF NOT EXISTS teams (
 CREATE INDEX IF NOT EXISTS idx_teams_dept ON teams (department_id);
 ALTER TABLE employees ADD COLUMN IF NOT EXISTS team_id UUID REFERENCES teams(id) ON DELETE SET NULL;
 ALTER TABLE employees ADD COLUMN IF NOT EXISTS manager_employee_id UUID REFERENCES employees(id) ON DELETE SET NULL;
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS approval_delegate_id UUID REFERENCES employees(id) ON DELETE SET NULL;
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS approval_delegate_until DATE;
 CREATE INDEX IF NOT EXISTS idx_emp_team ON employees (team_id) WHERE team_id IS NOT NULL;
 
 -- Generic approval workflow. Ships passive — gated by app_settings.approvals.enabled.
