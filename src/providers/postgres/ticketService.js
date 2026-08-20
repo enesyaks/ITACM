@@ -587,6 +587,12 @@ async function onRequestRejected({ ticketId }, actor) {
   await query("UPDATE tickets SET status='cancelled', updated_at=now() WHERE id = $1 AND status NOT IN ('resolved','closed','cancelled')", [ticketId]);
   await logActivity(ticketId, { name: (actor && actor.name) || 'Approval' }, 'request_rejected', 'Rejected — request cancelled').catch(() => {});
 }
+/** Called by approvalService when the requester withdraws — cancel the ticket. */
+async function onRequestWithdrawn({ ticketId }, actor) {
+  if (!isUuid(ticketId)) return;
+  await query("UPDATE tickets SET status='cancelled', updated_at=now() WHERE id = $1 AND status NOT IN ('resolved','closed','cancelled')", [ticketId]);
+  await logActivity(ticketId, { name: (actor && actor.name) || 'Requester' }, 'request_withdrawn', 'Withdrawn by requester').catch(() => {});
+}
 
 async function listMyTickets(user) {
   const emp = await employeeForUser(user);
@@ -745,7 +751,7 @@ function audit(action, summary, a, entityId, label) {
 module.exports = {
   createTicket, getTicket, listTickets, updateTicket, addComment,
   createMyTicket, listMyTickets, getMyTicket, addMyComment, submitMyCsat,
-  onRequestApproved, onRequestRejected,
+  onRequestApproved, onRequestRejected, onRequestWithdrawn,
   sweepSlaBreaches, SLA_TARGETS, stats, getSlaConfig, saveSlaConfig, categories,
   getCannedResponses, saveCannedResponses,
 };

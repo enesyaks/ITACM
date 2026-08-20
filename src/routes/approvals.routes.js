@@ -69,4 +69,14 @@ router.post('/:id/decide', asyncHandler(async (req, res) => {
   res.json({ success: true, data });
 }));
 
+/** POST /api/approvals/:id/cancel — the requester withdraws their pending request. */
+router.post('/:id/cancel', asyncHandler(async (req, res) => {
+  const emp = await currentEmployee(req);
+  const data = await approvalService.cancelByRequester(req.params.id, {
+    requesterEmployeeId: emp && emp.id,
+    isAdmin: isAdmin(req),
+  });
+  res.json({ success: true, data });
+}));
+
 module.exports = router;

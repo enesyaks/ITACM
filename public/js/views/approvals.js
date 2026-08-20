@@ -106,18 +106,30 @@ Views.approvals = async function (el) {
     el.querySelectorAll('[data-approve]').forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); decide(b.dataset.approve, 'approved'); }));
     el.querySelectorAll('[data-reject]').forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); decide(b.dataset.reject, 'rejected'); }));
     const byId = new Map([...pending, ...mine].map((r) => [r.id, r]));
+    const mineIds = new Set(mine.map((r) => r.id));
     el.querySelectorAll('tr[data-open]').forEach((tr) => tr.addEventListener('click', () => {
       const r = byId.get(tr.dataset.open);
-      if (r) openDetail(r);
+      if (r) openDetail(r, { mine: mineIds.has(r.id) });
     }));
+  }
+
+  function withdraw(id) {
+    confirmModal(T('Withdraw this request? The linked ticket will be cancelled.', 'Bu talep geri çekilsin mi? Bağlı ticket iptal edilecek.'), async () => {
+      try {
+        await api('/approvals/' + encodeURIComponent(id) + '/cancel', { method: 'POST' });
+        toast(T('Request withdrawn', 'Talep geri çekildi'), 'success'); closeModal(); await load();
+      } catch (err) { toast(err.message, 'error'); }
+    });
   }
 
   /* Read-only detail for a request: summary, amount, chain position, the current
      approver(s), and the full decision trail — plus quick approve/reject when it's
      still pending and routed to me. */
-  function openDetail(r) {
+  function openDetail(r, { mine = false } = {}) {
     const amount = r.payload && r.payload.amount;
     const pendingNow = r.status === 'pending';
+    const canApprove = pendingNow && !mine;
+    const canWithdraw = pendingNow && mine;
     const waiting = Array.isArray(r.stepState) && r.stepState.length
       ? r.stepState.filter((e) => e.status === 'pending').map((e) => e.name)
       : (r.approverName ? [r.approverName] : []);
@@ -141,14 +153,18 @@ Views.approvals = async function (el) {
         </div>
         ${r.decisionNote ? `<div class="form-field full"><label>${esc(T('Decision note', 'Karar notu'))}</label><div class="tk-desc">${esc(r.decisionNote)}</div></div>` : ''}
         ${typeof renderApprovalTimeline === 'function' ? renderApprovalTimeline(r.history) : ''}`,
-      foot: pendingNow
+      foot: canApprove
         ? `<button class="btn btn-outline" data-close>${esc(T('Close', 'Kapat'))}</button>
            <button class="btn btn-outline" id="ap-reject" style="color:var(--rose-700)"><span class="ms ms-sm">close</span> ${esc(T('Reject', 'Reddet'))}</button>
            <button class="btn btn-primary" id="ap-approve"><span class="ms ms-sm">check</span> ${esc(T('Approve', 'Onayla'))}</button>`
-        : `<button class="btn btn-outline" data-close>${esc(T('Close', 'Kapat'))}</button>`,
+        : canWithdraw
+          ? `<button class="btn btn-outline" data-close>${esc(T('Close', 'Kapat'))}</button>
+             <button class="btn btn-outline" id="ap-withdraw" style="color:var(--rose-700)"><span class="ms ms-sm">undo</span> ${esc(T('Withdraw', 'Geri çek'))}</button>`
+          : `<button class="btn btn-outline" data-close>${esc(T('Close', 'Kapat'))}</button>`,
       onMount(ov) {
         $('#ap-approve', ov)?.addEventListener('click', () => { closeModal(); decide(r.id, 'approved'); });
         $('#ap-reject', ov)?.addEventListener('click', () => { closeModal(); decide(r.id, 'rejected'); });
+        $('#ap-withdraw', ov)?.addEventListener('click', () => withdraw(r.id));
       },
     });
   }

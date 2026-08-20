@@ -302,6 +302,31 @@ async function cancel(id) {
 }
 
 /**
+ * Withdraw a pending request. Only the requester (or an admin) may do this, and
+ * only while pending. For a service request the held ticket is cancelled.
+ */
+async function cancelByRequester(id, { requesterEmployeeId, isAdmin = false } = {}) {
+  const req = await getRequest(id);
+  if (req.status !== 'pending') throw HttpError.badRequest('Only a pending request can be withdrawn');
+  if (!isAdmin && req.requesterEmployeeId !== requesterEmployeeId) {
+    throw HttpError.forbidden('You can only withdraw your own requests');
+  }
+  await query(`UPDATE approval_requests SET status='cancelled', decided_at=now() WHERE id=$1`, [id]);
+  await dispatchWithdraw(req);
+  return getRequest(id);
+}
+
+/** Cancel the held ticket when a service request is withdrawn. Best-effort. */
+async function dispatchWithdraw(req) {
+  try {
+    const providers = require('./index');
+    if (req.type === 'ticket_request' && providers.ticketService && providers.ticketService.onRequestWithdrawn) {
+      await providers.ticketService.onRequestWithdrawn(req.payload || {}, { name: req.requesterName || 'Requester' });
+    }
+  } catch { /* withdrawal side-effects are best-effort */ }
+}
+
+/**
  * Re-notify approvers of requests that have sat pending past reminderDays. Called
  * by the scheduler. Each nudge stamps last_reminded_at so the next only fires
  * after another full interval. Returns how many reminders were sent.
@@ -394,5 +419,6 @@ module.exports = {
   listAllPending,
   decide,
   cancel,
+  cancelByRequester,
   sweepReminders,
 };
