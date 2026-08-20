@@ -95,6 +95,17 @@ async function setupStep(requestId, requesterEmployeeId, levels, index) {
   return true;
 }
 
+/** Preview who a chain would route to for one requester (no side effects). */
+async function previewChain(requesterEmployeeId, levels) {
+  if (!isUuid(requesterEmployeeId) || !Array.isArray(levels)) return [];
+  const out = [];
+  for (const el of levels) {
+    const { approvers, mode } = await resolveStepApprovers(requesterEmployeeId, el);
+    out.push({ approvers: approvers.map((a) => a.fullName), mode });
+  }
+  return out;
+}
+
 /**
  * Open an approval request for an action, if policy requires one.
  * @returns {Promise<{required:false} | {required:true, request:object}>}
@@ -290,6 +301,7 @@ module.exports = {
   getConfig,
   isEnabled,
   createRequest,
+  previewChain,
   getRequest,
   listPending,
   listMine,

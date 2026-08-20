@@ -76,9 +76,16 @@ Views.myTickets = async function (el) {
       onMount(ov) {
         const kind = $('#mtk-c-kind', ov);
         const hint = $('#mtk-c-hint', ov);
+        const chainStr = (approval) => (approval || []).map((step) => {
+          const names = step.approvers || [];
+          if (!names.length) return '—';
+          if (names.length === 1) return names[0];
+          return '(' + names.join(step.mode === 'all' ? ' & ' : ' / ') + ')';
+        }).join(' → ');
         const showHint = () => {
           const tp = templates.find((x) => 'tpl:' + x.id === kind.value);
-          hint.textContent = tp && tp.description ? tp.description : '';
+          const chain = tp && tp.approval && tp.approval.length ? chainStr(tp.approval) : '';
+          hint.innerHTML = `${tp && tp.description ? esc(tp.description) : ''}${chain ? `<div style="margin-top:2px"><span class="ms ms-sm" style="vertical-align:-3px">how_to_reg</span> ${esc(t('mtk.approvalChain'))}: ${esc(chain)}</div>` : ''}`;
         };
         kind.addEventListener('change', showHint); showHint();
         $('#mtk-c-save', ov).addEventListener('click', async () => {

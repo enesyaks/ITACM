@@ -465,12 +465,14 @@ Views.tickets = async function (el, params = {}) {
       const lv = (tp && tp.approvalLevels) || [];
       const parStep = lv.find((x) => x && typeof x === 'object');
       const mgrOn = parStep ? parStep.levels.includes('manager') : lv.includes('manager');
+      const mgr2On = parStep ? parStep.levels.includes('manager2') : lv.includes('manager2');
       const deptOn = parStep ? parStep.levels.includes('department') : lv.includes('department');
       const mode = parStep ? ('parallel-' + parStep.mode) : 'sequential';
       return `<div class="rt-row" data-id="${esc((tp && tp.id) || '')}" style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
         <input class="rt-name" placeholder="${esc(t('rt.name'))}" value="${esc((tp && tp.name) || '')}" style="flex:0 0 150px">
         <input class="rt-cat" placeholder="${esc(t('tk.category'))}" value="${esc((tp && tp.category) || '')}" style="flex:0 0 110px">
         <label style="font-size:13px;display:inline-flex;gap:4px;align-items:center"><input type="checkbox" class="rt-mgr" ${mgrOn ? 'checked' : ''}> ${esc(t('rt.manager'))}</label>
+        <label style="font-size:13px;display:inline-flex;gap:4px;align-items:center"><input type="checkbox" class="rt-mgr2" ${mgr2On ? 'checked' : ''}> ${esc(t('rt.manager2'))}</label>
         <label style="font-size:13px;display:inline-flex;gap:4px;align-items:center"><input type="checkbox" class="rt-dept" ${deptOn ? 'checked' : ''}> ${esc(t('rt.department'))}</label>
         <select class="rt-mode ops-select" style="font-size:12px">
           <option value="sequential" ${mode === 'sequential' ? 'selected' : ''}>${esc(t('rt.seq'))}</option>
@@ -500,7 +502,11 @@ Views.tickets = async function (el, params = {}) {
           try {
             await api('/approvals/config', { method: 'PUT', body: { enabled: $('#rt-approvals-on', ov).checked } });
             const rows = [...listEl.querySelectorAll('.rt-row')].map((r) => {
-              const checked = [].concat(r.querySelector('.rt-mgr').checked ? ['manager'] : [], r.querySelector('.rt-dept').checked ? ['department'] : []);
+              const checked = [].concat(
+                r.querySelector('.rt-mgr').checked ? ['manager'] : [],
+                r.querySelector('.rt-mgr2').checked ? ['manager2'] : [],
+                r.querySelector('.rt-dept').checked ? ['department'] : []
+              );
               const modeVal = r.querySelector('.rt-mode').value;
               const approvalLevels = (modeVal === 'sequential' || checked.length < 2)
                 ? checked // sequential (or a single level — parallel is moot with one approver)

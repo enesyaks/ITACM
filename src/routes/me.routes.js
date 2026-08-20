@@ -80,8 +80,17 @@ router.post('/tickets/:id/documents', requireTicketing, express.json({ limit: '1
 
 /* Service-request templates the employee can raise (enabled only). */
 router.get('/request-templates', requireTicketing, asyncHandler(async (req, res) => {
+  const emp = await currentEmployee(req);
   const list = await requestTemplateService.listTemplates({ enabledOnly: true });
-  res.json({ success: true, data: list.map((tpl) => ({ id: tpl.id, name: tpl.name, description: tpl.description, category: tpl.category })) });
+  const out = [];
+  for (const tpl of list) {
+    let approval = [];
+    if (emp && Array.isArray(tpl.approvalLevels) && tpl.approvalLevels.length) {
+      approval = await approvalService.previewChain(emp.id, tpl.approvalLevels).catch(() => []);
+    }
+    out.push({ id: tpl.id, name: tpl.name, description: tpl.description, category: tpl.category, approval });
+  }
+  res.json({ success: true, data: out });
 }));
 
 /* Approvals the employee (as a manager) must act on — Portal accounts are

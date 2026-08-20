@@ -11,7 +11,7 @@ const { mapRow, mapRows, isUuid } = require('./rowMapper');
 const { HttpError } = require('../../utils/httpError');
 
 // Approval levels that resolveApprover understands.
-const LEVELS = new Set(['manager', 'department']);
+const LEVELS = new Set(['manager', 'manager2', 'department']);
 
 // An element is an org-level string ('manager') → single-approver step, or an
 // object { levels:[...], mode:'any'|'all' } → parallel step.
