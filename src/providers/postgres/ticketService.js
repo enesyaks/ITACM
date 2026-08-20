@@ -346,14 +346,23 @@ async function stats() {
       COUNT(*) FILTER (WHERE status NOT IN ('resolved','closed','cancelled') AND resolved_at IS NULL
                          AND sla_paused_at IS NULL
                          AND resolve_due_at IS NOT NULL AND resolve_due_at < now()) AS breached,
-      COUNT(*) FILTER (WHERE resolved_at >= date_trunc('day', now())) AS resolved_today
+      COUNT(*) FILTER (WHERE resolved_at >= date_trunc('day', now())) AS resolved_today,
+      -- SLA compliance over the last 30 days of resolved tickets (met resolution target)
+      COUNT(*) FILTER (WHERE resolved_at >= now() - interval '30 days' AND resolve_due_at IS NOT NULL) AS resolved_measurable,
+      COUNT(*) FILTER (WHERE resolved_at >= now() - interval '30 days' AND resolve_due_at IS NOT NULL AND resolved_at <= resolve_due_at) AS resolved_met,
+      ROUND(AVG(csat_rating) FILTER (WHERE csat_rating IS NOT NULL), 1) AS csat_avg,
+      COUNT(*) FILTER (WHERE csat_rating IS NOT NULL) AS csat_count
     FROM tickets`);
   const r = rows[0] || {};
+  const measurable = Number(r.resolved_measurable) || 0;
   return {
     open: Number(r.open) || 0,
     unassigned: Number(r.unassigned) || 0,
     breached: Number(r.breached) || 0,
     resolvedToday: Number(r.resolved_today) || 0,
+    slaCompliance: measurable ? Math.round((Number(r.resolved_met) || 0) / measurable * 100) : null,
+    csatAvg: r.csat_avg != null ? Number(r.csat_avg) : null,
+    csatCount: Number(r.csat_count) || 0,
   };
 }
 

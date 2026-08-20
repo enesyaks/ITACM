@@ -85,12 +85,19 @@ Views.tickets = async function (el, params = {}) {
     const card = (label, val, icon, tone) => `<div class="card card-pad metric">
       <div class="metric-top"><h3 class="card-title">${esc(label)}</h3>${iconChip(icon, tone)}</div>
       <div class="metric-value">${val}</div></div>`;
-    return `<div class="grid grid-4" style="margin-bottom:16px">
+    const compliance = s.slaCompliance != null
+      ? (s.slaCompliance >= 90 ? 'var(--emerald-600)' : s.slaCompliance >= 75 ? 'var(--amber-600)' : 'var(--rose-600)') : '';
+    const extra = (s.slaCompliance != null || s.csatCount)
+      ? `<div style="display:flex;gap:22px;flex-wrap:wrap;margin:-6px 0 16px;padding:0 2px;font-size:13px">
+          ${s.slaCompliance != null ? `<span><span class="cell-sub">${esc(t('tk.slaCompliance'))}:</span> <strong style="color:${compliance}">%${s.slaCompliance}</strong> <span class="cell-sub">(30${esc(t('tk.daysShort'))})</span></span>` : ''}
+          ${s.csatCount ? `<span><span class="cell-sub">${esc(t('tk.csatAvg'))}:</span> <strong>${esc(String(s.csatAvg))} / 5</strong> <span class="cell-sub">(${s.csatCount} ${esc(t('tk.votes'))})</span></span>` : ''}
+        </div>` : '';
+    return `<div class="grid grid-4" style="margin-bottom:${extra ? '10px' : '16px'}">
       ${card(t('tk.kpiOpen'), s.open, 'confirmation_number', 'indigo')}
       ${card(t('tk.kpiUnassigned'), s.unassigned, 'person_off', s.unassigned ? 'amber' : 'emerald')}
       ${card(t('tk.kpiBreached'), s.breached, 'warning', s.breached ? 'rose' : 'emerald')}
       ${card(t('tk.kpiResolvedToday'), s.resolvedToday, 'task_alt', 'blue')}
-    </div>`;
+    </div>${extra}`;
   };
   const staffList = Array.isArray(staff) ? staff : [];
   const staffName = (uid) => (staffList.find((u) => u.uid === uid) || {}).username || '';
