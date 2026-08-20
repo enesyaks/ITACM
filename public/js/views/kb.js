@@ -1,23 +1,31 @@
 /* ===================== KNOWLEDGE BASE (staff) ===================== */
 
-/* Fetch an authed image and show it inline (the <img> tag can't send the token). */
-async function kbAuthedImage(imgEl, url) {
+/* Fetch an authed file as a blob and point an <img>/<iframe> at it (the tag
+   can't send the bearer token itself). */
+async function kbAuthedBlob(el, url) {
   try {
     const tok = localStorage.getItem('itacm_token');
     const res = await fetch(url, { headers: { authorization: 'Bearer ' + tok } });
     if (!res.ok) return;
-    imgEl.src = URL.createObjectURL(await res.blob());
-  } catch { /* leave the broken image */ }
+    el.src = URL.createObjectURL(await res.blob());
+  } catch { /* leave it blank */ }
 }
 
-/* Render an article's attachments: images inline, other files as download links. */
+/* Render an article's attachments: images inline, PDFs in an inline viewer,
+   other files as download links. */
 function kbRenderAttachments(box, docs, urlFor) {
   if (!box) return;
   if (!docs.length) { box.innerHTML = ''; return; }
-  box.innerHTML = docs.map((d) => ((d.mime || '').startsWith('image/')
-    ? `<img class="kb-img" data-img="${esc(d.id)}" alt="${esc(d.filename)}">`
-    : `<div class="tk-doc"><span class="ms ms-sm">description</span><a href="#" data-dl="${esc(d.id)}" class="tk-doc-name">${esc(d.filename)}</a></div>`)).join('');
-  box.querySelectorAll('.kb-img').forEach((img) => kbAuthedImage(img, urlFor(img.dataset.img)));
+  box.innerHTML = docs.map((d) => {
+    const mime = d.mime || '';
+    if (mime.startsWith('image/')) return `<img class="kb-img" data-blob="${esc(d.id)}" alt="${esc(d.filename)}">`;
+    if (mime === 'application/pdf') return `<div class="kb-pdf">
+        <div class="kb-pdf-head"><span class="ms ms-sm">picture_as_pdf</span> <span style="flex:1">${esc(d.filename)}</span>
+          <a href="#" data-dl="${esc(d.id)}" class="cell-sub">${esc(t('kb.openFull'))}</a></div>
+        <iframe class="kb-pdf-frame" data-blob="${esc(d.id)}" title="${esc(d.filename)}"></iframe></div>`;
+    return `<div class="tk-doc"><span class="ms ms-sm">description</span><a href="#" data-dl="${esc(d.id)}" class="tk-doc-name">${esc(d.filename)}</a></div>`;
+  }).join('');
+  box.querySelectorAll('[data-blob]').forEach((el) => kbAuthedBlob(el, urlFor(el.dataset.blob)));
   box.querySelectorAll('[data-dl]').forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); viewAuthed(urlFor(a.dataset.dl)); }));
 }
 

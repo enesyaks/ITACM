@@ -5857,6 +5857,9 @@ body.ai-open .ai-panel { opacity: 1; visibility: visible; transform: none; }
 /* KB article attachments (images inline + file links) */
 .kb-attach { display: flex; flex-direction: column; gap: 10px; }
 .kb-attach .kb-img { max-width: 100%; border-radius: 10px; display: block; border: 1px solid var(--outline-variant); box-shadow: var(--shadow-card); }
+.kb-pdf { border: 1px solid var(--outline-variant); border-radius: 10px; overflow: hidden; }
+.kb-pdf-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--surface-low); font-size: 13px; }
+.kb-pdf-frame { width: 100%; height: 640px; border: 0; display: block; background: #fff; }
 
 /* Ticket attachments */
 .tk-docs { display: flex; flex-direction: column; gap: 6px; }
