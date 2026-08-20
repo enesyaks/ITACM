@@ -11,6 +11,13 @@ Views.approvals = async function (el) {
     license_assign: T('Software / license assignment', 'Yazılım / lisans zimmeti'),
     asset_sale: T('Asset sale', 'Cihaz satışı'),
     asset_scrap: T('Asset scrap', 'Cihaz hurdaya ayırma'),
+    ticket_request: T('Service request', 'Servis talebi'),
+  };
+  const typeLabel = (ty) => TYPE_LABEL[ty] || ty;
+  // Compact "step 2 / 3" position for a multi-step chain.
+  const chainPos = (r) => {
+    const n = Array.isArray(r.levels) ? r.levels.length : 0;
+    return n > 1 ? `<span class="pill pill-slate">${(r.currentLevel || 0) + 1} / ${n}</span>` : '';
   };
   const statusPill = (s) => ({
     pending: `<span class="pill pill-amber"><span class="ms ms-sm">schedule</span> ${esc(T('Pending', 'Bekliyor'))}</span>`,
@@ -46,8 +53,8 @@ Views.approvals = async function (el) {
   function pendingRow(r) {
     return `
       <tr>
-        <td><div class="cell-title">${esc(TYPE_LABEL[r.type] || r.type)}</div>
-          <div class="cell-sub">${esc(r.summary || '')}</div></td>
+        <td><div class="cell-title">${esc(r.summary || typeLabel(r.type))}</div>
+          <div class="cell-sub"><span class="pill pill-blue">${esc(typeLabel(r.type))}</span>${r.resourceRef ? ` <span class="mono">${esc(r.resourceRef)}</span>` : ''} ${chainPos(r)}</div></td>
         <td>${esc(r.requesterName || '—')}</td>
         <td class="cell-sub">${esc(when(r.createdAt))}</td>
         <td class="actions">
@@ -59,8 +66,8 @@ Views.approvals = async function (el) {
   function mineRow(r) {
     return `
       <tr>
-        <td><div class="cell-title">${esc(TYPE_LABEL[r.type] || r.type)}</div>
-          <div class="cell-sub">${esc(r.summary || '')}</div></td>
+        <td><div class="cell-title">${esc(r.summary || typeLabel(r.type))}</div>
+          <div class="cell-sub"><span class="pill pill-blue">${esc(typeLabel(r.type))}</span>${r.resourceRef ? ` <span class="mono">${esc(r.resourceRef)}</span>` : ''}</div></td>
         <td>${esc(r.approverName || '—')}</td>
         <td>${statusPill(r.status)}</td>
         <td class="cell-sub">${esc(when(r.createdAt))}${r.decidedAt ? ' · ' + esc(when(r.decidedAt)) : ''}</td>

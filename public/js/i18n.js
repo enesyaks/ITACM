@@ -1325,6 +1325,7 @@
     'nav.myTickets': L('My Tickets', 'Ticket\'larım'),
     'nav.problems': L('Problems', 'Problemler'),
     'nav.kb': L('Knowledge Base', 'Bilgi Bankası'),
+    'nav.approvals': L('Approvals', 'Onaylar'),
     'nav.myKb': L('Help Center', 'Yardım Merkezi'),
     'kb.title': L('Knowledge Base', 'Bilgi Bankası'),
     'kb.subtitle': L('Articles, procedures and known-error fixes', 'Makaleler, prosedürler ve bilinen hata çözümleri'),
