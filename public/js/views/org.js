@@ -14,6 +14,29 @@ Views.org = async function (el) {
   const C_ROOT = '#7f77dd', C_DEPT = '#175cd3', C_TEAM = '#0f6e56', C_PERSON = '#b54708';
   // 'struct' = company → departments → teams, 'people' = who reports to whom.
   const view = { mode: 'people', collapsed: new Set() };
+  let lastTree = null; // for re-rendering on fold/unfold without a refetch
+
+  /* Clean HTML reporting tree (BambooHR-style): nested cards + connectors,
+     driven purely by employees.manager_employee_id. */
+  function peopleTreeHtml(roots) {
+    const li = (p) => {
+      const kids = p.children.length;
+      const collapsed = view.collapsed.has(p.id);
+      const accent = p.isDeptManager ? C_DEPT : p.isTeamLead ? C_TEAM : C_PERSON;
+      const role = p.isDeptManager ? T('Dept manager', 'Dept. yöneticisi') : p.isTeamLead ? T('Team lead', 'Takım lideri') : '';
+      const card = `<div class="orgn" data-person="${esc(p.id)}" style="--org-accent:${accent}">
+          <span class="orgn-av" style="background:${accent}22;color:${accent}">${esc(initials(p.fullName))}</span>
+          <div class="orgn-main">
+            <span class="orgn-name">${esc(p.fullName)}</span>
+            <span class="orgn-sub">${esc(p.title || '—')}${p.department ? ' · ' + esc(p.department) : ''}</span>
+            ${role ? `<span class="orgn-role" style="color:${accent}">${esc(role)}</span>` : ''}
+          </div>
+          ${kids ? `<button type="button" class="orgn-toggle" data-toggle="${esc(p.id)}" title="${kids} ${esc(T('reports', 'bağlı'))}">${collapsed ? '+' + kids : '−'}</button>` : ''}
+        </div>`;
+      return `<li>${card}${kids && !collapsed ? `<ul>${p.children.map(li).join('')}</ul>` : ''}</li>`;
+    };
+    return `<div class="org-tree-wrap"><div class="org-tree"><ul class="org-roots">${roots.map(li).join('')}</ul></div></div>`;
+  }
   const trunc = (s, n) => { s = String(s || ''); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
 
   /* ---------- Employee picker (manager / lead) ---------- */
@@ -465,6 +488,7 @@ Views.org = async function (el) {
 
   /* ------------------------------- Render ------------------------------- */
   function render(tree, approvals) {
+    lastTree = tree;
     const reporting = Array.isArray(tree.reporting) ? tree.reporting : [];
     if (view.mode === 'people' && !view.collapsed.size && reporting.length) {
       view.collapsed = defaultCollapsed(reporting);
@@ -506,14 +530,14 @@ Views.org = async function (el) {
               <span class="ms">corporate_fare</span> ${esc(T('Departments & teams', 'Departman & takım'))}</button>
           </span>
           <span class="cell-sub" style="margin-left:auto">${esc(view.mode === 'people'
-            ? T('Click a card to fold / unfold reports · drag to rearrange', 'Ekibi açıp kapatmak için karta tıklayın · taşımak için sürükleyin')
+            ? T('Click a card to set the manager · use ± to fold reports', 'Yönetici atamak için karta tıklayın · ekibi katlamak için ±')
             : T('Click a node to manage it · drag to rearrange', 'Yönetmek için tıklayın · taşımak için sürükleyin'))}</span>
-          <button type="button" class="btn btn-outline btn-sm net-topo-reset" id="org-topo-reset" ${hasOrgLayout() ? '' : 'disabled'}>
-            <span class="ms">restart_alt</span> ${esc(T('Reset layout', 'Düzeni sıfırla'))}</button>
+          ${view.mode === 'struct' ? `<button type="button" class="btn btn-outline btn-sm net-topo-reset" id="org-topo-reset" ${hasOrgLayout() ? '' : 'disabled'}>
+            <span class="ms">restart_alt</span> ${esc(T('Reset layout', 'Düzeni sıfırla'))}</button>` : ''}
         </div>
         ${view.mode === 'people'
           ? (reporting.length
-            ? peopleTopologySvg(reporting)
+            ? peopleTreeHtml(reporting)
             : `<div class="table-empty" style="padding:24px">${esc(T('No reporting lines yet — set a manager on employee records to build this chart.', 'Henüz raporlama hattı yok — çalışan kayıtlarında yönetici atayarak bu şemayı oluşturun.'))}</div>`)
           : (tree.departments.length
             ? topologySvg(tree)
@@ -610,6 +634,32 @@ Views.org = async function (el) {
         open();
       });
       g.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); open(); } });
+    });
+
+    // HTML reporting tree (people mode): ± folds a branch; clicking a card
+    // sets that person's manager — reorganise the org straight from the chart.
+    el.querySelectorAll('.orgn-toggle').forEach((b) => b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = b.dataset.toggle;
+      if (view.collapsed.has(id)) view.collapsed.delete(id); else view.collapsed.add(id);
+      if (lastTree) render(lastTree, null);
+    }));
+    if (canManage) el.querySelectorAll('.orgn[data-person]').forEach((card) => {
+      card.addEventListener('click', async (e) => {
+        if (e.target.closest('.orgn-toggle')) return;
+        const id = card.dataset.person;
+        const emp = await api('/employees/' + encodeURIComponent(id)).catch(() => null);
+        if (!emp) return;
+        formModal({
+          title: `${T('Set manager', 'Yönetici ata')} — ${emp.fullName}`,
+          fields: [{ name: 'managerEmployeeId', label: T('Manager (reports to)', 'Yönetici (bağlı olduğu)'), type: 'employeeSearch', full: true, selected: emp.manager || null, selectedLabel: (emp.manager && emp.manager.fullName) || '' }],
+          submitLabel: T('Save', 'Kaydet'),
+          async onSubmit(d) {
+            await api('/employees/' + encodeURIComponent(id), { method: 'PUT', body: { managerEmployeeId: d.managerEmployeeId || null } });
+            toast(T('Saved', 'Kaydedildi'), 'success'); closeModal(); await load();
+          },
+        });
+      });
     });
   }
 
