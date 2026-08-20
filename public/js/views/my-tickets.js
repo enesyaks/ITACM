@@ -70,6 +70,11 @@ Views.myTickets = async function (el) {
           <div class="cell-sub" id="mtk-c-hint" style="margin-top:4px"></div></div>
         <div class="form-field full"><label>${esc(t('tk.subject'))} *</label><input id="mtk-c-subject" maxlength="300"></div>
         <div id="mtk-suggest"></div>
+        <div class="form-field full" id="mtk-c-amount-wrap" style="display:none">
+          <label>${esc(t('mtk.amount'))}</label>
+          <input id="mtk-c-amount" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0">
+          <div class="cell-sub" id="mtk-c-amount-hint" style="margin-top:4px"></div>
+        </div>
         <div class="form-field full"><label>${esc(t('tk.description'))}</label><textarea id="mtk-c-desc" rows="4" placeholder="${esc(t('mtk.descPh'))}"></textarea></div>
       </div>`,
       foot: `<button class="btn btn-outline" data-close>${esc(t('common.cancel'))}</button>
@@ -83,10 +88,19 @@ Views.myTickets = async function (el) {
           if (names.length === 1) return names[0];
           return '(' + names.join(step.mode === 'all' ? ' & ' : ' / ') + ')';
         }).join(' → ');
+        const amtWrap = $('#mtk-c-amount-wrap', ov);
+        const fmtAmt = (n) => '₺' + Number(n).toLocaleString('tr-TR');
         const showHint = () => {
           const tp = templates.find((x) => 'tpl:' + x.id === kind.value);
           const chain = tp && tp.approval && tp.approval.length ? chainStr(tp.approval) : '';
           hint.innerHTML = `${tp && tp.description ? esc(tp.description) : ''}${chain ? `<div style="margin-top:2px"><span class="ms ms-sm" style="vertical-align:-3px">how_to_reg</span> ${esc(t('mtk.approvalChain'))}: ${esc(chain)}</div>` : ''}`;
+          // Amount field only for templates that gate a step on a threshold.
+          if (tp && tp.amountThreshold != null) {
+            amtWrap.style.display = '';
+            $('#mtk-c-amount-hint', ov).textContent = t('mtk.amountHint').replace('{n}', fmtAmt(tp.amountThreshold));
+          } else {
+            amtWrap.style.display = 'none';
+          }
         };
         kind.addEventListener('change', showHint); showHint();
         // Self-service deflection: suggest matching KB articles as the subject is typed.
@@ -124,6 +138,10 @@ Views.myTickets = async function (el) {
           const v = kind.value;
           const body = { subject: $('#mtk-c-subject', ov).value.trim(), description: $('#mtk-c-desc', ov).value.trim() };
           if (v.startsWith('tpl:')) body.templateId = v.slice(4); else body.type = v;
+          if (amtWrap.style.display !== 'none') {
+            const amt = Number($('#mtk-c-amount', ov).value);
+            if (Number.isFinite(amt) && amt >= 0) body.amount = amt;
+          }
           try {
             await api('/me/tickets', { method: 'POST', body });
             closeModal(); toast(t('mtk.created'), 'success'); Views.myTickets(el);

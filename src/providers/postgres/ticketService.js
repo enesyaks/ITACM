@@ -548,18 +548,29 @@ async function createMyTicket(body, user) {
   }, user, { asEmployee: emp });
 
   if (template && Array.isArray(template.approvalLevels) && template.approvalLevels.length) {
-    const approval = await require('./approvalService').createRequest({
-      type: 'ticket_request',
-      requesterEmployeeId: emp.id,
-      requesterName: emp.full_name,
-      payload: { ticketId: ticket.id },
-      resourceRef: ticket.number,
-      summary: `${template.name}: ${ticket.subject}`,
-      levels: template.approvalLevels,
-    }).catch(() => ({ required: false }));
-    if (approval && approval.required && approval.request) {
-      await query('UPDATE tickets SET approval_request_id = $1 WHERE id = $2', [approval.request.id, ticket.id]);
-      logActivity(ticket.id, { name: 'system' }, 'approval_requested', `Pending ${template.approvalLevels.join(' → ')}`).catch(() => {});
+    // Amount-gated finance sign-off: below the template's threshold, drop the
+    // fixed final approver(s) (emp: steps) and route through the org levels only.
+    const amount = Number(body && body.amount);
+    const hasAmount = Number.isFinite(amount) && amount >= 0;
+    let levels = template.approvalLevels;
+    if (template.amountThreshold != null && Number.isFinite(Number(template.amountThreshold))) {
+      const meets = hasAmount && amount >= Number(template.amountThreshold);
+      if (!meets) levels = levels.filter((l) => !(typeof l === 'string' && l.startsWith('emp:')));
+    }
+    if (levels.length) {
+      const approval = await require('./approvalService').createRequest({
+        type: 'ticket_request',
+        requesterEmployeeId: emp.id,
+        requesterName: emp.full_name,
+        payload: { ticketId: ticket.id, amount: hasAmount ? amount : null },
+        resourceRef: ticket.number,
+        summary: `${template.name}: ${ticket.subject}${hasAmount ? ` — ₺${amount.toLocaleString('tr-TR')}` : ''}`,
+        levels,
+      }).catch(() => ({ required: false }));
+      if (approval && approval.required && approval.request) {
+        await query('UPDATE tickets SET approval_request_id = $1 WHERE id = $2', [approval.request.id, ticket.id]);
+        logActivity(ticket.id, { name: 'system' }, 'approval_requested', `Pending ${levels.join(' → ')}`).catch(() => {});
+      }
     }
   }
   return getMyTicket(ticket.id, user);

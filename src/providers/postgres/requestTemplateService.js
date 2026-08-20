@@ -38,34 +38,44 @@ function cleanLevels(input) {
   return out;
 }
 
+// A threshold is a non-negative number, or null (fixed approver always applies).
+function cleanAmount(v) {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
 async function listTemplates({ enabledOnly = false } = {}) {
   const { rows } = await query(
-    `SELECT id, name, description, category, approval_levels AS "approvalLevels", enabled, sort_order AS "sortOrder", created_at AS "createdAt"
+    `SELECT id, name, description, category, approval_levels AS "approvalLevels", enabled,
+            sort_order AS "sortOrder", amount_threshold AS "amountThreshold", created_at AS "createdAt"
        FROM request_templates ${enabledOnly ? 'WHERE enabled = true' : ''}
       ORDER BY sort_order, name`
   );
-  return mapRows(rows);
+  return mapRows(rows).map((r) => ({ ...r, amountThreshold: r.amountThreshold == null ? null : Number(r.amountThreshold) }));
 }
 
 async function getTemplate(id) {
   if (!isUuid(id)) throw HttpError.notFound('Template not found');
   const { rows } = await query('SELECT * FROM request_templates WHERE id = $1', [id]);
   if (!rows[0]) throw HttpError.notFound('Template not found');
-  return mapRow(rows[0]);
+  const r = mapRow(rows[0]);
+  return { ...r, amountThreshold: r.amountThreshold == null ? null : Number(r.amountThreshold) };
 }
 
 async function createTemplate(body) {
   const name = String((body && body.name) || '').trim().slice(0, 160);
   if (!name) throw HttpError.badRequest('A template name is required');
   const { rows } = await query(
-    `INSERT INTO request_templates (name, description, category, approval_levels, enabled, sort_order)
-     VALUES ($1,$2,$3,$4::jsonb,$5,$6) RETURNING id`,
+    `INSERT INTO request_templates (name, description, category, approval_levels, enabled, sort_order, amount_threshold)
+     VALUES ($1,$2,$3,$4::jsonb,$5,$6,$7) RETURNING id`,
     [name,
       body.description ? String(body.description).trim().slice(0, 2000) : null,
       body.category ? String(body.category).trim().slice(0, 120) : null,
       JSON.stringify(cleanLevels(body.approvalLevels)),
       body.enabled !== false,
-      Number.isFinite(Number(body.sortOrder)) ? Number(body.sortOrder) : 0]
+      Number.isFinite(Number(body.sortOrder)) ? Number(body.sortOrder) : 0,
+      cleanAmount(body.amountThreshold)]
   );
   return getTemplate(rows[0].id);
 }
@@ -81,6 +91,7 @@ async function updateTemplate(id, body) {
   if (body.approvalLevels !== undefined) set('approval_levels', JSON.stringify(cleanLevels(body.approvalLevels)));
   if (body.enabled !== undefined) set('enabled', !!body.enabled);
   if (body.sortOrder !== undefined) set('sort_order', Number(body.sortOrder) || 0);
+  if (body.amountThreshold !== undefined) set('amount_threshold', cleanAmount(body.amountThreshold));
   if (sets.length) { vals.push(id); await query(`UPDATE request_templates SET ${sets.join(', ')} WHERE id = $${vals.length}`, vals); }
   return getTemplate(id);
 }

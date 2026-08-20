@@ -1061,6 +1061,7 @@ CREATE TABLE IF NOT EXISTS request_templates (
   approval_levels JSONB NOT NULL DEFAULT '[]'::jsonb,
   enabled         BOOLEAN NOT NULL DEFAULT true,
   sort_order      INTEGER NOT NULL DEFAULT 0,
+  amount_threshold NUMERIC,   -- gate the fixed final approver (emp:) on request amount; NULL = always
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_request_templates_enabled ON request_templates (enabled, sort_order);

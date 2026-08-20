@@ -476,6 +476,7 @@ Views.tickets = async function (el, params = {}) {
       const deptOn = parStep ? parStep.levels.includes('department') : lv.includes('department');
       const empTok = lv.find((x) => typeof x === 'string' && x.startsWith('emp:'));
       const finalId = empTok ? empTok.slice(4) : '';
+      const threshold = (tp && tp.amountThreshold != null) ? tp.amountThreshold : '';
       const mode = parStep ? ('parallel-' + parStep.mode) : 'sequential';
       return `<div class="rt-row" data-id="${esc((tp && tp.id) || '')}" data-final="${esc(finalId)}"
           style="border:1px solid var(--outline-variant);border-radius:10px;padding:10px;margin-bottom:10px">
@@ -493,9 +494,13 @@ Views.tickets = async function (el, params = {}) {
           <label style="font-size:13px;display:inline-flex;gap:4px;align-items:center"><input type="checkbox" class="rt-en" ${(tp && tp.enabled !== false) ? 'checked' : ''}> ${esc(t('rt.enabled'))}</label>
           <button class="btn btn-outline btn-sm rt-del" type="button" title="${esc(t('common.remove') || 'Remove')}"><span class="ms ms-sm">delete</span></button>
         </div>
-        <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+        <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
           <span class="cell-sub" style="flex:0 0 auto"><span class="ms ms-sm" style="vertical-align:-3px">account_balance</span> ${esc(t('rt.finalApprover'))}:</span>
           <div class="rt-final-host" style="flex:1;min-width:220px"></div>
+          <label class="cell-sub" style="flex:0 0 auto;display:inline-flex;gap:4px;align-items:center" title="${esc(t('rt.amountThresholdHint'))}">
+            ${esc(t('rt.amountThreshold'))}
+            <input class="rt-amount" type="number" min="0" step="0.01" value="${esc(threshold)}" placeholder="—" style="width:110px">
+          </label>
         </div>
       </div>`;
     };
@@ -540,7 +545,9 @@ Views.tickets = async function (el, params = {}) {
               const host = r.querySelector('.rt-final-host');
               const finalId = host && host._picker ? host._picker.getId() : null;
               if (finalId) steps.push('emp:' + finalId);
-              return { id: r.dataset.id || null, name: r.querySelector('.rt-name').value.trim(), category: r.querySelector('.rt-cat').value.trim(), approvalLevels: steps, enabled: r.querySelector('.rt-en').checked };
+              const amtRaw = r.querySelector('.rt-amount').value.trim();
+              const amountThreshold = (finalId && amtRaw !== '' && Number(amtRaw) >= 0) ? Number(amtRaw) : null;
+              return { id: r.dataset.id || null, name: r.querySelector('.rt-name').value.trim(), category: r.querySelector('.rt-cat').value.trim(), approvalLevels: steps, amountThreshold, enabled: r.querySelector('.rt-en').checked };
             });
             for (const orig of loaded) if (orig.id && !rows.find((x) => x.id === orig.id)) await api('/request-templates/' + orig.id, { method: 'DELETE' });
             for (const row of rows) {

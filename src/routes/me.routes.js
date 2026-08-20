@@ -88,7 +88,7 @@ router.get('/request-templates', requireTicketing, asyncHandler(async (req, res)
     if (emp && Array.isArray(tpl.approvalLevels) && tpl.approvalLevels.length) {
       approval = await approvalService.previewChain(emp.id, tpl.approvalLevels).catch(() => []);
     }
-    out.push({ id: tpl.id, name: tpl.name, description: tpl.description, category: tpl.category, approval });
+    out.push({ id: tpl.id, name: tpl.name, description: tpl.description, category: tpl.category, approval, amountThreshold: tpl.amountThreshold != null ? Number(tpl.amountThreshold) : null });
   }
   res.json({ success: true, data: out });
 }));
