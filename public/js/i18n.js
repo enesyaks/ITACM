@@ -1496,6 +1496,8 @@
     'rt.add': L('Add template', 'Şablon ekle'),
     'rt.hint': L('Templates employees pick when raising a request. The ticked levels form the approval chain (resolved from the org chart); optionally add a specific final approver, e.g. finance sign-off.', 'Çalışanların talep açarken seçtiği şablonlar. İşaretli seviyeler onay zincirini oluşturur (org şemasından çözülür); dilerseniz en sona belirli bir onaycı ekleyin, ör. finans onayı.'),
     'rt.enableApprovals': L('Enable request approvals', 'Talep onaylarını etkinleştir'),
+    'rt.reminderDays': L('Remind after (days)', 'Hatırlat (gün)'),
+    'rt.reminderHint': L('Re-notify the approver when a request stays pending this many days. 0 = off.', 'Bir talep bu kadar gün onay beklerse onaycıya tekrar bildirim gönderilir. 0 = kapalı.'),
     'rt.seq': L('Sequential', 'Sıralı'),
     'rt.parAll': L('Parallel — all', 'Paralel — hepsi'),
     'rt.parAny': L('Parallel — any', 'Paralel — herhangi'),

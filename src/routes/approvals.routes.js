@@ -30,6 +30,9 @@ router.put('/config', requireRole('Owner', 'Admin'), asyncHandler(async (req, re
   const next = {
     enabled: body.enabled !== undefined ? !!body.enabled : cur.enabled,
     policy: (body.policy && typeof body.policy === 'object') ? body.policy : cur.policy,
+    reminderDays: body.reminderDays !== undefined
+      ? Math.max(0, Math.min(90, Number(body.reminderDays) || 0))
+      : cur.reminderDays,
   };
   await settingsService.saveSettings({ approvals: next });
   res.json({ success: true, data: next });

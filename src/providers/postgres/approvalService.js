@@ -34,9 +34,12 @@ const TYPE_LABELS = {
 async function getConfig() {
   const s = await settingsService.getSettings().catch(() => ({}));
   const raw = s.approvals || {};
+  const reminderDays = Number(raw.reminderDays);
   return {
     enabled: !!raw.enabled,
     policy: (raw.policy && typeof raw.policy === 'object') ? raw.policy : DEFAULT_POLICY,
+    // Days a request may sit pending before the approver is re-notified. 0 = off.
+    reminderDays: Number.isFinite(reminderDays) && reminderDays > 0 ? Math.min(reminderDays, 90) : 0,
   };
 }
 
@@ -275,6 +278,35 @@ async function cancel(id) {
 }
 
 /**
+ * Re-notify approvers of requests that have sat pending past reminderDays. Called
+ * by the scheduler. Each nudge stamps last_reminded_at so the next only fires
+ * after another full interval. Returns how many reminders were sent.
+ */
+async function sweepReminders() {
+  const config = await getConfig();
+  if (!config.enabled || !config.reminderDays) return 0;
+  const { rows } = await query(
+    `SELECT * FROM approval_requests
+      WHERE status = 'pending'
+        AND now() - COALESCE(last_reminded_at, created_at) >= ($1 || ' days')::interval`,
+    [String(config.reminderDays)]
+  );
+  let sent = 0;
+  for (const row of rows) {
+    const request = mapRow(row);
+    await query('UPDATE approval_requests SET last_reminded_at = now() WHERE id = $1', [request.id]);
+    try {
+      const providers = require('./index');
+      if (providers.notificationService && providers.notificationService.sendApprovalNotice) {
+        await providers.notificationService.sendApprovalNotice(request, { reminder: true });
+        sent += 1;
+      }
+    } catch { /* reminders are best-effort */ }
+  }
+  return sent;
+}
+
+/**
  * Replay an approved action against the underlying service. Lazy-require the
  * services to avoid circular dependencies at module load. Each handler receives
  * the stored payload; it must perform the same operation the trigger deferred.
@@ -338,4 +370,5 @@ module.exports = {
   listAllPending,
   decide,
   cancel,
+  sweepReminders,
 };

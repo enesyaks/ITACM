@@ -604,28 +604,44 @@ async function sendTicketNotification({ to, ticketNumber, subject, event, actorN
 }
 
 /**
- * Notify the current approver that a request awaits their decision. Best-effort:
- * resolves the approver's email from their employee record and never throws.
+ * Notify the pending approver(s) that a request awaits their decision. Handles
+ * both single-approver and parallel steps, and a `reminder` variant used by the
+ * scheduler for requests left pending too long. Best-effort: never throws.
  */
-async function sendApprovalNotice(request) {
+async function sendApprovalNotice(request, { reminder = false } = {}) {
   try {
-    if (!request || !request.approverEmployeeId) return { skipped: true, reason: 'no approver' };
-    const { rows } = await query('SELECT email, full_name FROM employees WHERE id = $1', [request.approverEmployeeId]);
-    const to = rows[0] && rows[0].email;
-    if (!to) return { skipped: true, reason: 'approver has no email' };
+    if (!request) return { skipped: true, reason: 'no request' };
+    const ids = [];
+    if (request.approverEmployeeId) ids.push(request.approverEmployeeId);
+    if (Array.isArray(request.stepState)) {
+      for (const e of request.stepState) if (e && e.status === 'pending' && e.employeeId) ids.push(e.employeeId);
+    }
+    if (!ids.length) return { skipped: true, reason: 'no approver' };
+    const { rows } = await query('SELECT id, email FROM employees WHERE id = ANY($1)', [[...new Set(ids)]]);
+    const recipients = rows.filter((r) => r.email);
+    if (!recipients.length) return { skipped: true, reason: 'approver has no email' };
     const { smtp, companyName, notify } = await getMailConfig();
     if (!smtp.host) return { skipped: true, reason: 'no smtp host' };
     const base = appBaseUrl(notify);
     const safe = (s) => String(s || '').replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
     const summary = request.summary || 'Approval needed';
+    const who = request.requesterName || 'A requester';
+    const lead = reminder
+      ? `Reminder — this request is still awaiting your approval${request.resourceRef ? ` (${safe(request.resourceRef)})` : ''}.`
+      : `${safe(who)} needs your approval${request.resourceRef ? ` (${safe(request.resourceRef)})` : ''}.`;
+    const tag = reminder ? 'Approval reminder' : 'Approval';
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8"></head>`
       + `<body style="font-family:system-ui,-apple-system,sans-serif;line-height:1.5;color:#1a1a1a;max-width:640px;margin:0 auto;padding:24px">`
       + `<p style="margin:0 0 6px;color:#64748b;font-size:13px">${safe(companyName)} · Approvals</p>`
       + `<h2 style="margin:0 0 10px;font-size:18px">${safe(summary)}</h2>`
-      + `<p style="margin:0 0 12px">${safe(request.requesterName || 'A requester')} needs your approval${request.resourceRef ? ` (${safe(request.resourceRef)})` : ''}.</p>`
+      + `<p style="margin:0 0 12px">${lead}</p>`
       + (base ? `<p style="margin:0"><a href="${safe(base)}" style="color:#4f46e5">Review the request</a></p>` : '')
       + `</body></html>`;
-    return await sendMail({ to, subject: `[Approval] ${summary}`, text: `${request.requesterName || 'A requester'} needs your approval: ${summary}${base ? '\n' + base : ''}`, html });
+    const results = [];
+    for (const r of recipients) {
+      results.push(await sendMail({ to: r.email, subject: `[${tag}] ${summary}`, text: `${reminder ? 'Reminder: ' : ''}${who} needs your approval: ${summary}${base ? '\n' + base : ''}`, html }));
+    }
+    return { sent: results.length };
   } catch (err) {
     return { skipped: true, reason: err.message };
   }

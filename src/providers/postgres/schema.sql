@@ -1071,3 +1071,4 @@ ALTER TABLE tickets ADD COLUMN IF NOT EXISTS approval_request_id UUID REFERENCES
 ALTER TABLE approval_requests ADD COLUMN IF NOT EXISTS step_state JSONB;
 ALTER TABLE approval_requests ADD COLUMN IF NOT EXISTS step_mode  TEXT CHECK (step_mode IN ('any', 'all'));
 ALTER TABLE approval_requests ADD COLUMN IF NOT EXISTS history    JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE approval_requests ADD COLUMN IF NOT EXISTS last_reminded_at TIMESTAMPTZ;

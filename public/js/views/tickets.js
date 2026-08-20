@@ -530,8 +530,13 @@ Views.tickets = async function (el, params = {}) {
     openModal({
       title: t('rt.title'),
       wide: true,
-      body: `<label style="display:inline-flex;align-items:center;gap:8px;margin-bottom:12px;font-size:14px">
-          <input type="checkbox" id="rt-approvals-on" ${cfg.enabled ? 'checked' : ''}> <strong>${esc(t('rt.enableApprovals'))}</strong></label>
+      body: `<div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;flex-wrap:wrap">
+          <label style="display:inline-flex;align-items:center;gap:8px;font-size:14px">
+            <input type="checkbox" id="rt-approvals-on" ${cfg.enabled ? 'checked' : ''}> <strong>${esc(t('rt.enableApprovals'))}</strong></label>
+          <label class="cell-sub" style="display:inline-flex;align-items:center;gap:6px" title="${esc(t('rt.reminderHint'))}">
+            <span class="ms ms-sm" style="vertical-align:-3px">notifications_active</span> ${esc(t('rt.reminderDays'))}
+            <input type="number" id="rt-reminder-days" min="0" max="90" step="1" value="${esc(cfg.reminderDays || 0)}" style="width:70px"></label>
+        </div>
         <p class="cell-sub" style="margin:0 0 12px">${esc(t('rt.hint'))}</p>
         <div id="rt-list">${(loaded.length ? loaded : [null]).map(rowHtml).join('')}</div>
         <button class="btn btn-outline btn-sm" id="rt-add" type="button"><span class="ms ms-sm">add</span> ${esc(t('rt.add'))}</button>`,
@@ -553,7 +558,7 @@ Views.tickets = async function (el, params = {}) {
         $('#rt-add', ov).addEventListener('click', () => { listEl.insertAdjacentHTML('beforeend', rowHtml(null)); wireDel(); mountPickers(); });
         $('#rt-save', ov).addEventListener('click', async () => {
           try {
-            await api('/approvals/config', { method: 'PUT', body: { enabled: $('#rt-approvals-on', ov).checked } });
+            await api('/approvals/config', { method: 'PUT', body: { enabled: $('#rt-approvals-on', ov).checked, reminderDays: Number($('#rt-reminder-days', ov).value) || 0 } });
             const rows = [...listEl.querySelectorAll('.rt-row')].map((r) => {
               const checked = [].concat(
                 r.querySelector('.rt-mgr').checked ? ['manager'] : [],
