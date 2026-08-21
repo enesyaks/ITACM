@@ -59,10 +59,10 @@ Donanım ve ağ envanteri · yazdırılabilir PDF tutanaklı personel zimmetleri
 Çoğu envanter aracı ya zamanla çürüyen bir Excel dosyası ya da kendi sunucunuzda barındıramadığınız ağır bir SaaS'tır. ITACM tam ortada durur:
 
 - **Tek komutla çalışır.** `docker compose up -d` size veritabanını, şemayı, ilk yöneticiyi ve tam bir web arayüzünü verir — build adımı yok, ayrı bir frontend kurmanıza gerek yok.
-- **Sağlam zimmetler.** Her cihaz ataması, satır kilitli ve atomik bir işlemdir; şirket markanızla **Zimmet Tutanağı** (yazdırılabilir teslim formu) üretir.
+- **Zimmet.** Her cihaz ataması, satır kilitli ve otomik bir işlemdir; şirket markanızla **Zimmet Tutanağı** (yazdırılabilir teslim formu) üretir.
 - **Tüm şirket, tek taşıma.** Cihazlar, personel, tutanaklar, sözleşmeler ve denetim geçmişi PostgreSQL'dedir. Yüklenen belgeler dosya sisteminde (`DATA_DIR/documents`); tam taşıma için `npm run migrate:export` kullanın.
-- **Depoda da çalışır.** Arayüz tamamen duyarlı; mobil alt menü ve kamerayla QR/barkod tarama ile telefonunuzdan sayım yapabilir veya laptop zimmetleyebilirsiniz.
-- **Sizin kalır.** Telemetri yok, üreticiye bağımlılık yok, MIT lisanslı.
+- **Envanter sayımı.** Arayüz tamamen duyarlı; mobil alt menü ve kamerayla QR/barkod tarama ile telefonunuzdan sayım yapabilir veya laptop zimmetleyebilirsiniz.
+- **Verileriniz sizde kalır.** Telemetri yok, üreticiye bağımlılık yok, MIT lisanslı.
 
 ---
 
