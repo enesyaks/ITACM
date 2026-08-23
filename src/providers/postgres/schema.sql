@@ -939,6 +939,7 @@ ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS sla_json JSONB NOT NULL DEFAUL
 
 -- Canned responses (058): array of { title, body }.
 ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS ticket_canned_json JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS ticket_categories_json JSONB;
 
 -- Knowledge base (068).
 CREATE TABLE IF NOT EXISTS kb_articles (

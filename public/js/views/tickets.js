@@ -101,6 +101,12 @@ Views.tickets = async function (el, params = {}) {
   const problemsList = Array.isArray(problemsRes) ? problemsRes : [];
   const probLabel = (p) => `${p.number} · ${p.title}`;
   const catList = Array.isArray(catsRes) ? catsRes : [];
+  // <option>s for a category <select>; keeps a legacy/current value that is no
+  // longer in the managed list so it isn't silently dropped on save.
+  const catOptions = (sel) => {
+    const opts = sel && !catList.includes(sel) ? [sel, ...catList] : catList;
+    return opts.map((c) => `<option value="${esc(c)}"${c === sel ? ' selected' : ''}>${esc(c)}</option>`).join('');
+  };
   let canned = Array.isArray(cannedRes) ? cannedRes : [];
   let sortKey = 'created';
   let sortOrder = 'desc';
@@ -691,7 +697,8 @@ Views.tickets = async function (el, params = {}) {
           <select id="tk-c-urgency">${['low', 'medium', 'high'].map((l) => `<option value="${l}"${l === 'medium' ? ' selected' : ''}>${esc(tkPriorityLabel(l))}</option>`).join('')}</select></div>
         <div class="form-field full"><label>${esc(t('tk.subject'))} *</label><input id="tk-c-subject" maxlength="300"></div>
         <div class="form-field full"><label>${esc(t('tk.description'))}</label><textarea id="tk-c-desc" rows="4"></textarea></div>
-        <div class="form-field" id="tk-c-cat-wrap"><label>${esc(t('tk.category'))}</label><input id="tk-c-cat" maxlength="120" placeholder="${esc(t('tk.categoryPh'))}"></div>
+        <div class="form-field" id="tk-c-cat-wrap"><label>${esc(t('tk.category'))}</label>
+          <select id="tk-c-cat"><option value="">${esc(t('tk.categoryNone'))}</option>${catOptions()}</select></div>
         <div class="form-field" id="tk-c-amount-wrap" style="display:none"><label>${esc(t('mtk.amount'))}</label>
           <input id="tk-c-amount" type="number" min="0" step="0.01" placeholder="0">
           <div class="cell-sub" id="tk-c-amount-hint" style="margin-top:4px"></div></div>
@@ -789,7 +796,7 @@ Views.tickets = async function (el, params = {}) {
           <div class="form-field"><label>${esc(t('tk.assignee'))}</label>
             <select id="tk-d-assignee" ${canAssign ? '' : 'disabled'}>${assignOpts}</select></div>
           <div class="form-field"><label>${esc(t('tk.category'))}</label>
-            <input id="tk-d-cat" value="${esc(tk.category || '')}" ${canUpdate ? '' : 'disabled'}></div>
+            <select id="tk-d-cat" ${canUpdate ? '' : 'disabled'}><option value="">${esc(t('tk.categoryNone'))}</option>${catOptions(tk.category)}</select></div>
           <div class="form-field"><label>${esc(t('tk.requester'))}</label>
             <div style="padding-top:6px">${esc(tk.requesterName || '—')}</div></div>
           ${tk.approvalStatus ? `<div class="form-field"><label>${esc(t('rt.approval'))}</label>

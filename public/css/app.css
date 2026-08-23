@@ -5930,6 +5930,15 @@ body.ai-open .ai-panel { opacity: 1; visibility: visible; transform: none; }
 .rt-amount-field { flex: 0 0 130px; }
 .rt-amount-field input { width: 100%; }
 
+/* Managed ticket-category chips (catalog page) */
+.tk-cat-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.tk-cat-chip { display: inline-flex; align-items: center; gap: 4px; padding: 5px 6px 5px 12px; font-size: 13px;
+  border: 1px solid var(--outline-variant); border-radius: 999px; background: var(--surface-low); }
+.tk-cat-x { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; padding: 0;
+  border: 0; border-radius: 50%; background: none; cursor: pointer; color: var(--on-surface-variant); }
+.tk-cat-x:hover { background: var(--surface-container, rgba(0,0,0,.08)); color: var(--rose-600, #e11d48); }
+.tk-cat-x .ms-sm { font-size: 16px; }
+
 /* --- Searchable combobox (styled datalist replacement) --- */
 .combo { position: relative; }
 .combo-box { position: relative; display: flex; align-items: center; }

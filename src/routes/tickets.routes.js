@@ -56,9 +56,16 @@ router.put('/sla', requirePermission('ticket', 'manage'), asyncHandler(async (re
   res.json({ success: true, data: await ticketService.saveSlaConfig(req.body || {}) });
 }));
 
-// GET /api/tickets/categories — distinct categories for the filter (before /:id)
+// GET /api/tickets/categories — managed + used categories for the pickers (before /:id)
 router.get('/categories', requirePermission('ticket', 'read'), asyncHandler(async (req, res) => {
   res.json({ success: true, data: await ticketService.categories() });
+}));
+// GET/PUT /api/tickets/categories/manage — the admin-curated category list.
+router.get('/categories/manage', requirePermission('ticket', 'read'), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await ticketService.getManagedCategories() });
+}));
+router.put('/categories/manage', requirePermission('ticket', 'manage'), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await ticketService.saveManagedCategories((req.body && req.body.items) || []) });
 }));
 
 // GET/PUT /api/tickets/canned — quick-reply templates (before /:id)

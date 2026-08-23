@@ -377,11 +377,35 @@ async function saveCannedResponses(input) {
   return out;
 }
 
+/** The admin-curated category list (source of truth for the dropdowns). */
+async function getManagedCategories() {
+  try {
+    const { rows } = await query('SELECT ticket_categories_json FROM app_settings WHERE id = 1');
+    const raw = rows[0] && Array.isArray(rows[0].ticket_categories_json) ? rows[0].ticket_categories_json : [];
+    return raw.map((c) => String(c || '').trim().slice(0, 120)).filter(Boolean);
+  } catch { return []; }
+}
+
+async function saveManagedCategories(input) {
+  const seen = new Set();
+  const out = [];
+  for (const c of (Array.isArray(input) ? input : [])) {
+    const v = String(c || '').trim().slice(0, 120);
+    if (v && !seen.has(v.toLowerCase())) { seen.add(v.toLowerCase()); out.push(v); }
+  }
+  const clipped = out.slice(0, 200);
+  await query('UPDATE app_settings SET ticket_categories_json = $1::jsonb WHERE id = 1', [JSON.stringify(clipped)]);
+  return clipped;
+}
+
+/** Managed list merged with any legacy free-text categories on existing tickets. */
 async function categories() {
+  const managed = await getManagedCategories();
   const { rows } = await query(
     "SELECT DISTINCT category FROM tickets WHERE category IS NOT NULL AND category <> '' ORDER BY category LIMIT 200"
   );
-  return rows.map((r) => r.category);
+  const used = rows.map((r) => r.category);
+  return [...new Set([...managed, ...used])].sort((a, b) => String(a).localeCompare(String(b)));
 }
 
 // Service-desk KPI counts for the stats strip. Breach is computed live (open
@@ -828,5 +852,5 @@ module.exports = {
   createMyTicket, listMyTickets, getMyTicket, addMyComment, submitMyCsat,
   onRequestApproved, onRequestRejected, onRequestWithdrawn, closeForProblem,
   sweepSlaBreaches, SLA_TARGETS, stats, getSlaConfig, saveSlaConfig, categories,
-  getCannedResponses, saveCannedResponses,
+  getCannedResponses, saveCannedResponses, getManagedCategories, saveManagedCategories,
 };
