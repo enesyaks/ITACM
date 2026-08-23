@@ -1341,6 +1341,8 @@
     'kb.bodyPh': L('Write the article… plain text, line breaks preserved.', 'Makaleyi yazın… düz metin, satır sonları korunur.'),
     'kb.published': L('Published', 'Yayında'),
     'kb.draft': L('Draft', 'Taslak'),
+    'kb.copyLink': L('Copy link', 'Linki kopyala'),
+    'kb.linkCopied': L('Link copied', 'Link kopyalandı'),
     'kb.publish': L('Publish (visible to employees)', 'Yayınla (çalışanlara görünür)'),
     'kb.views': L('views', 'görüntülenme'),
     'kb.deleteConfirm': L('Delete this article?', 'Bu makale silinsin mi?'),

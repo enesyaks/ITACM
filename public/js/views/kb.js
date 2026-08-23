@@ -31,6 +31,8 @@ function kbRenderAttachments(box, docs, urlFor) {
 
 Views.kb = async function (el) {
   const canManage = Auth.canIam('ticket', 'manage');
+  // Only privileged staff may hand out a shareable article link.
+  const canShare = ['Owner', 'Admin', 'Helpdesk'].includes(Auth.profile && Auth.profile.role);
   let searchTerm = '';
 
   const rowHtml = (a) => `<tr data-open="${esc(a.id)}" class="tk-row" style="cursor:pointer">
@@ -145,12 +147,25 @@ Views.kb = async function (el) {
         <div class="tk-desc" style="line-height:1.6">${esc(a.body || '—').replace(/\n/g, '<br>')}</div>
         <div id="kb-v-attach" class="kb-attach" style="margin-top:12px"></div>`,
       foot: `<button class="btn btn-outline" data-close>${esc(t('common.close'))}</button>
+             ${canShare ? `<button class="btn btn-outline" id="kb-v-share"><span class="ms">link</span> ${esc(t('kb.copyLink'))}</button>` : ''}
              ${canManage ? `<button class="btn btn-primary" id="kb-v-edit"><span class="ms">edit</span> ${esc(t('common.edit'))}</button>` : ''}`,
       async onMount(ov) {
+        // Reflect the open article in the URL so it can be copied/shared directly.
+        history.replaceState(null, '', '#/kb?a=' + encodeURIComponent(a.id));
+        $('#kb-v-share', ov)?.addEventListener('click', async () => {
+          const url = `${location.origin}${location.pathname}#/kb?a=${encodeURIComponent(a.id)}`;
+          try { await navigator.clipboard.writeText(url); toast(t('kb.linkCopied'), 'success'); }
+          catch { toast(url, 'info'); }
+        });
         $('#kb-v-edit', ov)?.addEventListener('click', () => { closeModal(); openEditor(a); });
         const docs = await api('/kb/' + encodeURIComponent(a.id) + '/documents').catch(() => []);
         kbRenderAttachments($('#kb-v-attach', ov), Array.isArray(docs) ? docs : [], (docId) => '/api/kb/documents/' + docId + '/download');
       },
+      onClose() { history.replaceState(null, '', '#/kb'); },
     });
   }
+
+  // Deep link: #/kb?a=<id> opens that article directly (shared links).
+  const deep = (location.hash.split('?')[1] || '').match(/(?:^|&)a=([^&]+)/);
+  if (deep) openArticle(decodeURIComponent(deep[1]));
 };
