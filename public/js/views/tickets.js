@@ -631,26 +631,31 @@ Views.tickets = async function (el, params = {}) {
   }
 
   function openCannedEditor() {
-    const rowHtml = (c) => `<div class="tk-canned-row" style="display:flex;gap:8px;margin-bottom:8px;align-items:flex-start">
-      <input class="tk-cn-title" placeholder="${esc(t('tk.cannedTitle'))}" maxlength="120" value="${esc((c && c.title) || '')}" style="flex:0 0 190px">
-      <textarea class="tk-cn-body" rows="2" placeholder="${esc(t('tk.cannedBody'))}" maxlength="4000" style="flex:1">${esc((c && c.body) || '')}</textarea>
-      <button class="btn btn-outline btn-sm tk-cn-del" type="button" title="${esc(t('common.remove') || 'Remove')}"><span class="ms ms-sm">delete</span></button>
+    const rowHtml = (c) => `<div class="rt-card tk-canned-card">
+      <div class="rt-card-head">
+        <div class="rt-field rt-grow"><label class="rt-lbl">${esc(t('tk.cannedTitle'))}</label>
+          <input class="tk-cn-title" maxlength="120" value="${esc((c && c.title) || '')}" placeholder="${esc(t('tk.cannedTitlePh'))}"></div>
+        <button class="btn btn-ghost btn-sm tk-cn-del" type="button" title="${esc(t('common.remove') || 'Remove')}"><span class="ms">delete</span></button>
+      </div>
+      <div class="rt-field" style="margin-top:10px"><label class="rt-lbl">${esc(t('tk.cannedBody'))}</label>
+        <textarea class="tk-cn-body" rows="3" maxlength="4000" placeholder="${esc(t('tk.cannedBodyPh'))}">${esc((c && c.body) || '')}</textarea></div>
     </div>`;
     openModal({
       title: t('tk.cannedManage'),
       wide: true,
-      body: `<p class="cell-sub" style="margin:0 0 12px">${esc(t('tk.cannedHint'))}</p>
+      stack: true, // sit on top of the ticket detail so saving doesn't close it
+      body: `<p class="cell-sub" style="margin:0 0 14px">${esc(t('tk.cannedHint'))}</p>
         <div id="tk-cn-list">${(canned.length ? canned : [{ title: '', body: '' }]).map(rowHtml).join('')}</div>
-        <button class="btn btn-outline btn-sm" id="tk-cn-add" type="button"><span class="ms ms-sm">add</span> ${esc(t('tk.cannedAdd'))}</button>`,
+        <button class="btn btn-outline btn-sm rt-add-btn" id="tk-cn-add" type="button"><span class="ms ms-sm">add</span> ${esc(t('tk.cannedAdd'))}</button>`,
       foot: `<button class="btn btn-outline" data-close>${esc(t('common.cancel'))}</button>
              <button class="btn btn-primary" id="tk-cn-save">${esc(t('common.save'))}</button>`,
       onMount(ov) {
         const list = $('#tk-cn-list', ov);
-        const wireDel = () => list.querySelectorAll('.tk-cn-del').forEach((b) => { b.onclick = () => b.closest('.tk-canned-row').remove(); });
+        const wireDel = () => list.querySelectorAll('.tk-cn-del').forEach((b) => { b.onclick = () => b.closest('.tk-canned-card').remove(); });
         wireDel();
         $('#tk-cn-add', ov).addEventListener('click', () => { list.insertAdjacentHTML('beforeend', rowHtml()); wireDel(); });
         $('#tk-cn-save', ov).addEventListener('click', async () => {
-          const items = [...list.querySelectorAll('.tk-canned-row')]
+          const items = [...list.querySelectorAll('.tk-canned-card')]
             .map((r) => ({ title: r.querySelector('.tk-cn-title').value.trim(), body: r.querySelector('.tk-cn-body').value.trim() }))
             .filter((x) => x.title && x.body);
           try {

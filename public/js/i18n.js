@@ -1453,6 +1453,8 @@
     'tk.cannedHint': L('Reusable reply templates staff can insert into the worklog.', 'Personelin worklog\'a ekleyebileceği yeniden kullanılabilir yanıt şablonları.'),
     'tk.cannedTitle': L('Title', 'Başlık'),
     'tk.cannedBody': L('Reply text', 'Yanıt metni'),
+    'tk.cannedTitlePh': L('e.g. Password reset steps', 'ör. Parola sıfırlama adımları'),
+    'tk.cannedBodyPh': L('The reply inserted into the worklog…', 'Worklog’a eklenecek yanıt…'),
     'tk.cannedAdd': L('Add template', 'Şablon ekle'),
     'tk.selected': L('{n} selected', '{n} seçili'),
     'tk.bulkAssign': L('Assign to…', 'Ata…'),
