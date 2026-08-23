@@ -48,6 +48,11 @@ router.get('/stats', requirePermission('ticket', 'read'), asyncHandler(async (re
   res.json({ success: true, data: await ticketService.stats() });
 }));
 
+// GET /api/tickets/report?from=&to= — ITIL service-desk report (before /:id)
+router.get('/report', requirePermission('ticket', 'read'), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await ticketService.report({ from: req.query.from, to: req.query.to }) });
+}));
+
 // GET/PUT /api/tickets/sla — effective SLA targets / save overrides (before /:id)
 router.get('/sla', requirePermission('ticket', 'read'), asyncHandler(async (req, res) => {
   res.json({ success: true, data: await ticketService.getSlaConfig() });

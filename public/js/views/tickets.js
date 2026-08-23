@@ -384,7 +384,8 @@ Views.tickets = async function (el, params = {}) {
   const render = () => {
     el.innerHTML = `
       ${pageHead(t('tk.title'), t('tk.subtitle'),
-        `${canManage ? `<button class="btn btn-outline" id="tk-templates"><span class="ms">assignment</span> ${esc(t('rt.title'))}</button>` : ''}`
+        `<button class="btn btn-outline" id="tk-report"><span class="ms">insights</span> ${esc(t('tk.report'))}</button>`
+        + `${canManage ? `<button class="btn btn-outline" id="tk-templates"><span class="ms">assignment</span> ${esc(t('rt.title'))}</button>` : ''}`
         + `${canManage ? `<button class="btn btn-outline" id="tk-sla"><span class="ms">schedule</span> ${esc(t('tk.slaSettings'))}</button>` : ''}`
         + `${canCreate ? `<button class="btn btn-primary" id="tk-new"><span class="ms">add</span> ${esc(t('tk.new'))}</button>` : ''}`)}
       <div id="tk-stats">${statsHtml(stats0)}</div>
@@ -426,6 +427,7 @@ Views.tickets = async function (el, params = {}) {
     if (sb) sb.addEventListener('click', openSlaEditor);
     const tb = $('#tk-templates', el);
     if (tb) tb.addEventListener('click', openRequestTemplates);
+    $('#tk-report', el)?.addEventListener('click', openReport);
     $('#tk-mode-list', el)?.addEventListener('click', () => { if (mode !== 'list') setMode('list'); });
     $('#tk-mode-board', el)?.addEventListener('click', () => { if (mode !== 'board') setMode('board'); });
     const reload = () => refresh();
@@ -605,6 +607,74 @@ Views.tickets = async function (el, params = {}) {
             closeModal(); toast(t('tk.saved'), 'success');
           } catch (err) { toast(err.message, 'error'); }
         });
+      },
+    });
+  }
+
+  function openReport() {
+    const fmtH = (h) => (h == null ? '—' : (h >= 24 ? (h / 24).toFixed(1) + ' ' + t('tk.daysShort') : h + ' ' + t('tk.hoursShort')));
+    const pctTxt = (p) => (p == null ? '—' : '%' + p);
+    const metric = (label, val, sub) => `<div class="card card-pad metric">
+      <div class="metric-top"><h3 class="card-title">${esc(label)}</h3></div>
+      <div class="metric-value">${esc(String(val))}</div>${sub ? `<div class="cell-sub">${esc(sub)}</div>` : ''}</div>`;
+    const renderReport = (rep) => {
+      const maxN = Math.max(1, ...rep.csat.distribution.map((d) => d.n));
+      return `
+        <h3 class="tkr-h">${esc(t('tk.reportVolume'))}</h3>
+        <div class="grid grid-4">
+          ${metric(t('tk.reportOpened'), rep.volume.opened, `${rep.volume.openedIncidents} ${tkTypeLabel('incident')} · ${rep.volume.openedRequests} ${tkTypeLabel('request')}`)}
+          ${metric(t('tk.reportResolved'), rep.volume.resolved)}
+          ${metric(t('tk.reportClosed'), rep.volume.closed)}
+          ${metric(t('tk.csat'), rep.csat.avg != null ? rep.csat.avg + ' / 5' : '—', `${rep.csat.count} ${t('tk.votes')}`)}
+        </div>
+        <h3 class="tkr-h">${esc(t('tk.slaCol'))}</h3>
+        <div class="grid grid-4">
+          ${metric(t('tk.sla.response'), pctTxt(rep.sla.responseCompliance), `${t('tk.reportAvg')} ${fmtH(rep.sla.avgResponseHours)}`)}
+          ${metric(t('tk.sla.resolution'), pctTxt(rep.sla.resolutionCompliance), `${t('tk.reportAvg')} ${fmtH(rep.sla.avgResolutionHours)}`)}
+        </div>
+        <h3 class="tkr-h">${esc(t('tk.csat'))}</h3>
+        <div class="tkr-csat">${rep.csat.distribution.slice().reverse().map((d) => `<div class="tkr-csat-row">
+          <span class="tkr-csat-star">${d.rating}★</span><div class="tkr-bar"><i style="width:${Math.round(d.n / maxN * 100)}%"></i></div>
+          <span class="cell-sub">${d.n}</span></div>`).join('')}</div>
+        <h3 class="tkr-h">${esc(t('tk.reportByAgent'))} <button class="btn btn-outline btn-sm" id="tkr-csv" style="float:right"><span class="ms ms-sm">download</span> CSV</button></h3>
+        <div class="table-wrap"><table class="data">
+          <thead><tr><th>${esc(t('tk.assignee'))}</th><th>${esc(t('tk.reportResolved'))}</th><th>${esc(t('tk.reportClosed'))}</th><th>${esc(t('tk.reportAvgRes'))}</th><th>${esc(t('tk.slaCompliance'))}</th><th>${esc(t('tk.csat'))}</th></tr></thead>
+          <tbody>${rep.agents.length ? rep.agents.map((a) => `<tr>
+            <td class="cell-title">${esc(a.agent)}</td><td>${a.resolved}</td><td>${a.closed}</td>
+            <td>${fmtH(a.avgResolutionHours)}</td><td>${pctTxt(a.slaCompliance)}</td><td>${a.csatAvg != null ? a.csatAvg + ' / 5' : '—'}</td></tr>`).join('')
+            : `<tr><td colspan="6" class="table-empty">${esc(t('tk.none'))}</td></tr>`}</tbody>
+        </table></div>`;
+    };
+    const exportAgents = (rep) => {
+      const rows = [['Agent', 'Resolved', 'Closed', 'AvgResolutionHours', 'SLACompliance%', 'CSATAvg']];
+      rep.agents.forEach((a) => rows.push([a.agent, a.resolved, a.closed, a.avgResolutionHours ?? '', a.slaCompliance ?? '', a.csatAvg ?? '']));
+      const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\r\n');
+      downloadTextFile(`ticket-report-${rep.from}_${rep.to}.csv`, csv);
+    };
+    const load = async (ov) => {
+      const from = $('#tkr-from', ov).value; const to = $('#tkr-to', ov).value;
+      const box = $('#tkr-body', ov);
+      box.innerHTML = `<p class="cell-sub">${esc(t('common.loading') || '…')}</p>`;
+      const rep = await api(`/tickets/report?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`).catch(() => null);
+      if (!rep) { box.innerHTML = `<p class="cell-sub">—</p>`; return; }
+      box.innerHTML = renderReport(rep);
+      $('#tkr-csv', ov)?.addEventListener('click', () => exportAgents(rep));
+    };
+    openModal({
+      title: t('tk.report'),
+      xwide: true,
+      body: `<div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px">
+          <div class="form-field"><label>${esc(t('tk.reportFrom'))}</label><input type="date" id="tkr-from"></div>
+          <div class="form-field"><label>${esc(t('tk.reportTo'))}</label><input type="date" id="tkr-to"></div>
+          <button class="btn btn-outline btn-sm" id="tkr-apply">${esc(t('common.apply') || 'Apply')}</button>
+        </div>
+        <div id="tkr-body"></div>`,
+      foot: `<button class="btn btn-outline" data-close>${esc(t('common.close'))}</button>`,
+      onMount(ov) {
+        $('#tkr-from', ov).value = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+        $('#tkr-to', ov).value = new Date().toISOString().slice(0, 10);
+        $('#tkr-apply', ov).addEventListener('click', () => load(ov));
+        load(ov);
       },
     });
   }

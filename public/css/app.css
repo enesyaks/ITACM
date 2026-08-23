@@ -5930,6 +5930,15 @@ body.ai-open .ai-panel { opacity: 1; visibility: visible; transform: none; }
 .rt-amount-field { flex: 0 0 130px; }
 .rt-amount-field input { width: 100%; }
 
+/* Service-desk report modal */
+.tkr-h { margin: 20px 0 10px; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--on-surface-variant); }
+.tkr-h:first-child { margin-top: 0; }
+.tkr-csat { display: flex; flex-direction: column; gap: 8px; max-width: 460px; }
+.tkr-csat-row { display: flex; align-items: center; gap: 10px; }
+.tkr-csat-star { flex: 0 0 34px; font-size: 13px; color: var(--amber-600, #d97706); font-weight: 600; }
+.tkr-bar { flex: 1; height: 10px; border-radius: 999px; background: var(--surface-low); overflow: hidden; }
+.tkr-bar i { display: block; height: 100%; background: var(--primary); border-radius: 999px; }
+
 /* Managed ticket-category chips (catalog page) */
 .tk-cat-chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .tk-cat-chip { display: inline-flex; align-items: center; gap: 4px; padding: 5px 6px 5px 12px; font-size: 13px;

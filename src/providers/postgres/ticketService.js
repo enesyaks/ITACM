@@ -438,6 +438,85 @@ async function stats() {
   };
 }
 
+/**
+ * ITIL service-desk report over a date window (defaults to the last 30 days):
+ * volume, SLA response/resolution compliance + average times, CSAT with its
+ * rating distribution, and a per-agent breakdown (workload, SLA, CSAT).
+ * Period metrics key off resolved_at (throughput) and created_at (intake).
+ */
+async function report({ from, to } = {}) {
+  const day = (v, fb) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) ? String(v) : fb);
+  const toD = day(to, new Date().toISOString().slice(0, 10));
+  const fromD = day(from, new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10));
+  // Inclusive of the whole `to` day.
+  const params = [fromD, `${toD} 23:59:59`];
+  const inRes = 'resolved_at BETWEEN $1 AND $2';
+  const { rows: sumRows } = await query(`
+    SELECT
+      COUNT(*) FILTER (WHERE created_at BETWEEN $1 AND $2) AS opened,
+      COUNT(*) FILTER (WHERE created_at BETWEEN $1 AND $2 AND type='incident') AS opened_incidents,
+      COUNT(*) FILTER (WHERE created_at BETWEEN $1 AND $2 AND type='request') AS opened_requests,
+      COUNT(*) FILTER (WHERE ${inRes}) AS resolved,
+      COUNT(*) FILTER (WHERE closed_at BETWEEN $1 AND $2) AS closed,
+      COUNT(*) FILTER (WHERE ${inRes} AND resolve_due_at IS NOT NULL) AS res_measurable,
+      COUNT(*) FILTER (WHERE ${inRes} AND resolve_due_at IS NOT NULL AND resolved_at <= resolve_due_at) AS res_met,
+      COUNT(*) FILTER (WHERE first_response_at BETWEEN $1 AND $2 AND response_due_at IS NOT NULL) AS resp_measurable,
+      COUNT(*) FILTER (WHERE first_response_at BETWEEN $1 AND $2 AND response_due_at IS NOT NULL AND first_response_at <= response_due_at) AS resp_met,
+      ROUND(AVG(EXTRACT(EPOCH FROM (resolved_at - created_at))/3600) FILTER (WHERE ${inRes}), 1) AS avg_resolution_h,
+      ROUND(AVG(EXTRACT(EPOCH FROM (first_response_at - created_at))/3600) FILTER (WHERE first_response_at BETWEEN $1 AND $2), 1) AS avg_response_h,
+      ROUND(AVG(csat_rating) FILTER (WHERE csat_rating IS NOT NULL AND ${inRes}), 2) AS csat_avg,
+      COUNT(*) FILTER (WHERE csat_rating IS NOT NULL AND ${inRes}) AS csat_count
+    FROM tickets`, params);
+  const s = sumRows[0] || {};
+  const pct = (met, meas) => (Number(meas) ? Math.round((Number(met) || 0) / Number(meas) * 100) : null);
+
+  const { rows: csatDist } = await query(
+    `SELECT csat_rating AS rating, COUNT(*)::int AS n FROM tickets
+      WHERE csat_rating IS NOT NULL AND ${inRes} GROUP BY csat_rating ORDER BY csat_rating`, params);
+
+  const { rows: agents } = await query(`
+    SELECT au.username AS agent,
+      COUNT(*)::int AS resolved,
+      COUNT(*) FILTER (WHERE t.closed_at BETWEEN $1 AND $2)::int AS closed,
+      ROUND(AVG(EXTRACT(EPOCH FROM (t.resolved_at - t.created_at))/3600), 1) AS avg_resolution_h,
+      COUNT(*) FILTER (WHERE t.resolve_due_at IS NOT NULL)::int AS sla_measurable,
+      COUNT(*) FILTER (WHERE t.resolve_due_at IS NOT NULL AND t.resolved_at <= t.resolve_due_at)::int AS sla_met,
+      ROUND(AVG(t.csat_rating) FILTER (WHERE t.csat_rating IS NOT NULL), 2) AS csat_avg
+    FROM tickets t JOIN users au ON au.id = t.assignee_user_id
+    WHERE t.${inRes} GROUP BY au.username ORDER BY resolved DESC, agent`, params);
+
+  return {
+    from: fromD,
+    to: toD,
+    volume: {
+      opened: Number(s.opened) || 0,
+      openedIncidents: Number(s.opened_incidents) || 0,
+      openedRequests: Number(s.opened_requests) || 0,
+      resolved: Number(s.resolved) || 0,
+      closed: Number(s.closed) || 0,
+    },
+    sla: {
+      responseCompliance: pct(s.resp_met, s.resp_measurable),
+      resolutionCompliance: pct(s.res_met, s.res_measurable),
+      avgResponseHours: s.avg_response_h != null ? Number(s.avg_response_h) : null,
+      avgResolutionHours: s.avg_resolution_h != null ? Number(s.avg_resolution_h) : null,
+    },
+    csat: {
+      avg: s.csat_avg != null ? Number(s.csat_avg) : null,
+      count: Number(s.csat_count) || 0,
+      distribution: [1, 2, 3, 4, 5].map((r) => ({ rating: r, n: (csatDist.find((d) => d.rating === r) || {}).n || 0 })),
+    },
+    agents: agents.map((a) => ({
+      agent: a.agent,
+      resolved: a.resolved,
+      closed: a.closed,
+      avgResolutionHours: a.avg_resolution_h != null ? Number(a.avg_resolution_h) : null,
+      slaCompliance: pct(a.sla_met, a.sla_measurable),
+      csatAvg: a.csat_avg != null ? Number(a.csat_avg) : null,
+    })),
+  };
+}
+
 async function updateTicket(id, patch, user) {
   if (!isUuid(id)) throw HttpError.notFound('Ticket not found');
   const a = actor(user);
@@ -851,6 +930,6 @@ module.exports = {
   createTicket, getTicket, listTickets, updateTicket, addComment, sendToApproval,
   createMyTicket, listMyTickets, getMyTicket, addMyComment, submitMyCsat,
   onRequestApproved, onRequestRejected, onRequestWithdrawn, closeForProblem,
-  sweepSlaBreaches, SLA_TARGETS, stats, getSlaConfig, saveSlaConfig, categories,
+  sweepSlaBreaches, SLA_TARGETS, stats, report, getSlaConfig, saveSlaConfig, categories,
   getCannedResponses, saveCannedResponses, getManagedCategories, saveManagedCategories,
 };
