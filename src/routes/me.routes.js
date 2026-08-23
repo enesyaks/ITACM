@@ -9,7 +9,7 @@ const express = require('express');
 const router = express.Router();
 const { authenticate } = require('../middleware/auth');
 const { asyncHandler } = require('../utils/asyncHandler');
-const { selfService, ticketService, settingsService, documentService, requestTemplateService, approvalService, kbService } = require('../services');
+const { selfService, ticketService, settingsService, documentService, requestTemplateService, approvalService, kbService, inappService } = require('../services');
 const { validateUpload } = require('../utils/uploadGuard');
 const { contentDisposition } = require('../utils/contentDisposition');
 const { query } = require('../providers/postgres/pool');
@@ -24,6 +24,21 @@ async function currentEmployee(req) {
 }
 
 router.use(authenticate);
+
+/* --- In-app notifications (bell). Any signed-in user has their own feed. --- */
+router.get('/notifications', asyncHandler(async (req, res) => {
+  const [items, unread] = await Promise.all([
+    inappService.listForUser(req.user.uid, { limit: Number(req.query.limit) || 30, unreadOnly: req.query.unread === '1' }),
+    inappService.unreadCount(req.user.uid),
+  ]);
+  res.json({ success: true, data: { items, unread } });
+}));
+router.post('/notifications/read-all', asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await inappService.markAllRead(req.user.uid) });
+}));
+router.post('/notifications/:id/read', asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await inappService.markRead(req.params.id, req.user.uid) });
+}));
 
 /** GET /api/me/zimmet — assets, licenses and mobile lines assigned to the caller. */
 router.get('/zimmet', asyncHandler(async (req, res) => {

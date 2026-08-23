@@ -13,6 +13,7 @@ module.exports = {
   employeeService: require('./employeeService'),
   orgService: require('./orgService'),
   approvalService: require('./approvalService'),
+  inappService: require('./inappService'),
   offboardService: require('./offboardService'),
   onboardingService: require('./onboardingService'),
   licenseService: require('./licenseService'),

@@ -896,6 +896,14 @@ function notifyUpdate(plan) {
     if (plan.newAssigneeId && p.assigneeEmail) {
       mail({ to: p.assigneeEmail, ticketNumber: plan.number, subject: plan.subject, event: 'assigned to you', actorName: plan.actorName });
     }
+    // In-app: the newly-assigned agent gets a bell notification too.
+    if (plan.newAssigneeId) {
+      require('./inappService').create({
+        userId: plan.newAssigneeId, type: 'ticket_assigned',
+        title: `${plan.number} ${'assigned to you'}`,
+        body: plan.subject, link: '#/tickets',
+      }).catch(() => {});
+    }
   })().catch(() => {});
 }
 

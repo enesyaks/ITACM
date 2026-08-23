@@ -1128,8 +1128,13 @@ code, .mono { font-family: var(--mono); font-size: 12px; }
   outline: none; min-width: 0;
 }
 .topbar-actions { margin-left: auto; display: flex; align-items: center; gap: 6px; }
-.icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border: none; background: transparent; border-radius: 50%; color: var(--on-surface-variant); cursor: pointer; }
+.icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border: none; background: transparent; border-radius: 50%; color: var(--on-surface-variant); cursor: pointer; position: relative; }
 .icon-btn:hover { background: var(--surface-container); }
+.notif-badge { position: absolute; top: 5px; right: 5px; min-width: 17px; height: 17px; padding: 0 4px; box-sizing: border-box;
+  display: inline-flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; line-height: 1;
+  color: #fff; background: var(--rose-600, #e11d48); border-radius: 999px; border: 2px solid var(--surface, #fff); }
+.notif-badge.hidden { display: none; }
+.gs-item.is-unread { background: var(--primary-container, rgba(79,70,229,.06)); }
 .icon-btn:focus-visible {
   outline: 2px solid var(--primary-container);
   outline-offset: 2px;

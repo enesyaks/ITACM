@@ -2613,8 +2613,40 @@ function clearDismissedNotifs() {
   localStorage.removeItem(notifDismissKey());
 }
 
+function notifIcon(type) {
+  if (String(type).startsWith('approval')) return 'how_to_reg';
+  if (type === 'ticket_assigned') return 'confirmation_number';
+  return 'notifications';
+}
+
+// Poll the unread count, paint the bell badge, and pop a toast when new ones land.
+let _lastNotifUnread = null;
+async function refreshNotifBadge() {
+  if (!Auth.profile) return;
+  try {
+    const d = await api('/me/notifications?unread=1&limit=1');
+    const n = (d && d.unread) || 0;
+    const badge = document.getElementById('notif-badge');
+    if (badge) { badge.textContent = n > 9 ? '9+' : String(n); badge.classList.toggle('hidden', !n); }
+    if (_lastNotifUnread != null && n > _lastNotifUnread) {
+      const diff = n - _lastNotifUnread;
+      toast(diff === 1 ? t('notif.one') : t('notif.many').replace('{n}', String(diff)), 'info');
+    }
+    _lastNotifUnread = n;
+  } catch { /* badge refresh is best-effort */ }
+}
+
 async function showNotifications() {
   const d = await api('/dashboard/stats');
+  const inapp = await api('/me/notifications?limit=20').catch(() => ({ items: [], unread: 0 }));
+  const inappItems = (inapp.items || []).map((n) => ({
+    id: `inapp:${n.id}`,
+    icon: notifIcon(n.type),
+    tone: n.readAt ? 'slate' : 'indigo',
+    text: n.title + (n.body ? ` — ${n.body}` : ''),
+    go: n.link || null,
+    unread: !n.readAt,
+  }));
   const todayStr = (() => {
     const t = new Date();
     return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
@@ -2622,6 +2654,7 @@ async function showNotifications() {
   const dismissed = loadDismissedNotifs();
   const onboardSched = d.alerts.onboardingScheduled || [];
   const raw = [
+    ...inappItems,
     ...onboardSched.map((o) => {
       const sd = String(o.startDate || '').slice(0, 10);
       const due = sd && sd <= todayStr;
@@ -2657,7 +2690,7 @@ async function showNotifications() {
     title: `Notifications (${items.length})`,
     body: items.length === 0 ? '<div class="table-empty">All clear — no active alerts.</div>' :
       items.map((n, i) => `
-      <div class="gs-item" data-note="${i}">
+      <div class="gs-item ${n.unread ? 'is-unread' : ''}" data-note="${i}">
         ${iconChip(n.icon, n.tone)}
         <div style="flex:1">${esc(n.label || n.text)}</div>
         <button type="button" class="btn btn-outline btn-sm" data-dismiss="${i}" title="Dismiss"><span class="ms">close</span></button>
@@ -2666,6 +2699,11 @@ async function showNotifications() {
     foot: `${items.length ? '<button class="btn btn-outline" id="notif-clear-all">Clear all</button>' : ''}
            <button class="btn btn-outline" data-close>Close</button>`,
     onMount(overlay) {
+      // Opening the bell marks the persistent (in-app) notifications read and
+      // clears the badge; the dashboard-derived alerts keep their dismiss flow.
+      if (inappItems.some((n) => n.unread)) {
+        api('/me/notifications/read-all', { method: 'POST' }).then(refreshNotifBadge).catch(() => {});
+      }
       overlay.querySelectorAll('[data-dismiss]').forEach((btn) => {
         btn.addEventListener('click', (e) => {
           e.stopPropagation();
@@ -3828,6 +3866,16 @@ async function init() {
 
   // Topbar buttons
   $('#btn-notifications').addEventListener('click', () => { if (Auth.profile) showNotifications().catch((e2) => toast(e2.message, 'error')); });
+  (() => {
+    const bell = $('#btn-notifications');
+    if (bell && !$('#notif-badge')) {
+      const b = document.createElement('span');
+      b.id = 'notif-badge'; b.className = 'notif-badge hidden';
+      bell.appendChild(b);
+    }
+  })();
+  setInterval(() => { if (Auth.profile) refreshNotifBadge(); }, 60000);
+  setTimeout(() => { if (Auth.profile) refreshNotifBadge(); }, 1500);
   $('#btn-help').addEventListener('click', showHelp);
   $('#btn-settings').addEventListener('click', () => { if (Auth.profile) showSettings(); });
   $('#topbar-avatar').addEventListener('click', () => { if (Auth.profile) showProfile(); });

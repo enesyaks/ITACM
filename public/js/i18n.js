@@ -1639,6 +1639,8 @@
     'common.expected': L('Expected', 'Beklenen', 'Erwartet', 'Attendu', 'Esperado', 'Previsto', 'Esperado', 'Verwacht', 'Oczekiwane', 'Ожидается', 'المتوقع', '予定'),
     'common.found': L('Found', 'Bulundu', 'Gefunden', 'Trouvé', 'Encontrado', 'Trovato', 'Encontrado', 'Gevonden', 'Znaleziono', 'Найдено', 'تم العثور عليه', '発見'),
     'common.notifications': L('Notifications', 'Bildirimler', 'Benachrichtigungen', 'Notifications', 'Notificaciones', 'Notifiche', 'Notificações', 'Meldingen', 'Powiadomienia', 'Уведомления', 'الإشعارات', '通知'),
+    'notif.one': L('New notification', 'Yeni bildirim'),
+    'notif.many': L('{n} new notifications', '{n} yeni bildirim'),
     'common.help': L('Help', 'Yardım', 'Hilfe', 'Aide', 'Ayuda', 'Aiuto', 'Ajuda', 'Help', 'Pomoc', 'Справка', 'مساعدة', 'ヘルプ'),
     'common.repair': L('Repair', 'Onarım', 'Reparatur', 'Réparer', 'Reparar', 'Ripara', 'Reparar', 'Repareren', 'Napraw', 'Ремонт', 'إصلاح', '修理'),
 

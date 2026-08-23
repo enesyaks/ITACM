@@ -256,6 +256,7 @@ async function decide(id, { decision, note = '', deciderName = '', deciderEmploy
       [id, deciderName || null, String(note || '').slice(0, 1000)]
     );
     await dispatchReject(req, { deciderName });
+    notifyRequesterDecision(req, 'rejected', deciderName).catch(() => {});
     return getRequest(id);
   }
   if (decision !== 'approved') throw HttpError.badRequest("decision must be 'approved' or 'rejected'");
@@ -294,6 +295,7 @@ async function advance(req, { note = '', deciderName = '' } = {}) {
     `UPDATE approval_requests SET status='approved', decided_by=$2, decided_at=now(), decision_note=$3, step_state=NULL WHERE id=$1`,
     [req.id, deciderName || null, String(note || '').slice(0, 1000)]
   );
+  notifyRequesterDecision(req, 'approved', deciderName).catch(() => {});
   return getRequest(req.id);
 }
 
@@ -440,14 +442,45 @@ async function dispatchReject(req, { deciderName }) {
   } catch { /* rejection side-effects are best-effort */ }
 }
 
-/** Fire-and-forget notification to the current approver (best-effort). */
+/** Fire-and-forget notification to the current approver — email + in-app. */
 async function notify(request) {
+  const providers = require('./index');
   try {
-    const providers = require('./index');
     if (providers.notificationService && providers.notificationService.sendApprovalNotice) {
       await providers.notificationService.sendApprovalNotice(request);
     }
-  } catch { /* notifications are best-effort */ }
+  } catch { /* email is best-effort */ }
+  try {
+    if (providers.inappService && request) {
+      // Current approver(s): the single approver, or each pending parallel one.
+      const ids = [];
+      if (request.approverEmployeeId) ids.push(request.approverEmployeeId);
+      if (Array.isArray(request.stepState)) for (const e of request.stepState) if (e && e.status === 'pending' && e.employeeId) ids.push(e.employeeId);
+      for (const empId of [...new Set(ids)]) {
+        await providers.inappService.createForEmployee(empId, {
+          type: 'approval_request',
+          title: request.summary || 'Approval needed',
+          body: `${request.requesterName || 'A requester'} needs your approval.`,
+          link: '#/approvals',
+        });
+      }
+    }
+  } catch { /* in-app is best-effort */ }
+}
+
+/** Notify the requester in-app that their request was decided (best-effort). */
+async function notifyRequesterDecision(request, decision, deciderName) {
+  try {
+    const providers = require('./index');
+    if (providers.inappService && request && request.requesterEmployeeId) {
+      await providers.inappService.createForEmployee(request.requesterEmployeeId, {
+        type: 'approval_' + decision,
+        title: `${request.summary || 'Your request'} — ${decision === 'approved' ? 'approved' : 'rejected'}`,
+        body: deciderName ? `Decided by ${deciderName}.` : null,
+        link: request.type === 'ticket_request' ? '#/my-tickets' : '#/approvals',
+      });
+    }
+  } catch { /* best-effort */ }
 }
 
 module.exports = {
