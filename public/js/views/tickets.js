@@ -20,6 +20,9 @@ const tkStars = (n) => `<span class="tk-stars" title="${n}/5">${'★'.repeat(n)}
 const tkStatusLabel = (s) => t('tk.status.' + s) || s;
 const tkPriorityLabel = (p) => t('tk.priority.' + p) || p;
 const tkTypeLabel = (ty) => t('tk.type.' + ty) || ty;
+// Readable label for an approval-chain level token (manager / manager2 /
+// department / emp:<uuid> fixed approver).
+const lvlLabel = (lv) => (String(lv).startsWith('emp:') ? t('rt.finalApprover') : (t('rt.' + lv) || String(lv)));
 
 /* Approval decision trail. `history` = [{ at, decision, deciderName, approverName, note }].
    Shared by the staff and portal ticket detail; returns '' when there's nothing to show. */
@@ -83,7 +86,7 @@ Views.tickets = async function (el, params = {}) {
   const canLinkProblem = Auth.canIam('problem', 'update') || Auth.canIam('problem', 'manage');
   let mode = localStorage.getItem('tk_mode') === 'board' ? 'board' : 'list';
 
-  const [tickets, staff, empRes, assetRes, stats0, catsRes, cannedRes, problemsRes] = await Promise.all([
+  const [tickets, staff, empRes, assetRes, stats0, catsRes, cannedRes, problemsRes, tplRes] = await Promise.all([
     api('/tickets?open=1').catch(() => []),
     api('/auth/users').catch(() => []),
     api('/employees?status=Active&limit=1000').catch(() => ({ items: [] })),
@@ -92,7 +95,9 @@ Views.tickets = async function (el, params = {}) {
     api('/tickets/categories').catch(() => []),
     api('/tickets/canned').catch(() => []),
     canLinkProblem ? api('/problems?limit=500').catch(() => []) : Promise.resolve([]),
+    api('/request-templates').catch(() => []),
   ]);
+  const templates = (Array.isArray(tplRes) ? tplRes : []).filter((tp) => tp.enabled !== false);
   const problemsList = Array.isArray(problemsRes) ? problemsRes : [];
   const probLabel = (p) => `${p.number} · ${p.title}`;
   const catList = Array.isArray(catsRes) ? catsRes : [];
@@ -672,7 +677,13 @@ Views.tickets = async function (el, params = {}) {
     openModal({
       title: t('tk.new'),
       body: `<div class="form-grid">
-        <div class="form-field"><label>${esc(t('tk.type'))}</label>
+        ${templates.length ? `<div class="form-field full"><label>${esc(t('tk.template'))}</label>
+          <select id="tk-c-tpl">
+            <option value="">— ${esc(t('tk.noTemplate'))} —</option>
+            ${templates.map((tp) => `<option value="${esc(tp.id)}">${esc(tp.name)}${tp.category ? ' · ' + esc(tp.category) : ''}</option>`).join('')}
+          </select>
+          <div class="cell-sub" id="tk-c-tpl-hint" style="margin-top:4px"></div></div>` : ''}
+        <div class="form-field" id="tk-c-type-wrap"><label>${esc(t('tk.type'))}</label>
           <select id="tk-c-type"><option value="incident">${esc(tkTypeLabel('incident'))}</option><option value="request">${esc(tkTypeLabel('request'))}</option></select></div>
         <div class="form-field"><label>${esc(t('tk.impact'))}</label>
           <select id="tk-c-impact">${['low', 'medium', 'high'].map((l) => `<option value="${l}"${l === 'medium' ? ' selected' : ''}>${esc(tkPriorityLabel(l))}</option>`).join('')}</select></div>
@@ -680,7 +691,10 @@ Views.tickets = async function (el, params = {}) {
           <select id="tk-c-urgency">${['low', 'medium', 'high'].map((l) => `<option value="${l}"${l === 'medium' ? ' selected' : ''}>${esc(tkPriorityLabel(l))}</option>`).join('')}</select></div>
         <div class="form-field full"><label>${esc(t('tk.subject'))} *</label><input id="tk-c-subject" maxlength="300"></div>
         <div class="form-field full"><label>${esc(t('tk.description'))}</label><textarea id="tk-c-desc" rows="4"></textarea></div>
-        <div class="form-field"><label>${esc(t('tk.category'))}</label><input id="tk-c-cat" maxlength="120" placeholder="${esc(t('tk.categoryPh'))}"></div>
+        <div class="form-field" id="tk-c-cat-wrap"><label>${esc(t('tk.category'))}</label><input id="tk-c-cat" maxlength="120" placeholder="${esc(t('tk.categoryPh'))}"></div>
+        <div class="form-field" id="tk-c-amount-wrap" style="display:none"><label>${esc(t('mtk.amount'))}</label>
+          <input id="tk-c-amount" type="number" min="0" step="0.01" placeholder="0">
+          <div class="cell-sub" id="tk-c-amount-hint" style="margin-top:4px"></div></div>
         <div class="form-field"><label>${esc(t('tk.requester'))}</label>
           <div id="tk-c-requester-host"></div></div>
         <div class="form-field"><label>${esc(t('tk.asset'))}</label>
@@ -691,18 +705,51 @@ Views.tickets = async function (el, params = {}) {
       onMount(ov) {
         const reqPicker = mountCombobox($('#tk-c-requester-host', ov), { items: emps, labelOf: empLabel, subOf: (e) => e.email || '', placeholder: t('tk.searchPh') });
         const assetCPicker = mountCombobox($('#tk-c-asset-host', ov), { items: assets, labelOf: assetLabel, subOf: (x) => x.serialNo || x.status || '', placeholder: t('tk.searchPh') });
+        // Template picker: choosing one turns this into a request (category +
+        // approval chain come from the template); the type/category fields hide
+        // and an amount field appears when the template gates on a threshold.
+        const tplSel = $('#tk-c-tpl', ov);
+        const chainStr = (levels) => (levels || []).map((el) => {
+          if (el && typeof el === 'object') return '(' + (el.levels || []).map(lvlLabel).join(el.mode === 'all' ? ' & ' : ' / ') + ')';
+          return lvlLabel(el);
+        }).join(' → ');
+        const onTpl = () => {
+          const tp = templates.find((x) => x.id === (tplSel && tplSel.value));
+          const typeWrap = $('#tk-c-type-wrap', ov); const catWrap = $('#tk-c-cat-wrap', ov);
+          const amtWrap = $('#tk-c-amount-wrap', ov); const hint = $('#tk-c-tpl-hint', ov);
+          if (tp) {
+            typeWrap.style.display = 'none'; catWrap.style.display = 'none';
+            const chain = Array.isArray(tp.approvalLevels) && tp.approvalLevels.length ? chainStr(tp.approvalLevels) : '';
+            hint.innerHTML = `${tp.category ? `<span class="pill pill-slate">${esc(tp.category)}</span> ` : ''}${chain ? `<span class="ms ms-sm" style="vertical-align:-3px">how_to_reg</span> ${esc(t('mtk.approvalChain'))}: ${esc(chain)}` : ''}`;
+            if (tp.amountThreshold != null) {
+              amtWrap.style.display = '';
+              $('#tk-c-amount-hint', ov).textContent = t('mtk.amountHint').replace('{n}', '₺' + Number(tp.amountThreshold).toLocaleString('tr-TR'));
+            } else amtWrap.style.display = 'none';
+          } else {
+            typeWrap.style.display = ''; catWrap.style.display = ''; amtWrap.style.display = 'none'; hint.textContent = '';
+          }
+        };
+        if (tplSel) { tplSel.addEventListener('change', onTpl); onTpl(); }
         $('#tk-c-save', ov).addEventListener('click', async () => {
+          const tplId = tplSel && tplSel.value;
+          const body = {
+            subject: $('#tk-c-subject', ov).value.trim(),
+            description: $('#tk-c-desc', ov).value.trim(),
+            impact: $('#tk-c-impact', ov).value,
+            urgency: $('#tk-c-urgency', ov).value,
+            requesterEmployeeId: reqPicker.getId(),
+            assetId: assetCPicker.getId(),
+          };
+          if (tplId) {
+            body.templateId = tplId;
+            const amt = Number($('#tk-c-amount', ov).value);
+            if (Number.isFinite(amt) && amt >= 0 && $('#tk-c-amount-wrap', ov).style.display !== 'none') body.amount = amt;
+          } else {
+            body.type = $('#tk-c-type', ov).value;
+            body.category = $('#tk-c-cat', ov).value.trim();
+          }
           try {
-            await api('/tickets', { method: 'POST', body: {
-              type: $('#tk-c-type', ov).value,
-              impact: $('#tk-c-impact', ov).value,
-              urgency: $('#tk-c-urgency', ov).value,
-              subject: $('#tk-c-subject', ov).value.trim(),
-              description: $('#tk-c-desc', ov).value.trim(),
-              category: $('#tk-c-cat', ov).value.trim(),
-              requesterEmployeeId: reqPicker.getId(),
-              assetId: assetCPicker.getId(),
-            } });
+            await api('/tickets', { method: 'POST', body });
             closeModal();
             toast(t('tk.created'), 'success');
             refresh();
@@ -747,6 +794,8 @@ Views.tickets = async function (el, params = {}) {
             <div style="padding-top:6px">${esc(tk.requesterName || '—')}</div></div>
           ${tk.approvalStatus ? `<div class="form-field"><label>${esc(t('rt.approval'))}</label>
             <div style="padding-top:6px">${pill({ pending: 'pill-amber', approved: 'pill-emerald', rejected: 'pill-rose' }[tk.approvalStatus] || 'pill-slate', t('mtk.ap' + tk.approvalStatus.charAt(0).toUpperCase() + tk.approvalStatus.slice(1)))}${tk.approvalStatus === 'pending' && tk.approvalApprover ? ` <span class="cell-sub">· ${esc(tk.approvalApprover)}</span>` : ''}</div></div>` : ''}
+          ${(canUpdate && tk.requesterEmployeeId && tk.approvalStatus !== 'pending') ? `<div class="form-field"><label>${esc(t('tk.approval'))}</label>
+            <div style="padding-top:4px"><button class="btn btn-outline btn-sm" id="tk-d-send-approval"><span class="ms ms-sm">how_to_reg</span> ${esc(t('tk.sendToApproval'))}</button></div></div>` : ''}
           ${renderApprovalTimeline(tk.approvalHistory)}
           <div class="form-field"><label>${esc(t('tk.asset'))}</label>
             <div id="tk-d-asset-host"></div></div>
@@ -796,6 +845,25 @@ Views.tickets = async function (el, params = {}) {
           catch (err) { toast(err.message, 'error'); }
         };
         $('#tk-d-status', ov)?.addEventListener('change', (e) => patch({ status: e.target.value }));
+        $('#tk-d-send-approval', ov)?.addEventListener('click', () => {
+          formModal({
+            title: t('tk.sendToApproval'),
+            stack: true,
+            fields: [{ name: 'level', label: t('tk.approvalLevel'), type: 'select', full: true, value: 'manager', options: [
+              { value: 'manager', label: t('rt.manager') },
+              { value: 'manager2', label: t('rt.manager2') },
+              { value: 'department', label: t('rt.department') },
+            ] }],
+            submitLabel: t('tk.sendToApproval'),
+            async onSubmit(d) {
+              // Let a failure propagate so formModal surfaces it and stays open.
+              await api('/tickets/' + encodeURIComponent(id) + '/send-approval', { method: 'POST', body: { level: d.level } });
+              toast(t('tk.sentToApproval'), 'success');
+              // Re-open the detail (fresh approval status) after formModal auto-closes.
+              setTimeout(() => openTicket(id), 0);
+            },
+          });
+        });
         $('#tk-d-impact', ov)?.addEventListener('change', (e) => patch({ impact: e.target.value || null }));
         $('#tk-d-urgency', ov)?.addEventListener('change', (e) => patch({ urgency: e.target.value || null }));
         $('#tk-d-assignee', ov)?.addEventListener('change', (e) => patch({ assigneeUserId: e.target.value || null }));

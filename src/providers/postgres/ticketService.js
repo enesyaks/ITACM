@@ -195,8 +195,47 @@ async function employeeForUser(user) {
   return rows[0] || null;
 }
 
+/**
+ * Open the approval a request template requires for a just-created ticket, if any.
+ * Shared by the portal (createMyTicket) and staff (createTicket) paths. Amount-
+ * gated: below the template threshold the fixed emp: approvers are dropped. No-op
+ * when the template has no chain or the ticket has no requester to route from.
+ */
+async function applyTemplateApproval(ticket, template, { amount, requesterEmployeeId, requesterName } = {}) {
+  if (!template || !Array.isArray(template.approvalLevels) || !template.approvalLevels.length) return;
+  if (!requesterEmployeeId) return;
+  const amt = Number(amount);
+  const hasAmount = Number.isFinite(amt) && amt >= 0;
+  let levels = template.approvalLevels;
+  if (template.amountThreshold != null && Number.isFinite(Number(template.amountThreshold))) {
+    const meets = hasAmount && amt >= Number(template.amountThreshold);
+    if (!meets) levels = levels.filter((l) => !(typeof l === 'string' && l.startsWith('emp:')));
+  }
+  if (!levels.length) return;
+  const approval = await require('./approvalService').createRequest({
+    type: 'ticket_request',
+    requesterEmployeeId,
+    requesterName: requesterName || null,
+    payload: { ticketId: ticket.id, amount: hasAmount ? amt : null },
+    resourceRef: ticket.number,
+    summary: `${template.name}: ${ticket.subject}${hasAmount ? ` — ₺${amt.toLocaleString('tr-TR')}` : ''}`,
+    levels,
+  }).catch(() => ({ required: false }));
+  if (approval && approval.required && approval.request) {
+    await query('UPDATE tickets SET approval_request_id = $1 WHERE id = $2', [approval.request.id, ticket.id]);
+    logActivity(ticket.id, { name: 'system' }, 'approval_requested', `Pending ${levels.join(' → ')}`).catch(() => {});
+  }
+}
+
 async function createTicket(body, user, { asEmployee = null } = {}) {
-  const type = TYPES.has(body && body.type) ? body.type : 'incident';
+  // Optional request template: forces type=request and carries a category + an
+  // approval chain that must clear before the desk fulfils the request.
+  let template = null;
+  if (body && body.templateId) {
+    template = await require('./requestTemplateService').getTemplate(body.templateId).catch(() => null);
+    if (!template || !template.enabled) throw HttpError.badRequest('Invalid request template');
+  }
+  const type = template ? 'request' : (TYPES.has(body && body.type) ? body.type : 'incident');
   const subject = String((body && body.subject) || '').trim().slice(0, 300);
   if (!subject) throw HttpError.badRequest('A subject is required');
   const description = String((body && body.description) || '').trim().slice(0, 8000);
@@ -207,7 +246,8 @@ async function createTicket(body, user, { asEmployee = null } = {}) {
   const priority = (impact && urgency)
     ? derivePriority(impact, urgency)
     : (PRIORITIES.has(body && body.priority) ? body.priority : 'medium');
-  const category = body && body.category ? String(body.category).trim().slice(0, 120) : null;
+  const category = template ? (template.category || null)
+    : (body && body.category ? String(body.category).trim().slice(0, 120) : null);
   const a = actor(user);
 
   let requesterEmployeeId = asEmployee ? asEmployee.id : null;
@@ -236,6 +276,14 @@ async function createTicket(body, user, { asEmployee = null } = {}) {
   const id = rows[0].id;
   await logActivity(id, a, 'created', `${type} · ${priority}`);
   audit('ticket.create', `Opened ${number}: ${subject}`, a, id, number);
+  if (template) {
+    const t0 = await getTicket(id, user);
+    await applyTemplateApproval(t0, template, {
+      amount: body && body.amount,
+      requesterEmployeeId: t0.requesterEmployeeId,
+      requesterName: t0.requesterName,
+    });
+  }
   return getTicket(id, user);
 }
 
@@ -540,47 +588,43 @@ async function addComment(id, body, user, { ownEmployeeId = null } = {}) {
 async function createMyTicket(body, user) {
   const emp = await employeeForUser(user);
   if (!emp) throw HttpError.forbidden('No employee record is linked to your account');
-  // Optional service-request template: forces type=request, carries a category and
-  // an approval chain that must clear before the desk fulfils it.
-  let template = null;
-  if (body && body.templateId) {
-    template = await require('./requestTemplateService').getTemplate(body.templateId).catch(() => null);
-    if (!template || !template.enabled) throw HttpError.badRequest('Invalid request template');
-  }
+  // createTicket resolves the optional template (type=request + category) and
+  // opens its amount-gated approval chain, routed from this employee.
   const ticket = await createTicket({
-    type: template ? 'request' : (body && body.type),
+    type: body && body.type,
+    templateId: body && body.templateId,
     subject: body && body.subject,
     description: body && body.description,
-    category: template ? template.category : undefined,
+    amount: body && body.amount,
   }, user, { asEmployee: emp });
-
-  if (template && Array.isArray(template.approvalLevels) && template.approvalLevels.length) {
-    // Amount-gated finance sign-off: below the template's threshold, drop the
-    // fixed final approver(s) (emp: steps) and route through the org levels only.
-    const amount = Number(body && body.amount);
-    const hasAmount = Number.isFinite(amount) && amount >= 0;
-    let levels = template.approvalLevels;
-    if (template.amountThreshold != null && Number.isFinite(Number(template.amountThreshold))) {
-      const meets = hasAmount && amount >= Number(template.amountThreshold);
-      if (!meets) levels = levels.filter((l) => !(typeof l === 'string' && l.startsWith('emp:')));
-    }
-    if (levels.length) {
-      const approval = await require('./approvalService').createRequest({
-        type: 'ticket_request',
-        requesterEmployeeId: emp.id,
-        requesterName: emp.full_name,
-        payload: { ticketId: ticket.id, amount: hasAmount ? amount : null },
-        resourceRef: ticket.number,
-        summary: `${template.name}: ${ticket.subject}${hasAmount ? ` — ₺${amount.toLocaleString('tr-TR')}` : ''}`,
-        levels,
-      }).catch(() => ({ required: false }));
-      if (approval && approval.required && approval.request) {
-        await query('UPDATE tickets SET approval_request_id = $1 WHERE id = $2', [approval.request.id, ticket.id]);
-        logActivity(ticket.id, { name: 'system' }, 'approval_requested', `Pending ${levels.join(' → ')}`).catch(() => {});
-      }
-    }
-  }
   return getMyTicket(ticket.id, user);
+}
+
+/**
+ * Manually route a ticket to approval — an agent decides it needs sign-off from
+ * the requester's manager (or skip-level / department). Creates a ticket_request
+ * approval and links it. Fails if one is already pending or nothing resolves.
+ */
+async function sendToApproval(ticketId, { level = 'manager' } = {}, user) {
+  const tk = await getTicket(ticketId, user);
+  if (tk.approvalStatus === 'pending') throw HttpError.badRequest('This ticket already has a pending approval');
+  if (!tk.requesterEmployeeId) throw HttpError.badRequest('This ticket has no requester to route the approval from');
+  const lvl = ['manager', 'manager2', 'department'].includes(level) ? level : 'manager';
+  const approval = await require('./approvalService').createRequest({
+    type: 'ticket_request',
+    requesterEmployeeId: tk.requesterEmployeeId,
+    requesterName: tk.requesterName,
+    payload: { ticketId },
+    resourceRef: tk.number,
+    summary: `${tk.number}: ${tk.subject}`,
+    levels: [lvl],
+  });
+  if (!approval || !approval.required || !approval.request) {
+    throw HttpError.badRequest('Could not start approval — the workflow may be off, or no approver is set for the requester');
+  }
+  await query('UPDATE tickets SET approval_request_id = $1, updated_at = now() WHERE id = $2', [approval.request.id, ticketId]);
+  await logActivity(ticketId, actor(user), 'approval_requested', `Sent to ${lvl}`).catch(() => {});
+  return getTicket(ticketId, user);
 }
 
 /** Called by approvalService.dispatch when a service-request approval clears. */
@@ -780,7 +824,7 @@ function audit(action, summary, a, entityId, label) {
 }
 
 module.exports = {
-  createTicket, getTicket, listTickets, updateTicket, addComment,
+  createTicket, getTicket, listTickets, updateTicket, addComment, sendToApproval,
   createMyTicket, listMyTickets, getMyTicket, addMyComment, submitMyCsat,
   onRequestApproved, onRequestRejected, onRequestWithdrawn, closeForProblem,
   sweepSlaBreaches, SLA_TARGETS, stats, getSlaConfig, saveSlaConfig, categories,
