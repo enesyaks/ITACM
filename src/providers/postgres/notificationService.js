@@ -577,27 +577,26 @@ async function sendOnboardingWelcomeEmail({ onboardingId, to, extraNote } = {}) 
  * resolves (never throws) so the caller can fire-and-forget: SMTP problems and
  * a disabled feature both come back as `{ skipped }`.
  */
+/** Minimal HTML shell wrapping an editable template's body fragment. */
+function templateHtml(bodyHtml) {
+  return '<!DOCTYPE html><html><head><meta charset="utf-8"></head>'
+    + '<body style="font-family:system-ui,-apple-system,sans-serif;line-height:1.5;color:#1a1a1a;max-width:640px;margin:0 auto;padding:24px">'
+    + `${bodyHtml}</body></html>`;
+}
+
 async function sendTicketNotification({ to, ticketNumber, subject, event, actorName, snippet }) {
   try {
     if (!to) return { skipped: true, reason: 'no recipient' };
     const { notify, smtp, companyName } = await getMailConfig();
     if (!notify.enabled || !notify.ticketUpdates) return { skipped: true, reason: 'ticket notifications off' };
     if (!smtp.host) return { skipped: true, reason: 'no smtp host' };
-
-    const base = appBaseUrl(notify);
-    const safe = (s) => String(s || '').replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
-    const line = `${actorName || 'Someone'} — ${event} · ${ticketNumber}`;
-    const textParts = [line, snippet ? `\n"${snippet}"` : '', base ? `\n${base}` : ''].filter(Boolean);
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"></head>`
-      + `<body style="font-family:system-ui,-apple-system,sans-serif;line-height:1.5;color:#1a1a1a;max-width:640px;margin:0 auto;padding:24px">`
-      + `<p style="margin:0 0 6px;color:#64748b;font-size:13px">${safe(companyName)} · Service Desk</p>`
-      + `<h2 style="margin:0 0 10px;font-size:18px">${safe(ticketNumber)} — ${safe(subject)}</h2>`
-      + `<p style="margin:0 0 12px">${safe(actorName || 'Someone')} — ${safe(event)}.</p>`
-      + (snippet ? `<blockquote style="margin:0 0 12px;padding:10px 14px;border-left:3px solid #cbd5e1;background:#f8fafc;color:#334155">${safe(snippet)}</blockquote>` : '')
-      + (base ? `<p style="margin:0"><a href="${safe(base)}" style="color:#4f46e5">Open the service desk</a></p>` : '')
-      + `</body></html>`;
-
-    return await sendMail({ to, subject: `[${ticketNumber}] ${subject}`, text: textParts.join('\n'), html });
+    const base = appBaseUrl(notify) || process.env.APP_URL || 'http://localhost:8000';
+    const templates = await getEmailTemplates();
+    const rendered = renderTemplate(templates.ticket_update, {
+      companyName, ticketNumber, subject, event,
+      actorName: actorName || 'Someone', snippet: snippet ? `"${snippet}"` : '', appUrl: base,
+    });
+    return await sendMail({ to, subject: rendered.subject, text: rendered.bodyText, html: templateHtml(rendered.bodyHtml) });
   } catch (err) {
     return { skipped: true, reason: err.message };
   }
@@ -622,26 +621,46 @@ async function sendApprovalNotice(request, { reminder = false } = {}) {
     if (!recipients.length) return { skipped: true, reason: 'approver has no email' };
     const { smtp, companyName, notify } = await getMailConfig();
     if (!smtp.host) return { skipped: true, reason: 'no smtp host' };
-    const base = appBaseUrl(notify);
-    const safe = (s) => String(s || '').replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
-    const summary = request.summary || 'Approval needed';
-    const who = request.requesterName || 'A requester';
-    const lead = reminder
-      ? `Reminder — this request is still awaiting your approval${request.resourceRef ? ` (${safe(request.resourceRef)})` : ''}.`
-      : `${safe(who)} needs your approval${request.resourceRef ? ` (${safe(request.resourceRef)})` : ''}.`;
-    const tag = reminder ? 'Approval reminder' : 'Approval';
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"></head>`
-      + `<body style="font-family:system-ui,-apple-system,sans-serif;line-height:1.5;color:#1a1a1a;max-width:640px;margin:0 auto;padding:24px">`
-      + `<p style="margin:0 0 6px;color:#64748b;font-size:13px">${safe(companyName)} · Approvals</p>`
-      + `<h2 style="margin:0 0 10px;font-size:18px">${safe(summary)}</h2>`
-      + `<p style="margin:0 0 12px">${lead}</p>`
-      + (base ? `<p style="margin:0"><a href="${safe(base)}" style="color:#4f46e5">Review the request</a></p>` : '')
-      + `</body></html>`;
+    const base = appBaseUrl(notify) || process.env.APP_URL || 'http://localhost:8000';
+    const templates = await getEmailTemplates();
+    const rendered = renderTemplate(templates.approval_request, {
+      companyName,
+      summary: request.summary || 'Approval needed',
+      requesterName: request.requesterName || 'A requester',
+      resourceRef: request.resourceRef ? ` (${request.resourceRef})` : '',
+      appUrl: base,
+    });
+    const subject = reminder ? `[Reminder] ${rendered.subject}` : rendered.subject;
+    const html = templateHtml(rendered.bodyHtml);
     const results = [];
     for (const r of recipients) {
-      results.push(await sendMail({ to: r.email, subject: `[${tag}] ${summary}`, text: `${reminder ? 'Reminder: ' : ''}${who} needs your approval: ${summary}${base ? '\n' + base : ''}`, html }));
+      results.push(await sendMail({ to: r.email, subject, text: rendered.bodyText, html }));
     }
     return { sent: results.length };
+  } catch (err) {
+    return { skipped: true, reason: err.message };
+  }
+}
+
+/** Email the requester that their request was approved/rejected (editable template). */
+async function sendApprovalDecisionEmail(request, { decision, deciderName } = {}) {
+  try {
+    if (!request || !request.requesterEmployeeId) return { skipped: true, reason: 'no requester' };
+    const { rows } = await query('SELECT email FROM employees WHERE id = $1', [request.requesterEmployeeId]);
+    const to = rows[0] && rows[0].email;
+    if (!to) return { skipped: true, reason: 'requester has no email' };
+    const { smtp, companyName, notify } = await getMailConfig();
+    if (!smtp.host) return { skipped: true, reason: 'no smtp host' };
+    const base = appBaseUrl(notify) || process.env.APP_URL || 'http://localhost:8000';
+    const templates = await getEmailTemplates();
+    const rendered = renderTemplate(templates.approval_decision, {
+      companyName,
+      summary: request.summary || 'Your request',
+      decision: decision === 'approved' ? 'approved' : 'rejected',
+      deciderName: deciderName ? `Decided by ${deciderName}.` : '',
+      appUrl: base,
+    });
+    return await sendMail({ to, subject: rendered.subject, text: rendered.bodyText, html: templateHtml(rendered.bodyHtml) });
   } catch (err) {
     return { skipped: true, reason: err.message };
   }
@@ -726,7 +745,7 @@ async function sendHrRequestNotice(request) {
 module.exports = {
   getMailConfig, saveMailConfig, clearMailConfig, sendTestEmail, runAlertDigest, runScheduledDigest, notifyHandoverCompleted, sendMail,
   getEmailTemplates, saveEmailTemplates, sendOnboardingWelcomeEmail, sendPortalAccessEmail, sendHrRequestNotice,
-  sendTicketNotification, sendApprovalNotice,
+  sendTicketNotification, sendApprovalNotice, sendApprovalDecisionEmail,
   sendOwnerTransferEmail,
   DEFAULT_NOTIFY, TEMPLATE_KEYS, PLACEHOLDERS,
 };

@@ -468,11 +468,12 @@ async function notify(request) {
   } catch { /* in-app is best-effort */ }
 }
 
-/** Notify the requester in-app that their request was decided (best-effort). */
+/** Notify the requester that their request was decided — in-app + email. */
 async function notifyRequesterDecision(request, decision, deciderName) {
+  if (!request || !request.requesterEmployeeId) return;
+  const providers = require('./index');
   try {
-    const providers = require('./index');
-    if (providers.inappService && request && request.requesterEmployeeId) {
+    if (providers.inappService) {
       await providers.inappService.createForEmployee(request.requesterEmployeeId, {
         type: 'approval_' + decision,
         title: `${request.summary || 'Your request'} — ${decision === 'approved' ? 'approved' : 'rejected'}`,
@@ -480,7 +481,12 @@ async function notifyRequesterDecision(request, decision, deciderName) {
         link: request.type === 'ticket_request' ? '#/my-tickets' : '#/approvals',
       });
     }
-  } catch { /* best-effort */ }
+  } catch { /* in-app is best-effort */ }
+  try {
+    if (providers.notificationService && providers.notificationService.sendApprovalDecisionEmail) {
+      await providers.notificationService.sendApprovalDecisionEmail(request, { decision, deciderName });
+    }
+  } catch { /* email is best-effort */ }
 }
 
 module.exports = {
