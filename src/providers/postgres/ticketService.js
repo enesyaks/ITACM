@@ -475,7 +475,7 @@ async function report({ from, to } = {}) {
       WHERE csat_rating IS NOT NULL AND ${inRes} GROUP BY csat_rating ORDER BY csat_rating`, params);
 
   const { rows: agents } = await query(`
-    SELECT au.username AS agent,
+    SELECT au.id AS user_id, au.username AS agent,
       COUNT(*)::int AS resolved,
       COUNT(*) FILTER (WHERE t.closed_at BETWEEN $1 AND $2)::int AS closed,
       ROUND(AVG(EXTRACT(EPOCH FROM (t.resolved_at - t.created_at))/3600), 1) AS avg_resolution_h,
@@ -483,11 +483,32 @@ async function report({ from, to } = {}) {
       COUNT(*) FILTER (WHERE t.resolve_due_at IS NOT NULL AND t.resolved_at <= t.resolve_due_at)::int AS sla_met,
       ROUND(AVG(t.csat_rating) FILTER (WHERE t.csat_rating IS NOT NULL), 2) AS csat_avg
     FROM tickets t JOIN users au ON au.id = t.assignee_user_id
-    WHERE t.${inRes} GROUP BY au.username ORDER BY resolved DESC, agent`, params);
+    WHERE t.${inRes} GROUP BY au.id, au.username ORDER BY resolved DESC, agent`, params);
 
+  // Daily trend (opened vs resolved) for a line/bar chart. Uses ::date so the
+  // whole `to` day is included. Capped implicitly by the requested range.
+  const dParams = [fromD, toD];
+  const { rows: trend } = await query(`
+    SELECT to_char(gs::date,'YYYY-MM-DD') AS date,
+      COALESCE(o.n,0)::int AS opened, COALESCE(r.n,0)::int AS resolved
+    FROM generate_series($1::date, $2::date, '1 day') gs
+    LEFT JOIN (SELECT created_at::date d, COUNT(*) n FROM tickets WHERE created_at::date BETWEEN $1 AND $2 GROUP BY 1) o ON o.d = gs::date
+    LEFT JOIN (SELECT resolved_at::date d, COUNT(*) n FROM tickets WHERE resolved_at::date BETWEEN $1 AND $2 GROUP BY 1) r ON r.d = gs::date
+    ORDER BY gs`, dParams);
+
+  const { rows: byPriority } = await query(
+    `SELECT priority, COUNT(*)::int AS n FROM tickets WHERE created_at::date BETWEEN $1 AND $2 GROUP BY priority`, dParams);
+  const { rows: byCategory } = await query(
+    `SELECT COALESCE(NULLIF(category,''),'—') AS category, COUNT(*)::int AS n
+       FROM tickets WHERE created_at::date BETWEEN $1 AND $2 GROUP BY 1 ORDER BY n DESC LIMIT 8`, dParams);
+
+  const PRIO_ORDER = ['urgent', 'high', 'medium', 'low'];
   return {
     from: fromD,
     to: toD,
+    trend,
+    byPriority: PRIO_ORDER.map((p) => ({ priority: p, n: (byPriority.find((x) => x.priority === p) || {}).n || 0 })),
+    byCategory: byCategory.map((c) => ({ category: c.category, n: c.n })),
     volume: {
       opened: Number(s.opened) || 0,
       openedIncidents: Number(s.opened_incidents) || 0,
@@ -507,6 +528,7 @@ async function report({ from, to } = {}) {
       distribution: [1, 2, 3, 4, 5].map((r) => ({ rating: r, n: (csatDist.find((d) => d.rating === r) || {}).n || 0 })),
     },
     agents: agents.map((a) => ({
+      userId: a.user_id,
       agent: a.agent,
       resolved: a.resolved,
       closed: a.closed,
@@ -514,6 +536,38 @@ async function report({ from, to } = {}) {
       slaCompliance: pct(a.sla_met, a.sla_measurable),
       csatAvg: a.csat_avg != null ? Number(a.csat_avg) : null,
     })),
+  };
+}
+
+/**
+ * Per-agent drill-down for the report: the tickets they resolved/closed in the
+ * window (with resolution time, SLA, CSAT) plus the ones still open on them now.
+ */
+async function agentReport({ userId, from, to } = {}) {
+  if (!isUuid(userId)) throw HttpError.badRequest('Invalid agent');
+  const day = (v, fb) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) ? String(v) : fb);
+  const toD = day(to, new Date().toISOString().slice(0, 10));
+  const fromD = day(from, new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10));
+  const params = [userId, fromD, `${toD} 23:59:59`];
+  const cols = `t.number, t.subject, t.type, t.priority, t.status, t.category,
+    t.resolved_at AS "resolvedAt", t.closed_at AS "closedAt", t.csat_rating AS "csatRating",
+    ROUND(EXTRACT(EPOCH FROM (t.resolved_at - t.created_at))/3600, 1) AS "resolutionHours",
+    (t.resolve_due_at IS NOT NULL AND t.resolved_at <= t.resolve_due_at) AS "slaMet"`;
+  const { rows: agentRow } = await query('SELECT username FROM users WHERE id = $1', [userId]);
+  const { rows: resolved } = await query(
+    `SELECT ${cols} FROM tickets t WHERE t.assignee_user_id = $1 AND t.resolved_at BETWEEN $2 AND $3
+      ORDER BY t.resolved_at DESC LIMIT 300`, params);
+  const { rows: open } = await query(
+    `SELECT t.number, t.subject, t.type, t.priority, t.status, t.category,
+       t.resolve_due_at AS "resolveDueAt", t.created_at AS "createdAt"
+       FROM tickets t WHERE t.assignee_user_id = $1
+        AND t.status NOT IN ('resolved','closed','cancelled')
+      ORDER BY t.created_at ASC LIMIT 300`, [userId]);
+  return {
+    agent: agentRow[0] ? agentRow[0].username : '—',
+    from: fromD, to: toD,
+    resolved, // columns are already aliased to camelCase in the SELECT
+    open,
   };
 }
 
@@ -938,6 +992,6 @@ module.exports = {
   createTicket, getTicket, listTickets, updateTicket, addComment, sendToApproval,
   createMyTicket, listMyTickets, getMyTicket, addMyComment, submitMyCsat,
   onRequestApproved, onRequestRejected, onRequestWithdrawn, closeForProblem,
-  sweepSlaBreaches, SLA_TARGETS, stats, report, getSlaConfig, saveSlaConfig, categories,
+  sweepSlaBreaches, SLA_TARGETS, stats, report, agentReport, getSlaConfig, saveSlaConfig, categories,
   getCannedResponses, saveCannedResponses, getManagedCategories, saveManagedCategories,
 };

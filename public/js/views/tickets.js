@@ -617,6 +617,30 @@ Views.tickets = async function (el, params = {}) {
     const metric = (label, val, sub) => `<div class="card card-pad metric">
       <div class="metric-top"><h3 class="card-title">${esc(label)}</h3></div>
       <div class="metric-value">${esc(String(val))}</div>${sub ? `<div class="cell-sub">${esc(sub)}</div>` : ''}</div>`;
+    const PRIO_COLOR = { urgent: 'var(--rose-600,#e11d48)', high: 'var(--amber-600,#d97706)', medium: 'var(--primary)', low: 'var(--outline)' };
+    // Grouped daily bar chart: opened (primary) vs resolved (emerald).
+    const trendChart = (trend) => {
+      if (!trend || !trend.length) return '';
+      const max = Math.max(1, ...trend.map((d) => Math.max(d.opened, d.resolved)));
+      const bw = 9; const gap = 5; const groupW = bw * 2 + 2; const pad = 8; const h = 130; const base = h - 18;
+      const w = pad * 2 + trend.length * (groupW + gap);
+      const bars = trend.map((d, i) => {
+        const x = pad + i * (groupW + gap);
+        const oh = Math.round(d.opened / max * (base - 6)); const rh = Math.round(d.resolved / max * (base - 6));
+        const lbl = (i % Math.ceil(trend.length / 12) === 0) ? `<text x="${x + bw}" y="${h - 4}" font-size="9" fill="var(--on-surface-variant)" text-anchor="middle">${esc(d.date.slice(5))}</text>` : '';
+        return `<rect x="${x}" y="${base - oh}" width="${bw}" height="${oh}" rx="2" fill="var(--primary)"><title>${esc(d.date)}: ${d.opened} ${esc(t('tk.reportOpened'))}</title></rect>`
+          + `<rect x="${x + bw + 2}" y="${base - rh}" width="${bw}" height="${rh}" rx="2" fill="var(--emerald-600,#059669)"><title>${esc(d.date)}: ${d.resolved} ${esc(t('tk.reportResolved'))}</title></rect>${lbl}`;
+      }).join('');
+      return `<div class="tkr-legend"><span><i style="background:var(--primary)"></i> ${esc(t('tk.reportOpened'))}</span><span><i style="background:var(--emerald-600,#059669)"></i> ${esc(t('tk.reportResolved'))}</span></div>
+        <div class="tkr-chart-scroll"><svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" style="max-width:none">${bars}<line x1="${pad}" y1="${base}" x2="${w - pad}" y2="${base}" stroke="var(--outline-variant)"/></svg></div>`;
+    };
+    const hBars = (items, labelFn, colorFn) => {
+      const max = Math.max(1, ...items.map((x) => x.n));
+      return `<div class="tkr-hbars">${items.map((x) => `<div class="tkr-hbar-row">
+        <span class="tkr-hbar-label">${esc(labelFn(x))}</span>
+        <div class="tkr-hbar"><i style="width:${Math.round(x.n / max * 100)}%;background:${colorFn ? colorFn(x) : 'var(--primary)'}"></i></div>
+        <span class="cell-sub tkr-hbar-n">${x.n}</span></div>`).join('')}</div>`;
+    };
     const renderReport = (rep) => {
       const maxN = Math.max(1, ...rep.csat.distribution.map((d) => d.n));
       return `
@@ -626,6 +650,14 @@ Views.tickets = async function (el, params = {}) {
           ${metric(t('tk.reportResolved'), rep.volume.resolved)}
           ${metric(t('tk.reportClosed'), rep.volume.closed)}
           ${metric(t('tk.csat'), rep.csat.avg != null ? rep.csat.avg + ' / 5' : '—', `${rep.csat.count} ${t('tk.votes')}`)}
+        </div>
+        <h3 class="tkr-h">${esc(t('tk.reportTrend'))}</h3>
+        ${trendChart(rep.trend)}
+        <div class="grid grid-2" style="margin-top:16px">
+          <div><h3 class="tkr-h" style="margin-top:0">${esc(t('tk.priorityCol'))}</h3>
+            ${hBars(rep.byPriority || [], (x) => tkPriorityLabel(x.priority), (x) => PRIO_COLOR[x.priority] || 'var(--primary)')}</div>
+          <div><h3 class="tkr-h" style="margin-top:0">${esc(t('tk.category'))}</h3>
+            ${(rep.byCategory && rep.byCategory.length) ? hBars(rep.byCategory, (x) => x.category) : `<p class="cell-sub">${esc(t('tk.none'))}</p>`}</div>
         </div>
         <h3 class="tkr-h">${esc(t('tk.slaCol'))}</h3>
         <div class="grid grid-4">
@@ -637,10 +669,11 @@ Views.tickets = async function (el, params = {}) {
           <span class="tkr-csat-star">${d.rating}★</span><div class="tkr-bar"><i style="width:${Math.round(d.n / maxN * 100)}%"></i></div>
           <span class="cell-sub">${d.n}</span></div>`).join('')}</div>
         <h3 class="tkr-h">${esc(t('tk.reportByAgent'))} <button class="btn btn-outline btn-sm" id="tkr-csv" style="float:right"><span class="ms ms-sm">download</span> CSV</button></h3>
+        <p class="cell-sub" style="margin:-4px 0 8px">${esc(t('tk.reportAgentHint'))}</p>
         <div class="table-wrap"><table class="data">
           <thead><tr><th>${esc(t('tk.assignee'))}</th><th>${esc(t('tk.reportResolved'))}</th><th>${esc(t('tk.reportClosed'))}</th><th>${esc(t('tk.reportAvgRes'))}</th><th>${esc(t('tk.slaCompliance'))}</th><th>${esc(t('tk.csat'))}</th></tr></thead>
-          <tbody>${rep.agents.length ? rep.agents.map((a) => `<tr>
-            <td class="cell-title">${esc(a.agent)}</td><td>${a.resolved}</td><td>${a.closed}</td>
+          <tbody>${rep.agents.length ? rep.agents.map((a) => `<tr data-agent="${esc(a.userId || '')}" style="cursor:pointer">
+            <td class="cell-title">${esc(a.agent)} <span class="ms ms-sm" style="vertical-align:-3px;color:var(--on-surface-variant)">chevron_right</span></td><td>${a.resolved}</td><td>${a.closed}</td>
             <td>${fmtH(a.avgResolutionHours)}</td><td>${pctTxt(a.slaCompliance)}</td><td>${a.csatAvg != null ? a.csatAvg + ' / 5' : '—'}</td></tr>`).join('')
             : `<tr><td colspan="6" class="table-empty">${esc(t('tk.none'))}</td></tr>`}</tbody>
         </table></div>`;
@@ -651,6 +684,36 @@ Views.tickets = async function (el, params = {}) {
       const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\r\n');
       downloadTextFile(`ticket-report-${rep.from}_${rep.to}.csv`, csv);
     };
+    const openAgentDetail = async (userId, from, to) => {
+      const data = await api(`/tickets/report/agent?userId=${encodeURIComponent(userId)}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`).catch(() => null);
+      if (!data) { toast(t('common.error') || 'Error', 'error'); return; }
+      const prPill = (p) => pill(TK_PRIORITY_PILL[p], tkPriorityLabel(p));
+      const resolvedRows = data.resolved.map((r) => `<tr>
+          <td class="mono">${esc(r.number)}</td><td><div class="cell-title">${esc(r.subject)}</div>${r.category ? `<div class="cell-sub">${esc(r.category)}</div>` : ''}</td>
+          <td>${prPill(r.priority)}</td><td>${fmtH(r.resolutionHours)}</td>
+          <td>${r.slaMet == null ? '—' : (r.slaMet ? `<span class="pill pill-emerald">${esc(t('tk.sla.met'))}</span>` : `<span class="pill pill-rose">${esc(t('tk.sla.breached'))}</span>`)}</td>
+          <td>${r.csatRating ? '★'.repeat(r.csatRating) : '—'}</td>
+          <td class="cell-sub">${esc(String(r.resolvedAt || '').slice(0, 10))}</td></tr>`).join('');
+      const openRows = data.open.map((r) => `<tr>
+          <td class="mono">${esc(r.number)}</td><td><div class="cell-title">${esc(r.subject)}</div></td>
+          <td>${prPill(r.priority)}</td><td>${pill(TK_STATUS_PILL[r.status], tkStatusLabel(r.status))}</td>
+          <td class="cell-sub">${esc(String(r.createdAt || '').slice(0, 10))}</td></tr>`).join('');
+      openModal({
+        title: `${data.agent} · ${data.from} → ${data.to}`,
+        xwide: true,
+        stack: true,
+        body: `
+          <h3 class="tkr-h" style="margin-top:0">${esc(t('tk.reportResolved'))} <span class="pill pill-slate">${data.resolved.length}</span></h3>
+          <div class="table-wrap"><table class="data">
+            <thead><tr><th>#</th><th>${esc(t('tk.subject'))}</th><th>${esc(t('tk.priorityCol'))}</th><th>${esc(t('tk.reportAvgRes'))}</th><th>SLA</th><th>${esc(t('tk.csat'))}</th><th>${esc(t('tk.reportResolved'))}</th></tr></thead>
+            <tbody>${resolvedRows || `<tr><td colspan="7" class="table-empty">${esc(t('tk.none'))}</td></tr>`}</tbody></table></div>
+          <h3 class="tkr-h">${esc(t('tk.reportAgentOpen'))} <span class="pill pill-amber">${data.open.length}</span></h3>
+          <div class="table-wrap"><table class="data">
+            <thead><tr><th>#</th><th>${esc(t('tk.subject'))}</th><th>${esc(t('tk.priorityCol'))}</th><th>${esc(t('tk.statusCol'))}</th><th>${esc(t('tk.createdCol'))}</th></tr></thead>
+            <tbody>${openRows || `<tr><td colspan="5" class="table-empty">${esc(t('tk.none'))}</td></tr>`}</tbody></table></div>`,
+        foot: `<button class="btn btn-outline" data-close>${esc(t('common.close'))}</button>`,
+      });
+    };
     const load = async (ov) => {
       const from = $('#tkr-from', ov).value; const to = $('#tkr-to', ov).value;
       const box = $('#tkr-body', ov);
@@ -659,6 +722,9 @@ Views.tickets = async function (el, params = {}) {
       if (!rep) { box.innerHTML = `<p class="cell-sub">—</p>`; return; }
       box.innerHTML = renderReport(rep);
       $('#tkr-csv', ov)?.addEventListener('click', () => exportAgents(rep));
+      box.querySelectorAll('tr[data-agent]').forEach((tr) => tr.addEventListener('click', () => {
+        if (tr.dataset.agent) openAgentDetail(tr.dataset.agent, rep.from, rep.to);
+      }));
     };
     openModal({
       title: t('tk.report'),

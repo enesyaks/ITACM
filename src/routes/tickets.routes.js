@@ -52,6 +52,10 @@ router.get('/stats', requirePermission('ticket', 'read'), asyncHandler(async (re
 router.get('/report', requirePermission('ticket', 'read'), asyncHandler(async (req, res) => {
   res.json({ success: true, data: await ticketService.report({ from: req.query.from, to: req.query.to }) });
 }));
+// GET /api/tickets/report/agent?userId=&from=&to= — per-agent drill-down
+router.get('/report/agent', requirePermission('ticket', 'read'), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await ticketService.agentReport({ userId: req.query.userId, from: req.query.from, to: req.query.to }) });
+}));
 
 // GET/PUT /api/tickets/sla — effective SLA targets / save overrides (before /:id)
 router.get('/sla', requirePermission('ticket', 'read'), asyncHandler(async (req, res) => {

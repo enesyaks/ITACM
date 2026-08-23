@@ -48,10 +48,10 @@ const ROUTES = {
     title: 'Knowledge Base', view: 'kb', icon: 'menu_book',
     iam: [['ticket', 'read']], module: 'ticketing',
   },
-  // Approver inbox. Not gated on a specific permission — anyone may be routed a
-  // request to approve (org-resolved); the view itself explains when the
-  // workflow is switched off. Portal users approve from My Tickets instead.
-  '#/approvals': { title: 'Approvals', view: 'approvals', icon: 'approval' },
+  // Approver inbox. Part of the service-desk (ticketing) module, so it hides when
+  // that module is off. Not gated on a specific permission — anyone may be routed
+  // a request to approve. Portal users approve from My Tickets instead.
+  '#/approvals': { title: 'Approvals', view: 'approvals', icon: 'approval', module: 'ticketing' },
   '#/stockcount': { title: 'Stock Count', view: 'stockcount', icon: 'fact_check' },
   '#/reports': { title: 'Reports', view: 'reports', icon: 'summarize' },
   '#/audit': { title: 'Audit Log', view: 'audit', icon: 'history', perm: 'canViewAudit' },
