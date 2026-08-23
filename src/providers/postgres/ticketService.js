@@ -465,6 +465,13 @@ async function updateTicket(id, patch, user) {
         if (!allowed.includes(patch.status)) {
           throw HttpError.badRequest(`Cannot move a ticket from "${cur.status}" to "${patch.status}"`);
         }
+        // A ticket must be assigned to someone before it can be resolved or closed
+        // (cancelling an unassigned ticket is still fine). The assignee may be set
+        // in this same PATCH.
+        if (patch.status === 'resolved' || patch.status === 'closed') {
+          const effAssignee = patch.assigneeUserId !== undefined ? (patch.assigneeUserId || null) : cur.assignee_user_id;
+          if (!effAssignee) throw HttpError.badRequest('Assign the ticket to someone before resolving or closing it');
+        }
         set('status', patch.status);
         acts.push(['status', `${cur.status} → ${patch.status}`]);
         statusTo = patch.status;
@@ -587,6 +594,30 @@ async function onRequestRejected({ ticketId }, actor) {
   await query("UPDATE tickets SET status='cancelled', updated_at=now() WHERE id = $1 AND status NOT IN ('resolved','closed','cancelled')", [ticketId]);
   await logActivity(ticketId, { name: (actor && actor.name) || 'Approval' }, 'request_rejected', 'Rejected — request cancelled').catch(() => {});
 }
+/**
+ * Cascade a problem closure onto its linked incidents: close the still-open
+ * tickets and cancel any pending approval they hold. Called by problemService
+ * when a problem moves to 'closed'. Returns how many tickets were closed.
+ */
+async function closeForProblem(problemId, actorName) {
+  if (!isUuid(problemId)) return 0;
+  const { rows } = await query(
+    "SELECT id, approval_request_id FROM tickets WHERE problem_id = $1 AND status NOT IN ('resolved','closed','cancelled')",
+    [problemId]
+  );
+  if (!rows.length) return 0;
+  const ids = rows.map((r) => r.id);
+  const arIds = rows.map((r) => r.approval_request_id).filter(Boolean);
+  if (arIds.length) {
+    await query("UPDATE approval_requests SET status='cancelled', decided_at=now() WHERE id = ANY($1) AND status='pending'", [arIds]);
+  }
+  await query("UPDATE tickets SET status='closed', closed_at=now(), updated_at=now() WHERE id = ANY($1)", [ids]);
+  for (const id of ids) {
+    await logActivity(id, { name: actorName || 'System' }, 'closed_by_problem', 'Closed — parent problem resolved').catch(() => {});
+  }
+  return ids.length;
+}
+
 /** Called by approvalService when the requester withdraws — cancel the ticket. */
 async function onRequestWithdrawn({ ticketId }, actor) {
   if (!isUuid(ticketId)) return;
@@ -751,7 +782,7 @@ function audit(action, summary, a, entityId, label) {
 module.exports = {
   createTicket, getTicket, listTickets, updateTicket, addComment,
   createMyTicket, listMyTickets, getMyTicket, addMyComment, submitMyCsat,
-  onRequestApproved, onRequestRejected, onRequestWithdrawn,
+  onRequestApproved, onRequestRejected, onRequestWithdrawn, closeForProblem,
   sweepSlaBreaches, SLA_TARGETS, stats, getSlaConfig, saveSlaConfig, categories,
   getCannedResponses, saveCannedResponses,
 };

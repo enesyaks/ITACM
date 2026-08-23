@@ -131,6 +131,16 @@ async function updateProblem(id, patch, user) {
   set('updated_at', new Date());
   vals.push(id);
   await query(`UPDATE problems SET ${sets.join(', ')} WHERE id = $${vals.length}`, vals);
+  // Closing a problem cascades to its linked incidents: close them and cancel any
+  // pending approval they hold. Best-effort — never block the problem update.
+  if (patch.status === 'closed' && cur.status !== 'closed') {
+    try {
+      const providers = require('./index');
+      if (providers.ticketService && providers.ticketService.closeForProblem) {
+        await providers.ticketService.closeForProblem(id, (user && user.username) || 'System');
+      }
+    } catch { /* cascade is best-effort */ }
+  }
   return getProblem(id);
 }
 
