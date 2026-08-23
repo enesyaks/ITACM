@@ -1237,6 +1237,7 @@ table.data.net-list .net-col-actions .btn .ms { font-size: 18px; }
 .tk-appr-ev > .ms-sm { font-size: 21px; flex: none; z-index: 1; background: var(--surface); border-radius: 50%; }
 .tk-appr-ev .tk-appr-ok { color: var(--emerald-600, #059669); }
 .tk-appr-ev .tk-appr-no { color: var(--rose-600, #e11d48); }
+.tk-appr-ev .tk-appr-esc { color: var(--amber-600, #d97706); }
 .tk-appr-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; padding-top: 1px; }
 .tk-appr-line { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .tk-appr-note { font-style: italic; color: var(--on-surface-variant); font-size: 13px; }
@@ -5897,6 +5898,7 @@ body.ai-open .ai-panel { opacity: 1; visibility: visible; transform: none; }
   border: 1px solid var(--outline-variant); border-radius: var(--radius-lg); background: var(--surface-low); }
 .rt-config-main { display: inline-flex; align-items: center; gap: 10px; font-size: 14px; cursor: pointer; white-space: nowrap; }
 .rt-config-main input[type="checkbox"] { flex: none; width: auto; margin: 0; }
+.rt-config-timers { display: inline-flex; align-items: center; gap: 16px; flex-wrap: wrap; }
 .rt-config-rem { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--on-surface-variant); white-space: nowrap; }
 .rt-config-rem input { width: 64px; }
 .rt-hint { margin: 0 0 14px; }

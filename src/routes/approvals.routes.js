@@ -33,6 +33,9 @@ router.put('/config', requireRole('Owner', 'Admin'), asyncHandler(async (req, re
     reminderDays: body.reminderDays !== undefined
       ? Math.max(0, Math.min(90, Number(body.reminderDays) || 0))
       : cur.reminderDays,
+    escalateDays: body.escalateDays !== undefined
+      ? Math.max(0, Math.min(90, Number(body.escalateDays) || 0))
+      : cur.escalateDays,
   };
   await settingsService.saveSettings({ approvals: next });
   res.json({ success: true, data: next });

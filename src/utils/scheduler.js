@@ -47,6 +47,9 @@ function start() {
       approvalService.sweepReminders()
         .then((n) => { if (n) console.log(`[scheduler] sent ${n} approval reminder(s)`); })
         .catch((err) => { console.warn('[scheduler] approval reminder sweep failed:', err.message); });
+      approvalService.sweepEscalations()
+        .then((n) => { if (n) console.log(`[scheduler] escalated ${n} approval(s)`); })
+        .catch((err) => { console.warn('[scheduler] approval escalation sweep failed:', err.message); });
     }
   }, TICK_MS);
   // Don't keep the event loop alive just for the scheduler (clean shutdown / tests).

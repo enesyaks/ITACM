@@ -27,15 +27,18 @@ function renderApprovalTimeline(history) {
   const rows = Array.isArray(history) ? history : [];
   if (!rows.length) return '';
   const items = rows.map((h) => {
-    const ok = h.decision === 'approved';
+    const kind = h.decision === 'approved' ? 'ok' : h.decision === 'escalated' ? 'esc' : 'no';
+    const icon = kind === 'ok' ? 'check_circle' : kind === 'esc' ? 'trending_up' : 'cancel';
+    const pill = kind === 'ok' ? 'pill-emerald' : kind === 'esc' ? 'pill-amber' : 'pill-rose';
+    const label = kind === 'ok' ? t('mtk.apApproved') : kind === 'esc' ? t('mtk.apEscalated') : t('mtk.apRejected');
     const when = String(h.at || '').replace('T', ' ').slice(0, 16);
     const who = h.deciderName || h.approverName || '—';
     const asSlot = h.approverName && h.deciderName && h.approverName !== h.deciderName ? ` <span class="cell-sub">(${esc(t('mtk.apFor'))} ${esc(h.approverName)})</span>` : '';
     return `<li class="tk-appr-ev">
-        <span class="ms ms-sm ${ok ? 'tk-appr-ok' : 'tk-appr-no'}">${ok ? 'check_circle' : 'cancel'}</span>
+        <span class="ms ms-sm tk-appr-${kind}">${icon}</span>
         <div class="tk-appr-body">
           <div class="tk-appr-line"><strong>${esc(who)}</strong>${asSlot}
-            <span class="pill ${ok ? 'pill-emerald' : 'pill-rose'}">${esc(ok ? t('mtk.apApproved') : t('mtk.apRejected'))}</span></div>
+            <span class="pill ${pill}">${esc(label)}</span></div>
           <div class="cell-sub">${esc(when)}</div>
           ${h.note ? `<div class="tk-appr-note">“${esc(h.note)}”</div>` : ''}</div>
       </li>`;
@@ -533,9 +536,14 @@ Views.tickets = async function (el, params = {}) {
           <label class="rt-config-main">
             <input type="checkbox" id="rt-approvals-on" ${cfg.enabled ? 'checked' : ''}>
             <strong>${esc(t('rt.enableApprovals'))}</strong></label>
-          <label class="rt-config-rem" title="${esc(t('rt.reminderHint'))}">
-            <span class="ms ms-sm" style="vertical-align:-3px">notifications_active</span> ${esc(t('rt.reminderDays'))}
-            <input type="number" id="rt-reminder-days" min="0" max="90" step="1" value="${esc(cfg.reminderDays || 0)}"></label>
+          <div class="rt-config-timers">
+            <label class="rt-config-rem" title="${esc(t('rt.reminderHint'))}">
+              <span class="ms ms-sm" style="vertical-align:-3px">notifications_active</span> ${esc(t('rt.reminderDays'))}
+              <input type="number" id="rt-reminder-days" min="0" max="90" step="1" value="${esc(cfg.reminderDays || 0)}"></label>
+            <label class="rt-config-rem" title="${esc(t('rt.escalateHint'))}">
+              <span class="ms ms-sm" style="vertical-align:-3px">trending_up</span> ${esc(t('rt.escalateDays'))}
+              <input type="number" id="rt-escalate-days" min="0" max="90" step="1" value="${esc(cfg.escalateDays || 0)}"></label>
+          </div>
         </div>
         <p class="cell-sub rt-hint">${esc(t('rt.enableApprovalsSub'))} ${esc(t('rt.hint'))}</p>
         <div id="rt-list">${(loaded.length ? loaded : [null]).map(rowHtml).join('')}</div>
@@ -558,7 +566,7 @@ Views.tickets = async function (el, params = {}) {
         $('#rt-add', ov).addEventListener('click', () => { listEl.insertAdjacentHTML('beforeend', rowHtml(null)); wireDel(); mountPickers(); });
         $('#rt-save', ov).addEventListener('click', async () => {
           try {
-            await api('/approvals/config', { method: 'PUT', body: { enabled: $('#rt-approvals-on', ov).checked, reminderDays: Number($('#rt-reminder-days', ov).value) || 0 } });
+            await api('/approvals/config', { method: 'PUT', body: { enabled: $('#rt-approvals-on', ov).checked, reminderDays: Number($('#rt-reminder-days', ov).value) || 0, escalateDays: Number($('#rt-escalate-days', ov).value) || 0 } });
             const rows = [...listEl.querySelectorAll('.rt-card')].map((r) => {
               const checked = [].concat(
                 r.querySelector('.rt-mgr').checked ? ['manager'] : [],

@@ -34,12 +34,15 @@ const TYPE_LABELS = {
 async function getConfig() {
   const s = await settingsService.getSettings().catch(() => ({}));
   const raw = s.approvals || {};
-  const reminderDays = Number(raw.reminderDays);
+  const clampDays = (v) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Math.min(Number(v), 90) : 0);
   return {
     enabled: !!raw.enabled,
     policy: (raw.policy && typeof raw.policy === 'object') ? raw.policy : DEFAULT_POLICY,
     // Days a request may sit pending before the approver is re-notified. 0 = off.
-    reminderDays: Number.isFinite(reminderDays) && reminderDays > 0 ? Math.min(reminderDays, 90) : 0,
+    reminderDays: clampDays(raw.reminderDays),
+    // Days a request may sit pending before its step escalates up to the
+    // approver's manager. 0 = off.
+    escalateDays: clampDays(raw.escalateDays),
   };
 }
 
@@ -356,6 +359,46 @@ async function sweepReminders() {
 }
 
 /**
+ * Escalate single-approver steps left pending past escalateDays up to the current
+ * approver's manager (never auto-approves). Records an 'escalated' history entry,
+ * stamps escalated_at, and notifies the new approver. Returns how many escalated.
+ * Parallel steps are skipped (ambiguous which approver to escalate).
+ */
+async function sweepEscalations() {
+  const config = await getConfig();
+  if (!config.enabled || !config.escalateDays) return 0;
+  const { rows } = await query(
+    `SELECT * FROM approval_requests
+      WHERE status = 'pending' AND approver_employee_id IS NOT NULL AND step_state IS NULL
+        AND now() - COALESCE(escalated_at, created_at) >= ($1 || ' days')::interval`,
+    [String(config.escalateDays)]
+  );
+  let escalated = 0;
+  for (const row of rows) {
+    const request = mapRow(row);
+    const mgr = await orgService.resolveApprover(request.approverEmployeeId, 'manager').catch(() => null);
+    // Nothing to escalate to, or it would loop back to the approver / requester.
+    if (!mgr || mgr.id === request.approverEmployeeId || mgr.id === request.requesterEmployeeId) {
+      await query('UPDATE approval_requests SET escalated_at = now() WHERE id = $1', [request.id]);
+      continue;
+    }
+    await appendHistory(request.id, {
+      level: request.currentLevel, decision: 'escalated',
+      deciderName: null, deciderEmployeeId: null,
+      approverName: `${request.approverName || '—'} → ${mgr.fullName}`,
+      note: 'Auto-escalated — no response in time',
+    });
+    await query(
+      'UPDATE approval_requests SET approver_employee_id = $2, approver_name = $3, escalated_at = now() WHERE id = $1',
+      [request.id, mgr.id, mgr.fullName]
+    );
+    notify(await getRequest(request.id)).catch(() => {});
+    escalated += 1;
+  }
+  return escalated;
+}
+
+/**
  * Replay an approved action against the underlying service. Lazy-require the
  * services to avoid circular dependencies at module load. Each handler receives
  * the stored payload; it must perform the same operation the trigger deferred.
@@ -421,4 +464,5 @@ module.exports = {
   cancel,
   cancelByRequester,
   sweepReminders,
+  sweepEscalations,
 };

@@ -1074,3 +1074,4 @@ ALTER TABLE approval_requests ADD COLUMN IF NOT EXISTS step_state JSONB;
 ALTER TABLE approval_requests ADD COLUMN IF NOT EXISTS step_mode  TEXT CHECK (step_mode IN ('any', 'all'));
 ALTER TABLE approval_requests ADD COLUMN IF NOT EXISTS history    JSONB NOT NULL DEFAULT '[]'::jsonb;
 ALTER TABLE approval_requests ADD COLUMN IF NOT EXISTS last_reminded_at TIMESTAMPTZ;
+ALTER TABLE approval_requests ADD COLUMN IF NOT EXISTS escalated_at TIMESTAMPTZ;
