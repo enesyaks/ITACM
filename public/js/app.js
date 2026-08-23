@@ -3706,6 +3706,7 @@ async function init() {
       const result = await loginWithPassword(email, password, { rememberMe });
       if (result && result.mfaRequired) {
         $('#login-form').classList.add('hidden');
+        $('#login-sso')?.classList.add('hidden'); // SSO/“or” belongs to the password step only
         const mfaForm = $('#mfa-form');
         mfaForm.classList.remove('hidden');
         mfaForm.dataset.mfaToken = result.mfaToken;
@@ -3758,6 +3759,9 @@ async function init() {
       mfaForm.dataset.mfaToken = '';
       mfaForm.dataset.rememberMe = '';
       $('#login-form').classList.remove('hidden');
+      // Restore the SSO/“or” block that the MFA step hid (only if SSO is on).
+      const on = !!(AppConfig && AppConfig.sso && AppConfig.sso.enabled);
+      $('#login-sso')?.classList.toggle('hidden', !on);
       $('#mfa-error').classList.add('hidden');
     });
 
