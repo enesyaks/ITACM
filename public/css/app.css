@@ -1403,9 +1403,12 @@ table.data.net-list .net-col-actions .btn .ms { font-size: 18px; }
 .btn-block { width: 100%; justify-content: center; }
 .btn-lg { padding: 14px 20px; font-size: 15px; border-radius: var(--radius-lg); }
 
-input:not([type="checkbox"]):not([type="radio"]), select, textarea { font-family: var(--font); font-size: 13.5px; color: var(--on-surface); width: 100%; border: 1px solid var(--outline-variant); border-radius: var(--radius-lg); padding: 9px 12px; background: #fff; }
+input, select, textarea { font-family: var(--font); font-size: 13.5px; color: var(--on-surface); width: 100%; border: 1px solid var(--outline-variant); border-radius: var(--radius-lg); padding: 9px 12px; background: #fff; }
 /* Checkboxes/radios must never inherit the full-width form-control sizing above,
-   or their labels wrap and the box balloons. Natural size + primary accent. */
+   or their labels wrap and the box balloons. Natural size + primary accent.
+   Kept as a separate, more-specific rule so the base `input` selector stays at
+   its original low specificity — component overrides (.search-box input, etc.)
+   must still win over the base rule. */
 input[type="checkbox"], input[type="radio"] { width: auto; flex: none; accent-color: var(--primary, #4f46e5); }
 input:focus, select:focus, textarea:focus { outline: 2px solid var(--primary-container); outline-offset: -1px; border-color: var(--primary-container); }
 textarea { resize: vertical; min-height: 60px; }
