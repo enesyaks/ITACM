@@ -3,7 +3,7 @@
  * module must be on. Employees read the enabled templates via /api/me/request-templates.
  */
 const router = require('express').Router();
-const { authenticate, requirePermission } = require('../middleware/auth');
+const { authenticate, requirePermission, requireAnyPermission } = require('../middleware/auth');
 const { asyncHandler } = require('../utils/asyncHandler');
 const { requestTemplateService, settingsService } = require('../services');
 const { HttpError } = require('../utils/httpError');
@@ -19,13 +19,13 @@ router.use(authenticate, requireTicketing);
 router.get('/', requirePermission('ticket', 'read'), asyncHandler(async (req, res) => {
   res.json({ success: true, data: await requestTemplateService.listTemplates() });
 }));
-router.post('/', requirePermission('ticket', 'manage'), asyncHandler(async (req, res) => {
+router.post('/', requireAnyPermission([['ticket', 'configure'], ['ticket', 'manage']]), asyncHandler(async (req, res) => {
   res.status(201).json({ success: true, data: await requestTemplateService.createTemplate(req.body || {}) });
 }));
-router.patch('/:id', requirePermission('ticket', 'manage'), asyncHandler(async (req, res) => {
+router.patch('/:id', requireAnyPermission([['ticket', 'configure'], ['ticket', 'manage']]), asyncHandler(async (req, res) => {
   res.json({ success: true, data: await requestTemplateService.updateTemplate(req.params.id, req.body || {}) });
 }));
-router.delete('/:id', requirePermission('ticket', 'manage'), asyncHandler(async (req, res) => {
+router.delete('/:id', requireAnyPermission([['ticket', 'configure'], ['ticket', 'manage']]), asyncHandler(async (req, res) => {
   res.json({ success: true, data: await requestTemplateService.deleteTemplate(req.params.id) });
 }));
 

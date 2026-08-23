@@ -80,6 +80,10 @@ Views.tickets = async function (el, params = {}) {
   const canUpdate = Auth.canIam('ticket', 'update') || Auth.canIam('ticket', 'manage');
   const canAssign = Auth.canIam('ticket', 'assign') || Auth.canIam('ticket', 'manage');
   const canManage = Auth.canIam('ticket', 'manage');
+  // Fine-grained (manage still implies both): report = the Report screen;
+  // configure = request templates + SLA targets + approval settings.
+  const canReport = Auth.canIam('ticket', 'report') || canManage;
+  const canConfigure = Auth.canIam('ticket', 'configure') || canManage;
   const canDocRead = Auth.canIam('document', 'read');
   const canDocUpload = Auth.canIam('document', 'upload') || Auth.canIam('document', 'create');
   const canDocDelete = Auth.canIam('document', 'delete');
@@ -384,9 +388,9 @@ Views.tickets = async function (el, params = {}) {
   const render = () => {
     el.innerHTML = `
       ${pageHead(t('tk.title'), t('tk.subtitle'),
-        `<button class="btn btn-outline" id="tk-report"><span class="ms">insights</span> ${esc(t('tk.report'))}</button>`
-        + `${canManage ? `<button class="btn btn-outline" id="tk-templates"><span class="ms">assignment</span> ${esc(t('rt.title'))}</button>` : ''}`
-        + `${canManage ? `<button class="btn btn-outline" id="tk-sla"><span class="ms">schedule</span> ${esc(t('tk.slaSettings'))}</button>` : ''}`
+        `${canReport ? `<button class="btn btn-outline" id="tk-report"><span class="ms">insights</span> ${esc(t('tk.report'))}</button>` : ''}`
+        + `${canConfigure ? `<button class="btn btn-outline" id="tk-templates"><span class="ms">assignment</span> ${esc(t('rt.title'))}</button>` : ''}`
+        + `${canConfigure ? `<button class="btn btn-outline" id="tk-sla"><span class="ms">schedule</span> ${esc(t('tk.slaSettings'))}</button>` : ''}`
         + `${canCreate ? `<button class="btn btn-primary" id="tk-new"><span class="ms">add</span> ${esc(t('tk.new'))}</button>` : ''}`)}
       <div id="tk-stats">${statsHtml(stats0)}</div>
       <div class="card card-pad" style="margin-bottom:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">

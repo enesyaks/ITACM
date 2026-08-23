@@ -158,7 +158,7 @@ Views.users = async function (el) {
     'line', 'consumable', 'maintenance', 'stock_count', 'report',
     'audit', 'dashboard', 'settings', 'user_management',
     'integration', 'document', 'handover_document', 'catalog', 'handover', 'onboarding',
-    'ai',
+    'ai', 'ticket', 'problem', 'change',
   ];
   const ACTIONS_BY_RESOURCE = {
     asset: ['read', 'create', 'update', 'delete', 'assign', 'unassign', 'sell', 'export', 'import', 'manage'],
@@ -182,6 +182,11 @@ Views.users = async function (el) {
     user_management: ['read', 'create', 'update', 'delete'],
     integration: ['read', 'update', 'manage'],
     ai: ['use'],
+    // Service desk / ITIL. report = the Report screen; configure = request
+    // templates, SLA targets, approval settings; manage implies both.
+    ticket: ['read', 'create', 'update', 'assign', 'report', 'configure', 'manage'],
+    problem: ['read', 'create', 'update', 'manage'],
+    change: ['read', 'create', 'update', 'approve', 'manage'],
   };
   const IAM_ACTIONS_FLAT = [...new Set(Object.values(ACTIONS_BY_RESOURCE).flat())];
   const IAM_CONSTRAINTS = [

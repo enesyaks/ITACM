@@ -49,11 +49,11 @@ router.get('/stats', requirePermission('ticket', 'read'), asyncHandler(async (re
 }));
 
 // GET /api/tickets/report?from=&to= — ITIL service-desk report (before /:id)
-router.get('/report', requirePermission('ticket', 'read'), asyncHandler(async (req, res) => {
+router.get('/report', requireAnyPermission([['ticket', 'report'], ['ticket', 'manage']]), asyncHandler(async (req, res) => {
   res.json({ success: true, data: await ticketService.report({ from: req.query.from, to: req.query.to }) });
 }));
 // GET /api/tickets/report/agent?userId=&from=&to= — per-agent drill-down
-router.get('/report/agent', requirePermission('ticket', 'read'), asyncHandler(async (req, res) => {
+router.get('/report/agent', requireAnyPermission([['ticket', 'report'], ['ticket', 'manage']]), asyncHandler(async (req, res) => {
   res.json({ success: true, data: await ticketService.agentReport({ userId: req.query.userId, from: req.query.from, to: req.query.to }) });
 }));
 
@@ -61,7 +61,7 @@ router.get('/report/agent', requirePermission('ticket', 'read'), asyncHandler(as
 router.get('/sla', requirePermission('ticket', 'read'), asyncHandler(async (req, res) => {
   res.json({ success: true, data: await ticketService.getSlaConfig() });
 }));
-router.put('/sla', requirePermission('ticket', 'manage'), asyncHandler(async (req, res) => {
+router.put('/sla', requireAnyPermission([['ticket', 'configure'], ['ticket', 'manage']]), asyncHandler(async (req, res) => {
   res.json({ success: true, data: await ticketService.saveSlaConfig(req.body || {}) });
 }));
 

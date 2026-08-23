@@ -1,5 +1,5 @@
 const router = require('express').Router();
-const { authenticate, requireRole } = require('../middleware/auth');
+const { authenticate, requireRole, requirePermission, requireAnyPermission } = require('../middleware/auth');
 const { asyncHandler } = require('../utils/asyncHandler');
 const { approvalService, settingsService } = require('../services');
 const { query } = require('../providers/postgres/pool');
@@ -18,13 +18,15 @@ const isAdmin = (req) => ['Owner', 'Admin'].includes(req.user && req.user.role);
 
 /* ------------------------- Feature flag / policy ------------------------- */
 
-/** GET /api/approvals/config — current enabled state + per-action policy. Owner/Admin only. */
-router.get('/config', requireRole('Owner', 'Admin'), asyncHandler(async (req, res) => {
+/** GET /api/approvals/config — enabled state + policy. Readable by anyone who can
+ *  read tickets (approvers see it in the inbox; the template editor loads it). */
+router.get('/config', requirePermission('ticket', 'read'), asyncHandler(async (req, res) => {
   res.json({ success: true, data: await approvalService.getConfig() });
 }));
 
-/** PUT /api/approvals/config — turn the workflow on/off and set the policy. Owner/Admin only. */
-router.put('/config', requireRole('Owner', 'Admin'), asyncHandler(async (req, res) => {
+/** PUT /api/approvals/config — turn the workflow on/off + reminder/escalation.
+ *  Requires ticket:configure (Owner/Admin bypass). */
+router.put('/config', requireAnyPermission([['ticket', 'configure'], ['ticket', 'manage']]), asyncHandler(async (req, res) => {
   const cur = await approvalService.getConfig();
   const body = req.body || {};
   const next = {

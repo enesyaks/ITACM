@@ -25,6 +25,9 @@ const ACTIONS = Object.freeze([
   'export', 'import', 'manage', 'approve', 'view_confidential',
   'view_history', 'view_inventory', 'view_handover',
   'download', 'upload', 'use',
+  // Service-desk fine-grained: `report` = the ITIL report; `configure` = request
+  // templates, SLA targets and the approval workflow settings.
+  'report', 'configure',
 ]);
 
 /**
@@ -88,7 +91,7 @@ const ACTIONS_BY_RESOURCE = Object.freeze({
   ai: Object.freeze(['use']),
   // Service desk / ITIL tickets. `assign` = pick up / reassign; `manage` = queues,
   // categories and others' tickets. Employees raise their own via /api/me/tickets.
-  ticket: Object.freeze(['read', 'create', 'update', 'assign', 'manage']),
+  ticket: Object.freeze(['read', 'create', 'update', 'assign', 'report', 'configure', 'manage']),
   // ITIL Problem Management: root-cause records that group recurring incidents.
   problem: Object.freeze(['read', 'create', 'update', 'manage']),
   // ITIL Change Enablement: `approve` = CAB decision (distinct from `update`).
@@ -109,7 +112,7 @@ const MANAGE_EXPAND = Object.freeze({
   consumable: Object.freeze(['read', 'update', 'delete']),
   maintenance: Object.freeze(['read', 'update', 'delete']),
   stock_count: Object.freeze(['read', 'update', 'delete']),
-  ticket: Object.freeze(['read', 'update', 'assign']),
+  ticket: Object.freeze(['read', 'update', 'assign', 'report', 'configure']),
   problem: Object.freeze(['read', 'update']),
   change: Object.freeze(['read', 'update', 'approve']),
 });
@@ -151,6 +154,7 @@ function getIamSchema() {
       handover: 'handover:create = make zimmet form. employee:view_handover + handover_document:* = Documents tab / scans.',
       assign: 'license:assign / line:assign / asset:assign|unassign control employee-card and list assign actions.',
       ai: 'ai:use = may open the AI assistant and run queries. The assistant still honours each user\'s own read permissions (a user can\'t surface data the UI denies them). Off unless enabled in Integrations → AI.',
+      ticket: 'read = see/work tickets. assign = pick up / reassign. report = the service-desk Report (SLA/CSAT/per-agent). configure = request templates, SLA targets and approval-workflow settings. manage = read+update+assign+report+configure (queues & others\' tickets).',
     },
   };
 }
