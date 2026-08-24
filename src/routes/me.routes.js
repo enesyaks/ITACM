@@ -125,6 +125,21 @@ router.post('/approvals/:id/decide', asyncHandler(async (req, res) => {
     isAdmin: false,
   }) });
 }));
+// The ticket worklog + attachments an approver may review — includes staff-internal
+// notes/files (e.g. IT's price research) that the requester never sees.
+router.get('/approvals/:id/context', requireTicketing, asyncHandler(async (req, res) => {
+  const emp = await currentEmployee(req);
+  res.json({ success: true, data: emp ? await approvalService.approverContext(req.params.id, emp.id) : { comments: [], documents: [] } });
+}));
+router.get('/approvals/:id/documents/:docId/download', requireTicketing, asyncHandler(async (req, res) => {
+  const emp = await currentEmployee(req);
+  const ticketId = await approvalService.approverDoc(req.params.id, emp && emp.id, req.params.docId); // authorizes
+  const doc = await documentService.getTicketDoc(req.params.docId);
+  if (!doc || String(doc.ticketId) !== String(ticketId)) throw HttpError.notFound('Attachment not found');
+  res.setHeader('Content-Type', doc.mime || 'application/octet-stream');
+  res.setHeader('Content-Disposition', contentDisposition(doc.filename, { inline: true }));
+  res.send(doc.buffer);
+}));
 
 /* Knowledge base — employees read/search the PUBLISHED articles only. */
 router.get('/kb', requireTicketing, asyncHandler(async (req, res) => {

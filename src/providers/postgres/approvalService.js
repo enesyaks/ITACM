@@ -222,6 +222,48 @@ async function getRequest(id) {
   return mapRow(rows[0]);
 }
 
+// True when `deciderEmployeeId` is a pending approver on the request's current step.
+function isPendingApprover(req, deciderEmployeeId) {
+  if (!deciderEmployeeId) return false;
+  const parallel = Array.isArray(req.stepState) && req.stepState.length > 0;
+  return parallel
+    ? req.stepState.some((e) => e.employeeId === deciderEmployeeId && e.status === 'pending')
+    : (deciderEmployeeId === req.approverEmployeeId);
+}
+
+/**
+ * The ticket worklog + attachments behind an approval request, for the current
+ * approver — INCLUDING staff-internal notes/files (e.g. IT's price research), so
+ * approvers can see them while the requester (who is not an approver) cannot.
+ * Only a pending approver of this request may read it.
+ */
+async function approverContext(requestId, deciderEmployeeId) {
+  const req = await getRequest(requestId);
+  if (!isPendingApprover(req, deciderEmployeeId)) throw HttpError.forbidden('You are not an approver for this request');
+  const ticketId = req.payload && req.payload.ticketId;
+  if (!ticketId || !isUuid(ticketId)) return { ticketId: null, comments: [], documents: [] };
+  const tk = (await query('SELECT number, subject, description FROM tickets WHERE id = $1', [ticketId])).rows[0] || {};
+  const comments = (await query(
+    `SELECT id, author_name AS "authorName", body, internal, created_at AS "createdAt"
+       FROM ticket_comments WHERE ticket_id = $1 ORDER BY created_at ASC`, [ticketId])).rows;
+  const docs = (await query(
+    `SELECT id, comment_id AS "commentId", filename, mime, byte_size AS "byteSize", internal
+       FROM ticket_documents WHERE ticket_id = $1 ORDER BY created_at ASC`, [ticketId])).rows;
+  const byComment = {};
+  docs.forEach((d) => { if (d.commentId) (byComment[d.commentId] = byComment[d.commentId] || []).push(d); });
+  comments.forEach((c) => { c.documents = byComment[c.id] || []; });
+  return { ticketId, number: tk.number, subject: tk.subject, description: tk.description,
+    comments, documents: docs.filter((d) => !d.commentId) };
+}
+
+// Does this doc belong to the ticket behind a request the approver may see?
+async function approverDoc(requestId, deciderEmployeeId, docId) {
+  const req = await getRequest(requestId);
+  if (!isPendingApprover(req, deciderEmployeeId)) throw HttpError.forbidden('You are not an approver for this request');
+  const ticketId = req.payload && req.payload.ticketId;
+  return ticketId || null;
+}
+
 async function listPending(approverEmployeeId) {
   if (!isUuid(approverEmployeeId)) return [];
   const { rows } = await query(
@@ -527,7 +569,7 @@ module.exports = {
   isEnabled,
   createRequest,
   previewChain,
-  getRequest,
+  getRequest, approverContext, approverDoc,
   listPending,
   listMine,
   listAllPending,

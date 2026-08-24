@@ -83,13 +83,34 @@ Views.myTickets = async function (el) {
           ${a.createdAt ? field(t('tk.createdCol'), `<span class="cell-sub">${esc(String(a.createdAt).replace('T', ' ').slice(0, 16))}</span>`) : ''}
           ${a.approverName ? field(t('mtk.apWaiting'), esc(a.approverName)) : ''}
         </div>
-        ${typeof renderApprovalTimeline === 'function' ? renderApprovalTimeline(a.history) : ''}`,
+        ${typeof renderApprovalTimeline === 'function' ? renderApprovalTimeline(a.history) : ''}
+        <div id="mtk-appr-context"></div>`,
       foot: `<button class="btn btn-outline" data-close>${esc(t('common.close'))}</button>
              <button class="btn btn-outline" id="mtk-appr-reject" style="color:var(--rose-700)"><span class="ms ms-sm">close</span> ${esc(t('ch.reject'))}</button>
              <button class="btn btn-primary" id="mtk-appr-approve"><span class="ms ms-sm">check</span> ${esc(t('ch.approve'))}</button>`,
       onMount(ov) {
         $('#mtk-appr-approve', ov)?.addEventListener('click', () => { closeModal(); decideAppr(a.id, 'approved'); });
         $('#mtk-appr-reject', ov)?.addEventListener('click', () => { closeModal(); decideAppr(a.id, 'rejected'); });
+        // Load the ticket's worklog + attachments for the approver — including
+        // staff-internal notes/files (IT price research) the requester never sees.
+        const dl = (docId) => '/api/me/approvals/' + encodeURIComponent(a.id) + '/documents/' + encodeURIComponent(docId) + '/download';
+        const cdocsHtml = (docs) => (docs && docs.length) ? `<div class="tk-comment-docs">${docs.map((d) => `<a href="#" class="mtk-cdoc" data-adl="${esc(d.id)}"><span class="ms ms-sm">${(d.mime || '').startsWith('image/') ? 'image' : 'description'}</span> <span class="tk-cdoc-name">${esc(d.filename)}</span></a>`).join('')}</div>` : '';
+        api('/me/approvals/' + encodeURIComponent(a.id) + '/context').then((ctx) => {
+          const host = $('#mtk-appr-context', ov); if (!host || !ctx) return;
+          const comments = Array.isArray(ctx.comments) ? ctx.comments : [];
+          const standalone = Array.isArray(ctx.documents) ? ctx.documents : [];
+          if (!comments.length && !standalone.length && !ctx.description) return;
+          const cHtml = comments.map((c) => `<div class="tk-comment${c.internal ? ' tk-internal' : ''}">
+              <div class="tk-comment-head"><strong>${esc(c.authorName || '')}</strong>
+                ${c.internal ? `<span class="pill pill-amber"><span class="ms ms-sm" style="vertical-align:-2px">lock</span> ${esc(t('tk.internal'))}</span>` : ''}
+                <span class="cell-sub">${esc(String(c.createdAt || '').replace('T', ' ').slice(0, 16))}</span></div>
+              <div>${esc(c.body || '').replace(/\n/g, '<br>')}</div>${cdocsHtml(c.documents)}</div>`).join('');
+          host.innerHTML = `<h3 style="margin:16px 0 8px">${esc(t('mtk.apContext'))}</h3>
+            ${ctx.description ? `<div class="tk-desc" style="margin-bottom:10px">${esc(ctx.description).replace(/\n/g, '<br>')}</div>` : ''}
+            ${comments.length ? `<div class="tk-comments">${cHtml}</div>` : `<p class="cell-sub">${esc(t('tk.noComments'))}</p>`}
+            ${standalone.length ? `<div class="tk-docs" style="margin-top:8px">${standalone.map((d) => `<div class="tk-doc"><span class="ms ms-sm">${(d.mime || '').startsWith('image/') ? 'image' : 'description'}</span><a href="#" class="mtk-cdoc" data-adl="${esc(d.id)}" class="tk-doc-name">${esc(d.filename)}</a></div>`).join('')}</div>` : ''}`;
+          host.querySelectorAll('.mtk-cdoc').forEach((el) => el.addEventListener('click', (e) => { e.preventDefault(); viewAuthed(dl(el.dataset.adl)); }));
+        }).catch(() => {});
       },
     });
   }

@@ -1180,7 +1180,7 @@ Views.tickets = async function (el, params = {}) {
                 ${canDocUpload ? `<div class="tkd-upload-row"><label class="btn btn-outline btn-sm" style="margin:0">
                   <span class="ms ms-sm">upload_file</span> ${esc(t('tk.attach'))}
                   <input type="file" id="tk-doc-file" style="display:none"></label>
-                  <label class="tkd-check"><input type="checkbox" id="tk-doc-internal"> ${esc(t('tk.docInternal'))}</label>
+                  <label class="tkd-internal" title="${esc(t('tk.docInternal'))}"><input type="checkbox" id="tk-doc-internal"><span class="ms ms-sm">lock</span> ${esc(t('tk.docInternal'))}</label>
                   <span class="cell-sub">${esc(t('tk.attachHint'))}</span></div>` : ''}
               </section>` : ''}
               <details class="tkd-activity"><summary class="cell-sub">${esc(t('tk.activity'))}</summary>
