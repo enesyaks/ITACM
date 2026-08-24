@@ -695,13 +695,13 @@ Views.tickets = async function (el, params = {}) {
       const data = await api(`/tickets/report/agent?userId=${encodeURIComponent(userId)}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`).catch(() => null);
       if (!data) { toast(t('common.error') || 'Error', 'error'); return; }
       const prPill = (p) => pill(TK_PRIORITY_PILL[p], tkPriorityLabel(p));
-      const resolvedRows = data.resolved.map((r) => `<tr>
+      const resolvedRows = data.resolved.map((r) => `<tr data-open="${esc(r.id || '')}" style="cursor:pointer">
           <td class="mono">${esc(r.number)}</td><td><div class="cell-title">${esc(r.subject)}</div>${r.category ? `<div class="cell-sub">${esc(r.category)}</div>` : ''}</td>
           <td>${prPill(r.priority)}</td><td>${fmtH(r.resolutionHours)}</td>
           <td>${r.slaMet == null ? '—' : (r.slaMet ? `<span class="pill pill-emerald">${esc(t('tk.sla.met'))}</span>` : `<span class="pill pill-rose">${esc(t('tk.sla.breached'))}</span>`)}</td>
           <td>${r.csatRating ? '★'.repeat(r.csatRating) : '—'}</td>
           <td class="cell-sub">${esc(String(r.resolvedAt || '').slice(0, 10))}</td></tr>`).join('');
-      const openRows = data.open.map((r) => `<tr>
+      const openRows = data.open.map((r) => `<tr data-open="${esc(r.id || '')}" style="cursor:pointer">
           <td class="mono">${esc(r.number)}</td><td><div class="cell-title">${esc(r.subject)}</div></td>
           <td>${prPill(r.priority)}</td><td>${pill(TK_STATUS_PILL[r.status], tkStatusLabel(r.status))}</td>
           <td class="cell-sub">${esc(String(r.createdAt || '').slice(0, 10))}</td></tr>`).join('');
@@ -719,6 +719,11 @@ Views.tickets = async function (el, params = {}) {
             <thead><tr><th>#</th><th>${esc(t('tk.subject'))}</th><th>${esc(t('tk.priorityCol'))}</th><th>${esc(t('tk.statusCol'))}</th><th>${esc(t('tk.createdCol'))}</th></tr></thead>
             <tbody>${openRows || `<tr><td colspan="5" class="table-empty">${esc(t('tk.none'))}</td></tr>`}</tbody></table></div>`,
         foot: `<button class="btn btn-outline" data-close>${esc(t('common.close'))}</button>`,
+        onMount(ov) {
+          ov.querySelectorAll('tr[data-open]').forEach((tr) => tr.addEventListener('click', () => {
+            if (tr.dataset.open) openTicket(tr.dataset.open);
+          }));
+        },
       });
     };
     const load = async (ov) => {

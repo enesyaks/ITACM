@@ -606,7 +606,7 @@ async function agentReport({ userId, from, to } = {}) {
   const toD = day(to, new Date().toISOString().slice(0, 10));
   const fromD = day(from, new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10));
   const params = [userId, fromD, `${toD} 23:59:59`];
-  const cols = `t.number, t.subject, t.type, t.priority, t.status, t.category,
+  const cols = `t.id, t.number, t.subject, t.type, t.priority, t.status, t.category,
     t.resolved_at AS "resolvedAt", t.closed_at AS "closedAt", t.csat_rating AS "csatRating",
     ROUND(EXTRACT(EPOCH FROM (t.resolved_at - t.created_at))/3600, 1) AS "resolutionHours",
     (t.resolve_due_at IS NOT NULL AND t.resolved_at <= t.resolve_due_at) AS "slaMet"`;
@@ -615,7 +615,7 @@ async function agentReport({ userId, from, to } = {}) {
     `SELECT ${cols} FROM tickets t WHERE t.assignee_user_id = $1 AND t.resolved_at BETWEEN $2 AND $3
       ORDER BY t.resolved_at DESC LIMIT 300`, params);
   const { rows: open } = await query(
-    `SELECT t.number, t.subject, t.type, t.priority, t.status, t.category,
+    `SELECT t.id, t.number, t.subject, t.type, t.priority, t.status, t.category,
        t.resolve_due_at AS "resolveDueAt", t.created_at AS "createdAt"
        FROM tickets t WHERE t.assignee_user_id = $1
         AND t.status NOT IN ('resolved','closed','cancelled')
