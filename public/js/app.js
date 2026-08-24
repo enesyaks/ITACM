@@ -10,6 +10,8 @@ const ROUTES = {
   '#/zimmetlerim': { title: 'My Assets', view: 'myZimmet', icon: 'inventory_2' },
   '#/my-tickets': { title: 'My Tickets', view: 'myTickets', icon: 'support_agent', module: 'ticketing', portalOnly: true },
   '#/my-kb': { title: 'Help Center', view: 'myKb', icon: 'menu_book', module: 'ticketing', portalOnly: true },
+  // Portal users have no topbar bell, so their notifications live on a page.
+  '#/notifications': { title: 'Notifications', view: 'notifications', icon: 'notifications', portalOnly: true },
   // HR-only screen. IT never opens this page — they review and approve tickets
   // from the Dashboard HR card, so the filing surface and the approving surface
   // stay separate.
@@ -118,7 +120,7 @@ function saveNavPref() {
 /** Every route this account may open, in declaration order. */
 function permittedNavEntries() {
   return Object.entries(ROUTES).filter(([hash, r]) => {
-    if (isPortalUser()) return hash === PORTAL_HASH || (['#/my-tickets', '#/my-kb'].includes(hash) && moduleOn('ticketing'));
+    if (isPortalUser()) return hash === PORTAL_HASH || hash === '#/notifications' || (['#/my-tickets', '#/my-kb'].includes(hash) && moduleOn('ticketing'));
     if (isHrConfined()) return HR_ALLOWED_HASHES.has(hash);
     if (r.portalOnly) return false; // self-service-only routes never show for staff
     // Optional module (e.g. Service Desk): hidden unless the Owner enabled it.
@@ -331,7 +333,7 @@ async function navigate() {
   const hash = ROUTES[rawHash] ? rawHash : homeHash;
   const route = ROUTES[hash];
   // Portal accounts are confined to their own zimmet page (+ their own tickets).
-  const portalOk = hash === PORTAL_HASH || (['#/my-tickets', '#/my-kb'].includes(hash) && moduleOn('ticketing'));
+  const portalOk = hash === PORTAL_HASH || hash === '#/notifications' || (['#/my-tickets', '#/my-kb'].includes(hash) && moduleOn('ticketing'));
   if (isPortalUser() && !portalOk) { location.hash = PORTAL_HASH; return; }
   if (isHrConfined() && !HR_ALLOWED_HASHES.has(hash)) { location.hash = HR_HOME_HASH; return; }
   // Mirror permittedNavEntries: a portalOnly route or a disabled optional module

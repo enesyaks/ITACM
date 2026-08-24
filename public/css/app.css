@@ -1135,6 +1135,15 @@ code, .mono { font-family: var(--mono); font-size: 12px; }
   color: #fff; background: var(--rose-600, #e11d48); border-radius: 999px; border: 2px solid var(--surface, #fff); }
 .notif-badge.hidden { display: none; }
 .gs-item.is-unread { background: var(--primary-container, rgba(79,70,229,.06)); }
+/* Notifications page (portal + staff) */
+.ntf-list { display: flex; flex-direction: column; }
+.ntf-row { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--outline-variant); }
+.ntf-row:last-child { border-bottom: 0; }
+.ntf-row:hover { background: var(--surface-low); }
+.ntf-row.is-unread { background: var(--primary-container, rgba(79,70,229,.06)); }
+.ntf-body { flex: 1; min-width: 0; }
+.ntf-title { font-weight: 600; font-size: 14px; }
+.ntf-time { margin-top: 2px; }
 .icon-btn:focus-visible {
   outline: 2px solid var(--primary-container);
   outline-offset: 2px;
@@ -5899,7 +5908,7 @@ body.ai-open .ai-panel { opacity: 1; visibility: visible; transform: none; }
 .kb-attach .kb-img { max-width: 100%; border-radius: 10px; display: block; border: 1px solid var(--outline-variant); box-shadow: var(--shadow-card); }
 .kb-pdf { border: 1px solid var(--outline-variant); border-radius: 10px; overflow: hidden; }
 .kb-pdf-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--surface-low); font-size: 13px; }
-.kb-pdf-frame { width: 100%; height: 640px; border: 0; display: block; background: #fff; }
+.kb-pdf-host { width: 100%; max-height: min(70vh, 640px); overflow-y: auto; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 8px; background: var(--surface); }
 
 /* --- Request-template editor (approval workflow) --- */
 .rt-config { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 12px 16px; margin-bottom: 12px;

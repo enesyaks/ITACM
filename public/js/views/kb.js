@@ -1,7 +1,7 @@
 /* ===================== KNOWLEDGE BASE (staff) ===================== */
 
-/* Fetch an authed file as a blob and point an <img>/<iframe> at it (the tag
-   can't send the bearer token itself). */
+/* Fetch an authed image as a blob and point an <img> at it (the tag can't send
+   the bearer token itself). */
 async function kbAuthedBlob(el, url) {
   try {
     const tok = localStorage.getItem('itacm_token');
@@ -11,8 +11,22 @@ async function kbAuthedBlob(el, url) {
   } catch { /* leave it blank */ }
 }
 
-/* Render an article's attachments: images inline, PDFs in an inline viewer,
-   other files as download links. */
+/* Render an authed PDF inline with PDF.js (a raw <iframe> to a blob: URL renders
+   blank in most browsers — same reason the full-screen viewer uses PDF.js). */
+async function kbRenderPdfInline(host, url) {
+  try {
+    const tok = localStorage.getItem('itacm_token');
+    const res = await fetch(url, { headers: { authorization: 'Bearer ' + tok } });
+    if (!res.ok) { host.innerHTML = `<div class="table-empty">${esc(t('doc.previewUnavailable') || '—')}</div>`; return; }
+    const buf = await res.arrayBuffer();
+    if (typeof renderPdfPreview === 'function') {
+      renderPdfPreview(host, buf, () => { host.innerHTML = `<div class="table-empty">${esc(t('doc.previewUnavailable') || '—')}</div>`; });
+    }
+  } catch { host.innerHTML = ''; }
+}
+
+/* Render an article's attachments: images inline, PDFs in an inline PDF.js
+   viewer, other files as download links. */
 function kbRenderAttachments(box, docs, urlFor) {
   if (!box) return;
   if (!docs.length) { box.innerHTML = ''; return; }
@@ -22,10 +36,11 @@ function kbRenderAttachments(box, docs, urlFor) {
     if (mime === 'application/pdf') return `<div class="kb-pdf">
         <div class="kb-pdf-head"><span class="ms ms-sm">picture_as_pdf</span> <span style="flex:1">${esc(d.filename)}</span>
           <a href="#" data-dl="${esc(d.id)}" class="cell-sub">${esc(t('kb.openFull'))}</a></div>
-        <iframe class="kb-pdf-frame" data-blob="${esc(d.id)}" title="${esc(d.filename)}"></iframe></div>`;
+        <div class="kb-pdf-host" data-pdf="${esc(d.id)}"><div class="table-empty">${esc(t('common.loading') || '…')}</div></div></div>`;
     return `<div class="tk-doc"><span class="ms ms-sm">description</span><a href="#" data-dl="${esc(d.id)}" class="tk-doc-name">${esc(d.filename)}</a></div>`;
   }).join('');
   box.querySelectorAll('[data-blob]').forEach((el) => kbAuthedBlob(el, urlFor(el.dataset.blob)));
+  box.querySelectorAll('[data-pdf]').forEach((host) => kbRenderPdfInline(host, urlFor(host.dataset.pdf)));
   box.querySelectorAll('[data-dl]').forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); viewAuthed(urlFor(a.dataset.dl)); }));
 }
 

@@ -24,11 +24,12 @@ Views.myTickets = async function (el) {
       <td class="cell-sub">${esc(String(tk.createdAt || '').slice(0, 10))}</td>
     </tr>`;
 
-  const apprCard = (a) => `<div class="tk-doc" data-appr="${esc(a.id)}">
+  const apprCard = (a) => `<div class="tk-doc" data-appr="${esc(a.id)}" style="cursor:pointer">
       <span style="flex:1"><strong>${esc(a.summary || t('mtk.apGeneric'))}</strong>
         <span class="cell-sub"> · ${esc(t('mtk.apFrom'))} ${esc(a.requesterName || '—')}</span></span>
       <button class="btn btn-outline btn-sm appr-reject" data-id="${esc(a.id)}" style="color:var(--rose-700)">${esc(t('ch.reject'))}</button>
       <button class="btn btn-primary btn-sm appr-approve" data-id="${esc(a.id)}">${esc(t('ch.approve'))}</button>
+      <span class="ms ms-sm" style="color:var(--on-surface-variant)">chevron_right</span>
     </div>`;
 
   el.innerHTML = `
@@ -54,8 +55,44 @@ Views.myTickets = async function (el) {
       toast(decision === 'approved' ? t('ch.approved') : t('ch.rejected'), 'success'); Views.myTickets(el);
     } catch (err) { toast(err.message, 'error'); }
   };
-  el.querySelectorAll('.appr-approve').forEach((b) => b.addEventListener('click', () => decideAppr(b.dataset.id, 'approved')));
-  el.querySelectorAll('.appr-reject').forEach((b) => b.addEventListener('click', () => decideAppr(b.dataset.id, 'rejected')));
+  el.querySelectorAll('.appr-approve').forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); decideAppr(b.dataset.id, 'approved'); }));
+  el.querySelectorAll('.appr-reject').forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); decideAppr(b.dataset.id, 'rejected'); }));
+  const byApprId = new Map(approvals.map((a) => [a.id, a]));
+  el.querySelectorAll('[data-appr]').forEach((card) => card.addEventListener('click', (e) => {
+    if (e.target.closest('button')) return;
+    const a = byApprId.get(card.dataset.appr);
+    if (a) openApprDetail(a);
+  }));
+
+  // Read-only detail for a request awaiting my approval, with approve/reject.
+  function openApprDetail(a) {
+    const amount = a.payload && a.payload.amount;
+    const n = Array.isArray(a.levels) ? a.levels.length : 0;
+    const step = n > 1 ? `<span class="pill pill-slate">${(a.currentLevel || 0) + 1} / ${n}</span>` : '';
+    const field = (label, val) => `<div class="form-field"><label>${esc(label)}</label><div style="padding-top:4px">${val}</div></div>`;
+    openModal({
+      title: a.summary || t('mtk.apGeneric'),
+      wide: true,
+      body: `
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px">
+          ${apPill('pending')}${a.resourceRef ? ` <span class="pill pill-slate"><span class="mono">${esc(a.resourceRef)}</span></span>` : ''} ${step}
+        </div>
+        <div class="form-grid">
+          ${field(t('tk.requester'), esc(a.requesterName || '—'))}
+          ${amount != null ? field(t('mtk.amount'), `<strong>₺${esc(Number(amount).toLocaleString('tr-TR'))}</strong>`) : ''}
+          ${a.createdAt ? field(t('tk.createdCol'), `<span class="cell-sub">${esc(String(a.createdAt).replace('T', ' ').slice(0, 16))}</span>`) : ''}
+          ${a.approverName ? field(t('mtk.apWaiting'), esc(a.approverName)) : ''}
+        </div>
+        ${typeof renderApprovalTimeline === 'function' ? renderApprovalTimeline(a.history) : ''}`,
+      foot: `<button class="btn btn-outline" data-close>${esc(t('common.close'))}</button>
+             <button class="btn btn-outline" id="mtk-appr-reject" style="color:var(--rose-700)"><span class="ms ms-sm">close</span> ${esc(t('ch.reject'))}</button>
+             <button class="btn btn-primary" id="mtk-appr-approve"><span class="ms ms-sm">check</span> ${esc(t('ch.approve'))}</button>`,
+      onMount(ov) {
+        $('#mtk-appr-approve', ov)?.addEventListener('click', () => { closeModal(); decideAppr(a.id, 'approved'); });
+        $('#mtk-appr-reject', ov)?.addEventListener('click', () => { closeModal(); decideAppr(a.id, 'rejected'); });
+      },
+    });
+  }
 
   function openCreate() {
     openModal({
