@@ -85,12 +85,17 @@ Views.problems = async function (el) {
     if (!p) return;
     const assignOpts = `<option value="">${esc(t('tk.unassigned'))}</option>` +
       staffList.map((u) => `<option value="${esc(u.uid)}"${u.uid === p.assigneeUserId ? ' selected' : ''}>${esc(u.username)}</option>`).join('');
-    const incRows = (p.incidents || []).map((i) => `<div class="tk-doc">
-        <a href="#" data-inc="${esc(i.id)}" class="tk-doc-name mono">${esc(i.number)}</a>
-        <span style="flex:1">${esc(i.subject)}</span>
-        ${pill(TK_STATUS_PILL[i.status] || 'pill-slate', tkStatusLabel(i.status))}
-        ${canUpdate ? `<button class="btn btn-outline btn-sm pr-unlink" data-tid="${esc(i.id)}" title="${esc(t('pr.unlink'))}"><span class="ms ms-sm">link_off</span></button>` : ''}
-      </div>`).join('') || `<p class="cell-sub">${esc(t('pr.noIncidents'))}</p>`;
+    const incRows = (p.incidents || []).map((i) => `<div class="pr-inc prio-${esc(i.priority || 'medium')}" data-inc="${esc(i.id)}">
+        <span class="pr-inc-no mono">${esc(i.number)}</span>
+        <div class="pr-inc-main">
+          <div class="pr-inc-subj">${esc(i.subject)}</div>
+          <div class="pr-inc-pills">
+            ${i.priority ? pill(TK_PRIORITY_PILL[i.priority], tkPriorityLabel(i.priority)) : ''}
+            ${pill(TK_STATUS_PILL[i.status] || 'pill-slate', tkStatusLabel(i.status))}
+          </div>
+        </div>
+        ${canUpdate ? `<button class="btn btn-ghost btn-sm pr-unlink" data-tid="${esc(i.id)}" title="${esc(t('pr.unlink'))}"><span class="ms ms-sm">link_off</span></button>` : ''}
+      </div>`).join('') || `<div class="pr-inc-empty"><span class="ms">link_off</span> ${esc(t('pr.noIncidents'))}</div>`;
 
     openModal({
       title: `${p.number} · ${p.title}`,
@@ -111,7 +116,7 @@ Views.problems = async function (el) {
             <textarea id="pr-d-work" rows="2" ${canUpdate ? '' : 'disabled'} placeholder="${esc(t('pr.workaroundPh'))}">${esc(p.workaround || '')}</textarea></div>
         </div>
         <h3 style="margin:16px 0 8px">${esc(t('pr.incidents'))} <span class="cell-sub">(${p.incidents ? p.incidents.length : 0})</span></h3>
-        <div class="tk-docs">${incRows}</div>
+        <div class="pr-inc-list">${incRows}</div>
         ${canUpdate ? `<div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <input id="pr-link-inc" list="pr-inc-list" class="ops-select" placeholder="${esc(t('pr.linkIncident'))}" style="min-width:260px">
           <datalist id="pr-inc-list">${incOptions}</datalist>
@@ -128,9 +133,14 @@ Views.problems = async function (el) {
         $('#pr-d-assignee', ov)?.addEventListener('change', (e) => patch({ assigneeUserId: e.target.value || null }).then(refresh));
         $('#pr-d-root', ov)?.addEventListener('change', (e) => patch({ rootCause: e.target.value.trim() }));
         $('#pr-d-work', ov)?.addEventListener('change', (e) => patch({ workaround: e.target.value.trim() }));
-        ov.querySelectorAll('.pr-unlink').forEach((b) => b.addEventListener('click', async () => {
+        ov.querySelectorAll('.pr-unlink').forEach((b) => b.addEventListener('click', async (e) => {
+          e.stopPropagation();
           try { await api('/problems/' + encodeURIComponent(id) + '/link/' + b.dataset.tid, { method: 'DELETE' }); closeModal(); openProblem(id); refresh(); }
           catch (err) { toast(err.message, 'error'); }
+        }));
+        // Click an incident card to open that ticket (deep-link).
+        ov.querySelectorAll('.pr-inc[data-inc]').forEach((row) => row.addEventListener('click', () => {
+          closeModal(); location.hash = '#/tickets?open=' + encodeURIComponent(row.dataset.inc);
         }));
         $('#pr-link-btn', ov)?.addEventListener('click', async () => {
           const val = $('#pr-link-inc', ov).value.trim();
