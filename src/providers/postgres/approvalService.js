@@ -243,12 +243,13 @@ async function approverContext(requestId, deciderEmployeeId) {
   const ticketId = req.payload && req.payload.ticketId;
   if (!ticketId || !isUuid(ticketId)) return { ticketId: null, comments: [], documents: [] };
   const tk = (await query('SELECT number, subject, description FROM tickets WHERE id = $1', [ticketId])).rows[0] || {};
+  // Approvers see public + approver-only notes/files, but NOT staff-only (IT team) ones.
   const comments = (await query(
     `SELECT id, author_name AS "authorName", body, internal, created_at AS "createdAt"
-       FROM ticket_comments WHERE ticket_id = $1 ORDER BY created_at ASC`, [ticketId])).rows;
+       FROM ticket_comments WHERE ticket_id = $1 AND staff_only = false ORDER BY created_at ASC`, [ticketId])).rows;
   const docs = (await query(
     `SELECT id, comment_id AS "commentId", filename, mime, byte_size AS "byteSize", internal
-       FROM ticket_documents WHERE ticket_id = $1 ORDER BY created_at ASC`, [ticketId])).rows;
+       FROM ticket_documents WHERE ticket_id = $1 AND staff_only = false ORDER BY created_at ASC`, [ticketId])).rows;
   const byComment = {};
   docs.forEach((d) => { if (d.commentId) (byComment[d.commentId] = byComment[d.commentId] || []).push(d); });
   comments.forEach((c) => { c.documents = byComment[c.id] || []; });

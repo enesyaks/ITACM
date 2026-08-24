@@ -908,6 +908,9 @@ CREATE TABLE IF NOT EXISTS ticket_comments (
   created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_ticket_comments ON ticket_comments (ticket_id, created_at);
+-- Three visibility levels (080): public (default) → internal (staff + approvers,
+-- hidden from requester) → staff_only (IT team only, approvers don't see it).
+ALTER TABLE ticket_comments ADD COLUMN IF NOT EXISTS staff_only BOOLEAN NOT NULL DEFAULT false;
 
 CREATE TABLE IF NOT EXISTS ticket_activity (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -994,6 +997,8 @@ ALTER TABLE ticket_documents ADD COLUMN IF NOT EXISTS internal BOOLEAN NOT NULL 
 -- so they can render beneath it. NULL = a standalone ticket attachment.
 ALTER TABLE ticket_documents ADD COLUMN IF NOT EXISTS comment_id UUID REFERENCES ticket_comments(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_ticket_documents_comment ON ticket_documents (comment_id);
+-- IT-team-only attachments (080): internal AND hidden from approvers too.
+ALTER TABLE ticket_documents ADD COLUMN IF NOT EXISTS staff_only BOOLEAN NOT NULL DEFAULT false;
 
 -- ITIL Problem Management (062).
 CREATE TABLE IF NOT EXISTS problems (

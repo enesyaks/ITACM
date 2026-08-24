@@ -353,7 +353,7 @@ async function getTicket(id, user, { ownEmployeeId = null } = {}) {
     throw HttpError.forbidden('Not allowed to view this ticket');
   }
   const { rows: comments } = await query(
-    `SELECT id, author_name AS "authorName", body, internal, created_at AS "createdAt"
+    `SELECT id, author_name AS "authorName", body, internal, staff_only AS "staffOnly", created_at AS "createdAt"
        FROM ticket_comments WHERE ticket_id = $1 ${ownEmployeeId ? 'AND internal = false' : ''}
       ORDER BY created_at ASC`,
     [id]
@@ -800,13 +800,15 @@ async function addComment(id, body, user, { ownEmployeeId = null } = {}) {
   if (!isUuid(id)) throw HttpError.notFound('Ticket not found');
   const text = String((body && body.body) || '').trim().slice(0, 8000);
   if (!text) throw HttpError.badRequest('A comment body is required');
-  const internal = !ownEmployeeId && !!(body && body.internal); // employees can't post internal notes
+  // Employees (portal) can never post restricted notes. staff_only implies internal.
+  const staffOnly = !ownEmployeeId && !!(body && body.staffOnly);
+  const internal = !ownEmployeeId && (staffOnly || !!(body && body.internal));
   const a = actor(user);
   // Ownership check for self-service authors.
   await getTicket(id, user, { ownEmployeeId });
   const ins = await query(
-    'INSERT INTO ticket_comments (ticket_id, author_user_id, author_name, body, internal) VALUES ($1,$2,$3,$4,$5) RETURNING id',
-    [id, a.id, a.name, text, internal]
+    'INSERT INTO ticket_comments (ticket_id, author_user_id, author_name, body, internal, staff_only) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id',
+    [id, a.id, a.name, text, internal, staffOnly]
   );
   const commentId = ins.rows[0].id;
   // First customer-facing staff reply stamps the response time. Internal notes

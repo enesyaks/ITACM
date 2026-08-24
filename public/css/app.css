@@ -5900,6 +5900,7 @@ body.ai-open .ai-panel { opacity: 1; visibility: visible; transform: none; }
 .tkd-vis-opt:hover { color: var(--on-surface); }
 .tkd-vis-opt.act[data-v="public"] { background: var(--surface); color: var(--on-surface); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
 .tkd-vis-opt.act[data-v="internal"] { background: color-mix(in srgb, var(--amber-600, #d97706) 16%, transparent); color: var(--amber-700, #b45309); }
+.tkd-vis-opt.act[data-v="staff"] { background: color-mix(in srgb, var(--primary) 15%, transparent); color: var(--primary); }
 .tkd-vis-opt:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 
 /* (legacy) prominent "internal note" toggle — turns amber (with a lock) when active */

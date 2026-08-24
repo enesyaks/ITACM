@@ -627,8 +627,7 @@ Views.tickets = async function (el, params = {}) {
         const wireCard = (card) => {
           const chain = card.querySelector('.rt-chain');
           const addBtn = card.querySelector('.rt-addstep'); const menu = card.querySelector('.rt-addmenu');
-          addBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
+          addBtn.addEventListener('click', () => {
             const wasHidden = menu.classList.contains('is-hidden');
             ov.querySelectorAll('.rt-addmenu').forEach((m) => m.classList.add('is-hidden')); // only one menu open at a time
             if (wasHidden) menu.classList.remove('is-hidden');
@@ -646,7 +645,12 @@ Views.tickets = async function (el, params = {}) {
         };
         [...listEl.querySelectorAll('.rt-card')].forEach(wireCard);
         wireDel(); mountPickers(); renumber();
-        ov.addEventListener('click', (e) => { if (!e.target.closest('.rt-addstep-wrap')) ov.querySelectorAll('.rt-addmenu').forEach((m) => m.classList.add('is-hidden')); });
+        // Close any open add-step menu on a pointerdown outside it — capture phase
+        // so it always fires (unaffected by stopPropagation / drag handlers). The
+        // add button and menu items live inside .rt-addstep-wrap and are exempted.
+        ov.addEventListener('pointerdown', (e) => {
+          if (!e.target.closest('.rt-addstep-wrap')) ov.querySelectorAll('.rt-addmenu').forEach((m) => m.classList.add('is-hidden'));
+        }, true);
 
         $('#rt-add', ov).addEventListener('click', () => {
           listEl.insertAdjacentHTML('beforeend', rowHtml(null));
@@ -1124,7 +1128,7 @@ Views.tickets = async function (el, params = {}) {
     const comments = (tk.comments || []).map((c) => `
       <div class="tk-comment${c.internal ? ' tk-internal' : ''}">
         <div class="tk-comment-head"><strong>${esc(c.authorName || '')}</strong>
-          ${c.internal ? `<span class="pill pill-amber">${esc(t('tk.internal'))}</span>` : ''}
+          ${c.staffOnly ? `<span class="pill pill-slate"><span class="ms ms-sm" style="vertical-align:-2px">engineering</span> ${esc(t('tk.visStaff'))}</span>` : (c.internal ? `<span class="pill pill-amber"><span class="ms ms-sm" style="vertical-align:-2px">shield_person</span> ${esc(t('tk.visInternal'))}</span>` : '')}
           <span class="cell-sub">${esc(String(c.createdAt || '').replace('T', ' ').slice(0, 16))}</span></div>
         <div>${esc(c.body).replace(/\n/g, '<br>')}</div>
         ${commentDocs(c.documents)}
@@ -1168,10 +1172,10 @@ Views.tickets = async function (el, params = {}) {
                     <div class="tkd-reply-left">
                       <label class="btn btn-ghost btn-sm" style="margin:0"><span class="ms ms-sm">attach_file</span> ${esc(t('tk.attach'))}
                         <input type="file" id="tk-d-reply-file" accept=".pdf,.png,.jpg,.jpeg,.webp,application/pdf,image/png,image/jpeg,image/webp" multiple hidden></label>
-                      <div class="tkd-vis" title="${esc(t('tk.visHint'))}">
-                        <input type="checkbox" id="tk-d-internal" hidden>
+                      <div class="tkd-vis" id="tk-d-vis" data-vis="public" title="${esc(t('tk.visHint'))}">
                         <button type="button" class="tkd-vis-opt" data-v="public"><span class="ms ms-sm">public</span> ${esc(t('tk.visPublic'))}</button>
                         <button type="button" class="tkd-vis-opt" data-v="internal"><span class="ms ms-sm">shield_person</span> ${esc(t('tk.visInternal'))}</button>
+                        <button type="button" class="tkd-vis-opt" data-v="staff"><span class="ms ms-sm">engineering</span> ${esc(t('tk.visStaff'))}</button>
                       </div>
                     </div>
                     <button class="btn btn-primary btn-sm" id="tk-d-addcomment">${esc(t('tk.post'))}</button>
@@ -1184,10 +1188,10 @@ Views.tickets = async function (el, params = {}) {
                 ${canDocUpload ? `<div class="tkd-upload-row"><label class="btn btn-outline btn-sm" style="margin:0">
                   <span class="ms ms-sm">upload_file</span> ${esc(t('tk.attach'))}
                   <input type="file" id="tk-doc-file" style="display:none"></label>
-                  <div class="tkd-vis" title="${esc(t('tk.visHint'))}">
-                    <input type="checkbox" id="tk-doc-internal" hidden>
+                  <div class="tkd-vis" id="tk-doc-vis" data-vis="public" title="${esc(t('tk.visHint'))}">
                     <button type="button" class="tkd-vis-opt" data-v="public"><span class="ms ms-sm">public</span> ${esc(t('tk.visPublic'))}</button>
                     <button type="button" class="tkd-vis-opt" data-v="internal"><span class="ms ms-sm">shield_person</span> ${esc(t('tk.visInternal'))}</button>
+                    <button type="button" class="tkd-vis-opt" data-v="staff"><span class="ms ms-sm">engineering</span> ${esc(t('tk.visStaff'))}</button>
                   </div>
                   <span class="cell-sub">${esc(t('tk.attachHint'))}</span></div>` : ''}
               </section>` : ''}
@@ -1245,13 +1249,14 @@ Views.tickets = async function (el, params = {}) {
           try { await api('/tickets/' + encodeURIComponent(id), { method: 'PATCH', body }); toast(t('tk.saved'), 'success'); refresh(); }
           catch (err) { toast(err.message, 'error'); }
         };
-        // Visibility segmented toggle (Everyone / Approvers-only) backed by a hidden checkbox.
+        // Visibility segmented selector (Everyone / Approvers-only / IT-team-only);
+        // the chosen level lives on the group's data-vis.
         ov.querySelectorAll('.tkd-vis').forEach((grp) => {
-          const cb = grp.querySelector('input[type=checkbox]');
-          const sync = () => grp.querySelectorAll('.tkd-vis-opt').forEach((b) => b.classList.toggle('act', (b.dataset.v === 'internal') === !!cb.checked));
-          grp.querySelectorAll('.tkd-vis-opt').forEach((b) => b.addEventListener('click', () => { cb.checked = (b.dataset.v === 'internal'); sync(); }));
+          const sync = () => grp.querySelectorAll('.tkd-vis-opt').forEach((b) => b.classList.toggle('act', b.dataset.v === grp.dataset.vis));
+          grp.querySelectorAll('.tkd-vis-opt').forEach((b) => b.addEventListener('click', () => { grp.dataset.vis = b.dataset.v; sync(); }));
           sync();
         });
+        const visFlags = (sel) => { const v = ($(sel, ov) && $(sel, ov).dataset.vis) || 'public'; return { internal: v !== 'public', staffOnly: v === 'staff' }; };
         // Resolving/closing requires impact, category and an assignee. Pre-check
         // on the client for a friendly, translated message (backend also enforces),
         // reverting the dropdown and flagging the empty fields.
@@ -1359,8 +1364,8 @@ Views.tickets = async function (el, params = {}) {
             const reader = new FileReader();
             reader.onload = async () => {
               const base64 = String(reader.result).split(',')[1] || '';
-              const internal = !!($('#tk-doc-internal', ov) && $('#tk-doc-internal', ov).checked);
-              try { await api('/tickets/' + encodeURIComponent(id) + '/documents', { method: 'POST', body: { base64, filename: file.name, internal } }); toast(t('tk.attached'), 'success'); loadDocs(); }
+              const vf = visFlags('#tk-doc-vis');
+              try { await api('/tickets/' + encodeURIComponent(id) + '/documents', { method: 'POST', body: { base64, filename: file.name, internal: vf.internal, staffOnly: vf.staffOnly } }); toast(t('tk.attached'), 'success'); loadDocs(); }
               catch (err) { toast(err.message, 'error'); }
               e.target.value = '';
             };
@@ -1406,12 +1411,12 @@ Views.tickets = async function (el, params = {}) {
         $('#tk-d-addcomment', ov)?.addEventListener('click', async () => {
           const body = $('#tk-d-comment', ov).value.trim();
           if (!body && !replyStaged.length) return;
-          const internal = !!$('#tk-d-internal', ov).checked;
+          const vf = visFlags('#tk-d-vis');
           try {
-            const resp = await api('/tickets/' + encodeURIComponent(id) + '/comments', { method: 'POST', body: { body: body || t('tk.fileOnlyComment'), internal } });
+            const resp = await api('/tickets/' + encodeURIComponent(id) + '/comments', { method: 'POST', body: { body: body || t('tk.fileOnlyComment'), internal: vf.internal, staffOnly: vf.staffOnly } });
             const commentId = resp && resp.newCommentId;
             for (const f of replyStaged) {
-              try { await api('/tickets/' + encodeURIComponent(id) + '/documents', { method: 'POST', body: { base64: await readReplyB64(f), filename: f.name, internal, commentId } }); }
+              try { await api('/tickets/' + encodeURIComponent(id) + '/documents', { method: 'POST', body: { base64: await readReplyB64(f), filename: f.name, internal: vf.internal, staffOnly: vf.staffOnly, commentId } }); }
               catch { /* best-effort per file */ }
             }
             closeModal(); openTicket(id); refresh();
