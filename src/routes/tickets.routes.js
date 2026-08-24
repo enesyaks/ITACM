@@ -126,6 +126,7 @@ router.post('/:id/documents', requireAnyPermission([['document', 'upload'], ['do
     ticketId: ticket.id, filename, mime, buffer,
     uploadedBy: req.user.uid, uploadedByName: req.user.username || req.user.email,
     internal: !!(req.body && req.body.internal),
+    commentId: (req.body && req.body.commentId) || null,
   });
   res.status(201).json({ success: true, data: saved });
 }));

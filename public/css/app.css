@@ -5854,6 +5854,15 @@ body.ai-open .ai-panel { opacity: 1; visibility: visible; transform: none; }
 .tk-comment { border: 1px solid var(--outline-variant); border-radius: var(--radius-lg); padding: 10px 12px; background: var(--surface); }
 .tk-comment.tk-internal { background: var(--surface-low, #f4f3f8); border-color: color-mix(in srgb, var(--amber, #b45309) 40%, var(--outline-variant)); }
 .tk-comment-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 13px; }
+/* Files attached to a specific comment, shown beneath its body */
+.tk-comment-docs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.tk-cdoc, .mtk-cdoc { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 5px 10px;
+  border: 1px solid var(--outline-variant); border-radius: 8px; background: var(--surface-low);
+  font-size: 12.5px; color: var(--on-surface); text-decoration: none; }
+.tk-cdoc:hover, .mtk-cdoc:hover { border-color: var(--primary); background: var(--surface); }
+.tk-cdoc .ms-sm, .mtk-cdoc .ms-sm { color: var(--primary); flex: none; }
+.tk-cdoc-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.tkd-reply-left { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .tk-desc { white-space: pre-wrap; }
 .tk-activity { margin: 8px 0 0; padding-left: 18px; font-size: 12.5px; color: var(--on-surface-variant); }
 .tk-activity li { margin: 3px 0; }

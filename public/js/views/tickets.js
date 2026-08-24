@@ -1064,12 +1064,15 @@ Views.tickets = async function (el, params = {}) {
     }
     const assignOpts = `<option value="">${esc(t('tk.unassigned'))}</option>` +
       staffList.map((u) => `<option value="${esc(u.uid)}"${u.uid === tk.assigneeUserId ? ' selected' : ''}>${esc(u.username)}</option>`).join('');
+    const tkdSize = (b) => (b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round((b || 0) / 1024)) + ' KB');
+    const commentDocs = (docs) => (docs && docs.length) ? `<div class="tk-comment-docs">${docs.map((d) => `<a href="#" class="tk-cdoc" data-cdl="${esc(d.id)}"><span class="ms ms-sm">${(d.mime || '').startsWith('image/') ? 'image' : 'description'}</span> <span class="tk-cdoc-name">${esc(d.filename)}</span> <span class="cell-sub">${esc(tkdSize(d.byteSize))}</span></a>`).join('')}</div>` : '';
     const comments = (tk.comments || []).map((c) => `
       <div class="tk-comment${c.internal ? ' tk-internal' : ''}">
         <div class="tk-comment-head"><strong>${esc(c.authorName || '')}</strong>
           ${c.internal ? `<span class="pill pill-amber">${esc(t('tk.internal'))}</span>` : ''}
           <span class="cell-sub">${esc(String(c.createdAt || '').replace('T', ' ').slice(0, 16))}</span></div>
         <div>${esc(c.body).replace(/\n/g, '<br>')}</div>
+        ${commentDocs(c.documents)}
       </div>`).join('') || `<p class="cell-sub">${esc(t('tk.noComments'))}</p>`;
     const activity = (tk.activity || []).map((a) => `<li><span class="cell-sub">${esc(String(a.createdAt || '').replace('T', ' ').slice(0, 16))}</span> · ${esc(a.actorName || '')} — ${esc(a.action)}${a.detail ? ' (' + esc(a.detail) + ')' : ''}</li>`).join('');
 
@@ -1105,8 +1108,13 @@ Views.tickets = async function (el, params = {}) {
                     ${canManage ? `<option value="__manage__">— ${esc(t('tk.cannedManage'))} —</option>` : ''}
                   </select>` : ''}
                   <textarea id="tk-d-comment" rows="3" placeholder="${esc(t('tk.addComment'))}"></textarea>
+                  <div class="mtk-files" id="tk-d-reply-files"></div>
                   <div class="tkd-reply-foot">
-                    <label class="tkd-check"><input type="checkbox" id="tk-d-internal"> ${esc(t('tk.internalNote'))}</label>
+                    <div class="tkd-reply-left">
+                      <label class="btn btn-ghost btn-sm" style="margin:0"><span class="ms ms-sm">attach_file</span> ${esc(t('tk.attach'))}
+                        <input type="file" id="tk-d-reply-file" accept=".pdf,.png,.jpg,.jpeg,.webp,application/pdf,image/png,image/jpeg,image/webp" multiple hidden></label>
+                      <label class="tkd-check"><input type="checkbox" id="tk-d-internal"> ${esc(t('tk.internalNote'))}</label>
+                    </div>
                     <button class="btn btn-primary btn-sm" id="tk-d-addcomment">${esc(t('tk.post'))}</button>
                   </div>
                 </div>` : ''}
@@ -1259,7 +1267,8 @@ Views.tickets = async function (el, params = {}) {
           const fmtSize = (b) => (b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB');
           const loadDocs = async () => {
             const box = $('#tk-docs', ov); if (!box) return;
-            const docs = await api('/tickets/' + encodeURIComponent(id) + '/documents').catch(() => []);
+            // Comment-linked files render under their comment, not in this list.
+            const docs = (await api('/tickets/' + encodeURIComponent(id) + '/documents').catch(() => [])).filter((d) => !d.commentId);
             box.innerHTML = docs.length ? docs.map((d) => `<div class="tk-doc">
                 <span class="ms ms-sm">${(d.mime || '').startsWith('image/') ? 'image' : 'description'}</span>
                 <a href="#" data-dl="${esc(d.id)}" class="tk-doc-name">${esc(d.filename)}</a>
@@ -1299,11 +1308,41 @@ Views.tickets = async function (el, params = {}) {
           }
           e.target.value = '';
         });
+        // Comment-linked files open with the same authed download path.
+        ov.querySelectorAll('.tk-cdoc').forEach((a) => a.addEventListener('click', (e) => {
+          e.preventDefault(); viewAuthed('/api/tickets/documents/' + a.dataset.cdl + '/download?view=1');
+        }));
+        // Stage files on the reply, uploaded and linked to the comment after it posts.
+        const replyStaged = [];
+        const replyFilesBox = $('#tk-d-reply-files', ov);
+        const renderReplyFiles = () => {
+          if (!replyFilesBox) return;
+          replyFilesBox.innerHTML = replyStaged.map((f, i) => `<div class="mtk-file">
+            <span class="ms ms-sm">${f.type.startsWith('image/') ? 'image' : 'description'}</span>
+            <span class="mtk-file-name">${esc(f.name)}</span>
+            <button type="button" class="mtk-file-x" data-i="${i}"><span class="ms ms-sm">close</span></button></div>`).join('');
+          replyFilesBox.querySelectorAll('.mtk-file-x').forEach((b) => b.addEventListener('click', () => { replyStaged.splice(Number(b.dataset.i), 1); renderReplyFiles(); }));
+        };
+        $('#tk-d-reply-file', ov)?.addEventListener('change', (e) => {
+          for (const f of e.target.files) {
+            if (!/\.(pdf|png|jpe?g|webp)$/i.test(f.name)) { toast(t('mtk.fileType').replace('{n}', f.name), 'error'); continue; }
+            if (f.size > 8 * 1024 * 1024) { toast(t('mtk.fileTooBig').replace('{n}', f.name), 'error'); continue; }
+            replyStaged.push(f);
+          }
+          e.target.value = ''; renderReplyFiles();
+        });
+        const readReplyB64 = (file) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1] || ''); r.onerror = () => rej(new Error('read failed')); r.readAsDataURL(file); });
         $('#tk-d-addcomment', ov)?.addEventListener('click', async () => {
           const body = $('#tk-d-comment', ov).value.trim();
-          if (!body) return;
+          if (!body && !replyStaged.length) return;
+          const internal = !!$('#tk-d-internal', ov).checked;
           try {
-            await api('/tickets/' + encodeURIComponent(id) + '/comments', { method: 'POST', body: { body, internal: !!$('#tk-d-internal', ov).checked } });
+            const resp = await api('/tickets/' + encodeURIComponent(id) + '/comments', { method: 'POST', body: { body: body || t('tk.fileOnlyComment'), internal } });
+            const commentId = resp && resp.newCommentId;
+            for (const f of replyStaged) {
+              try { await api('/tickets/' + encodeURIComponent(id) + '/documents', { method: 'POST', body: { base64: await readReplyB64(f), filename: f.name, internal, commentId } }); }
+              catch { /* best-effort per file */ }
+            }
             closeModal(); openTicket(id); refresh();
           } catch (err) { toast(err.message, 'error'); }
         });

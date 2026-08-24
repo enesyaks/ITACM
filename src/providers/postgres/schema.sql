@@ -990,6 +990,10 @@ CREATE TABLE IF NOT EXISTS ticket_documents (
 );
 CREATE INDEX IF NOT EXISTS idx_ticket_documents ON ticket_documents (ticket_id, created_at);
 ALTER TABLE ticket_documents ADD COLUMN IF NOT EXISTS internal BOOLEAN NOT NULL DEFAULT false;
+-- Attachments raised as part of a worklog reply link back to that comment (079),
+-- so they can render beneath it. NULL = a standalone ticket attachment.
+ALTER TABLE ticket_documents ADD COLUMN IF NOT EXISTS comment_id UUID REFERENCES ticket_comments(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_ticket_documents_comment ON ticket_documents (comment_id);
 
 -- ITIL Problem Management (062).
 CREATE TABLE IF NOT EXISTS problems (

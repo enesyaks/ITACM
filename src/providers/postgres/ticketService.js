@@ -358,6 +358,17 @@ async function getTicket(id, user, { ownEmployeeId = null } = {}) {
       ORDER BY created_at ASC`,
     [id]
   );
+  // Attach each comment's linked files so they render beneath it. Portal payloads
+  // never expose internal attachments.
+  const { rows: cdocs } = await query(
+    `SELECT id, comment_id AS "commentId", filename, mime, byte_size AS "byteSize"
+       FROM ticket_documents WHERE ticket_id = $1 AND comment_id IS NOT NULL ${ownEmployeeId ? 'AND internal = false' : ''}
+      ORDER BY created_at ASC`,
+    [id]
+  );
+  const docsByComment = {};
+  for (const d of cdocs) { (docsByComment[d.commentId] = docsByComment[d.commentId] || []).push(d); }
+  for (const c of comments) { c.documents = docsByComment[c.id] || []; }
   ticket.comments = comments;
   if (!ownEmployeeId) {
     const { rows: activity } = await query(
@@ -793,17 +804,20 @@ async function addComment(id, body, user, { ownEmployeeId = null } = {}) {
   const a = actor(user);
   // Ownership check for self-service authors.
   await getTicket(id, user, { ownEmployeeId });
-  await query(
-    'INSERT INTO ticket_comments (ticket_id, author_user_id, author_name, body, internal) VALUES ($1,$2,$3,$4,$5)',
+  const ins = await query(
+    'INSERT INTO ticket_comments (ticket_id, author_user_id, author_name, body, internal) VALUES ($1,$2,$3,$4,$5) RETURNING id',
     [id, a.id, a.name, text, internal]
   );
+  const commentId = ins.rows[0].id;
   // First customer-facing staff reply stamps the response time. Internal notes
   // are hidden from the requester, so they must not satisfy the response SLA.
   if (!ownEmployeeId && !internal) {
     await query('UPDATE tickets SET first_response_at = COALESCE(first_response_at, now()), updated_at = now() WHERE id = $1', [id]);
   }
   notifyComment({ id, ownEmployeeId, internal, snippet: text.slice(0, 200), actorName: a.name });
-  return getTicket(id, user, { ownEmployeeId });
+  const ticket = await getTicket(id, user, { ownEmployeeId });
+  ticket.newCommentId = commentId; // lets the client link freshly-uploaded files
+  return ticket;
 }
 
 /* -------------------------- self-service (Portal) -------------------------- */

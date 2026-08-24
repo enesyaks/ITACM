@@ -89,6 +89,7 @@ router.post('/tickets/:id/documents', requireTicketing, express.json({ limit: '1
     ticketId: ticket.id, filename, mime, buffer,
     uploadedBy: req.user.uid, uploadedByName: req.user.username || req.user.email,
     internal: false, // employees can never post internal attachments
+    commentId: (req.body && req.body.commentId) || null,
   });
   res.status(201).json({ success: true, data: saved });
 }));

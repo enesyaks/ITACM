@@ -1669,6 +1669,7 @@
     'tk.secDetails': L('Details', 'Detay', 'Details', 'Détails', 'Detalles', 'Dettagli', 'Detalhes', 'Details', 'Szczegóły', 'Детали', 'التفاصيل', '詳細'),
     'tk.secClassify': L('Classification', 'Sınıflandırma', 'Klassifizierung', 'Classification', 'Clasificación', 'Classificazione', 'Classificação', 'Classificatie', 'Klasyfikacja', 'Классификация', 'التصنيف', '分類'),
     'tk.secLinks': L('Links', 'İlişkiler', 'Verknüpfungen', 'Liens', 'Vínculos', 'Collegamenti', 'Vínculos', 'Koppelingen', 'Powiązania', 'Связи', 'الروابط', '関連付け'),
+    'tk.fileOnlyComment': L('(shared a file)', '(dosya paylaşıldı)', '(Datei geteilt)', '(fichier partagé)', '(archivo compartido)', '(file condiviso)', '(arquivo compartilhado)', '(bestand gedeeld)', '(udostępniono plik)', '(файл прикреплён)', '(تمت مشاركة ملف)', '（ファイルを共有）'),
     'tk.asset': L('Asset', 'Varlık', 'Asset', 'Actif', 'Activo', 'Asset', 'Ativo', 'Asset', 'Zasób', 'Актив', 'الأصل', '資産'),
     'tk.searchPh': L('Search…', 'Ara…', 'Suchen…', 'Rechercher…', 'Buscar…', 'Cerca…', 'Pesquisar…', 'Zoeken…', 'Szukaj…', 'Поиск…', 'بحث…', '検索…'),
     'tk.assetUnknown': L('Pick an asset from the list', 'Listeden bir varlık seçin', 'Wählen Sie ein Asset aus der Liste', 'Choisissez un actif dans la liste', 'Elige un activo de la lista', 'Scegli un asset dall\'elenco', 'Escolha um ativo da lista', 'Kies een asset uit de lijst', 'Wybierz zasób z listy', 'Выберите актив из списка', 'اختر أصلاً من القائمة', 'リストから資産を選択'),

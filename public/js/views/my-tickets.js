@@ -273,11 +273,14 @@ Views.myTickets = async function (el) {
   async function openMine(id) {
     const tk = await api('/me/tickets/' + encodeURIComponent(id)).catch((e) => { toast(e.message, 'error'); return null; });
     if (!tk) return;
+    const cdocSize = (b) => (b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round((b || 0) / 1024)) + ' KB');
+    const commentDocs = (docs) => (docs && docs.length) ? `<div class="tk-comment-docs">${docs.map((d) => `<a href="#" class="mtk-cdoc" data-cdl="${esc(d.id)}"><span class="ms ms-sm">${(d.mime || '').startsWith('image/') ? 'image' : 'description'}</span> <span class="tk-cdoc-name">${esc(d.filename)}</span> <span class="cell-sub">${esc(cdocSize(d.byteSize))}</span></a>`).join('')}</div>` : '';
     const comments = (tk.comments || []).map((c) => `
       <div class="tk-comment">
         <div class="tk-comment-head"><strong>${esc(c.authorName || '')}</strong>
           <span class="cell-sub">${esc(String(c.createdAt || '').replace('T', ' ').slice(0, 16))}</span></div>
         <div>${esc(c.body).replace(/\n/g, '<br>')}</div>
+        ${commentDocs(c.documents)}
       </div>`).join('') || `<p class="cell-sub">${esc(t('tk.noComments'))}</p>`;
     const open = !['resolved', 'closed', 'cancelled'].includes(tk.status);
 
@@ -318,7 +321,12 @@ Views.myTickets = async function (el) {
                 <div class="tk-comments">${comments}</div>
                 ${open ? `<div class="tkd-reply">
                   <textarea id="mtk-d-comment" rows="3" placeholder="${esc(t('mtk.addComment'))}"></textarea>
-                  <div class="tkd-reply-foot"><span></span><button class="btn btn-primary btn-sm" id="mtk-d-post">${esc(t('tk.post'))}</button></div>
+                  <div class="mtk-files" id="mtk-d-reply-files"></div>
+                  <div class="tkd-reply-foot">
+                    <label class="btn btn-ghost btn-sm" style="margin:0"><span class="ms ms-sm">attach_file</span> ${esc(t('tk.attach'))}
+                      <input type="file" id="mtk-d-reply-file" accept=".pdf,.png,.jpg,.jpeg,.webp,application/pdf,image/png,image/jpeg,image/webp" multiple hidden></label>
+                    <button class="btn btn-primary btn-sm" id="mtk-d-post">${esc(t('tk.post'))}</button>
+                  </div>
                 </div>` : `<p class="cell-sub">${esc(t('mtk.closedNote'))}</p>`}
               </section>
               <section class="tkd-sec">
@@ -348,11 +356,40 @@ Views.myTickets = async function (el) {
         </div>`,
       foot: `<button class="btn btn-outline" data-close>${esc(t('common.close'))}</button>`,
       onMount(ov) {
+        // Comment-linked files download via the portal authed path.
+        ov.querySelectorAll('.mtk-cdoc').forEach((a) => a.addEventListener('click', (e) => {
+          e.preventDefault(); viewAuthed('/api/me/tickets/' + encodeURIComponent(id) + '/documents/' + a.dataset.cdl + '/download');
+        }));
+        // Stage reply files, uploaded and linked to the comment once it posts.
+        const replyStaged = [];
+        const replyFilesBox = $('#mtk-d-reply-files', ov);
+        const renderReplyFiles = () => {
+          if (!replyFilesBox) return;
+          replyFilesBox.innerHTML = replyStaged.map((f, i) => `<div class="mtk-file">
+            <span class="ms ms-sm">${f.type.startsWith('image/') ? 'image' : 'description'}</span>
+            <span class="mtk-file-name">${esc(f.name)}</span>
+            <button type="button" class="mtk-file-x" data-i="${i}"><span class="ms ms-sm">close</span></button></div>`).join('');
+          replyFilesBox.querySelectorAll('.mtk-file-x').forEach((b) => b.addEventListener('click', () => { replyStaged.splice(Number(b.dataset.i), 1); renderReplyFiles(); }));
+        };
+        $('#mtk-d-reply-file', ov)?.addEventListener('change', (e) => {
+          for (const f of e.target.files) {
+            if (!/\.(pdf|png|jpe?g|webp)$/i.test(f.name)) { toast(t('mtk.fileType').replace('{n}', f.name), 'error'); continue; }
+            if (f.size > 8 * 1024 * 1024) { toast(t('mtk.fileTooBig').replace('{n}', f.name), 'error'); continue; }
+            replyStaged.push(f);
+          }
+          e.target.value = ''; renderReplyFiles();
+        });
+        const readReplyB64 = (file) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1] || ''); r.onerror = () => rej(new Error('read failed')); r.readAsDataURL(file); });
         $('#mtk-d-post', ov)?.addEventListener('click', async () => {
           const body = $('#mtk-d-comment', ov).value.trim();
-          if (!body) return;
+          if (!body && !replyStaged.length) return;
           try {
-            await api('/me/tickets/' + encodeURIComponent(id) + '/comments', { method: 'POST', body: { body } });
+            const resp = await api('/me/tickets/' + encodeURIComponent(id) + '/comments', { method: 'POST', body: { body: body || t('tk.fileOnlyComment') } });
+            const commentId = resp && resp.newCommentId;
+            for (const f of replyStaged) {
+              try { await api('/me/tickets/' + encodeURIComponent(id) + '/documents', { method: 'POST', body: { base64: await readReplyB64(f), filename: f.name, commentId } }); }
+              catch { /* best-effort per file */ }
+            }
             closeModal(); openMine(id);
           } catch (err) { toast(err.message, 'error'); }
         });
@@ -372,7 +409,8 @@ Views.myTickets = async function (el) {
         const fmtSize = (b) => (b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB');
         const loadDocs = async () => {
           const box = $('#mtk-docs', ov); if (!box) return;
-          const docs = await api('/me/tickets/' + encodeURIComponent(id) + '/documents').catch(() => []);
+          // Comment-linked files show under their comment, not in this list.
+          const docs = (await api('/me/tickets/' + encodeURIComponent(id) + '/documents').catch(() => [])).filter((d) => !d.commentId);
           box.innerHTML = docs.length ? docs.map((d) => `<div class="tk-doc">
               <span class="ms ms-sm">${(d.mime || '').startsWith('image/') ? 'image' : 'description'}</span>
               <a href="#" data-dl="${esc(d.id)}" class="tk-doc-name">${esc(d.filename)}</a>
