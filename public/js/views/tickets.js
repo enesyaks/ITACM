@@ -1168,7 +1168,11 @@ Views.tickets = async function (el, params = {}) {
                     <div class="tkd-reply-left">
                       <label class="btn btn-ghost btn-sm" style="margin:0"><span class="ms ms-sm">attach_file</span> ${esc(t('tk.attach'))}
                         <input type="file" id="tk-d-reply-file" accept=".pdf,.png,.jpg,.jpeg,.webp,application/pdf,image/png,image/jpeg,image/webp" multiple hidden></label>
-                      <label class="tkd-internal" title="${esc(t('tk.internalNote'))}"><input type="checkbox" id="tk-d-internal"><span class="ms ms-sm">lock</span> ${esc(t('tk.internalNote'))}</label>
+                      <div class="tkd-vis" title="${esc(t('tk.visHint'))}">
+                        <input type="checkbox" id="tk-d-internal" hidden>
+                        <button type="button" class="tkd-vis-opt" data-v="public"><span class="ms ms-sm">public</span> ${esc(t('tk.visPublic'))}</button>
+                        <button type="button" class="tkd-vis-opt" data-v="internal"><span class="ms ms-sm">shield_person</span> ${esc(t('tk.visInternal'))}</button>
+                      </div>
                     </div>
                     <button class="btn btn-primary btn-sm" id="tk-d-addcomment">${esc(t('tk.post'))}</button>
                   </div>
@@ -1180,7 +1184,11 @@ Views.tickets = async function (el, params = {}) {
                 ${canDocUpload ? `<div class="tkd-upload-row"><label class="btn btn-outline btn-sm" style="margin:0">
                   <span class="ms ms-sm">upload_file</span> ${esc(t('tk.attach'))}
                   <input type="file" id="tk-doc-file" style="display:none"></label>
-                  <label class="tkd-internal" title="${esc(t('tk.docInternal'))}"><input type="checkbox" id="tk-doc-internal"><span class="ms ms-sm">lock</span> ${esc(t('tk.docInternal'))}</label>
+                  <div class="tkd-vis" title="${esc(t('tk.visHint'))}">
+                    <input type="checkbox" id="tk-doc-internal" hidden>
+                    <button type="button" class="tkd-vis-opt" data-v="public"><span class="ms ms-sm">public</span> ${esc(t('tk.visPublic'))}</button>
+                    <button type="button" class="tkd-vis-opt" data-v="internal"><span class="ms ms-sm">shield_person</span> ${esc(t('tk.visInternal'))}</button>
+                  </div>
                   <span class="cell-sub">${esc(t('tk.attachHint'))}</span></div>` : ''}
               </section>` : ''}
               <details class="tkd-activity"><summary class="cell-sub">${esc(t('tk.activity'))}</summary>
@@ -1237,6 +1245,13 @@ Views.tickets = async function (el, params = {}) {
           try { await api('/tickets/' + encodeURIComponent(id), { method: 'PATCH', body }); toast(t('tk.saved'), 'success'); refresh(); }
           catch (err) { toast(err.message, 'error'); }
         };
+        // Visibility segmented toggle (Everyone / Approvers-only) backed by a hidden checkbox.
+        ov.querySelectorAll('.tkd-vis').forEach((grp) => {
+          const cb = grp.querySelector('input[type=checkbox]');
+          const sync = () => grp.querySelectorAll('.tkd-vis-opt').forEach((b) => b.classList.toggle('act', (b.dataset.v === 'internal') === !!cb.checked));
+          grp.querySelectorAll('.tkd-vis-opt').forEach((b) => b.addEventListener('click', () => { cb.checked = (b.dataset.v === 'internal'); sync(); }));
+          sync();
+        });
         // Resolving/closing requires impact, category and an assignee. Pre-check
         // on the client for a friendly, translated message (backend also enforces),
         // reverting the dropdown and flagging the empty fields.

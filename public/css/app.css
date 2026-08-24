@@ -5890,7 +5890,19 @@ body.ai-open .ai-panel { opacity: 1; visibility: visible; transform: none; }
 .tkd-reply { margin-top: 12px; }
 .tkd-reply-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; }
 .tkd-check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--on-surface-variant); }
-/* Prominent "internal note" toggle — turns amber (with a lock) when active */
+/* Corporate visibility selector — Everyone / Approvers-only (segmented) */
+.tkd-vis { display: inline-flex; padding: 3px; gap: 3px; background: var(--surface-low);
+  border: 1px solid var(--outline-variant); border-radius: 10px; }
+.tkd-vis-opt { display: inline-flex; align-items: center; gap: 5px; font: inherit; font-size: 12.5px; font-weight: 600;
+  padding: 5px 12px; border: 0; background: transparent; color: var(--on-surface-variant); border-radius: 8px; cursor: pointer;
+  white-space: nowrap; transition: background .12s, color .12s, box-shadow .12s; }
+.tkd-vis-opt .ms-sm { font-size: 16px; }
+.tkd-vis-opt:hover { color: var(--on-surface); }
+.tkd-vis-opt.act[data-v="public"] { background: var(--surface); color: var(--on-surface); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+.tkd-vis-opt.act[data-v="internal"] { background: color-mix(in srgb, var(--amber-600, #d97706) 16%, transparent); color: var(--amber-700, #b45309); }
+.tkd-vis-opt:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+/* (legacy) prominent "internal note" toggle — turns amber (with a lock) when active */
 .tkd-internal { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; user-select: none;
   font-size: 13px; font-weight: 500; padding: 5px 11px; border-radius: 999px;
   border: 1px solid var(--outline-variant); background: var(--surface); color: var(--on-surface-variant);
