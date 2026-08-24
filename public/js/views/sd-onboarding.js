@@ -33,22 +33,25 @@ const SDOB_SLIDES = [
     locate: { route: '#/tickets', selector: '#tk-report' } },
 ];
 
-// Jump to a feature's screen and spotlight the real nav item / button. Polls
-// briefly because the target view renders asynchronously after the hash change.
-function sdobLocate(target) {
-  if (!target) return;
+// Jump to a feature's screen and spotlight the real nav item / button, then
+// call onRestore() so the tour can reappear. Polls briefly because the target
+// view renders asynchronously after the hash change.
+function sdobLocate(target, onRestore) {
+  const restore = (() => { let done = false; return () => { if (done) return; done = true; if (onRestore) onRestore(); }; })();
+  if (!target) { restore(); return; }
   try { if (location.hash !== target.route) location.hash = target.route; } catch { /* ignore */ }
   const navFallback = '#nav a[data-route="' + target.route + '"]';
   let tries = 0;
   const tick = () => {
     tries++;
     const el = document.querySelector(target.selector) || document.querySelector(navFallback);
-    if (!el) { if (tries < 12) setTimeout(tick, 150); return; }
+    if (!el) { if (tries < 12) setTimeout(tick, 150); else restore(); return; }
     try { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch { /* ignore */ }
     el.classList.add('sdob-locate-pulse');
     const tag = document.createElement('div');
     tag.className = 'sdob-locate-tag';
-    tag.innerHTML = '<span class="ms ms-sm">arrow_upward</span> ' + esc(t('sdob.locateHere'));
+    tag.innerHTML = '<span class="ms ms-sm">arrow_upward</span> <span>' + esc(t('sdob.locateHere')) + '</span>'
+      + '<button type="button" class="sdob-tag-resume"><span class="ms ms-sm">undo</span> ' + esc(t('sdob.resume')) + '</button>';
     document.body.appendChild(tag);
     const place = () => {
       const r = el.getBoundingClientRect();
@@ -56,13 +59,17 @@ function sdobLocate(target) {
       tag.style.left = Math.max(8, Math.min(r.left, window.innerWidth - tag.offsetWidth - 8)) + 'px';
     };
     place();
-    const done = () => {
+    let timer = null;
+    const finish = () => {
+      if (timer) clearTimeout(timer);
       el.classList.remove('sdob-locate-pulse');
       tag.remove();
       window.removeEventListener('scroll', place, true);
+      restore();
     };
+    tag.querySelector('.sdob-tag-resume').addEventListener('click', finish);
     window.addEventListener('scroll', place, true);
-    setTimeout(done, 4000);
+    timer = setTimeout(finish, 6000); // auto-return to the tour if not dismissed
   };
   setTimeout(tick, 260);
 }
@@ -190,7 +197,12 @@ function showServiceDeskOnboarding(force) {
     whereEl.innerHTML = `<span class="sdob-where"><span class="ms ms-sm">location_on</span> ${esc(t('sdob.' + s.key + '.where'))}</span>`
       + (s.locate ? `<button class="btn btn-outline btn-sm sdob-show" id="sdob-show" style="border-color:${s.color};color:${s.color}"><span class="ms ms-sm">my_location</span> ${esc(t('sdob.locate'))}</button>` : '');
     const showBtn = overlay.querySelector('#sdob-show');
-    if (showBtn) showBtn.addEventListener('click', () => { close(); sdobLocate(s.locate); });
+    if (showBtn) showBtn.addEventListener('click', () => {
+      // Temporarily hide the tour (don't mark it seen) so the spotlight is visible,
+      // then bring it back to the same slide when the spotlight ends.
+      overlay.style.display = 'none';
+      sdobLocate(s.locate, () => { overlay.style.display = ''; });
+    });
     dots.innerHTML = SDOB_SLIDES.map((_, k) => `<button class="sdob-dot ${k === i ? 'active' : ''}" data-k="${k}" aria-label="${k + 1}"></button>`).join('');
     dots.querySelectorAll('.sdob-dot').forEach((d) => d.addEventListener('click', () => go(Number(d.dataset.k))));
     backBtn.style.visibility = i === 0 ? 'hidden' : '';
