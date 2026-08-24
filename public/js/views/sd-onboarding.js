@@ -16,15 +16,56 @@ function sdobSeenKey() {
   return SDOB_KEY + ':' + uid;
 }
 
-// Slide model: an accent colour, a hero icon, and t()-keys for the copy.
+// Slide model: an accent colour, a hero icon, t()-keys for the copy, and an
+// optional `locate` target — the route to open plus a CSS selector to spotlight
+// so "Show me" jumps to the real screen/button and highlights it.
 const SDOB_SLIDES = [
-  { icon: 'support_agent', color: '#4f46e5', key: 'welcome', bullets: 3 },
-  { icon: 'confirmation_number', color: '#2563eb', key: 'tickets', bullets: 4 },
-  { icon: 'how_to_reg', color: '#7c3aed', key: 'approvals', bullets: 4 },
-  { icon: 'account_tree', color: '#0891b2', key: 'workflow', bullets: 3 },
+  { icon: 'support_agent', color: '#4f46e5', key: 'welcome', bullets: 3,
+    locate: { route: '#/tickets', selector: '#nav a[data-route="#/tickets"]' } },
+  { icon: 'confirmation_number', color: '#2563eb', key: 'tickets', bullets: 4,
+    locate: { route: '#/tickets', selector: '#nav a[data-route="#/tickets"]' } },
+  { icon: 'how_to_reg', color: '#7c3aed', key: 'approvals', bullets: 4,
+    locate: { route: '#/tickets', selector: '#tk-templates' } },
+  { icon: 'account_tree', color: '#0891b2', key: 'workflow', bullets: 3,
+    locate: { route: '#/tickets', selector: '#tk-workflow' } },
   { icon: 'menu_book', color: '#059669', key: 'portal', bullets: 4 },
-  { icon: 'insights', color: '#d97706', key: 'reports', bullets: 3 },
+  { icon: 'insights', color: '#d97706', key: 'reports', bullets: 3,
+    locate: { route: '#/tickets', selector: '#tk-report' } },
 ];
+
+// Jump to a feature's screen and spotlight the real nav item / button. Polls
+// briefly because the target view renders asynchronously after the hash change.
+function sdobLocate(target) {
+  if (!target) return;
+  try { if (location.hash !== target.route) location.hash = target.route; } catch { /* ignore */ }
+  const navFallback = '#nav a[data-route="' + target.route + '"]';
+  let tries = 0;
+  const tick = () => {
+    tries++;
+    const el = document.querySelector(target.selector) || document.querySelector(navFallback);
+    if (!el) { if (tries < 12) setTimeout(tick, 150); return; }
+    try { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch { /* ignore */ }
+    el.classList.add('sdob-locate-pulse');
+    const tag = document.createElement('div');
+    tag.className = 'sdob-locate-tag';
+    tag.innerHTML = '<span class="ms ms-sm">arrow_upward</span> ' + esc(t('sdob.locateHere'));
+    document.body.appendChild(tag);
+    const place = () => {
+      const r = el.getBoundingClientRect();
+      tag.style.top = (r.bottom + 8) + 'px';
+      tag.style.left = Math.max(8, Math.min(r.left, window.innerWidth - tag.offsetWidth - 8)) + 'px';
+    };
+    place();
+    const done = () => {
+      el.classList.remove('sdob-locate-pulse');
+      tag.remove();
+      window.removeEventListener('scroll', place, true);
+    };
+    window.addEventListener('scroll', place, true);
+    setTimeout(done, 4000);
+  };
+  setTimeout(tick, 260);
+}
 
 // A small, text-free illustration per slide that demonstrates the feature — a
 // mini board, an approval chain, a status graph, a request form, a bar chart.
@@ -106,7 +147,7 @@ function showServiceDeskOnboarding(force) {
         <h2 class="sdob-title" id="sdob-title"></h2>
         <p class="sdob-desc" id="sdob-desc"></p>
         <ul class="sdob-bullets" id="sdob-bullets"></ul>
-        <div class="sdob-where" id="sdob-where"></div>
+        <div class="sdob-whererow" id="sdob-where"></div>
       </div>
       <div class="sdob-foot">
         <div class="sdob-dots" id="sdob-dots"></div>
@@ -146,7 +187,10 @@ function showServiceDeskOnboarding(force) {
     const items = [];
     for (let b = 1; b <= s.bullets; b++) items.push(t('sdob.' + s.key + '.b' + b));
     bullets.innerHTML = items.map((x) => `<li><span class="ms ms-sm" style="color:${s.color}">check_circle</span> ${esc(x)}</li>`).join('');
-    whereEl.innerHTML = `<span class="ms ms-sm">location_on</span> ${esc(t('sdob.' + s.key + '.where'))}`;
+    whereEl.innerHTML = `<span class="sdob-where"><span class="ms ms-sm">location_on</span> ${esc(t('sdob.' + s.key + '.where'))}</span>`
+      + (s.locate ? `<button class="btn btn-outline btn-sm sdob-show" id="sdob-show" style="border-color:${s.color};color:${s.color}"><span class="ms ms-sm">my_location</span> ${esc(t('sdob.locate'))}</button>` : '');
+    const showBtn = overlay.querySelector('#sdob-show');
+    if (showBtn) showBtn.addEventListener('click', () => { close(); sdobLocate(s.locate); });
     dots.innerHTML = SDOB_SLIDES.map((_, k) => `<button class="sdob-dot ${k === i ? 'active' : ''}" data-k="${k}" aria-label="${k + 1}"></button>`).join('');
     dots.querySelectorAll('.sdob-dot').forEach((d) => d.addEventListener('click', () => go(Number(d.dataset.k))));
     backBtn.style.visibility = i === 0 ? 'hidden' : '';

@@ -5972,10 +5972,25 @@ body.ai-open .ai-panel { opacity: 1; visibility: visible; transform: none; }
 .sdob-suggest .ms { font-size: 18px; }
 .sdob-chart { align-items: flex-end; gap: 9px; height: 96px; }
 .sdob-bar2 { width: 22px; border-radius: 5px 5px 0 0; }
-.sdob-where { display: inline-flex; align-items: center; gap: 6px; margin-top: 14px; padding: 6px 12px;
+.sdob-whererow { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.sdob-where { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px;
   border-radius: 999px; background: var(--surface-low); border: 1px solid var(--outline-variant);
   font-size: 12.5px; font-weight: 600; color: var(--on-surface-variant); }
 .sdob-where .ms-sm { color: var(--primary); }
+.sdob-show { background: transparent !important; }
+.sdob-show .ms-sm { font-size: 16px; }
+
+/* "Show me" spotlight: a pulsing ring on the real nav item / button + a tag */
+.sdob-locate-pulse { position: relative; z-index: 30; border-radius: 10px;
+  animation: sdob-pulse 1.1s ease-out 3; box-shadow: 0 0 0 3px var(--primary); }
+@keyframes sdob-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--primary) 70%, transparent), 0 0 0 3px var(--primary); }
+  70% { box-shadow: 0 0 0 14px transparent, 0 0 0 3px var(--primary); }
+  100% { box-shadow: 0 0 0 0 transparent, 0 0 0 3px var(--primary); }
+}
+.sdob-locate-tag { position: fixed; z-index: 5000; display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 12px; border-radius: 10px; background: var(--primary); color: #fff; font-size: 13px; font-weight: 700;
+  box-shadow: 0 10px 24px rgba(0,0,0,.3); animation: sdob-fade .2s ease; pointer-events: none; }
 .sdob-body { padding: 4px 28px 8px; overflow-y: auto; }
 .sdob-badge { font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--on-surface-variant); }
 .sdob-title { margin: 6px 0 8px; font-size: 22px; font-weight: 800; color: var(--on-surface); }
