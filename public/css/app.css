@@ -6110,20 +6110,40 @@ body.ai-open .ai-panel { opacity: 1; visibility: visible; transform: none; }
 .rt-card .rt-del { padding: 6px 8px; color: var(--on-surface-variant); }
 .rt-card .rt-del:hover { color: var(--rose-600, #e11d48); }
 
-.rt-section { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; }
-.rt-chips { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.rt-chip { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; font-size: 13px; cursor: pointer;
-  border: 1px solid var(--outline-variant); border-radius: 999px; background: var(--surface); user-select: none; transition: border-color .12s, background .12s, color .12s; }
-.rt-chip .ms-sm { color: var(--on-surface-variant); }
-.rt-chip input { position: absolute; opacity: 0; width: 0; height: 0; }
-.rt-chip:hover { border-color: var(--on-surface-variant); }
-.rt-chip:has(input:checked) { border-color: var(--primary); background: var(--primary-container); color: var(--primary); }
-.rt-chip:has(input:checked) .ms-sm { color: var(--primary); }
-.rt-mode { font-size: 13px; margin-left: 4px; }
-.rt-final-row { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
-.rt-final-host { flex: 1; min-width: 240px; }
-.rt-amount-field { flex: 0 0 130px; }
-.rt-amount-field input { width: 100%; }
+.rt-section { margin-top: 16px; display: flex; flex-direction: column; gap: 10px; }
+.rt-sec-head { display: flex; align-items: baseline; gap: 10px; }
+.rt-sec-hint { font-size: 11.5px; color: var(--on-surface-variant); }
+/* Ordered, drag-reorderable approval chain */
+.rt-chain { display: flex; flex-direction: column; gap: 8px; }
+.rt-step { display: flex; align-items: center; gap: 10px; padding: 9px 10px 9px 6px; position: relative;
+  background: var(--surface); border: 1px solid var(--outline-variant); border-radius: 11px; transition: box-shadow .12s, border-color .12s; }
+.rt-step + .rt-step::before { content: ''; position: absolute; left: 26px; top: -9px; width: 2px; height: 9px; background: var(--outline-variant); }
+.rt-step:hover { border-color: var(--outline); box-shadow: var(--shadow-card, 0 4px 12px rgba(0,0,0,.06)); }
+.rt-step.rt-dragging { opacity: .5; border-style: dashed; }
+.rt-drag { color: var(--outline); cursor: grab; font-size: 20px; flex: none; }
+.rt-drag:active { cursor: grabbing; }
+.rt-step-no { flex: none; width: 22px; height: 22px; border-radius: 7px; display: grid; place-items: center;
+  font-family: ui-monospace, Menlo, monospace; font-size: 11px; font-weight: 700; color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 12%, transparent); }
+.rt-step-ic { flex: none; width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center;
+  border: 1px solid var(--outline-variant); }
+.rt-step-ic .ms-sm { font-size: 17px; }
+.rt-step-label { font-size: 14px; font-weight: 600; flex: 1; }
+.rt-step .rt-emp-host { flex: 1; min-width: 160px; }
+.rt-step .rt-emp-amt { flex: 0 0 118px; width: 118px; }
+.rt-step-del { flex: none; display: inline-grid; place-items: center; width: 28px; height: 28px; padding: 0; cursor: pointer;
+  border: 0; background: transparent; color: var(--on-surface-variant); border-radius: 7px; }
+.rt-step-del:hover { background: var(--surface-low); color: var(--rose-600, #e11d48); }
+.rt-chain-empty { margin: 0; font-size: 13px; color: var(--on-surface-variant); padding: 10px 12px;
+  border: 1px dashed var(--outline-variant); border-radius: 11px; text-align: center; }
+.rt-addstep-wrap { position: relative; align-self: flex-start; }
+.rt-addmenu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 5; min-width: 210px; padding: 6px;
+  display: flex; flex-direction: column; gap: 2px; background: var(--surface); border: 1px solid var(--outline-variant);
+  border-radius: 12px; box-shadow: 0 12px 30px rgba(0,0,0,.16); }
+.rt-addmenu button { display: flex; align-items: center; gap: 9px; text-align: left; font: inherit; font-size: 13.5px;
+  padding: 8px 10px; border: 0; background: transparent; color: var(--ink, var(--on-surface)); border-radius: 8px; cursor: pointer; }
+.rt-addmenu button:hover { background: var(--surface-low); }
+.rt-addmenu button .ms-sm { color: var(--primary); }
 
 /* Service-desk report modal */
 .tkr-h { margin: 20px 0 10px; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--on-surface-variant); }

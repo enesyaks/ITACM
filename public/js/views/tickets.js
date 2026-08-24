@@ -513,18 +513,40 @@ Views.tickets = async function (el, params = {}) {
       api('/approvals/config').catch(() => ({ enabled: false })),
     ]);
     const loaded = Array.isArray(tpls) ? tpls : [];
+    // Flatten a stored chain (which may carry legacy parallel groups) into an
+    // ordered list of single-approver step tokens for the drag-reorder builder.
+    const parseChain = (levels) => {
+      const out = [];
+      (levels || []).forEach((el) => {
+        if (el && typeof el === 'object' && Array.isArray(el.levels)) el.levels.forEach((x) => out.push(String(x)));
+        else if (el != null) out.push(String(el));
+      });
+      return out;
+    };
+    const STEP_ICON = { manager: 'person', manager2: 'supervisor_account', department: 'apartment' };
+    const stepMeta = (tok) => {
+      if (tok === 'role:it') return { icon: 'groups', label: t('rt.itTeam') };
+      if (tok.startsWith('emp:')) return { icon: 'account_balance', label: t('rt.specificPerson') };
+      return { icon: STEP_ICON[tok] || 'person', label: t('rt.' + tok) || tok };
+    };
+    // One draggable step row. emp: steps carry an inline person picker + threshold.
+    const stepRowHtml = (tok, threshold) => {
+      const m = stepMeta(tok); const isEmp = tok.startsWith('emp:');
+      return `<div class="rt-step" draggable="true" data-token="${esc(tok)}">
+        <span class="rt-drag ms" title="${esc(t('rt.dragHint'))}">drag_indicator</span>
+        <span class="rt-step-no"></span>
+        <span class="rt-step-ic" style="background:${isEmp ? 'var(--primary)' : 'var(--surface)'};color:${isEmp ? '#fff' : 'var(--primary)'}"><span class="ms ms-sm">${m.icon}</span></span>
+        ${isEmp
+          ? `<div class="rt-emp-host" data-empid="${esc(tok.slice(4))}"></div>
+             <input class="rt-emp-amt" type="number" min="0" step="0.01" value="${esc(threshold != null ? threshold : '')}" placeholder="${esc(t('rt.thresholdPh'))}" title="${esc(t('rt.amountThresholdHint'))}">`
+          : `<span class="rt-step-label">${esc(m.label)}</span>`}
+        <button class="rt-step-del" type="button" title="${esc(t('common.remove') || 'Remove')}"><span class="ms ms-sm">close</span></button>
+      </div>`;
+    };
     const rowHtml = (tp) => {
-      const lv = (tp && tp.approvalLevels) || [];
-      const parStep = lv.find((x) => x && typeof x === 'object');
-      const mgrOn = parStep ? parStep.levels.includes('manager') : lv.includes('manager');
-      const mgr2On = parStep ? parStep.levels.includes('manager2') : lv.includes('manager2');
-      const deptOn = parStep ? parStep.levels.includes('department') : lv.includes('department');
-      const itOn = lv.some((x) => x === 'role:it');
-      const empTok = lv.find((x) => typeof x === 'string' && x.startsWith('emp:'));
-      const finalId = empTok ? empTok.slice(4) : '';
+      const chain = parseChain((tp && tp.approvalLevels) || []);
       const threshold = (tp && tp.amountThreshold != null) ? tp.amountThreshold : '';
-      const mode = parStep ? ('parallel-' + parStep.mode) : 'sequential';
-      return `<div class="rt-card" data-id="${esc((tp && tp.id) || '')}" data-final="${esc(finalId)}">
+      return `<div class="rt-card" data-id="${esc((tp && tp.id) || '')}">
         <div class="rt-card-head">
           <div class="rt-field rt-grow"><label class="rt-lbl">${esc(t('rt.name'))}</label>
             <input class="rt-name" placeholder="${esc(t('rt.namePh'))}" value="${esc((tp && tp.name) || '')}"></div>
@@ -534,25 +556,19 @@ Views.tickets = async function (el, params = {}) {
           <button class="btn btn-ghost btn-sm rt-del" type="button" title="${esc(t('common.remove') || 'Remove')}"><span class="ms">delete</span></button>
         </div>
         <div class="rt-section">
-          <span class="rt-lbl">${esc(t('rt.chainLabel'))}</span>
-          <div class="rt-chips">
-            <label class="rt-chip"><input type="checkbox" class="rt-mgr" ${mgrOn ? 'checked' : ''}><span class="ms ms-sm">person</span> ${esc(t('rt.manager'))}</label>
-            <label class="rt-chip"><input type="checkbox" class="rt-mgr2" ${mgr2On ? 'checked' : ''}><span class="ms ms-sm">supervisor_account</span> ${esc(t('rt.manager2'))}</label>
-            <label class="rt-chip"><input type="checkbox" class="rt-dept" ${deptOn ? 'checked' : ''}><span class="ms ms-sm">apartment</span> ${esc(t('rt.department'))}</label>
-            <label class="rt-chip rt-chip-it" title="${esc(t('rt.itTeamHint'))}"><input type="checkbox" class="rt-it" ${itOn ? 'checked' : ''}><span class="ms ms-sm">groups</span> ${esc(t('rt.itTeam'))}</label>
-            <select class="rt-mode ops-select">
-              <option value="sequential" ${mode === 'sequential' ? 'selected' : ''}>${esc(t('rt.seq'))}</option>
-              <option value="parallel-all" ${mode === 'parallel-all' ? 'selected' : ''}>${esc(t('rt.parAll'))}</option>
-              <option value="parallel-any" ${mode === 'parallel-any' ? 'selected' : ''}>${esc(t('rt.parAny'))}</option>
-            </select>
-          </div>
-        </div>
-        <div class="rt-section">
-          <span class="rt-lbl"><span class="ms ms-sm" style="vertical-align:-3px">account_balance</span> ${esc(t('rt.finalApprover'))}</span>
-          <div class="rt-final-row">
-            <div class="rt-final-host"></div>
-            <div class="rt-field rt-amount-field"><label class="rt-lbl" title="${esc(t('rt.amountThresholdHint'))}">${esc(t('rt.amountThreshold'))}</label>
-              <input class="rt-amount" type="number" min="0" step="0.01" value="${esc(threshold)}" placeholder="—"></div>
+          <div class="rt-sec-head"><span class="rt-lbl">${esc(t('rt.chainLabel'))}</span>
+            <span class="rt-sec-hint">${esc(t('rt.dragHint'))}</span></div>
+          <div class="rt-chain">${chain.map((tok) => stepRowHtml(tok, threshold)).join('')}</div>
+          <p class="rt-chain-empty${chain.length ? ' is-hidden' : ''}">${esc(t('rt.chainEmpty'))}</p>
+          <div class="rt-addstep-wrap">
+            <button class="btn btn-outline btn-sm rt-addstep" type="button"><span class="ms ms-sm">add</span> ${esc(t('rt.addStep'))}</button>
+            <div class="rt-addmenu is-hidden">
+              <button type="button" data-add="manager"><span class="ms ms-sm">person</span> ${esc(t('rt.manager'))}</button>
+              <button type="button" data-add="manager2"><span class="ms ms-sm">supervisor_account</span> ${esc(t('rt.manager2'))}</button>
+              <button type="button" data-add="department"><span class="ms ms-sm">apartment</span> ${esc(t('rt.department'))}</button>
+              <button type="button" data-add="role:it"><span class="ms ms-sm">groups</span> ${esc(t('rt.itTeam'))}</button>
+              <button type="button" data-add="emp"><span class="ms ms-sm">account_balance</span> ${esc(t('rt.specificPerson'))}</button>
+            </div>
           </div>
         </div>
       </div>`;
@@ -581,39 +597,73 @@ Views.tickets = async function (el, params = {}) {
       onMount(ov) {
         const listEl = $('#rt-list', ov);
         const wireDel = () => listEl.querySelectorAll('.rt-del').forEach((b) => { b.onclick = () => b.closest('.rt-card').remove(); });
-        // Mount the fixed-person picker (finance sign-off etc.) on any un-wired row.
-        const mountPickers = () => listEl.querySelectorAll('.rt-final-host').forEach((host) => {
+        // Number every chain's steps (1,2,3…) after add / remove / reorder.
+        const renumber = (scope) => {
+          const cards = scope ? [scope] : [...listEl.querySelectorAll('.rt-card')];
+          cards.forEach((c) => {
+            const steps = [...c.querySelectorAll('.rt-chain .rt-step')];
+            steps.forEach((s, i) => { const n = s.querySelector('.rt-step-no'); if (n) n.textContent = i + 1; });
+            const empty = c.querySelector('.rt-chain-empty'); if (empty) empty.classList.toggle('is-hidden', steps.length > 0);
+          });
+        };
+        // Mount a person picker on any emp step that doesn't have one yet.
+        const mountPickers = () => listEl.querySelectorAll('.rt-emp-host').forEach((host) => {
           if (host._picker) return;
-          host._picker = mountEmployeeSearchField(host, { name: 'rt-final', placeholder: t('rt.finalApproverPh') });
-          const finalId = host.closest('.rt-card').dataset.final || '';
-          if (finalId) api('/employees/' + encodeURIComponent(finalId))
+          host._picker = mountEmployeeSearchField(host, { name: 'rt-emp', placeholder: t('rt.finalApproverPh') });
+          const empId = host.dataset.empid || '';
+          if (empId) api('/employees/' + encodeURIComponent(empId))
             .then((e) => { if (e) host._picker.setSelected({ id: e.id, fullName: e.fullName, department: e.department, email: e.email }); })
             .catch(() => {});
         });
-        wireDel(); mountPickers();
-        $('#rt-add', ov).addEventListener('click', () => { listEl.insertAdjacentHTML('beforeend', rowHtml(null)); wireDel(); mountPickers(); });
+        // Drag-reorder: which step should the dragged one go before, given cursor Y.
+        const getAfter = (chain, y) => {
+          let closest = { offset: -Infinity, el: null };
+          chain.querySelectorAll('.rt-step:not(.rt-dragging)').forEach((el) => {
+            const b = el.getBoundingClientRect(); const off = y - b.top - b.height / 2;
+            if (off < 0 && off > closest.offset) closest = { offset: off, el };
+          });
+          return closest.el;
+        };
+        const wireCard = (card) => {
+          const chain = card.querySelector('.rt-chain');
+          const addBtn = card.querySelector('.rt-addstep'); const menu = card.querySelector('.rt-addmenu');
+          addBtn.addEventListener('click', (e) => { e.stopPropagation(); menu.classList.toggle('is-hidden'); });
+          menu.querySelectorAll('button[data-add]').forEach((b) => b.addEventListener('click', () => {
+            const tok = b.dataset.add === 'emp' ? 'emp:' : b.dataset.add;
+            if (tok !== 'emp:' && [...chain.querySelectorAll('.rt-step')].some((s) => s.dataset.token === tok)) { menu.classList.add('is-hidden'); return; }
+            chain.insertAdjacentHTML('beforeend', stepRowHtml(tok, ''));
+            menu.classList.add('is-hidden'); mountPickers(); renumber(card);
+          }));
+          chain.addEventListener('click', (e) => { const d = e.target.closest('.rt-step-del'); if (!d) return; d.closest('.rt-step').remove(); renumber(card); });
+          chain.addEventListener('dragstart', (e) => { const s = e.target.closest('.rt-step'); if (!s) return; s.classList.add('rt-dragging'); e.dataTransfer.effectAllowed = 'move'; });
+          chain.addEventListener('dragend', (e) => { const s = e.target.closest('.rt-step'); if (s) s.classList.remove('rt-dragging'); renumber(card); });
+          chain.addEventListener('dragover', (e) => { e.preventDefault(); const dragging = chain.querySelector('.rt-dragging'); if (!dragging) return; const after = getAfter(chain, e.clientY); if (after == null) chain.appendChild(dragging); else chain.insertBefore(dragging, after); });
+        };
+        [...listEl.querySelectorAll('.rt-card')].forEach(wireCard);
+        wireDel(); mountPickers(); renumber();
+        ov.addEventListener('click', (e) => { if (!e.target.closest('.rt-addstep-wrap')) ov.querySelectorAll('.rt-addmenu').forEach((m) => m.classList.add('is-hidden')); });
+
+        $('#rt-add', ov).addEventListener('click', () => {
+          listEl.insertAdjacentHTML('beforeend', rowHtml(null));
+          const card = listEl.lastElementChild; wireCard(card); wireDel(); mountPickers(); renumber(card);
+        });
         $('#rt-save', ov).addEventListener('click', async () => {
           try {
             await api('/approvals/config', { method: 'PUT', body: { enabled: $('#rt-approvals-on', ov).checked, reminderDays: Number($('#rt-reminder-days', ov).value) || 0, escalateDays: Number($('#rt-escalate-days', ov).value) || 0 } });
             const rows = [...listEl.querySelectorAll('.rt-card')].map((r) => {
-              const checked = [].concat(
-                r.querySelector('.rt-mgr').checked ? ['manager'] : [],
-                r.querySelector('.rt-mgr2').checked ? ['manager2'] : [],
-                r.querySelector('.rt-dept').checked ? ['department'] : []
-              );
-              const modeVal = r.querySelector('.rt-mode').value;
-              const steps = (modeVal === 'sequential' || checked.length < 2)
-                ? checked.slice() // sequential (or a single level — parallel is moot with one approver)
-                : [{ levels: checked, mode: modeVal === 'parallel-all' ? 'all' : 'any' }];
-              // The IT/Helpdesk team reviews AFTER the org approvers and before any
-              // fixed final approver: e.g. manager → IT team → finance.
-              if (r.querySelector('.rt-it').checked) steps.push('role:it');
-              // A fixed final approver (e.g. finance) is always the LAST, sequential step.
-              const host = r.querySelector('.rt-final-host');
-              const finalId = host && host._picker ? host._picker.getId() : null;
-              if (finalId) steps.push('emp:' + finalId);
-              const amtRaw = r.querySelector('.rt-amount').value.trim();
-              const amountThreshold = (finalId && amtRaw !== '' && Number(amtRaw) >= 0) ? Number(amtRaw) : null;
+              // Steps in their on-screen (dragged) order → an ordered token chain.
+              const steps = []; let amountThreshold = null;
+              [...r.querySelectorAll('.rt-chain .rt-step')].forEach((s) => {
+                const tok = s.dataset.token;
+                if (tok && tok.startsWith('emp')) {
+                  const host = s.querySelector('.rt-emp-host'); const empId = host && host._picker ? host._picker.getId() : null;
+                  if (empId) {
+                    steps.push('emp:' + empId);
+                    const amtRaw = (s.querySelector('.rt-emp-amt').value || '').trim();
+                    if (amountThreshold == null && amtRaw !== '' && Number(amtRaw) >= 0) amountThreshold = Number(amtRaw);
+                  }
+                } else if (tok) steps.push(tok);
+              });
               return { id: r.dataset.id || null, name: r.querySelector('.rt-name').value.trim(), category: r.querySelector('.rt-cat').value.trim(), approvalLevels: steps, amountThreshold, enabled: r.querySelector('.rt-en').checked };
             });
             for (const orig of loaded) if (orig.id && !rows.find((x) => x.id === orig.id)) await api('/request-templates/' + orig.id, { method: 'DELETE' });
