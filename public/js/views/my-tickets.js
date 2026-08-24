@@ -94,43 +94,66 @@ Views.myTickets = async function (el) {
     });
   }
 
+  // Allowed attachment types / size, mirrored from the server uploadGuard.
+  const MTK_MAX_BYTES = 8 * 1024 * 1024;
+  const MTK_ACCEPT = '.pdf,.png,.jpg,.jpeg,.webp,application/pdf,image/png,image/jpeg,image/webp';
+  const mtkFmtSize = (b) => (b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB');
+
   function openCreate() {
+    // Files staged before the ticket exists; uploaded after it is created.
+    const staged = [];
     openModal({
       title: t('mtk.new'),
-      body: `<div class="form-grid">
+      wide: true,
+      body: `<p class="mtk-lead">${esc(t('mtk.createLead'))}</p>
+      <div class="form-grid">
         <div class="form-field full"><label>${esc(t('mtk.kind'))}</label>
           <select id="mtk-c-kind">
             ${templates.map((tp) => `<option value="tpl:${esc(tp.id)}">${esc(tp.name)}${tp.category ? ' · ' + esc(tp.category) : ''}</option>`).join('')}
             <option value="incident">${esc(tkTypeLabel('incident'))}</option>
             <option value="request">${esc(tkTypeLabel('request'))}</option>
           </select>
-          <div class="cell-sub" id="mtk-c-hint" style="margin-top:4px"></div></div>
-        <div class="form-field full"><label>${esc(t('tk.subject'))} *</label><input id="mtk-c-subject" maxlength="300"></div>
+          <div class="mtk-info" id="mtk-c-info" style="display:none"></div></div>
+        <div class="form-field full"><label>${esc(t('tk.subject'))} *</label>
+          <input id="mtk-c-subject" maxlength="300" placeholder="${esc(t('mtk.subjectPh'))}"></div>
         <div id="mtk-suggest"></div>
         <div class="form-field full" id="mtk-c-amount-wrap" style="display:none">
           <label>${esc(t('mtk.amount'))}</label>
           <input id="mtk-c-amount" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0">
           <div class="cell-sub" id="mtk-c-amount-hint" style="margin-top:4px"></div>
         </div>
-        <div class="form-field full"><label>${esc(t('tk.description'))}</label><textarea id="mtk-c-desc" rows="4" placeholder="${esc(t('mtk.descPh'))}"></textarea></div>
+        <div class="form-field full"><label>${esc(t('tk.description'))}</label>
+          <textarea id="mtk-c-desc" rows="4" placeholder="${esc(t('mtk.descPh'))}"></textarea></div>
+        <div class="form-field full"><label>${esc(t('tk.attachments'))} <span class="cell-sub">(${esc(t('common.optional') || 'optional')})</span></label>
+          <div class="mtk-drop" id="mtk-c-drop" tabindex="0" role="button">
+            <span class="ms">cloud_upload</span>
+            <div class="mtk-drop-txt"><strong>${esc(t('mtk.dropTitle'))}</strong>
+              <span class="cell-sub">${esc(t('tk.attachHint'))}</span></div>
+            <input type="file" id="mtk-c-file" accept="${MTK_ACCEPT}" multiple hidden>
+          </div>
+          <div class="mtk-files" id="mtk-c-files"></div>
+        </div>
       </div>`,
       foot: `<button class="btn btn-outline" data-close>${esc(t('common.cancel'))}</button>
              <button class="btn btn-primary" id="mtk-c-save">${esc(t('mtk.submit'))}</button>`,
       onMount(ov) {
         const kind = $('#mtk-c-kind', ov);
-        const hint = $('#mtk-c-hint', ov);
-        const chainStr = (approval) => (approval || []).map((step) => {
+        const info = $('#mtk-c-info', ov);
+        const chainHtml = (approval) => (approval || []).map((step) => {
           const names = step.approvers || [];
-          if (!names.length) return '—';
-          if (names.length === 1) return names[0];
-          return '(' + names.join(step.mode === 'all' ? ' & ' : ' / ') + ')';
-        }).join(' → ');
+          const label = !names.length ? '—' : names.length === 1 ? names[0]
+            : '(' + names.join(step.mode === 'all' ? ' & ' : ' / ') + ')';
+          return `<span class="mtk-chain-step">${esc(label)}</span>`;
+        }).join('<span class="ms ms-sm mtk-chain-arr">arrow_forward</span>');
         const amtWrap = $('#mtk-c-amount-wrap', ov);
         const fmtAmt = (n) => '₺' + Number(n).toLocaleString('tr-TR');
         const showHint = () => {
           const tp = templates.find((x) => 'tpl:' + x.id === kind.value);
-          const chain = tp && tp.approval && tp.approval.length ? chainStr(tp.approval) : '';
-          hint.innerHTML = `${tp && tp.description ? esc(tp.description) : ''}${chain ? `<div style="margin-top:2px"><span class="ms ms-sm" style="vertical-align:-3px">how_to_reg</span> ${esc(t('mtk.approvalChain'))}: ${esc(chain)}</div>` : ''}`;
+          const desc = tp && tp.description ? `<div class="mtk-info-desc">${esc(tp.description)}</div>` : '';
+          const chain = tp && tp.approval && tp.approval.length
+            ? `<div class="mtk-chain"><span class="ms ms-sm">how_to_reg</span> <span class="mtk-chain-lbl">${esc(t('mtk.approvalChain'))}</span> ${chainHtml(tp.approval)}</div>` : '';
+          if (desc || chain) { info.innerHTML = desc + chain; info.style.display = ''; }
+          else { info.style.display = 'none'; }
           // Amount field only for templates that gate a step on a threshold.
           if (tp && tp.amountThreshold != null) {
             amtWrap.style.display = '';
@@ -140,6 +163,38 @@ Views.myTickets = async function (el) {
           }
         };
         kind.addEventListener('change', showHint); showHint();
+
+        // --- Attachments: stage locally, upload after the ticket is created ---
+        const drop = $('#mtk-c-drop', ov);
+        const fileInput = $('#mtk-c-file', ov);
+        const filesBox = $('#mtk-c-files', ov);
+        const renderFiles = () => {
+          filesBox.innerHTML = staged.map((f, i) => `<div class="mtk-file">
+            <span class="ms ms-sm">${f.type.startsWith('image/') ? 'image' : 'description'}</span>
+            <span class="mtk-file-name">${esc(f.name)}</span>
+            <span class="cell-sub">${esc(mtkFmtSize(f.size))}</span>
+            <button type="button" class="mtk-file-x" data-i="${i}" title="${esc(t('common.remove') || 'Remove')}"><span class="ms ms-sm">close</span></button>
+          </div>`).join('');
+          filesBox.querySelectorAll('.mtk-file-x').forEach((b) => b.addEventListener('click', () => {
+            staged.splice(Number(b.dataset.i), 1); renderFiles();
+          }));
+        };
+        const addFiles = (list) => {
+          for (const f of list) {
+            const okType = /\.(pdf|png|jpe?g|webp)$/i.test(f.name) || /^(application\/pdf|image\/(png|jpeg|webp))$/.test(f.type);
+            if (!okType) { toast(t('mtk.fileType').replace('{n}', f.name), 'error'); continue; }
+            if (f.size > MTK_MAX_BYTES) { toast(t('mtk.fileTooBig').replace('{n}', f.name), 'error'); continue; }
+            if (staged.some((s) => s.name === f.name && s.size === f.size)) continue;
+            staged.push(f);
+          }
+          renderFiles();
+        };
+        drop.addEventListener('click', () => fileInput.click());
+        drop.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput.click(); } });
+        fileInput.addEventListener('change', (e) => { addFiles(e.target.files); e.target.value = ''; });
+        ['dragenter', 'dragover'].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add('is-over'); }));
+        ['dragleave', 'drop'].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); if (ev !== 'dragleave' || e.target === drop) drop.classList.remove('is-over'); }));
+        drop.addEventListener('drop', (e) => { if (e.dataTransfer && e.dataTransfer.files) addFiles(e.dataTransfer.files); });
         // Self-service deflection: suggest matching KB articles as the subject is typed.
         const subj = $('#mtk-c-subject', ov);
         const suggestBox = $('#mtk-suggest', ov);
@@ -172,18 +227,44 @@ Views.myTickets = async function (el) {
           }));
         };
         subj.addEventListener('input', () => { clearTimeout(sugTimer); sugTimer = setTimeout(renderSuggest, 350); });
-        $('#mtk-c-save', ov).addEventListener('click', async () => {
+        const readB64 = (file) => new Promise((resolve, reject) => {
+          const r = new FileReader();
+          r.onload = () => resolve(String(r.result).split(',')[1] || '');
+          r.onerror = () => reject(new Error('read failed'));
+          r.readAsDataURL(file);
+        });
+        const saveBtn = $('#mtk-c-save', ov);
+        saveBtn.addEventListener('click', async () => {
           const v = kind.value;
           const body = { subject: $('#mtk-c-subject', ov).value.trim(), description: $('#mtk-c-desc', ov).value.trim() };
+          if (!body.subject) { toast(t('mtk.subjectReq') || (t('tk.subject') + ' *'), 'error'); return; }
           if (v.startsWith('tpl:')) body.templateId = v.slice(4); else body.type = v;
           if (amtWrap.style.display !== 'none') {
             const amt = Number($('#mtk-c-amount', ov).value);
             if (Number.isFinite(amt) && amt >= 0) body.amount = amt;
           }
+          const label = saveBtn.innerHTML;
+          saveBtn.disabled = true;
+          saveBtn.innerHTML = '<span class="btn-spin"></span>' + esc(t('mtk.submit'));
           try {
-            await api('/me/tickets', { method: 'POST', body });
-            closeModal(); toast(t('mtk.created'), 'success'); Views.myTickets(el);
-          } catch (err) { toast(err.message, 'error'); }
+            const created = await api('/me/tickets', { method: 'POST', body });
+            const id = created && created.id;
+            // Upload staged attachments now that the ticket exists (best-effort).
+            let failed = 0;
+            for (const f of staged) {
+              try {
+                const base64 = await readB64(f);
+                await api('/me/tickets/' + encodeURIComponent(id) + '/documents', { method: 'POST', body: { base64, filename: f.name } });
+              } catch { failed++; }
+            }
+            closeModal();
+            if (failed) toast(t('mtk.someAttachFailed').replace('{n}', failed), 'error');
+            else toast(t('mtk.created'), 'success');
+            Views.myTickets(el);
+          } catch (err) {
+            saveBtn.disabled = false; saveBtn.innerHTML = label;
+            toast(err.message, 'error');
+          }
         });
       },
     });

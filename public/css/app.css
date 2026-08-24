@@ -5903,6 +5903,33 @@ body.ai-open .ai-panel { opacity: 1; visibility: visible; transform: none; }
 .mtk-sug.open .mtk-sug-chev { transform: rotate(180deg); }
 .mtk-sug-body { padding: 4px 12px 10px 34px; font-size: 13.5px; color: var(--on-surface-variant); }
 
+/* New-request modal: intro, template info banner, approval chain, upload */
+.mtk-lead { margin: -4px 0 16px; color: var(--on-surface-variant); font-size: 14px; }
+.mtk-info { margin-top: 8px; padding: 10px 12px; border-radius: 10px;
+  background: var(--primary-container-soft, rgba(79,70,229,.06)); border: 1px solid var(--outline-variant); }
+.mtk-info-desc { font-size: 13.5px; color: var(--on-surface); }
+.mtk-chain { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 6px; font-size: 13px; }
+.mtk-chain > .ms-sm { color: var(--primary); }
+.mtk-chain-lbl { color: var(--on-surface-variant); margin-right: 2px; }
+.mtk-chain-step { display: inline-flex; align-items: center; padding: 2px 10px; border-radius: 999px;
+  background: var(--surface); border: 1px solid var(--outline-variant); font-weight: 600; }
+.mtk-chain-arr { color: var(--on-surface-variant) !important; font-size: 16px !important; }
+.mtk-drop { display: flex; align-items: center; gap: 12px; padding: 16px; cursor: pointer;
+  border: 1.5px dashed var(--outline); border-radius: 12px; background: var(--surface-low);
+  transition: border-color .15s, background .15s; }
+.mtk-drop:hover, .mtk-drop:focus-visible { border-color: var(--primary); background: var(--surface); outline: none; }
+.mtk-drop.is-over { border-color: var(--primary); background: var(--primary-container-soft, rgba(79,70,229,.08)); }
+.mtk-drop > .ms { font-size: 28px; color: var(--primary); flex: none; }
+.mtk-drop-txt { display: flex; flex-direction: column; gap: 2px; }
+.mtk-files { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.mtk-file { display: flex; align-items: center; gap: 8px; padding: 8px 10px; font-size: 13.5px;
+  border: 1px solid var(--outline-variant); border-radius: 8px; background: var(--surface); }
+.mtk-file > .ms-sm { color: var(--primary); flex: none; }
+.mtk-file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.mtk-file-x { display: inline-flex; align-items: center; justify-content: center; padding: 2px; cursor: pointer;
+  border: 0; background: transparent; color: var(--on-surface-variant); border-radius: 6px; flex: none; }
+.mtk-file-x:hover { background: var(--surface-low); color: var(--rose-600, #e11d48); }
+
 /* KB article attachments (images inline + file links) */
 .kb-attach { display: flex; flex-direction: column; gap: 10px; }
 .kb-attach .kb-img { max-width: 100%; border-radius: 10px; display: block; border: 1px solid var(--outline-variant); box-shadow: var(--shadow-card); }
