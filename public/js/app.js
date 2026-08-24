@@ -2618,6 +2618,7 @@ function clearDismissedNotifs() {
 function notifIcon(type) {
   if (String(type).startsWith('approval')) return 'how_to_reg';
   if (type === 'ticket_assigned') return 'confirmation_number';
+  if (type === 'ticket_reply') return 'chat';
   return 'notifications';
 }
 

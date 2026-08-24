@@ -1028,10 +1028,30 @@ function notifyComment({ id, ownEmployeeId, internal, snippet, actorName }) {
     )).rows[0];
     if (!meta) return;
     const p = await partyEmails(meta);
-    if (!ownEmployeeId && p.requesterEmail) {
-      mail({ to: p.requesterEmail, ticketNumber: meta.number, subject: meta.subject, event: 'a new reply was posted', actorName, snippet });
-    } else if (ownEmployeeId && p.assigneeEmail) {
-      mail({ to: p.assigneeEmail, ticketNumber: meta.number, subject: meta.subject, event: 'the requester replied', actorName, snippet });
+    const inapp = require('./inappService');
+    if (!ownEmployeeId) {
+      // Staff public reply → notify the requester (email + in-app bell).
+      if (p.requesterEmail) mail({ to: p.requesterEmail, ticketNumber: meta.number, subject: meta.subject, event: 'a new reply was posted', actorName, snippet });
+      if (meta.requesterEmployeeId) {
+        inapp.createForEmployee(meta.requesterEmployeeId, {
+          type: 'ticket_reply',
+          title: `${meta.number} · ${meta.subject}`,
+          body: `${actorName || 'Support'}: ${snippet || ''}`.trim(),
+          link: '#/tickets', linkPortal: '#/my-tickets',
+        }).catch(() => {});
+      }
+    } else {
+      // Requester reply → notify the assignee (email + in-app bell).
+      if (p.assigneeEmail) mail({ to: p.assigneeEmail, ticketNumber: meta.number, subject: meta.subject, event: 'the requester replied', actorName, snippet });
+      if (meta.assigneeUserId) {
+        inapp.create({
+          userId: meta.assigneeUserId,
+          type: 'ticket_reply',
+          title: `${meta.number} · ${meta.subject}`,
+          body: `${actorName || 'Requester'}: ${snippet || ''}`.trim(),
+          link: '#/tickets',
+        }).catch(() => {});
+      }
     }
   })().catch(() => {});
 }
