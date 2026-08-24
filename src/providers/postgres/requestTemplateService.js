@@ -15,9 +15,12 @@ const LEVELS = new Set(['manager', 'manager2', 'department']);
 
 // A level is an org-level string ('manager') OR a fixed-person token 'emp:<uuid>'
 // (used to route a step to a specific approver, e.g. the finance sign-off).
+// Role-team approval steps: role:it (the IT/Helpdesk team) or role:<RoleName>.
+const ROLE_TOKENS = new Set(['role:it', 'role:Owner', 'role:Admin', 'role:Helpdesk']);
 function isValidLevel(l) {
   const s = String(l);
   if (LEVELS.has(s)) return true;
+  if (ROLE_TOKENS.has(s)) return true;
   if (s.startsWith('emp:')) return isUuid(s.slice(4));
   return false;
 }

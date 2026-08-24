@@ -106,16 +106,46 @@ async function resolveLevel(requesterEmployeeId, lvl) {
   return applyDelegate(base, requesterEmployeeId);
 }
 
-/** Resolve a step's levels to distinct approvers (order preserved, deduped). */
+// Staff roles that make up the "IT team" for a role:it approval step. Any of
+// them (matched to an employee by email) may pick up and approve the step.
+const IT_TEAM_ROLES = ['Owner', 'Admin', 'Helpdesk'];
+
+/** Expand a role:<token> level to every eligible employee approver (deduped). */
+async function resolveRoleApprovers(token, requesterEmployeeId) {
+  const roles = token === 'it' ? IT_TEAM_ROLES : [token];
+  const { rows } = await query(
+    `SELECT DISTINCT e.id, e.full_name FROM employees e
+       JOIN users u ON lower(u.email) = lower(e.email)
+      WHERE e.status = 'Active' AND u.role = ANY($1) AND e.id <> $2
+      ORDER BY e.full_name`,
+    [roles, requesterEmployeeId]
+  );
+  return rows.map((r) => ({ id: r.id, fullName: r.full_name }));
+}
+
+/** Resolve a single level token to zero-or-more approvers. Role tokens fan out
+ *  to a team; org/fixed tokens yield one (delegate-substituted). */
+async function resolveLevelMulti(requesterEmployeeId, lvl) {
+  const s = String(lvl);
+  if (s.startsWith('role:')) return resolveRoleApprovers(s.slice(5), requesterEmployeeId);
+  const a = await resolveLevel(requesterEmployeeId, lvl);
+  return a ? [a] : [];
+}
+
+/** Resolve a step's levels to distinct approvers (order preserved, deduped).
+ *  A step that includes a role token is inherently multi-approver / mode 'any'. */
 async function resolveStepApprovers(requesterEmployeeId, element) {
   const step = normalizeStep(element);
   const out = [];
   const seen = new Set();
+  let hasRole = false;
   for (const lvl of step.orgLevels) {
-    const a = await resolveLevel(requesterEmployeeId, lvl);
-    if (a && !seen.has(a.id)) { seen.add(a.id); out.push(a); }
+    if (String(lvl).startsWith('role:')) hasRole = true;
+    const list = await resolveLevelMulti(requesterEmployeeId, lvl);
+    for (const a of list) if (a && !seen.has(a.id)) { seen.add(a.id); out.push(a); }
   }
-  return { approvers: out, mode: step.mode };
+  // Any member of a team step can approve on the team's behalf.
+  return { approvers: out, mode: hasRole ? 'any' : step.mode };
 }
 
 /**

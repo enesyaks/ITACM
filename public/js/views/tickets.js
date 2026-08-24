@@ -21,8 +21,14 @@ const tkStatusLabel = (s) => t('tk.status.' + s) || s;
 const tkPriorityLabel = (p) => t('tk.priority.' + p) || p;
 const tkTypeLabel = (ty) => t('tk.type.' + ty) || ty;
 // Readable label for an approval-chain level token (manager / manager2 /
-// department / emp:<uuid> fixed approver).
-const lvlLabel = (lv) => (String(lv).startsWith('emp:') ? t('rt.finalApprover') : (t('rt.' + lv) || String(lv)));
+// department / role:<team> / emp:<uuid> fixed approver).
+const lvlLabel = (lv) => {
+  const s = String(lv);
+  if (s.startsWith('emp:')) return t('rt.finalApprover');
+  if (s === 'role:it') return t('rt.itTeam');
+  if (s.startsWith('role:')) return s.slice(5);
+  return t('rt.' + s) || s;
+};
 
 /* Approval decision trail. `history` = [{ at, decision, deciderName, approverName, note }].
    Shared by the staff and portal ticket detail; returns '' when there's nothing to show. */
@@ -513,6 +519,7 @@ Views.tickets = async function (el, params = {}) {
       const mgrOn = parStep ? parStep.levels.includes('manager') : lv.includes('manager');
       const mgr2On = parStep ? parStep.levels.includes('manager2') : lv.includes('manager2');
       const deptOn = parStep ? parStep.levels.includes('department') : lv.includes('department');
+      const itOn = lv.some((x) => x === 'role:it');
       const empTok = lv.find((x) => typeof x === 'string' && x.startsWith('emp:'));
       const finalId = empTok ? empTok.slice(4) : '';
       const threshold = (tp && tp.amountThreshold != null) ? tp.amountThreshold : '';
@@ -532,6 +539,7 @@ Views.tickets = async function (el, params = {}) {
             <label class="rt-chip"><input type="checkbox" class="rt-mgr" ${mgrOn ? 'checked' : ''}><span class="ms ms-sm">person</span> ${esc(t('rt.manager'))}</label>
             <label class="rt-chip"><input type="checkbox" class="rt-mgr2" ${mgr2On ? 'checked' : ''}><span class="ms ms-sm">supervisor_account</span> ${esc(t('rt.manager2'))}</label>
             <label class="rt-chip"><input type="checkbox" class="rt-dept" ${deptOn ? 'checked' : ''}><span class="ms ms-sm">apartment</span> ${esc(t('rt.department'))}</label>
+            <label class="rt-chip rt-chip-it" title="${esc(t('rt.itTeamHint'))}"><input type="checkbox" class="rt-it" ${itOn ? 'checked' : ''}><span class="ms ms-sm">groups</span> ${esc(t('rt.itTeam'))}</label>
             <select class="rt-mode ops-select">
               <option value="sequential" ${mode === 'sequential' ? 'selected' : ''}>${esc(t('rt.seq'))}</option>
               <option value="parallel-all" ${mode === 'parallel-all' ? 'selected' : ''}>${esc(t('rt.parAll'))}</option>
@@ -597,6 +605,9 @@ Views.tickets = async function (el, params = {}) {
               const steps = (modeVal === 'sequential' || checked.length < 2)
                 ? checked.slice() // sequential (or a single level — parallel is moot with one approver)
                 : [{ levels: checked, mode: modeVal === 'parallel-all' ? 'all' : 'any' }];
+              // The IT/Helpdesk team reviews AFTER the org approvers and before any
+              // fixed final approver: e.g. manager → IT team → finance.
+              if (r.querySelector('.rt-it').checked) steps.push('role:it');
               // A fixed final approver (e.g. finance) is always the LAST, sequential step.
               const host = r.querySelector('.rt-final-host');
               const finalId = host && host._picker ? host._picker.getId() : null;
