@@ -1055,73 +1055,95 @@ Views.tickets = async function (el, params = {}) {
 
     openModal({
       title: `${tk.number} · ${tk.subject}`,
-      wide: true,
+      xwide: true,
       body: `
-        <div class="form-grid">
-          <div class="form-field"><label>${esc(t('tk.statusCol'))}</label>
-            <select id="tk-d-status" ${canUpdate ? '' : 'disabled'}>${TK_STATUS.map((s) => `<option value="${s}"${s === tk.status ? ' selected' : ''}>${esc(tkStatusLabel(s))}</option>`).join('')}</select></div>
-          <div class="form-field"><label>${esc(t('tk.impact'))}</label>
-            <select id="tk-d-impact" ${canUpdate ? '' : 'disabled'}><option value="">—</option>${['low', 'medium', 'high'].map((l) => `<option value="${l}"${l === tk.impact ? ' selected' : ''}>${esc(tkPriorityLabel(l))}</option>`).join('')}</select></div>
-          <div class="form-field"><label>${esc(t('tk.urgency'))}</label>
-            <select id="tk-d-urgency" ${canUpdate ? '' : 'disabled'}><option value="">—</option>${['low', 'medium', 'high'].map((l) => `<option value="${l}"${l === tk.urgency ? ' selected' : ''}>${esc(tkPriorityLabel(l))}</option>`).join('')}</select></div>
-          <div class="form-field"><label>${esc(t('tk.priorityCol'))}</label>
-            <div style="padding-top:6px">${pill(TK_PRIORITY_PILL[tk.priority], tkPriorityLabel(tk.priority))}${(tk.impact && tk.urgency && tkDerivePriority(tk.impact, tk.urgency) === tk.priority) ? ` <span class="cell-sub">${esc(t('tk.derived'))}</span>` : ''}</div></div>
-          <div class="form-field"><label>${esc(t('tk.assignee'))}</label>
-            <select id="tk-d-assignee" ${canAssign ? '' : 'disabled'}>${assignOpts}</select></div>
-          <div class="form-field"><label>${esc(t('tk.category'))}</label>
-            <select id="tk-d-cat" ${canUpdate ? '' : 'disabled'}><option value="">${esc(t('tk.categoryNone'))}</option>${catOptions(tk.category)}</select></div>
-          <div class="form-field"><label>${esc(t('tk.requester'))}</label>
-            <div style="padding-top:6px">${esc(tk.requesterName || '—')}</div></div>
-          ${tk.approvalStatus ? `<div class="form-field"><label>${esc(t('rt.approval'))}</label>
-            <div style="padding-top:6px">${pill({ pending: 'pill-amber', approved: 'pill-emerald', rejected: 'pill-rose' }[tk.approvalStatus] || 'pill-slate', t('mtk.ap' + tk.approvalStatus.charAt(0).toUpperCase() + tk.approvalStatus.slice(1)))}${tk.approvalStatus === 'pending' && tk.approvalApprover ? ` <span class="cell-sub">· ${esc(tk.approvalApprover)}</span>` : ''}</div>
-            ${myAppr ? `<div style="padding-top:8px;display:flex;gap:8px">
-              <button class="btn btn-primary btn-sm" id="tk-d-appr-approve"><span class="ms ms-sm">check</span> ${esc(t('ch.approve'))}</button>
-              <button class="btn btn-outline btn-sm" id="tk-d-appr-reject" style="color:var(--rose-700)"><span class="ms ms-sm">close</span> ${esc(t('ch.reject'))}</button>
-            </div>` : ''}</div>` : ''}
-          ${(canUpdate && tk.requesterEmployeeId && tk.approvalStatus !== 'pending') ? `<div class="form-field"><label>${esc(t('tk.approval'))}</label>
-            <div style="padding-top:4px"><button class="btn btn-outline btn-sm" id="tk-d-send-approval"><span class="ms ms-sm">how_to_reg</span> ${esc(t('tk.sendToApproval'))}</button></div></div>` : ''}
-          ${renderApprovalTimeline(tk.approvalHistory)}
-          <div class="form-field"><label>${esc(t('tk.asset'))}</label>
-            <div id="tk-d-asset-host"></div></div>
-          ${canLinkProblem ? `<div class="form-field"><label>${esc(t('pr.problemLink'))}</label>
-            <div id="tk-d-problem-host"></div></div>`
-          : (tk.problemNumber ? `<div class="form-field"><label>${esc(t('pr.problemLink'))}</label><div style="padding-top:6px" class="mono">${esc(tk.problemNumber)}</div></div>` : '')}
-          <div class="form-field full"><label>${esc(t('tk.slaCol'))}</label>
-            <div class="tk-sla">
-              <span>${esc(t('tk.sla.response'))}: ${tkSlaBadge(tk.sla && tk.sla.response)}${slaDue(tk.sla && tk.sla.response)}</span>
-              <span>${esc(t('tk.sla.resolution'))}: ${tkSlaBadge(tk.sla && tk.sla.resolve)}${slaDue(tk.sla && tk.sla.resolve)}</span>
-            </div></div>
-          <div class="form-field full"><label>${esc(t('tk.description'))}</label>
-            <div class="tk-desc">${esc(tk.description || '—').replace(/\n/g, '<br>')}</div></div>
-          <div class="form-field"><label>${esc(t('tk.resolutionCode'))}</label>
-            <select id="tk-d-rescode" ${canUpdate ? '' : 'disabled'}><option value="">—</option>${TK_RESOLUTION_CODES.map((rc) => `<option value="${rc}"${rc === tk.resolutionCode ? ' selected' : ''}>${esc(t('tk.rescode.' + rc))}</option>`).join('')}</select></div>
-          <div class="form-field"><label>${esc(t('tk.csat'))}</label>
-            <div style="padding-top:6px">${tk.csatRating ? `${tkStars(tk.csatRating)}${tk.csatComment ? ` <span class="cell-sub">“${esc(tk.csatComment)}”</span>` : ''}` : `<span class="cell-sub">${esc(t('tk.csatNone'))}</span>`}</div></div>
-          <div class="form-field full"><label>${esc(t('tk.resolutionNote'))}</label>
-            <textarea id="tk-d-resnote" rows="2" ${canUpdate ? '' : 'disabled'} placeholder="${esc(t('tk.resolutionNotePh'))}">${esc(tk.resolutionNote || '')}</textarea></div>
-        </div>
-        <h3 style="margin:16px 0 8px">${esc(t('tk.worklog'))}</h3>
-        <div class="tk-comments">${comments}</div>
-        ${canUpdate ? `<div style="margin-top:10px">
-          ${(canned.length || canManage) ? `<select id="tk-d-canned" class="ops-select" style="margin-bottom:6px">
-            <option value="">${esc(t('tk.cannedPick'))}</option>
-            ${canned.map((c, i) => `<option value="${i}">${esc(c.title)}</option>`).join('')}
-            ${canManage ? `<option value="__manage__">— ${esc(t('tk.cannedManage'))} —</option>` : ''}
-          </select>` : ''}
-          <textarea id="tk-d-comment" rows="2" placeholder="${esc(t('tk.addComment'))}"></textarea>
-          <label style="display:inline-flex;align-items:center;gap:6px;margin-top:6px;font-size:13px">
-            <input type="checkbox" id="tk-d-internal"> ${esc(t('tk.internalNote'))}</label>
-          <div><button class="btn btn-outline btn-sm" id="tk-d-addcomment" style="margin-top:6px">${esc(t('tk.post'))}</button></div>
-        </div>` : ''}
-        ${canDocRead ? `<h3 style="margin:16px 0 8px">${esc(t('tk.attachments'))}</h3>
-          <div id="tk-docs" class="tk-docs"><p class="cell-sub">${esc(t('common.loading') || '…')}</p></div>
-          ${canDocUpload ? `<div style="margin-top:8px;display:flex;align-items:center;gap:12px;flex-wrap:wrap"><label class="btn btn-outline btn-sm" style="margin:0">
-            <span class="ms ms-sm">upload_file</span> ${esc(t('tk.attach'))}
-            <input type="file" id="tk-doc-file" style="display:none"></label>
-            <label style="display:inline-flex;align-items:center;gap:6px;font-size:13px"><input type="checkbox" id="tk-doc-internal"> ${esc(t('tk.docInternal'))}</label>
-            <span class="cell-sub">${esc(t('tk.attachHint'))}</span></div>` : ''}` : ''}
-        <details style="margin-top:14px"><summary class="cell-sub">${esc(t('tk.activity'))}</summary>
-          <ul class="tk-activity">${activity}</ul></details>`,
+        <div class="tkd">
+          <div class="tkd-topbar">
+            ${pill(TK_STATUS_PILL[tk.status] || 'pill-slate', tkStatusLabel(tk.status))}
+            ${pill(TK_PRIORITY_PILL[tk.priority], tkPriorityLabel(tk.priority))}
+            <span class="tkd-chip"><span class="ms ms-sm">${tk.type === 'incident' ? 'error' : 'assignment'}</span> ${esc(tkTypeLabel(tk.type))}</span>
+            ${tk.approvalStatus ? pill({ pending: 'pill-amber', approved: 'pill-emerald', rejected: 'pill-rose' }[tk.approvalStatus] || 'pill-slate', t('mtk.ap' + tk.approvalStatus.charAt(0).toUpperCase() + tk.approvalStatus.slice(1))) : ''}
+            <span class="tkd-topmeta"><span class="ms ms-sm">schedule</span> ${esc(String(tk.createdAt || '').replace('T', ' ').slice(0, 16))}</span>
+          </div>
+          <div class="tkd-grid">
+            <div class="tkd-main">
+              <section class="tkd-sec">
+                <h4 class="tkd-h">${esc(t('tk.description'))}</h4>
+                <div class="tk-desc">${esc(tk.description || '—').replace(/\n/g, '<br>')}</div>
+              </section>
+              <section class="tkd-sec">
+                <h4 class="tkd-h">${esc(t('tk.worklog'))}</h4>
+                <div class="tk-comments">${comments}</div>
+                ${canUpdate ? `<div class="tkd-reply">
+                  ${(canned.length || canManage) ? `<select id="tk-d-canned" class="ops-select" style="margin-bottom:6px">
+                    <option value="">${esc(t('tk.cannedPick'))}</option>
+                    ${canned.map((c, i) => `<option value="${i}">${esc(c.title)}</option>`).join('')}
+                    ${canManage ? `<option value="__manage__">— ${esc(t('tk.cannedManage'))} —</option>` : ''}
+                  </select>` : ''}
+                  <textarea id="tk-d-comment" rows="3" placeholder="${esc(t('tk.addComment'))}"></textarea>
+                  <div class="tkd-reply-foot">
+                    <label class="tkd-check"><input type="checkbox" id="tk-d-internal"> ${esc(t('tk.internalNote'))}</label>
+                    <button class="btn btn-primary btn-sm" id="tk-d-addcomment">${esc(t('tk.post'))}</button>
+                  </div>
+                </div>` : ''}
+              </section>
+              ${canDocRead ? `<section class="tkd-sec">
+                <h4 class="tkd-h">${esc(t('tk.attachments'))}</h4>
+                <div id="tk-docs" class="tk-docs"><p class="cell-sub">${esc(t('common.loading') || '…')}</p></div>
+                ${canDocUpload ? `<div class="tkd-upload-row"><label class="btn btn-outline btn-sm" style="margin:0">
+                  <span class="ms ms-sm">upload_file</span> ${esc(t('tk.attach'))}
+                  <input type="file" id="tk-doc-file" style="display:none"></label>
+                  <label class="tkd-check"><input type="checkbox" id="tk-doc-internal"> ${esc(t('tk.docInternal'))}</label>
+                  <span class="cell-sub">${esc(t('tk.attachHint'))}</span></div>` : ''}
+              </section>` : ''}
+              <details class="tkd-activity"><summary class="cell-sub">${esc(t('tk.activity'))}</summary>
+                <ul class="tk-activity">${activity}</ul></details>
+            </div>
+            <aside class="tkd-side">
+              <div class="tkd-prop"><span class="tkd-plabel">${esc(t('tk.statusCol'))}</span>
+                <select id="tk-d-status" ${canUpdate ? '' : 'disabled'}>${TK_STATUS.map((s) => `<option value="${s}"${s === tk.status ? ' selected' : ''}>${esc(tkStatusLabel(s))}</option>`).join('')}</select></div>
+              <div class="tkd-2col">
+                <div class="tkd-prop"><span class="tkd-plabel">${esc(t('tk.impact'))}</span>
+                  <select id="tk-d-impact" ${canUpdate ? '' : 'disabled'}><option value="">—</option>${['low', 'medium', 'high'].map((l) => `<option value="${l}"${l === tk.impact ? ' selected' : ''}>${esc(tkPriorityLabel(l))}</option>`).join('')}</select></div>
+                <div class="tkd-prop"><span class="tkd-plabel">${esc(t('tk.urgency'))}</span>
+                  <select id="tk-d-urgency" ${canUpdate ? '' : 'disabled'}><option value="">—</option>${['low', 'medium', 'high'].map((l) => `<option value="${l}"${l === tk.urgency ? ' selected' : ''}>${esc(tkPriorityLabel(l))}</option>`).join('')}</select></div>
+              </div>
+              <div class="tkd-prop"><span class="tkd-plabel">${esc(t('tk.priorityCol'))}</span>
+                <div class="tkd-val">${pill(TK_PRIORITY_PILL[tk.priority], tkPriorityLabel(tk.priority))}${(tk.impact && tk.urgency && tkDerivePriority(tk.impact, tk.urgency) === tk.priority) ? ` <span class="cell-sub">${esc(t('tk.derived'))}</span>` : ''}</div></div>
+              <div class="tkd-prop"><span class="tkd-plabel">${esc(t('tk.assignee'))}</span>
+                <select id="tk-d-assignee" ${canAssign ? '' : 'disabled'}>${assignOpts}</select></div>
+              <div class="tkd-prop"><span class="tkd-plabel">${esc(t('tk.category'))}</span>
+                <select id="tk-d-cat" ${canUpdate ? '' : 'disabled'}><option value="">${esc(t('tk.categoryNone'))}</option>${catOptions(tk.category)}</select></div>
+              <div class="tkd-prop"><span class="tkd-plabel">${esc(t('tk.requester'))}</span>
+                <div class="tkd-val">${esc(tk.requesterName || '—')}</div></div>
+              ${tk.approvalStatus ? `<div class="tkd-prop"><span class="tkd-plabel">${esc(t('rt.approval'))}</span>
+                <div class="tkd-val">${pill({ pending: 'pill-amber', approved: 'pill-emerald', rejected: 'pill-rose' }[tk.approvalStatus] || 'pill-slate', t('mtk.ap' + tk.approvalStatus.charAt(0).toUpperCase() + tk.approvalStatus.slice(1)))}${tk.approvalStatus === 'pending' && tk.approvalApprover ? ` <span class="cell-sub">· ${esc(tk.approvalApprover)}</span>` : ''}</div>
+                ${myAppr ? `<div class="tkd-appr-actions">
+                  <button class="btn btn-primary btn-sm" id="tk-d-appr-approve"><span class="ms ms-sm">check</span> ${esc(t('ch.approve'))}</button>
+                  <button class="btn btn-outline btn-sm" id="tk-d-appr-reject" style="color:var(--rose-700)"><span class="ms ms-sm">close</span> ${esc(t('ch.reject'))}</button>
+                </div>` : ''}</div>` : ''}
+              ${(canUpdate && tk.requesterEmployeeId && tk.approvalStatus !== 'pending') ? `<div class="tkd-prop"><span class="tkd-plabel">${esc(t('tk.approval'))}</span>
+                <div><button class="btn btn-outline btn-sm" id="tk-d-send-approval"><span class="ms ms-sm">how_to_reg</span> ${esc(t('tk.sendToApproval'))}</button></div></div>` : ''}
+              ${renderApprovalTimeline(tk.approvalHistory)}
+              <div class="tkd-prop"><span class="tkd-plabel">${esc(t('tk.asset'))}</span>
+                <div id="tk-d-asset-host"></div></div>
+              ${canLinkProblem ? `<div class="tkd-prop"><span class="tkd-plabel">${esc(t('pr.problemLink'))}</span>
+                <div id="tk-d-problem-host"></div></div>`
+              : (tk.problemNumber ? `<div class="tkd-prop"><span class="tkd-plabel">${esc(t('pr.problemLink'))}</span><div class="mono">${esc(tk.problemNumber)}</div></div>` : '')}
+              <div class="tkd-prop"><span class="tkd-plabel">${esc(t('tk.slaCol'))}</span>
+                <div class="tk-sla tkd-sla">
+                  <span>${esc(t('tk.sla.response'))}: ${tkSlaBadge(tk.sla && tk.sla.response)}${slaDue(tk.sla && tk.sla.response)}</span>
+                  <span>${esc(t('tk.sla.resolution'))}: ${tkSlaBadge(tk.sla && tk.sla.resolve)}${slaDue(tk.sla && tk.sla.resolve)}</span>
+                </div></div>
+              <div class="tkd-prop"><span class="tkd-plabel">${esc(t('tk.resolutionCode'))}</span>
+                <select id="tk-d-rescode" ${canUpdate ? '' : 'disabled'}><option value="">—</option>${TK_RESOLUTION_CODES.map((rc) => `<option value="${rc}"${rc === tk.resolutionCode ? ' selected' : ''}>${esc(t('tk.rescode.' + rc))}</option>`).join('')}</select></div>
+              <div class="tkd-prop"><span class="tkd-plabel">${esc(t('tk.csat'))}</span>
+                <div class="tkd-val">${tk.csatRating ? `${tkStars(tk.csatRating)}${tk.csatComment ? ` <span class="cell-sub">“${esc(tk.csatComment)}”</span>` : ''}` : `<span class="cell-sub">${esc(t('tk.csatNone'))}</span>`}</div></div>
+              <div class="tkd-prop"><span class="tkd-plabel">${esc(t('tk.resolutionNote'))}</span>
+                <textarea id="tk-d-resnote" rows="2" ${canUpdate ? '' : 'disabled'} placeholder="${esc(t('tk.resolutionNotePh'))}">${esc(tk.resolutionNote || '')}</textarea></div>
+            </aside>
+          </div>
+        </div>`,
       foot: `<button class="btn btn-outline" data-close>${esc(t('common.close'))}</button>`,
       onMount(ov) {
         const patch = async (body) => {

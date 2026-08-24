@@ -283,39 +283,65 @@ Views.myTickets = async function (el) {
 
     openModal({
       title: `${tk.number} · ${tk.subject}`,
-      wide: true,
+      xwide: true,
       body: `
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
-          ${pill('pill-slate', tkTypeLabel(tk.type))}
-          ${pill(TK_STATUS_PILL[tk.status], tkStatusLabel(tk.status))}
-          ${pill(TK_PRIORITY_PILL[tk.priority], tkPriorityLabel(tk.priority))}
-          ${tk.approvalStatus ? apPill(tk.approvalStatus) : ''}
-        </div>
-        ${tk.approvalStatus === 'pending' && tk.approvalApprover ? `<p class="cell-sub" style="margin:-6px 0 12px">${esc(t('mtk.apWaiting'))} <strong>${esc(tk.approvalApprover)}</strong></p>` : ''}
-        ${renderApprovalTimeline(tk.approvalHistory)}
-        <div class="form-field full" style="margin-bottom:12px"><label>${esc(t('tk.description'))}</label>
-          <div class="tk-desc">${esc(tk.description || '—').replace(/\n/g, '<br>')}</div></div>
-        ${tk.resolutionNote ? `<div class="form-field full" style="margin-bottom:12px"><label>${esc(t('mtk.resolution'))}</label>
-          <div class="tk-desc">${esc(tk.resolutionNote).replace(/\n/g, '<br>')}</div></div>` : ''}
-        ${['resolved', 'closed'].includes(tk.status) ? `<div class="mtk-csat" style="margin-bottom:12px">
-          <label class="form-label">${esc(t('mtk.rateTitle'))}</label>
-          ${tk.csatRating ? `<div style="padding-top:4px">${'★'.repeat(tk.csatRating)}<span class="tk-stars-off">${'★'.repeat(5 - tk.csatRating)}</span> <span class="cell-sub">${esc(t('mtk.rateThanks'))}</span></div>`
-            : `<div class="mtk-stars" style="margin-top:4px">${[1, 2, 3, 4, 5].map((n) => `<button type="button" class="mtk-star" data-star="${n}" aria-label="${n}">★</button>`).join('')}</div>
-               <textarea id="mtk-csat-comment" rows="2" placeholder="${esc(t('mtk.rateComment'))}" style="margin-top:6px"></textarea>
-               <div><button class="btn btn-outline btn-sm" id="mtk-csat-send" style="margin-top:6px" disabled>${esc(t('mtk.rateSubmit'))}</button></div>`}
-        </div>` : ''}
-        <h3 style="margin:12px 0 8px">${esc(t('mtk.updates'))}</h3>
-        <div class="tk-comments">${comments}</div>
-        ${open ? `<div style="margin-top:10px">
-          <textarea id="mtk-d-comment" rows="2" placeholder="${esc(t('mtk.addComment'))}"></textarea>
-          <div><button class="btn btn-outline btn-sm" id="mtk-d-post" style="margin-top:6px">${esc(t('tk.post'))}</button></div>
-        </div>` : `<p class="cell-sub" style="margin-top:10px">${esc(t('mtk.closedNote'))}</p>`}
-        <h3 style="margin:16px 0 8px">${esc(t('tk.attachments'))}</h3>
-        <div id="mtk-docs" class="tk-docs"><p class="cell-sub">${esc(t('common.loading') || '…')}</p></div>
-        ${open ? `<div style="margin-top:8px"><label class="btn btn-outline btn-sm" style="margin:0">
-          <span class="ms ms-sm">upload_file</span> ${esc(t('tk.attach'))}
-          <input type="file" id="mtk-doc-file" style="display:none"></label>
-          <span class="cell-sub" style="margin-left:8px">${esc(t('tk.attachHint'))}</span></div>` : ''}`,
+        <div class="tkd tkd-portal">
+          <div class="tkd-topbar">
+            ${pill(TK_STATUS_PILL[tk.status], tkStatusLabel(tk.status))}
+            ${pill(TK_PRIORITY_PILL[tk.priority], tkPriorityLabel(tk.priority))}
+            <span class="tkd-chip"><span class="ms ms-sm">${tk.type === 'incident' ? 'error' : 'assignment'}</span> ${esc(tkTypeLabel(tk.type))}</span>
+            ${tk.approvalStatus ? apPill(tk.approvalStatus) : ''}
+            <span class="tkd-topmeta"><span class="ms ms-sm">schedule</span> ${esc(String(tk.createdAt || '').replace('T', ' ').slice(0, 16))}</span>
+          </div>
+          <div class="tkd-grid">
+            <div class="tkd-main">
+              <section class="tkd-sec">
+                <h4 class="tkd-h">${esc(t('tk.description'))}</h4>
+                <div class="tk-desc">${esc(tk.description || '—').replace(/\n/g, '<br>')}</div>
+              </section>
+              ${tk.resolutionNote ? `<section class="tkd-sec">
+                <h4 class="tkd-h">${esc(t('mtk.resolution'))}</h4>
+                <div class="tk-desc">${esc(tk.resolutionNote).replace(/\n/g, '<br>')}</div></section>` : ''}
+              ${['resolved', 'closed'].includes(tk.status) ? `<section class="tkd-sec mtk-csat">
+                <h4 class="tkd-h">${esc(t('mtk.rateTitle'))}</h4>
+                ${tk.csatRating ? `<div>${'★'.repeat(tk.csatRating)}<span class="tk-stars-off">${'★'.repeat(5 - tk.csatRating)}</span> <span class="cell-sub">${esc(t('mtk.rateThanks'))}</span></div>`
+                  : `<div class="mtk-stars">${[1, 2, 3, 4, 5].map((n) => `<button type="button" class="mtk-star" data-star="${n}" aria-label="${n}">★</button>`).join('')}</div>
+                     <textarea id="mtk-csat-comment" rows="2" placeholder="${esc(t('mtk.rateComment'))}" style="margin-top:6px"></textarea>
+                     <div><button class="btn btn-outline btn-sm" id="mtk-csat-send" style="margin-top:6px" disabled>${esc(t('mtk.rateSubmit'))}</button></div>`}
+              </section>` : ''}
+              <section class="tkd-sec">
+                <h4 class="tkd-h">${esc(t('mtk.updates'))}</h4>
+                <div class="tk-comments">${comments}</div>
+                ${open ? `<div class="tkd-reply">
+                  <textarea id="mtk-d-comment" rows="3" placeholder="${esc(t('mtk.addComment'))}"></textarea>
+                  <div class="tkd-reply-foot"><span></span><button class="btn btn-primary btn-sm" id="mtk-d-post">${esc(t('tk.post'))}</button></div>
+                </div>` : `<p class="cell-sub">${esc(t('mtk.closedNote'))}</p>`}
+              </section>
+              <section class="tkd-sec">
+                <h4 class="tkd-h">${esc(t('tk.attachments'))}</h4>
+                <div id="mtk-docs" class="tk-docs"><p class="cell-sub">${esc(t('common.loading') || '…')}</p></div>
+                ${open ? `<div class="tkd-upload-row"><label class="btn btn-outline btn-sm" style="margin:0">
+                  <span class="ms ms-sm">upload_file</span> ${esc(t('tk.attach'))}
+                  <input type="file" id="mtk-doc-file" style="display:none"></label>
+                  <span class="cell-sub">${esc(t('tk.attachHint'))}</span></div>` : ''}
+              </section>
+            </div>
+            <aside class="tkd-side">
+              <div class="tkd-prop"><span class="tkd-plabel">${esc(t('tk.statusCol'))}</span>
+                <div class="tkd-val">${pill(TK_STATUS_PILL[tk.status], tkStatusLabel(tk.status))}</div></div>
+              <div class="tkd-prop"><span class="tkd-plabel">${esc(t('tk.priorityCol'))}</span>
+                <div class="tkd-val">${pill(TK_PRIORITY_PILL[tk.priority], tkPriorityLabel(tk.priority))}</div></div>
+              <div class="tkd-prop"><span class="tkd-plabel">${esc(t('tk.type'))}</span>
+                <div class="tkd-val">${esc(tkTypeLabel(tk.type))}</div></div>
+              <div class="tkd-prop"><span class="tkd-plabel">${esc(t('tk.createdCol'))}</span>
+                <div class="tkd-val">${esc(String(tk.createdAt || '').replace('T', ' ').slice(0, 16))}</div></div>
+              ${tk.approvalStatus ? `<div class="tkd-prop"><span class="tkd-plabel">${esc(t('rt.approval'))}</span>
+                <div class="tkd-val">${apPill(tk.approvalStatus)}</div>
+                ${tk.approvalStatus === 'pending' && tk.approvalApprover ? `<div class="cell-sub" style="margin-top:4px">${esc(t('mtk.apWaiting'))} <strong>${esc(tk.approvalApprover)}</strong></div>` : ''}</div>
+              ${renderApprovalTimeline(tk.approvalHistory)}` : ''}
+            </aside>
+          </div>
+        </div>`,
       foot: `<button class="btn btn-outline" data-close>${esc(t('common.close'))}</button>`,
       onMount(ov) {
         $('#mtk-d-post', ov)?.addEventListener('click', async () => {

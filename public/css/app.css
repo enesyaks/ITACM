@@ -5860,6 +5860,44 @@ body.ai-open .ai-panel { opacity: 1; visibility: visible; transform: none; }
 .tk-sla { display: flex; flex-wrap: wrap; gap: 8px 22px; align-items: center; }
 .tk-sla > span { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
 
+/* ===== Ticket / request detail — professional two-column layout ===== */
+.tkd-topbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 0 0 14px;
+  margin-bottom: 16px; border-bottom: 1px solid var(--outline-variant); }
+.tkd-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 999px;
+  background: var(--surface-low); border: 1px solid var(--outline-variant); font-size: 12px; font-weight: 600; }
+.tkd-chip .ms-sm { font-size: 15px; color: var(--on-surface-variant); }
+.tkd-topmeta { display: inline-flex; align-items: center; gap: 5px; margin-left: auto;
+  font-size: 12.5px; color: var(--on-surface-variant); }
+.tkd-topmeta .ms-sm { font-size: 16px; }
+.tkd-grid { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 26px; align-items: start; }
+.tkd-main { min-width: 0; }
+.tkd-sec { margin-bottom: 22px; }
+.tkd-sec:last-child { margin-bottom: 0; }
+.tkd-h { margin: 0 0 10px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--on-surface-variant); }
+.tkd-reply { margin-top: 12px; }
+.tkd-reply-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; }
+.tkd-check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--on-surface-variant); }
+.tkd-upload-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 10px; }
+.tkd-activity { margin-top: 6px; }
+/* Right-hand properties panel */
+.tkd-side { background: var(--surface-low); border: 1px solid var(--outline-variant); border-radius: 14px;
+  padding: 16px; position: sticky; top: 0; }
+.tkd-prop { display: flex; flex-direction: column; gap: 5px; margin-bottom: 14px; }
+.tkd-prop:last-child { margin-bottom: 0; }
+.tkd-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.tkd-plabel { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--on-surface-variant); }
+.tkd-val { font-size: 14px; min-height: 20px; }
+.tkd-side select, .tkd-side textarea, .tkd-side input { width: 100%; }
+.tkd-sla { flex-direction: column; align-items: stretch; gap: 6px; }
+.tkd-appr-actions { display: flex; gap: 8px; margin-top: 8px; }
+.tkd-side .form-field.full { margin: 0; }
+@media (max-width: 820px) {
+  .tkd-grid { grid-template-columns: 1fr; gap: 18px; }
+  .tkd-side { position: static; order: -1; }
+}
+
 /* Service-desk list — priority accent, avatars, refined cells */
 .tk-list td:first-child { position: relative; }
 .tk-list tr.tk-row > td:first-child::before {
