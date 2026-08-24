@@ -65,6 +65,17 @@ router.put('/sla', requireAnyPermission([['ticket', 'configure'], ['ticket', 'ma
   res.json({ success: true, data: await ticketService.saveSlaConfig(req.body || {}) });
 }));
 
+// GET/PUT /api/tickets/workflow — the editable status transition map (before /:id)
+router.get('/workflow', requirePermission('ticket', 'read'), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await ticketService.getWorkflow() });
+}));
+router.put('/workflow', requireAnyPermission([['ticket', 'configure'], ['ticket', 'manage']]), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await ticketService.saveWorkflow(req.body || {}) });
+}));
+router.post('/workflow/reset', requireAnyPermission([['ticket', 'configure'], ['ticket', 'manage']]), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await ticketService.resetWorkflow() });
+}));
+
 // GET /api/tickets/categories — managed + used categories for the pickers (before /:id)
 router.get('/categories', requirePermission('ticket', 'read'), asyncHandler(async (req, res) => {
   res.json({ success: true, data: await ticketService.categories() });

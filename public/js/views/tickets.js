@@ -391,6 +391,7 @@ Views.tickets = async function (el, params = {}) {
         `${canReport ? `<button class="btn btn-outline" id="tk-report"><span class="ms">insights</span> ${esc(t('tk.report'))}</button>` : ''}`
         + `${canConfigure ? `<button class="btn btn-outline" id="tk-templates"><span class="ms">assignment</span> ${esc(t('rt.title'))}</button>` : ''}`
         + `${canConfigure ? `<button class="btn btn-outline" id="tk-sla"><span class="ms">schedule</span> ${esc(t('tk.slaSettings'))}</button>` : ''}`
+        + `${canConfigure ? `<button class="btn btn-outline" id="tk-workflow"><span class="ms">account_tree</span> ${esc(t('wf.title'))}</button>` : ''}`
         + `${canCreate ? `<button class="btn btn-primary" id="tk-new"><span class="ms">add</span> ${esc(t('tk.new'))}</button>` : ''}`)}
       <div id="tk-stats">${statsHtml(stats0)}</div>
       <div class="card card-pad" style="margin-bottom:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
@@ -429,6 +430,8 @@ Views.tickets = async function (el, params = {}) {
     if (nb) nb.addEventListener('click', openCreate);
     const sb = $('#tk-sla', el);
     if (sb) sb.addEventListener('click', openSlaEditor);
+    const wb = $('#tk-workflow', el);
+    if (wb) wb.addEventListener('click', openWorkflowEditor);
     const tb = $('#tk-templates', el);
     if (tb) tb.addEventListener('click', openRequestTemplates);
     $('#tk-report', el)?.addEventListener('click', openReport);
@@ -776,6 +779,111 @@ Views.tickets = async function (el, params = {}) {
           }; });
           try { await api('/tickets/sla', { method: 'PUT', body }); closeModal(); toast(t('tk.saved'), 'success'); refresh(); }
           catch (err) { toast(err.message, 'error'); }
+        });
+      },
+    });
+  }
+
+  // --- Workflow (status-transition) editor --------------------------------
+  // Jira-like: a live directed graph of the allowed status moves + an editable
+  // from→to matrix. Saves to app_settings via PUT /tickets/workflow.
+  const WF_COLORS = {
+    new: '#64748b', open: '#2563eb', in_progress: '#d97706', pending: '#7c3aed',
+    resolved: '#059669', closed: '#475569', cancelled: '#e11d48',
+  };
+  const WF_TERMINAL = new Set(['resolved', 'closed', 'cancelled']);
+
+  function wfGraph(statuses, trans) {
+    const nodeW = 116, nodeH = 42, gap = 46, slot = nodeW + gap;
+    const marginX = 24, centerY = 200, height = 400;
+    const width = marginX * 2 + (statuses.length - 1) * slot + nodeW;
+    const cx = (i) => marginX + i * slot + nodeW / 2;
+    const idx = {}; statuses.forEach((s, i) => { idx[s] = i; });
+    const arcs = [];
+    statuses.forEach((from) => (trans[from] || []).forEach((to) => {
+      const i = idx[from], j = idx[to];
+      if (i == null || j == null || i === j) return;
+      const span = Math.abs(j - i);
+      const xi = cx(i), xj = cx(j), mx = (xi + xj) / 2;
+      const up = j > i; // forward arcs bow up, backward bow down
+      const y0 = up ? centerY - nodeH / 2 : centerY + nodeH / 2;
+      const cpY = up ? y0 - (34 + span * 20) : y0 + (34 + span * 20);
+      arcs.push(`<path d="M ${xi} ${y0} Q ${mx} ${cpY} ${xj} ${y0}" fill="none"
+        stroke="${WF_COLORS[to] || '#94a3b8'}" stroke-width="2" opacity="0.75"
+        marker-end="url(#wf-arrow)"></path>`);
+    }));
+    const nodes = statuses.map((s, i) => {
+      const x = marginX + i * slot, y = centerY - nodeH / 2, c = WF_COLORS[s] || '#64748b';
+      return `<g>
+        <rect x="${x}" y="${y}" width="${nodeW}" height="${nodeH}" rx="10"
+          fill="${c}22" stroke="${c}" stroke-width="1.5"></rect>
+        <circle cx="${x + 16}" cy="${centerY}" r="5" fill="${c}"></circle>
+        <text x="${x + 30}" y="${centerY + 4}" font-size="12.5" font-weight="600"
+          fill="var(--on-surface)">${esc(tkStatusLabel(s))}</text>
+      </g>`;
+    }).join('');
+    return `<svg viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" style="max-width:none">
+      <defs><marker id="wf-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8"></path></marker></defs>
+      ${arcs.join('')}${nodes}</svg>`;
+  }
+
+  async function openWorkflowEditor() {
+    const wf = await api('/tickets/workflow').catch(() => null);
+    if (!wf) { toast(t('common.error') || 'Error', 'error'); return; }
+    const statuses = wf.statuses || TK_STATUS;
+    // Mutable working copy: { from: Set(to) }.
+    const state = {}; statuses.forEach((s) => { state[s] = new Set(wf.transitions[s] || []); });
+
+    const cell = (from, to) => {
+      if (from === to) return '<td class="wf-cell wf-self">·</td>';
+      const on = state[from].has(to);
+      return `<td class="wf-cell"><label class="wf-chk"><input type="checkbox" data-from="${from}" data-to="${to}" ${on ? 'checked' : ''}><span></span></label></td>`;
+    };
+    const matrix = `<table class="wf-matrix"><thead><tr>
+        <th class="wf-corner">${esc(t('wf.fromTo'))}</th>
+        ${statuses.map((s) => `<th><span class="wf-hdr" style="color:${WF_COLORS[s]}">${esc(tkStatusLabel(s))}</span></th>`).join('')}
+      </tr></thead><tbody>
+        ${statuses.map((from) => `<tr>
+          <th class="wf-row-h"><span class="wf-hdr" style="color:${WF_COLORS[from]}">${esc(tkStatusLabel(from))}</span>${WF_TERMINAL.has(from) ? '' : ' <span class="wf-req" title="' + esc(t('wf.needsExit')) + '">*</span>'}</th>
+          ${statuses.map((to) => cell(from, to)).join('')}
+        </tr>`).join('')}
+      </tbody></table>`;
+
+    openModal({
+      title: t('wf.title'),
+      wide: true,
+      body: `<p class="cell-sub" style="margin:0 0 12px">${esc(t('wf.hint'))}</p>
+        <div class="wf-graph-scroll"><div id="wf-graph">${wfGraph(statuses, wf.transitions)}</div></div>
+        <p class="cell-sub" style="margin:14px 0 6px">${esc(t('wf.matrixHint'))}</p>
+        <div style="overflow-x:auto">${matrix}</div>
+        <p class="cell-sub" style="margin:10px 0 0"><span class="wf-req">*</span> ${esc(t('wf.needsExit'))}</p>`,
+      foot: `<button class="btn btn-ghost" id="wf-reset" style="margin-right:auto">${esc(t('wf.reset'))}</button>
+             <button class="btn btn-outline" data-close>${esc(t('common.cancel'))}</button>
+             <button class="btn btn-primary" id="wf-save">${esc(t('common.save'))}</button>`,
+      onMount(ov) {
+        const toObj = () => { const o = {}; statuses.forEach((s) => { o[s] = [...state[s]]; }); return o; };
+        const redraw = () => { $('#wf-graph', ov).innerHTML = wfGraph(statuses, toObj()); };
+        ov.querySelectorAll('.wf-matrix input[type=checkbox]').forEach((c) => c.addEventListener('change', (e) => {
+          const { from, to } = e.target.dataset;
+          if (e.target.checked) state[from].add(to); else state[from].delete(to);
+          redraw();
+        }));
+        $('#wf-save', ov).addEventListener('click', async () => {
+          try { await api('/tickets/workflow', { method: 'PUT', body: { transitions: toObj() } });
+            closeModal(); toast(t('tk.saved'), 'success'); }
+          catch (err) { toast(err.message, 'error'); }
+        });
+        // Reset repopulates the matrix to the built-in defaults locally; nothing is
+        // persisted until Save, so Cancel still discards it.
+        $('#wf-reset', ov).addEventListener('click', () => {
+          const def = wf.defaults || {};
+          statuses.forEach((s) => { state[s] = new Set(def[s] || []); });
+          ov.querySelectorAll('.wf-matrix input[type=checkbox]').forEach((c) => {
+            c.checked = state[c.dataset.from].has(c.dataset.to);
+          });
+          redraw();
+          toast(t('wf.resetDone'), 'info');
         });
       },
     });

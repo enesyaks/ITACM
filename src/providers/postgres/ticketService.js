@@ -131,7 +131,10 @@ function stripSla(row) {
 }
 
 // Allowed status transitions (from → [to]). Missing / same-state = rejected.
-const TRANSITIONS = Object.freeze({
+// This is the built-in DEFAULT; an admin can override the map from the Workflow
+// editor (stored in app_settings.ticket_workflow_json). getWorkflow() merges the
+// stored override over these defaults.
+const DEFAULT_TRANSITIONS = Object.freeze({
   new: ['open', 'in_progress', 'cancelled'],
   open: ['in_progress', 'pending', 'resolved', 'cancelled'],
   in_progress: ['open', 'pending', 'resolved', 'cancelled'],
@@ -140,6 +143,60 @@ const TRANSITIONS = Object.freeze({
   closed: ['in_progress'],
   cancelled: [],
 });
+const STATUS_ORDER = ['new', 'open', 'in_progress', 'pending', 'resolved', 'closed', 'cancelled'];
+
+// Effective transition map = stored override (validated to the known statuses)
+// or the built-in default when nothing is stored. Cached briefly like SLA.
+let _wfCache = null;
+let _wfCacheAt = 0;
+function sanitizeTransitions(input) {
+  const out = {};
+  for (const from of STATUS_ORDER) {
+    const raw = Array.isArray(input && input[from]) ? input[from] : [];
+    const seen = new Set();
+    out[from] = [];
+    for (const to of raw) {
+      if (STATUSES.has(to) && to !== from && !seen.has(to)) { seen.add(to); out[from].push(to); }
+    }
+  }
+  return out;
+}
+async function getWorkflow() {
+  if (_wfCache && Date.now() - _wfCacheAt < 60 * 1000) return _wfCache;
+  let stored = null;
+  try {
+    const { rows } = await query('SELECT ticket_workflow_json FROM app_settings WHERE id = 1');
+    const j = rows[0] && rows[0].ticket_workflow_json;
+    if (j && typeof j === 'object' && j.transitions && typeof j.transitions === 'object') stored = j.transitions;
+  } catch { stored = null; }
+  const transitions = stored ? sanitizeTransitions(stored) : sanitizeTransitions(DEFAULT_TRANSITIONS);
+  _wfCache = {
+    transitions,
+    defaults: sanitizeTransitions(DEFAULT_TRANSITIONS),
+    statuses: STATUS_ORDER.slice(),
+    terminal: [...TERMINAL],
+    customized: !!stored,
+  };
+  _wfCacheAt = Date.now();
+  return _wfCache;
+}
+async function saveWorkflow(input) {
+  const transitions = sanitizeTransitions((input && input.transitions) || input || {});
+  // Guardrail: every non-terminal status needs at least one way out, or a ticket
+  // could get stuck forever. Terminal states (resolved/closed/cancelled) may be
+  // dead-ends by design, so they're exempt.
+  for (const from of STATUS_ORDER) {
+    if (!TERMINAL.has(from) && transitions[from].length === 0) {
+      throw HttpError.badRequest(`Status "${from}" has no outgoing transition — a ticket would get stuck there`);
+    }
+  }
+  await query('UPDATE app_settings SET ticket_workflow_json = $1::jsonb WHERE id = 1', [JSON.stringify({ transitions })]);
+  _wfCache = null;
+  return getWorkflow();
+}
+function resetWorkflow() {
+  return saveWorkflow({ transitions: DEFAULT_TRANSITIONS });
+}
 
 function actor(user) {
   return {
@@ -586,6 +643,7 @@ async function updateTicket(id, patch, user) {
     if (!canProblem) throw HttpError.forbidden('You do not have permission to link tickets to a problem');
   }
   const slaTargets = await getSlaConfig(); // read before the tx (separate connection)
+  const workflow = await getWorkflow();    // effective (editable) status transition map
   let plan = null;
   await withTransaction(async (t) => {
     const { rows } = await t.query('SELECT * FROM tickets WHERE id = $1 FOR UPDATE', [id]);
@@ -666,7 +724,7 @@ async function updateTicket(id, patch, user) {
     if (patch.status !== undefined) {
       if (!STATUSES.has(patch.status)) throw HttpError.badRequest('Invalid status');
       if (patch.status !== cur.status) {
-        const allowed = TRANSITIONS[cur.status] || [];
+        const allowed = workflow.transitions[cur.status] || [];
         if (!allowed.includes(patch.status)) {
           throw HttpError.badRequest(`Cannot move a ticket from "${cur.status}" to "${patch.status}"`);
         }
@@ -994,4 +1052,5 @@ module.exports = {
   onRequestApproved, onRequestRejected, onRequestWithdrawn, closeForProblem,
   sweepSlaBreaches, SLA_TARGETS, stats, report, agentReport, getSlaConfig, saveSlaConfig, categories,
   getCannedResponses, saveCannedResponses, getManagedCategories, saveManagedCategories,
+  getWorkflow, saveWorkflow, resetWorkflow,
 };
