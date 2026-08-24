@@ -287,11 +287,15 @@ Views.myTickets = async function (el) {
       body: `
         <div class="tkd tkd-portal">
           <div class="tkd-topbar">
-            ${pill(TK_STATUS_PILL[tk.status], tkStatusLabel(tk.status))}
-            ${pill(TK_PRIORITY_PILL[tk.priority], tkPriorityLabel(tk.priority))}
-            <span class="tkd-chip"><span class="ms ms-sm">${tk.type === 'incident' ? 'error' : 'assignment'}</span> ${esc(tkTypeLabel(tk.type))}</span>
-            ${tk.approvalStatus ? apPill(tk.approvalStatus) : ''}
-            <span class="tkd-topmeta"><span class="ms ms-sm">schedule</span> ${esc(String(tk.createdAt || '').replace('T', ' ').slice(0, 16))}</span>
+            <span class="tkd-typeicon tkd-type-${tk.type === 'incident' ? 'incident' : 'request'}"><span class="ms">${tk.type === 'incident' ? 'error' : 'assignment'}</span></span>
+            <div class="tkd-topbar-info">
+              <div class="tkd-badges">
+                ${pill(TK_STATUS_PILL[tk.status], tkStatusLabel(tk.status))}
+                ${pill(TK_PRIORITY_PILL[tk.priority], tkPriorityLabel(tk.priority))}
+                ${tk.approvalStatus ? apPill(tk.approvalStatus) : ''}
+              </div>
+              <div class="tkd-submeta">${esc(tkTypeLabel(tk.type))} · <span class="ms ms-sm">schedule</span> ${esc(String(tk.createdAt || '').replace('T', ' ').slice(0, 16))}</div>
+            </div>
           </div>
           <div class="tkd-grid">
             <div class="tkd-main">

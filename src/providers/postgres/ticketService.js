@@ -728,12 +728,20 @@ async function updateTicket(id, patch, user) {
         if (!allowed.includes(patch.status)) {
           throw HttpError.badRequest(`Cannot move a ticket from "${cur.status}" to "${patch.status}"`);
         }
-        // A ticket must be assigned to someone before it can be resolved or closed
-        // (cancelling an unassigned ticket is still fine). The assignee may be set
-        // in this same PATCH.
+        // Before a ticket can be resolved or closed it must be classified and
+        // owned: impact, category and an assignee are all required (cancelling
+        // still needs none of them). Any of these may be set in this same PATCH.
         if (patch.status === 'resolved' || patch.status === 'closed') {
           const effAssignee = patch.assigneeUserId !== undefined ? (patch.assigneeUserId || null) : cur.assignee_user_id;
-          if (!effAssignee) throw HttpError.badRequest('Assign the ticket to someone before resolving or closing it');
+          const effImpactReq = patch.impact !== undefined ? (patch.impact || null) : cur.impact;
+          const effCategory = patch.category !== undefined ? (String(patch.category || '').trim() || null) : (cur.category || null);
+          const missing = [];
+          if (!effImpactReq) missing.push('impact');
+          if (!effCategory) missing.push('category');
+          if (!effAssignee) missing.push('assignee');
+          if (missing.length) {
+            throw HttpError.badRequest(`Set ${missing.join(', ')} before resolving or closing the ticket`, { code: 'ticket_required_fields', fields: missing });
+          }
         }
         set('status', patch.status);
         acts.push(['status', `${cur.status} → ${patch.status}`]);

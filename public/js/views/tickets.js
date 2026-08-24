@@ -946,30 +946,50 @@ Views.tickets = async function (el, params = {}) {
   function openCreate() {
     openModal({
       title: t('tk.new'),
-      body: `<div class="form-grid">
-        ${templates.length ? `<div class="form-field full"><label>${esc(t('tk.template'))}</label>
-          <select id="tk-c-tpl">
-            <option value="">— ${esc(t('tk.noTemplate'))} —</option>
-            ${templates.map((tp) => `<option value="${esc(tp.id)}">${esc(tp.name)}${tp.category ? ' · ' + esc(tp.category) : ''}</option>`).join('')}
-          </select>
-          <div class="cell-sub" id="tk-c-tpl-hint" style="margin-top:4px"></div></div>` : ''}
-        <div class="form-field" id="tk-c-type-wrap"><label>${esc(t('tk.type'))}</label>
-          <select id="tk-c-type"><option value="incident">${esc(tkTypeLabel('incident'))}</option><option value="request">${esc(tkTypeLabel('request'))}</option></select></div>
-        <div class="form-field"><label>${esc(t('tk.impact'))}</label>
-          <select id="tk-c-impact">${['low', 'medium', 'high'].map((l) => `<option value="${l}"${l === 'medium' ? ' selected' : ''}>${esc(tkPriorityLabel(l))}</option>`).join('')}</select></div>
-        <div class="form-field"><label>${esc(t('tk.urgency'))}</label>
-          <select id="tk-c-urgency">${['low', 'medium', 'high'].map((l) => `<option value="${l}"${l === 'medium' ? ' selected' : ''}>${esc(tkPriorityLabel(l))}</option>`).join('')}</select></div>
-        <div class="form-field full"><label>${esc(t('tk.subject'))} *</label><input id="tk-c-subject" maxlength="300"></div>
-        <div class="form-field full"><label>${esc(t('tk.description'))}</label><textarea id="tk-c-desc" rows="4"></textarea></div>
-        <div class="form-field" id="tk-c-cat-wrap"><label>${esc(t('tk.category'))}</label>
-          <select id="tk-c-cat"><option value="">${esc(t('tk.categoryNone'))}</option>${catOptions()}</select></div>
-        <div class="form-field" id="tk-c-amount-wrap" style="display:none"><label>${esc(t('mtk.amount'))}</label>
-          <input id="tk-c-amount" type="number" min="0" step="0.01" placeholder="0">
-          <div class="cell-sub" id="tk-c-amount-hint" style="margin-top:4px"></div></div>
-        <div class="form-field"><label>${esc(t('tk.requester'))}</label>
-          <div id="tk-c-requester-host"></div></div>
-        <div class="form-field"><label>${esc(t('tk.asset'))}</label>
-          <div id="tk-c-asset-host"></div></div>
+      body: `<div class="tkc">
+        <section class="tkd-sec">
+          <h4 class="tkd-h">${esc(t('tk.secType'))}</h4>
+          <div class="form-grid">
+            ${templates.length ? `<div class="form-field full"><label>${esc(t('tk.template'))}</label>
+              <select id="tk-c-tpl">
+                <option value="">— ${esc(t('tk.noTemplate'))} —</option>
+                ${templates.map((tp) => `<option value="${esc(tp.id)}">${esc(tp.name)}${tp.category ? ' · ' + esc(tp.category) : ''}</option>`).join('')}
+              </select>
+              <div class="cell-sub" id="tk-c-tpl-hint" style="margin-top:4px"></div></div>` : ''}
+            <div class="form-field" id="tk-c-type-wrap"><label>${esc(t('tk.type'))}</label>
+              <select id="tk-c-type"><option value="incident">${esc(tkTypeLabel('incident'))}</option><option value="request">${esc(tkTypeLabel('request'))}</option></select></div>
+          </div>
+        </section>
+        <section class="tkd-sec">
+          <h4 class="tkd-h">${esc(t('tk.secDetails'))}</h4>
+          <div class="form-grid">
+            <div class="form-field full"><label>${esc(t('tk.subject'))} *</label><input id="tk-c-subject" maxlength="300" placeholder="${esc(t('mtk.subjectPh'))}"></div>
+            <div class="form-field full"><label>${esc(t('tk.description'))}</label><textarea id="tk-c-desc" rows="4" placeholder="${esc(t('mtk.descPh'))}"></textarea></div>
+          </div>
+        </section>
+        <section class="tkd-sec">
+          <h4 class="tkd-h">${esc(t('tk.secClassify'))}</h4>
+          <div class="form-grid">
+            <div class="form-field"><label>${esc(t('tk.impact'))}</label>
+              <select id="tk-c-impact">${['low', 'medium', 'high'].map((l) => `<option value="${l}"${l === 'medium' ? ' selected' : ''}>${esc(tkPriorityLabel(l))}</option>`).join('')}</select></div>
+            <div class="form-field"><label>${esc(t('tk.urgency'))}</label>
+              <select id="tk-c-urgency">${['low', 'medium', 'high'].map((l) => `<option value="${l}"${l === 'medium' ? ' selected' : ''}>${esc(tkPriorityLabel(l))}</option>`).join('')}</select></div>
+            <div class="form-field" id="tk-c-cat-wrap"><label>${esc(t('tk.category'))}</label>
+              <select id="tk-c-cat"><option value="">${esc(t('tk.categoryNone'))}</option>${catOptions()}</select></div>
+            <div class="form-field" id="tk-c-amount-wrap" style="display:none"><label>${esc(t('mtk.amount'))}</label>
+              <input id="tk-c-amount" type="number" min="0" step="0.01" placeholder="0">
+              <div class="cell-sub" id="tk-c-amount-hint" style="margin-top:4px"></div></div>
+          </div>
+        </section>
+        <section class="tkd-sec">
+          <h4 class="tkd-h">${esc(t('tk.secLinks'))}</h4>
+          <div class="form-grid">
+            <div class="form-field"><label>${esc(t('tk.requester'))}</label>
+              <div id="tk-c-requester-host"></div></div>
+            <div class="form-field"><label>${esc(t('tk.asset'))}</label>
+              <div id="tk-c-asset-host"></div></div>
+          </div>
+        </section>
       </div>`,
       foot: `<button class="btn btn-outline" data-close>${esc(t('common.cancel'))}</button>
              <button class="btn btn-primary" id="tk-c-save">${esc(t('tk.create'))}</button>`,
@@ -1059,11 +1079,15 @@ Views.tickets = async function (el, params = {}) {
       body: `
         <div class="tkd">
           <div class="tkd-topbar">
-            ${pill(TK_STATUS_PILL[tk.status] || 'pill-slate', tkStatusLabel(tk.status))}
-            ${pill(TK_PRIORITY_PILL[tk.priority], tkPriorityLabel(tk.priority))}
-            <span class="tkd-chip"><span class="ms ms-sm">${tk.type === 'incident' ? 'error' : 'assignment'}</span> ${esc(tkTypeLabel(tk.type))}</span>
-            ${tk.approvalStatus ? pill({ pending: 'pill-amber', approved: 'pill-emerald', rejected: 'pill-rose' }[tk.approvalStatus] || 'pill-slate', t('mtk.ap' + tk.approvalStatus.charAt(0).toUpperCase() + tk.approvalStatus.slice(1))) : ''}
-            <span class="tkd-topmeta"><span class="ms ms-sm">schedule</span> ${esc(String(tk.createdAt || '').replace('T', ' ').slice(0, 16))}</span>
+            <span class="tkd-typeicon tkd-type-${tk.type === 'incident' ? 'incident' : 'request'}"><span class="ms">${tk.type === 'incident' ? 'error' : 'assignment'}</span></span>
+            <div class="tkd-topbar-info">
+              <div class="tkd-badges">
+                ${pill(TK_STATUS_PILL[tk.status] || 'pill-slate', tkStatusLabel(tk.status))}
+                ${pill(TK_PRIORITY_PILL[tk.priority], tkPriorityLabel(tk.priority))}
+                ${tk.approvalStatus ? pill({ pending: 'pill-amber', approved: 'pill-emerald', rejected: 'pill-rose' }[tk.approvalStatus] || 'pill-slate', t('mtk.ap' + tk.approvalStatus.charAt(0).toUpperCase() + tk.approvalStatus.slice(1))) : ''}
+              </div>
+              <div class="tkd-submeta">${esc(tkTypeLabel(tk.type))}${tk.requesterName ? ' · ' + esc(tk.requesterName) : ''} · <span class="ms ms-sm">schedule</span> ${esc(String(tk.createdAt || '').replace('T', ' ').slice(0, 16))}</div>
+            </div>
           </div>
           <div class="tkd-grid">
             <div class="tkd-main">
@@ -1103,16 +1127,16 @@ Views.tickets = async function (el, params = {}) {
               <div class="tkd-prop"><span class="tkd-plabel">${esc(t('tk.statusCol'))}</span>
                 <select id="tk-d-status" ${canUpdate ? '' : 'disabled'}>${TK_STATUS.map((s) => `<option value="${s}"${s === tk.status ? ' selected' : ''}>${esc(tkStatusLabel(s))}</option>`).join('')}</select></div>
               <div class="tkd-2col">
-                <div class="tkd-prop"><span class="tkd-plabel">${esc(t('tk.impact'))}</span>
+                <div class="tkd-prop"><span class="tkd-plabel req">${esc(t('tk.impact'))}</span>
                   <select id="tk-d-impact" ${canUpdate ? '' : 'disabled'}><option value="">—</option>${['low', 'medium', 'high'].map((l) => `<option value="${l}"${l === tk.impact ? ' selected' : ''}>${esc(tkPriorityLabel(l))}</option>`).join('')}</select></div>
                 <div class="tkd-prop"><span class="tkd-plabel">${esc(t('tk.urgency'))}</span>
                   <select id="tk-d-urgency" ${canUpdate ? '' : 'disabled'}><option value="">—</option>${['low', 'medium', 'high'].map((l) => `<option value="${l}"${l === tk.urgency ? ' selected' : ''}>${esc(tkPriorityLabel(l))}</option>`).join('')}</select></div>
               </div>
               <div class="tkd-prop"><span class="tkd-plabel">${esc(t('tk.priorityCol'))}</span>
                 <div class="tkd-val">${pill(TK_PRIORITY_PILL[tk.priority], tkPriorityLabel(tk.priority))}${(tk.impact && tk.urgency && tkDerivePriority(tk.impact, tk.urgency) === tk.priority) ? ` <span class="cell-sub">${esc(t('tk.derived'))}</span>` : ''}</div></div>
-              <div class="tkd-prop"><span class="tkd-plabel">${esc(t('tk.assignee'))}</span>
+              <div class="tkd-prop"><span class="tkd-plabel req">${esc(t('tk.assignee'))}</span>
                 <select id="tk-d-assignee" ${canAssign ? '' : 'disabled'}>${assignOpts}</select></div>
-              <div class="tkd-prop"><span class="tkd-plabel">${esc(t('tk.category'))}</span>
+              <div class="tkd-prop"><span class="tkd-plabel req">${esc(t('tk.category'))}</span>
                 <select id="tk-d-cat" ${canUpdate ? '' : 'disabled'}><option value="">${esc(t('tk.categoryNone'))}</option>${catOptions(tk.category)}</select></div>
               <div class="tkd-prop"><span class="tkd-plabel">${esc(t('tk.requester'))}</span>
                 <div class="tkd-val">${esc(tk.requesterName || '—')}</div></div>
@@ -1150,7 +1174,32 @@ Views.tickets = async function (el, params = {}) {
           try { await api('/tickets/' + encodeURIComponent(id), { method: 'PATCH', body }); toast(t('tk.saved'), 'success'); refresh(); }
           catch (err) { toast(err.message, 'error'); }
         };
-        $('#tk-d-status', ov)?.addEventListener('change', (e) => patch({ status: e.target.value }));
+        // Resolving/closing requires impact, category and an assignee. Pre-check
+        // on the client for a friendly, translated message (backend also enforces),
+        // reverting the dropdown and flagging the empty fields.
+        $('#tk-d-status', ov)?.addEventListener('change', (e) => {
+          const next = e.target.value;
+          if (next === 'resolved' || next === 'closed') {
+            const impactEl = $('#tk-d-impact', ov);
+            const catEl = $('#tk-d-cat', ov);
+            const asgEl = $('#tk-d-assignee', ov);
+            const need = [];
+            if (impactEl && !impactEl.value) need.push([impactEl, t('tk.impact')]);
+            if (catEl && !catEl.value) need.push([catEl, t('tk.category')]);
+            if (asgEl && !asgEl.value) need.push([asgEl, t('tk.assignee')]);
+            if (need.length) {
+              e.target.value = tk.status; // revert
+              ov.querySelectorAll('.tkd-need').forEach((n) => n.classList.remove('tkd-need'));
+              need.forEach(([el]) => { el.classList.add('tkd-need'); });
+              need[0][0].focus();
+              toast(t('tk.requiredBeforeClose').replace('{fields}', need.map((x) => x[1]).join(', ')), 'error');
+              return;
+            }
+          }
+          patch({ status: next });
+        });
+        // Clear the required-field highlight once the user fills one in.
+        ['#tk-d-impact', '#tk-d-cat', '#tk-d-assignee'].forEach((sel) => $(sel, ov)?.addEventListener('change', (e) => { if (e.target.value) e.target.classList.remove('tkd-need'); }));
         $('#tk-d-send-approval', ov)?.addEventListener('click', () => {
           formModal({
             title: t('tk.sendToApproval'),

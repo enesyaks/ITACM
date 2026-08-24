@@ -5861,14 +5861,17 @@ body.ai-open .ai-panel { opacity: 1; visibility: visible; transform: none; }
 .tk-sla > span { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
 
 /* ===== Ticket / request detail — professional two-column layout ===== */
-.tkd-topbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 0 0 14px;
-  margin-bottom: 16px; border-bottom: 1px solid var(--outline-variant); }
-.tkd-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 999px;
-  background: var(--surface-low); border: 1px solid var(--outline-variant); font-size: 12px; font-weight: 600; }
-.tkd-chip .ms-sm { font-size: 15px; color: var(--on-surface-variant); }
-.tkd-topmeta { display: inline-flex; align-items: center; gap: 5px; margin-left: auto;
-  font-size: 12.5px; color: var(--on-surface-variant); }
-.tkd-topmeta .ms-sm { font-size: 16px; }
+.tkd-topbar { display: flex; align-items: center; gap: 14px; padding: 14px 16px; margin-bottom: 18px;
+  background: var(--surface-low); border: 1px solid var(--outline-variant); border-radius: 14px; }
+.tkd-typeicon { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px;
+  border-radius: 12px; color: #fff; flex: none; box-shadow: 0 6px 14px rgba(0,0,0,.14); }
+.tkd-typeicon .ms { font-size: 24px; }
+.tkd-type-incident { background: #e11d48; }
+.tkd-type-request { background: #4f46e5; }
+.tkd-topbar-info { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.tkd-badges { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.tkd-submeta { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; color: var(--on-surface-variant); }
+.tkd-submeta .ms-sm { font-size: 15px; }
 .tkd-grid { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 26px; align-items: start; }
 .tkd-main { min-width: 0; }
 .tkd-sec { margin-bottom: 22px; }
@@ -5892,6 +5895,8 @@ body.ai-open .ai-panel { opacity: 1; visibility: visible; transform: none; }
 .tkd-side select, .tkd-side textarea, .tkd-side input { width: 100%; }
 .tkd-sla { flex-direction: column; align-items: stretch; gap: 6px; }
 .tkd-appr-actions { display: flex; gap: 8px; margin-top: 8px; }
+.tkd-need { outline: 2px solid var(--rose-600, #e11d48); outline-offset: 1px; border-radius: 8px; }
+.tkd-plabel.req::after { content: ' *'; color: var(--rose-600, #e11d48); }
 .tkd-side .form-field.full { margin: 0; }
 @media (max-width: 820px) {
   .tkd-grid { grid-template-columns: 1fr; gap: 18px; }
