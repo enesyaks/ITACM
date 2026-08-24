@@ -26,6 +26,49 @@ const SDOB_SLIDES = [
   { icon: 'insights', color: '#d97706', key: 'reports', bullets: 3 },
 ];
 
+// A small, text-free illustration per slide that demonstrates the feature — a
+// mini board, an approval chain, a status graph, a request form, a bar chart.
+function sdobIllo(key, c) {
+  if (key === 'tickets') {
+    return `<div class="sdob-illo sdob-board">${[0, 1, 2].map((col) => `<div class="sdob-col">
+        <span class="sdob-coldot" style="background:${c}"></span>
+        <span class="sdob-card2" style="border-left-color:${c}"></span>
+        ${col < 2 ? `<span class="sdob-card2" style="border-left-color:${c}"></span>` : ''}
+      </div>`).join('')}</div>`;
+  }
+  if (key === 'approvals') {
+    return `<div class="sdob-illo sdob-chain">
+      <span class="sdob-node" style="background:${c}"><span class="ms">person</span></span>
+      <span class="sdob-arr" style="color:${c}">arrow_forward</span>
+      <span class="sdob-node" style="background:${c}"><span class="ms">groups</span></span>
+      <span class="sdob-arr" style="color:${c}">arrow_forward</span>
+      <span class="sdob-node" style="background:${c}"><span class="ms">account_balance</span></span>
+    </div>`;
+  }
+  if (key === 'workflow') {
+    const pill = `<span class="sdob-pill" style="border-color:${c}"><span class="sdob-pilldot" style="background:${c}"></span></span>`;
+    return `<div class="sdob-illo sdob-chain">
+      ${pill}<span class="sdob-arr" style="color:${c}">arrow_forward</span>${pill}<span class="sdob-arr" style="color:${c}">arrow_forward</span>${pill}
+    </div>`;
+  }
+  if (key === 'portal') {
+    return `<div class="sdob-illo"><div class="sdob-formcard">
+      <span class="sdob-bar" style="width:55%;background:${c}66"></span>
+      <span class="sdob-input"></span>
+      <span class="sdob-suggest"><span class="ms" style="color:${c}">lightbulb</span><span class="sdob-bar" style="flex:1;background:${c}33"></span></span>
+    </div></div>`;
+  }
+  if (key === 'reports') {
+    return `<div class="sdob-illo sdob-chart">${[42, 72, 54, 92, 64].map((h) => `<span class="sdob-bar2" style="height:${h}%;background:${c}"></span>`).join('')}</div>`;
+  }
+  // welcome — the three pillars of the desk.
+  return `<div class="sdob-illo sdob-chips3">
+    <span class="sdob-ichip" style="background:${c}"><span class="ms">confirmation_number</span></span>
+    <span class="sdob-ichip" style="background:${c}"><span class="ms">how_to_reg</span></span>
+    <span class="sdob-ichip" style="background:${c}"><span class="ms">menu_book</span></span>
+  </div>`;
+}
+
 function resetServiceDeskOnboarding() {
   try { localStorage.removeItem(sdobSeenKey()); } catch { /* ignore */ }
 }
@@ -63,6 +106,7 @@ function showServiceDeskOnboarding(force) {
         <h2 class="sdob-title" id="sdob-title"></h2>
         <p class="sdob-desc" id="sdob-desc"></p>
         <ul class="sdob-bullets" id="sdob-bullets"></ul>
+        <div class="sdob-where" id="sdob-where"></div>
       </div>
       <div class="sdob-foot">
         <div class="sdob-dots" id="sdob-dots"></div>
@@ -80,6 +124,7 @@ function showServiceDeskOnboarding(force) {
   const title = overlay.querySelector('#sdob-title');
   const desc = overlay.querySelector('#sdob-desc');
   const bullets = overlay.querySelector('#sdob-bullets');
+  const whereEl = overlay.querySelector('#sdob-where');
   const dots = overlay.querySelector('#sdob-dots');
   const backBtn = overlay.querySelector('#sdob-back');
   const nextBtn = overlay.querySelector('#sdob-next');
@@ -94,13 +139,14 @@ function showServiceDeskOnboarding(force) {
   function render() {
     const s = SDOB_SLIDES[i];
     hero.style.background = `linear-gradient(135deg, ${s.color}22, ${s.color}0d)`;
-    hero.innerHTML = `<span class="sdob-hero-icon" style="background:${s.color}"><span class="ms">${s.icon}</span></span>`;
+    hero.innerHTML = sdobIllo(s.key, s.color);
     badge.textContent = t('sdob.badge').replace('{i}', i + 1).replace('{n}', n);
     title.textContent = t('sdob.' + s.key + '.title');
     desc.textContent = t('sdob.' + s.key + '.desc');
     const items = [];
     for (let b = 1; b <= s.bullets; b++) items.push(t('sdob.' + s.key + '.b' + b));
     bullets.innerHTML = items.map((x) => `<li><span class="ms ms-sm" style="color:${s.color}">check_circle</span> ${esc(x)}</li>`).join('');
+    whereEl.innerHTML = `<span class="ms ms-sm">location_on</span> ${esc(t('sdob.' + s.key + '.where'))}`;
     dots.innerHTML = SDOB_SLIDES.map((_, k) => `<button class="sdob-dot ${k === i ? 'active' : ''}" data-k="${k}" aria-label="${k + 1}"></button>`).join('');
     dots.querySelectorAll('.sdob-dot').forEach((d) => d.addEventListener('click', () => go(Number(d.dataset.k))));
     backBtn.style.visibility = i === 0 ? 'hidden' : '';

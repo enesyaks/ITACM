@@ -5941,10 +5941,41 @@ body.ai-open .ai-panel { opacity: 1; visibility: visible; transform: none; }
 .sdob-x { position: absolute; top: 12px; right: 12px; z-index: 2; display: inline-flex; padding: 6px; cursor: pointer;
   border: 0; background: transparent; color: var(--on-surface-variant); border-radius: 8px; }
 .sdob-x:hover { background: rgba(0,0,0,.06); }
-.sdob-hero { display: flex; align-items: center; justify-content: center; padding: 34px 0 28px; }
+.sdob-hero { display: flex; align-items: center; justify-content: center; padding: 22px 20px; min-height: 128px; }
 .sdob-hero-icon { display: inline-flex; align-items: center; justify-content: center; width: 76px; height: 76px;
   border-radius: 20px; color: #fff; box-shadow: 0 10px 24px rgba(0,0,0,.18); }
 .sdob-hero-icon .ms { font-size: 40px; }
+/* Per-slide illustrations */
+.sdob-illo { display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%; }
+.sdob-chips3 { gap: 16px; }
+.sdob-ichip { display: inline-flex; align-items: center; justify-content: center; width: 54px; height: 54px;
+  border-radius: 15px; color: #fff; box-shadow: 0 8px 18px rgba(0,0,0,.16); }
+.sdob-ichip .ms { font-size: 28px; }
+.sdob-board { gap: 10px; }
+.sdob-col { display: flex; flex-direction: column; gap: 7px; width: 62px; padding: 9px;
+  background: var(--surface); border-radius: 10px; box-shadow: 0 6px 16px rgba(0,0,0,.09); }
+.sdob-coldot { width: 12px; height: 12px; border-radius: 999px; }
+.sdob-card2 { height: 13px; border-radius: 4px; background: var(--surface-low); border-left: 3px solid; }
+.sdob-chain { gap: 6px; }
+.sdob-node { display: inline-flex; align-items: center; justify-content: center; width: 48px; height: 48px;
+  border-radius: 13px; color: #fff; box-shadow: 0 8px 18px rgba(0,0,0,.16); }
+.sdob-node .ms { font-size: 24px; }
+.sdob-arr { font-family: 'Material Symbols Outlined'; font-size: 22px; }
+.sdob-pill { display: inline-flex; align-items: center; justify-content: center; width: 46px; height: 30px;
+  border: 2px solid; border-radius: 999px; background: var(--surface); }
+.sdob-pilldot { width: 10px; height: 10px; border-radius: 999px; }
+.sdob-formcard { width: 190px; padding: 13px; display: flex; flex-direction: column; gap: 9px;
+  background: var(--surface); border-radius: 12px; box-shadow: 0 8px 20px rgba(0,0,0,.12); }
+.sdob-bar { height: 9px; border-radius: 4px; background: var(--outline-variant); display: block; }
+.sdob-input { height: 26px; border-radius: 6px; background: var(--surface-low); border: 1px solid var(--outline-variant); }
+.sdob-suggest { display: flex; align-items: center; gap: 7px; }
+.sdob-suggest .ms { font-size: 18px; }
+.sdob-chart { align-items: flex-end; gap: 9px; height: 96px; }
+.sdob-bar2 { width: 22px; border-radius: 5px 5px 0 0; }
+.sdob-where { display: inline-flex; align-items: center; gap: 6px; margin-top: 14px; padding: 6px 12px;
+  border-radius: 999px; background: var(--surface-low); border: 1px solid var(--outline-variant);
+  font-size: 12.5px; font-weight: 600; color: var(--on-surface-variant); }
+.sdob-where .ms-sm { color: var(--primary); }
 .sdob-body { padding: 4px 28px 8px; overflow-y: auto; }
 .sdob-badge { font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--on-surface-variant); }
 .sdob-title { margin: 6px 0 8px; font-size: 22px; font-weight: 800; color: var(--on-surface); }
