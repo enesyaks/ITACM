@@ -5890,6 +5890,17 @@ body.ai-open .ai-panel { opacity: 1; visibility: visible; transform: none; }
 .tkd-reply { margin-top: 12px; }
 .tkd-reply-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; }
 .tkd-check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--on-surface-variant); }
+/* Prominent "internal note" toggle — turns amber (with a lock) when active */
+.tkd-internal { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; user-select: none;
+  font-size: 13px; font-weight: 500; padding: 5px 11px; border-radius: 999px;
+  border: 1px solid var(--outline-variant); background: var(--surface); color: var(--on-surface-variant);
+  transition: background .12s, border-color .12s, color .12s; }
+.tkd-internal input { position: absolute; opacity: 0; width: 0; height: 0; }
+.tkd-internal .ms-sm { font-size: 15px; }
+.tkd-internal:hover { border-color: var(--amber-600, #d97706); }
+.tkd-internal:has(input:checked) { background: color-mix(in srgb, var(--amber-600, #d97706) 14%, transparent);
+  border-color: var(--amber-600, #d97706); color: var(--amber-700, #b45309); font-weight: 600; }
+.tkd-internal:has(input:focus-visible) { outline: 2px solid var(--amber-600, #d97706); outline-offset: 2px; }
 .tkd-upload-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 10px; }
 .tkd-activity { margin-top: 6px; }
 /* Right-hand properties panel */

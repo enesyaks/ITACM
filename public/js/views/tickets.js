@@ -1168,7 +1168,7 @@ Views.tickets = async function (el, params = {}) {
                     <div class="tkd-reply-left">
                       <label class="btn btn-ghost btn-sm" style="margin:0"><span class="ms ms-sm">attach_file</span> ${esc(t('tk.attach'))}
                         <input type="file" id="tk-d-reply-file" accept=".pdf,.png,.jpg,.jpeg,.webp,application/pdf,image/png,image/jpeg,image/webp" multiple hidden></label>
-                      <label class="tkd-check"><input type="checkbox" id="tk-d-internal"> ${esc(t('tk.internalNote'))}</label>
+                      <label class="tkd-internal" title="${esc(t('tk.internalNote'))}"><input type="checkbox" id="tk-d-internal"><span class="ms ms-sm">lock</span> ${esc(t('tk.internalNote'))}</label>
                     </div>
                     <button class="btn btn-primary btn-sm" id="tk-d-addcomment">${esc(t('tk.post'))}</button>
                   </div>
