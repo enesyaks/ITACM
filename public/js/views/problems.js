@@ -117,10 +117,9 @@ Views.problems = async function (el) {
         </div>
         <h3 style="margin:16px 0 8px">${esc(t('pr.incidents'))} <span class="cell-sub">(${p.incidents ? p.incidents.length : 0})</span></h3>
         <div class="pr-inc-list">${incRows}</div>
-        ${canUpdate ? `<div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <input id="pr-link-inc" list="pr-inc-list" class="ops-select" placeholder="${esc(t('pr.linkIncident'))}" style="min-width:260px">
-          <datalist id="pr-inc-list">${incOptions}</datalist>
-          <button class="btn btn-outline btn-sm" id="pr-link-btn">${esc(t('pr.link'))}</button>
+        ${canUpdate ? `<div class="pr-link-row">
+          <div id="pr-link-host" class="pr-link-host"></div>
+          <button class="btn btn-primary btn-sm" id="pr-link-btn"><span class="ms ms-sm">add_link</span> ${esc(t('pr.link'))}</button>
         </div>` : ''}`,
       foot: `<button class="btn btn-outline" data-close>${esc(t('common.close'))}</button>`,
       onMount(ov) {
@@ -142,9 +141,17 @@ Views.problems = async function (el) {
         ov.querySelectorAll('.pr-inc[data-inc]').forEach((row) => row.addEventListener('click', () => {
           closeModal(); location.hash = '#/tickets?open=' + encodeURIComponent(row.dataset.inc);
         }));
+        // Searchable combobox of incidents not already linked to this problem.
+        const linkedIds = new Set((p.incidents || []).map((i) => i.id));
+        const linkHost = $('#pr-link-host', ov);
+        const linkPicker = linkHost ? mountCombobox(linkHost, {
+          items: incidents.filter((i) => !linkedIds.has(i.id)),
+          labelOf: (i) => i.number + ' · ' + i.subject,
+          subOf: (i) => tkStatusLabel(i.status),
+          placeholder: t('pr.linkIncident'),
+        }) : null;
         $('#pr-link-btn', ov)?.addEventListener('click', async () => {
-          const val = $('#pr-link-inc', ov).value.trim();
-          const tid = incIdByLabel.get(val);
+          const tid = linkPicker && linkPicker.getId();
           if (!tid) { toast(t('pr.pickIncident'), 'error'); return; }
           try { await api('/problems/' + encodeURIComponent(id) + '/link', { method: 'POST', body: { ticketId: tid } }); closeModal(); openProblem(id); refresh(); }
           catch (err) { toast(err.message, 'error'); }

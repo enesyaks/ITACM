@@ -5874,6 +5874,9 @@ body.ai-open .ai-panel { opacity: 1; visibility: visible; transform: none; }
 .pr-inc-empty { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 18px; color: var(--on-surface-variant);
   font-size: 13.5px; border: 1px dashed var(--outline-variant); border-radius: 11px; }
 .pr-inc-empty .ms { font-size: 20px; opacity: .7; }
+.pr-link-row { display: flex; gap: 10px; align-items: flex-start; margin-top: 12px; }
+.pr-link-host { flex: 1; min-width: 0; }
+.pr-link-row .btn { flex: none; margin-top: 2px; }
 /* Files attached to a specific comment, shown beneath its body */
 .tk-comment-docs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .tk-cdoc, .mtk-cdoc { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 5px 10px;

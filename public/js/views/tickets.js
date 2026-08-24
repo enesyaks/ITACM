@@ -573,9 +573,11 @@ Views.tickets = async function (el, params = {}) {
         </div>
       </div>`;
     };
+    let menuCloser = null; // document-level closer for the add-step menus
     openModal({
       title: t('rt.title'),
       wide: true,
+      onClose() { if (menuCloser) document.removeEventListener('pointerdown', menuCloser, true); },
       body: `<div class="rt-config">
           <label class="rt-config-main">
             <input type="checkbox" id="rt-approvals-on" ${cfg.enabled ? 'checked' : ''}>
@@ -645,12 +647,13 @@ Views.tickets = async function (el, params = {}) {
         };
         [...listEl.querySelectorAll('.rt-card')].forEach(wireCard);
         wireDel(); mountPickers(); renumber();
-        // Close any open add-step menu on a pointerdown outside it — capture phase
-        // so it always fires (unaffected by stopPropagation / drag handlers). The
-        // add button and menu items live inside .rt-addstep-wrap and are exempted.
-        ov.addEventListener('pointerdown', (e) => {
+        // Close any open add-step menu on a pointerdown outside it — attached to
+        // DOCUMENT in capture phase so it always fires regardless of the modal's
+        // own handlers, scrolling or stopPropagation. Removed on modal close.
+        menuCloser = (e) => {
           if (!e.target.closest('.rt-addstep-wrap')) ov.querySelectorAll('.rt-addmenu').forEach((m) => m.classList.add('is-hidden'));
-        }, true);
+        };
+        document.addEventListener('pointerdown', menuCloser, true);
 
         $('#rt-add', ov).addEventListener('click', () => {
           listEl.insertAdjacentHTML('beforeend', rowHtml(null));
