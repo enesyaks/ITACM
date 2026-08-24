@@ -648,10 +648,16 @@ GET /api/integrations/licenses/:id/sam
     const on = !!$('#int-ticketing', el)?.checked;
     if (btn) btn.disabled = true;
     try {
+      const wasOff = !AppConfig.ticketingEnabled;
       const saved = await api('/settings', { method: 'PUT', body: { ticketingEnabled: on } });
       if (typeof AppConfig === 'object' && AppConfig) AppConfig.ticketingEnabled = saved ? !!saved.ticketingEnabled : on;
       toast(t('int.ticketing.saved'), 'success');
       if (typeof renderNav === 'function') renderNav(); // show/hide the Service Desk item
+      // Just switched the module on → walk the admin through what it offers.
+      if (on && wasOff) {
+        if (typeof resetServiceDeskOnboarding === 'function') resetServiceDeskOnboarding();
+        if (typeof showServiceDeskOnboarding === 'function') setTimeout(() => showServiceDeskOnboarding(true), 300);
+      }
     } catch (err) { toast(err.message, 'error'); }
     finally { if (btn) btn.disabled = false; }
   });

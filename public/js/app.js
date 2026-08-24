@@ -700,6 +700,10 @@ function showApp() {
     if (typeof checkOnboardingDueOnLogin === 'function') {
       checkOnboardingDueOnLogin().catch(() => {});
     }
+    // First look at the service desk after it's switched on → explain the module.
+    if (typeof maybeShowServiceDeskOnboarding === 'function') {
+      setTimeout(() => { try { maybeShowServiceDeskOnboarding(); } catch { /* ignore */ } }, 700);
+    }
     if (typeof maybeShowUpdateNotice === 'function') {
       setTimeout(() => {
         try {
