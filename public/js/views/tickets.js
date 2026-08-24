@@ -627,7 +627,12 @@ Views.tickets = async function (el, params = {}) {
         const wireCard = (card) => {
           const chain = card.querySelector('.rt-chain');
           const addBtn = card.querySelector('.rt-addstep'); const menu = card.querySelector('.rt-addmenu');
-          addBtn.addEventListener('click', (e) => { e.stopPropagation(); menu.classList.toggle('is-hidden'); });
+          addBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const wasHidden = menu.classList.contains('is-hidden');
+            ov.querySelectorAll('.rt-addmenu').forEach((m) => m.classList.add('is-hidden')); // only one menu open at a time
+            if (wasHidden) menu.classList.remove('is-hidden');
+          });
           menu.querySelectorAll('button[data-add]').forEach((b) => b.addEventListener('click', () => {
             const tok = b.dataset.add === 'emp' ? 'emp:' : b.dataset.add;
             if (tok !== 'emp:' && [...chain.querySelectorAll('.rt-step')].some((s) => s.dataset.token === tok)) { menu.classList.add('is-hidden'); return; }
