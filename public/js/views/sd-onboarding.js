@@ -11,9 +11,15 @@
 
 const SDOB_KEY = 'itacm:sd-onboarding:v1';
 
-function sdobSeenKey() {
+// Per-user, per-variant seen flag. Staff keeps the original (unsuffixed) key for
+// backward compatibility; portal gets its own so the two tours are independent.
+function sdobSeenKey(variant) {
   const uid = (typeof Auth === 'object' && Auth.profile && (Auth.profile.uid || Auth.profile.email)) || 'anon';
-  return SDOB_KEY + ':' + uid;
+  return SDOB_KEY + (variant === 'portal' ? ':portal' : '') + ':' + uid;
+}
+
+function sdobIsPortalUser() {
+  return !!(typeof Auth === 'object' && Auth.profile && Auth.profile.role === 'Portal');
 }
 
 // Slide model: an accent colour, a hero icon, t()-keys for the copy, and an
@@ -31,6 +37,20 @@ const SDOB_SLIDES = [
   { icon: 'menu_book', color: '#059669', key: 'portal', bullets: 4 },
   { icon: 'insights', color: '#d97706', key: 'reports', bullets: 3,
     locate: { route: '#/tickets', selector: '#tk-report' } },
+];
+
+// Portal (end-user) tour: how to raise a request, track it, find help articles
+// and read notifications. Shown once on a portal user's first sign-in.
+const SDOB_PORTAL_SLIDES = [
+  { color: '#4f46e5', key: 'pwelcome', illo: 'p_welcome', bullets: 3 },
+  { color: '#2563eb', key: 'pcreate', illo: 'p_create', bullets: 4,
+    locate: { route: '#/my-tickets', selector: '#mtk-new' } },
+  { color: '#7c3aed', key: 'ptrack', illo: 'p_track', bullets: 3,
+    locate: { route: '#/my-tickets', selector: '#nav a[data-route="#/my-tickets"]' } },
+  { color: '#059669', key: 'phelp', illo: 'p_help', bullets: 3,
+    locate: { route: '#/my-kb', selector: '#nav a[data-route="#/my-kb"]' } },
+  { color: '#d97706', key: 'pnotifs', illo: 'p_notifs', bullets: 2,
+    locate: { route: '#/notifications', selector: '#nav a[data-route="#/notifications"]' } },
 ];
 
 // Jump to a feature's screen and spotlight the real nav item / button, then
@@ -109,6 +129,36 @@ function sdobIllo(key, c) {
   if (key === 'reports') {
     return `<div class="sdob-illo sdob-chart">${[42, 72, 54, 92, 64].map((h) => `<span class="sdob-bar2" style="height:${h}%;background:${c}"></span>`).join('')}</div>`;
   }
+  // ---- Portal (end-user) illustrations ----
+  if (key === 'p_welcome') {
+    return `<div class="sdob-illo sdob-chips3">
+      <span class="sdob-ichip" style="background:${c}"><span class="ms">support_agent</span></span>
+      <span class="sdob-ichip" style="background:${c}"><span class="ms">menu_book</span></span>
+      <span class="sdob-ichip" style="background:${c}"><span class="ms">notifications</span></span>
+    </div>`;
+  }
+  if (key === 'p_create' || key === 'portal') {
+    return `<div class="sdob-illo"><div class="sdob-formcard">
+      <span class="sdob-bar" style="width:55%;background:${c}66"></span>
+      <span class="sdob-input"></span>
+      <span class="sdob-suggest"><span class="ms" style="color:${c}">lightbulb</span><span class="sdob-bar" style="flex:1;background:${c}33"></span></span>
+    </div></div>`;
+  }
+  if (key === 'p_track') {
+    return `<div class="sdob-illo sdob-tracklist">${['#22c55e', c, '#f59e0b'].map((dot) => `<span class="sdob-trow">
+      <span class="sdob-tdot" style="background:${dot}"></span><span class="sdob-bar" style="flex:1"></span></span>`).join('')}</div>`;
+  }
+  if (key === 'p_help') {
+    return `<div class="sdob-illo"><div class="sdob-doccard">
+      <span class="sdob-bar" style="width:70%;background:${c}66"></span>
+      <span class="sdob-bar" style="width:100%"></span>
+      <span class="sdob-bar" style="width:92%"></span>
+      <span class="sdob-attach"><span class="ms" style="color:${c}">attach_file</span><span class="sdob-bar" style="width:44%"></span></span>
+    </div></div>`;
+  }
+  if (key === 'p_notifs') {
+    return `<div class="sdob-illo"><span class="sdob-bell" style="background:${c}"><span class="ms">notifications</span><span class="sdob-bell-badge">3</span></span></div>`;
+  }
   // welcome — the three pillars of the desk.
   return `<div class="sdob-illo sdob-chips3">
     <span class="sdob-ichip" style="background:${c}"><span class="ms">confirmation_number</span></span>
@@ -117,30 +167,37 @@ function sdobIllo(key, c) {
   </div>`;
 }
 
-function resetServiceDeskOnboarding() {
-  try { localStorage.removeItem(sdobSeenKey()); } catch { /* ignore */ }
+function resetServiceDeskOnboarding(variant) {
+  try { localStorage.removeItem(sdobSeenKey(variant)); } catch { /* ignore */ }
 }
 
 function maybeShowServiceDeskOnboarding() {
   try {
     if (typeof moduleOn !== 'function' || !moduleOn('ticketing')) return;
+    // Portal (end-user) first sign-in → the shorter self-service tour.
+    if (sdobIsPortalUser()) {
+      if (localStorage.getItem(sdobSeenKey('portal')) === '1') return;
+      showServiceDeskOnboarding(false, 'portal');
+      return;
+    }
     // Staff who can actually run the service desk (Owner/Admin/Helpdesk etc.).
     if (!(typeof Auth === 'object' && Auth.canIam && Auth.canIam('ticket', 'read'))) return;
-    if (localStorage.getItem(sdobSeenKey()) === '1') return;
-    showServiceDeskOnboarding(false);
+    if (localStorage.getItem(sdobSeenKey('staff')) === '1') return;
+    showServiceDeskOnboarding(false, 'staff');
   } catch { /* never block the app */ }
 }
 
-function showServiceDeskOnboarding(force) {
+function showServiceDeskOnboarding(force, variant) {
+  const slides = variant === 'portal' ? SDOB_PORTAL_SLIDES : SDOB_SLIDES;
   if (!force) {
-    try { if (localStorage.getItem(sdobSeenKey()) === '1') return; } catch { /* ignore */ }
+    try { if (localStorage.getItem(sdobSeenKey(variant)) === '1') return; } catch { /* ignore */ }
   }
   // Only one instance at a time.
   document.getElementById('sdob-overlay')?.remove();
 
   let i = 0;
-  const n = SDOB_SLIDES.length;
-  const markSeen = () => { try { localStorage.setItem(sdobSeenKey(), '1'); } catch { /* ignore */ } };
+  const n = slides.length;
+  const markSeen = () => { try { localStorage.setItem(sdobSeenKey(variant), '1'); } catch { /* ignore */ } };
 
   const overlay = document.createElement('div');
   overlay.id = 'sdob-overlay';
@@ -185,9 +242,9 @@ function showServiceDeskOnboarding(force) {
   };
 
   function render() {
-    const s = SDOB_SLIDES[i];
+    const s = slides[i];
     hero.style.background = `linear-gradient(135deg, ${s.color}22, ${s.color}0d)`;
-    hero.innerHTML = sdobIllo(s.key, s.color);
+    hero.innerHTML = sdobIllo(s.illo || s.key, s.color);
     badge.textContent = t('sdob.badge').replace('{i}', i + 1).replace('{n}', n);
     title.textContent = t('sdob.' + s.key + '.title');
     desc.textContent = t('sdob.' + s.key + '.desc');
@@ -203,7 +260,7 @@ function showServiceDeskOnboarding(force) {
       overlay.style.display = 'none';
       sdobLocate(s.locate, () => { overlay.style.display = ''; });
     });
-    dots.innerHTML = SDOB_SLIDES.map((_, k) => `<button class="sdob-dot ${k === i ? 'active' : ''}" data-k="${k}" aria-label="${k + 1}"></button>`).join('');
+    dots.innerHTML = slides.map((_, k) => `<button class="sdob-dot ${k === i ? 'active' : ''}" data-k="${k}" aria-label="${k + 1}"></button>`).join('');
     dots.querySelectorAll('.sdob-dot').forEach((d) => d.addEventListener('click', () => go(Number(d.dataset.k))));
     backBtn.style.visibility = i === 0 ? 'hidden' : '';
     const last = i === n - 1;
