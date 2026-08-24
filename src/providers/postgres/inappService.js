@@ -23,15 +23,20 @@ async function create({ userId, type, title, body = null, link = null }) {
   return rows[0] || null;
 }
 
-/** Resolve an employee to their login (by email) and notify that user. */
+/** Resolve an employee to their login (by email) and notify that user.
+ *  If the payload carries a `linkPortal`, portal recipients get that link
+ *  instead of `link` (staff-only views like #/approvals aren't reachable
+ *  from the portal, so the router would bounce them to the home page). */
 async function createForEmployee(employeeId, payload) {
   if (!isUuid(employeeId)) return null;
   const { rows } = await query(
-    `SELECT u.id FROM employees e JOIN users u ON lower(u.email) = lower(e.email) WHERE e.id = $1 LIMIT 1`,
+    `SELECT u.id, u.role FROM employees e JOIN users u ON lower(u.email) = lower(e.email) WHERE e.id = $1 LIMIT 1`,
     [employeeId]
   );
   if (!rows[0]) return null;
-  return create({ ...payload, userId: rows[0].id });
+  const { linkPortal, ...rest } = payload;
+  const link = (rows[0].role === 'Portal' && linkPortal) ? linkPortal : rest.link;
+  return create({ ...rest, link, userId: rows[0].id });
 }
 
 async function listForUser(userId, { limit = 30, unreadOnly = false } = {}) {

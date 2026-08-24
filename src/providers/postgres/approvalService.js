@@ -462,6 +462,7 @@ async function notify(request) {
           title: request.summary || 'Approval needed',
           body: `${request.requesterName || 'A requester'} needs your approval.`,
           link: '#/approvals',
+          linkPortal: '#/my-tickets',
         });
       }
     }
@@ -479,6 +480,7 @@ async function notifyRequesterDecision(request, decision, deciderName) {
         title: `${request.summary || 'Your request'} — ${decision === 'approved' ? 'approved' : 'rejected'}`,
         body: deciderName ? `Decided by ${deciderName}.` : null,
         link: request.type === 'ticket_request' ? '#/my-tickets' : '#/approvals',
+        linkPortal: '#/my-tickets',
       });
     }
   } catch { /* in-app is best-effort */ }
