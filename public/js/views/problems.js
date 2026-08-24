@@ -127,7 +127,21 @@ Views.problems = async function (el) {
           try { await api('/problems/' + encodeURIComponent(id), { method: 'PATCH', body }); toast(t('tk.saved'), 'success'); }
           catch (err) { toast(err.message, 'error'); }
         };
-        $('#pr-d-status', ov)?.addEventListener('change', (e) => patch({ status: e.target.value }).then(refresh));
+        // Resolving/closing needs an owner — friendly client pre-check (server enforces too).
+        $('#pr-d-status', ov)?.addEventListener('change', (e) => {
+          const next = e.target.value;
+          if (next === 'resolved' || next === 'closed') {
+            const asg = $('#pr-d-assignee', ov);
+            if (asg && !asg.value) {
+              e.target.value = p.status; // revert
+              asg.classList.add('tkd-need'); asg.focus();
+              toast(t('pr.assignBeforeClose'), 'error');
+              return;
+            }
+          }
+          patch({ status: next }).then(refresh);
+        });
+        $('#pr-d-assignee', ov)?.addEventListener('change', (e) => { if (e.target.value) e.target.classList.remove('tkd-need'); });
         $('#pr-d-priority', ov)?.addEventListener('change', (e) => patch({ priority: e.target.value }).then(refresh));
         $('#pr-d-assignee', ov)?.addEventListener('change', (e) => patch({ assigneeUserId: e.target.value || null }).then(refresh));
         $('#pr-d-root', ov)?.addEventListener('change', (e) => patch({ rootCause: e.target.value.trim() }));

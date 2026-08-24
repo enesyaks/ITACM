@@ -121,6 +121,14 @@ async function updateProblem(id, patch, user) {
       if (!allowed.includes(patch.status)) {
         throw HttpError.badRequest(`Cannot move a problem from "${cur.status}" to "${patch.status}"`);
       }
+      // A problem must be owned (assigned) before it can be resolved or closed.
+      // The assignee may be set in this same PATCH.
+      if (patch.status === 'resolved' || patch.status === 'closed') {
+        const effAssignee = patch.assigneeUserId !== undefined ? (patch.assigneeUserId || null) : cur.assignee_user_id;
+        if (!effAssignee) {
+          throw HttpError.badRequest('Assign the problem to someone before resolving or closing it', { code: 'problem_required_fields', fields: ['assignee'] });
+        }
+      }
       set('status', patch.status);
       if (patch.status === 'resolved') set('resolved_at', new Date());
       else if (patch.status === 'closed') set('closed_at', new Date());
