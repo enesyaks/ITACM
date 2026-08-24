@@ -909,6 +909,15 @@ Views.tickets = async function (el, params = {}) {
   async function openTicket(id) {
     const tk = await api('/tickets/' + encodeURIComponent(id)).catch((e) => { toast(e.message, 'error'); return null; });
     if (!tk) return;
+    // If this ticket is awaiting approval AND the signed-in user is the pending
+    // approver, /me/approvals/pending returns a request whose resourceRef is the
+    // ticket number — surface Approve / Reject right here so IT staff who are the
+    // approver don't have to hunt for it in the portal.
+    let myAppr = null;
+    if (tk.approvalStatus === 'pending') {
+      const pend = await api('/me/approvals/pending').catch(() => []);
+      myAppr = (Array.isArray(pend) ? pend : []).find((a) => a.resourceRef === tk.number) || null;
+    }
     const assignOpts = `<option value="">${esc(t('tk.unassigned'))}</option>` +
       staffList.map((u) => `<option value="${esc(u.uid)}"${u.uid === tk.assigneeUserId ? ' selected' : ''}>${esc(u.username)}</option>`).join('');
     const comments = (tk.comments || []).map((c) => `
@@ -940,7 +949,11 @@ Views.tickets = async function (el, params = {}) {
           <div class="form-field"><label>${esc(t('tk.requester'))}</label>
             <div style="padding-top:6px">${esc(tk.requesterName || '—')}</div></div>
           ${tk.approvalStatus ? `<div class="form-field"><label>${esc(t('rt.approval'))}</label>
-            <div style="padding-top:6px">${pill({ pending: 'pill-amber', approved: 'pill-emerald', rejected: 'pill-rose' }[tk.approvalStatus] || 'pill-slate', t('mtk.ap' + tk.approvalStatus.charAt(0).toUpperCase() + tk.approvalStatus.slice(1)))}${tk.approvalStatus === 'pending' && tk.approvalApprover ? ` <span class="cell-sub">· ${esc(tk.approvalApprover)}</span>` : ''}</div></div>` : ''}
+            <div style="padding-top:6px">${pill({ pending: 'pill-amber', approved: 'pill-emerald', rejected: 'pill-rose' }[tk.approvalStatus] || 'pill-slate', t('mtk.ap' + tk.approvalStatus.charAt(0).toUpperCase() + tk.approvalStatus.slice(1)))}${tk.approvalStatus === 'pending' && tk.approvalApprover ? ` <span class="cell-sub">· ${esc(tk.approvalApprover)}</span>` : ''}</div>
+            ${myAppr ? `<div style="padding-top:8px;display:flex;gap:8px">
+              <button class="btn btn-primary btn-sm" id="tk-d-appr-approve"><span class="ms ms-sm">check</span> ${esc(t('ch.approve'))}</button>
+              <button class="btn btn-outline btn-sm" id="tk-d-appr-reject" style="color:var(--rose-700)"><span class="ms ms-sm">close</span> ${esc(t('ch.reject'))}</button>
+            </div>` : ''}</div>` : ''}
           ${(canUpdate && tk.requesterEmployeeId && tk.approvalStatus !== 'pending') ? `<div class="form-field"><label>${esc(t('tk.approval'))}</label>
             <div style="padding-top:4px"><button class="btn btn-outline btn-sm" id="tk-d-send-approval"><span class="ms ms-sm">how_to_reg</span> ${esc(t('tk.sendToApproval'))}</button></div></div>` : ''}
           ${renderApprovalTimeline(tk.approvalHistory)}
@@ -1011,6 +1024,17 @@ Views.tickets = async function (el, params = {}) {
             },
           });
         });
+        const decideAppr = async (decision) => {
+          try {
+            await api('/me/approvals/' + encodeURIComponent(myAppr.id) + '/decide', { method: 'POST', body: { decision } });
+            toast(decision === 'approved' ? t('ch.approved') : t('ch.rejected'), 'success');
+            if (typeof refreshNotifBadge === 'function') refreshNotifBadge();
+            closeModal();
+            setTimeout(() => openTicket(id), 0);
+          } catch (err) { toast(err.message, 'error'); }
+        };
+        $('#tk-d-appr-approve', ov)?.addEventListener('click', () => decideAppr('approved'));
+        $('#tk-d-appr-reject', ov)?.addEventListener('click', () => decideAppr('rejected'));
         $('#tk-d-impact', ov)?.addEventListener('change', (e) => patch({ impact: e.target.value || null }));
         $('#tk-d-urgency', ov)?.addEventListener('change', (e) => patch({ urgency: e.target.value || null }));
         $('#tk-d-assignee', ov)?.addEventListener('change', (e) => patch({ assigneeUserId: e.target.value || null }));
