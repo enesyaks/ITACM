@@ -409,8 +409,9 @@ Views.myTickets = async function (el) {
         const fmtSize = (b) => (b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB');
         const loadDocs = async () => {
           const box = $('#mtk-docs', ov); if (!box) return;
-          // Comment-linked files show under their comment, not in this list.
-          const docs = (await api('/me/tickets/' + encodeURIComponent(id) + '/documents').catch(() => [])).filter((d) => !d.commentId);
+          // Every attachment is listed here, including files posted with a comment
+          // (those also render beneath their comment).
+          const docs = await api('/me/tickets/' + encodeURIComponent(id) + '/documents').catch(() => []);
           box.innerHTML = docs.length ? docs.map((d) => `<div class="tk-doc">
               <span class="ms ms-sm">${(d.mime || '').startsWith('image/') ? 'image' : 'description'}</span>
               <a href="#" data-dl="${esc(d.id)}" class="tk-doc-name">${esc(d.filename)}</a>
