@@ -68,4 +68,18 @@ async function markAllRead(userId) {
   return { updated: rowCount };
 }
 
-module.exports = { create, createForEmployee, listForUser, unreadCount, markRead, markAllRead };
+/**
+ * Retention: bound the notifications table so it can't grow forever. Removes
+ * READ notifications older than 30 days, and ANY notification older than 90 days
+ * (unread ones that stale out). Returns how many rows were deleted.
+ */
+async function pruneOld() {
+  const { rowCount } = await query(
+    `DELETE FROM notifications
+       WHERE (read_at IS NOT NULL AND created_at < now() - interval '30 days')
+          OR (created_at < now() - interval '90 days')`
+  );
+  return rowCount || 0;
+}
+
+module.exports = { create, createForEmployee, listForUser, unreadCount, markRead, markAllRead, pruneOld };

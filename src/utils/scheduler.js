@@ -15,10 +15,12 @@ const zimmetImportService = require('../providers/postgres/zimmetImportService')
 const backupService = require('../providers/postgres/backupService');
 const ticketService = require('../providers/postgres/ticketService');
 const approvalService = require('../providers/postgres/approvalService');
+const inappService = require('../providers/postgres/inappService');
 
 const TICK_MS = 60 * 1000;
 const PURGE_EVERY_TICKS = 60; // hourly
 const REMINDER_EVERY_TICKS = 60; // hourly — reminders only need daily granularity
+const NOTIF_PRUNE_EVERY_TICKS = 60 * 24; // once a day — bound the notifications table
 let timer = null;
 let ticks = 0;
 
@@ -50,6 +52,11 @@ function start() {
       approvalService.sweepEscalations()
         .then((n) => { if (n) console.log(`[scheduler] escalated ${n} approval(s)`); })
         .catch((err) => { console.warn('[scheduler] approval escalation sweep failed:', err.message); });
+    }
+    if (ticks % NOTIF_PRUNE_EVERY_TICKS === 0) {
+      inappService.pruneOld()
+        .then((n) => { if (n) console.log(`[scheduler] pruned ${n} old notification(s)`); })
+        .catch((err) => { console.warn('[scheduler] notification prune failed:', err.message); });
     }
   }, TICK_MS);
   // Don't keep the event loop alive just for the scheduler (clean shutdown / tests).
