@@ -163,11 +163,14 @@ function sanitizeTransitions(input) {
 }
 async function getWorkflow() {
   if (_wfCache && Date.now() - _wfCacheAt < 60 * 1000) return _wfCache;
-  let stored = null;
+  let stored = null; let autoClose = 0;
   try {
     const { rows } = await query('SELECT ticket_workflow_json FROM app_settings WHERE id = 1');
     const j = rows[0] && rows[0].ticket_workflow_json;
-    if (j && typeof j === 'object' && j.transitions && typeof j.transitions === 'object') stored = j.transitions;
+    if (j && typeof j === 'object') {
+      if (j.transitions && typeof j.transitions === 'object') stored = j.transitions;
+      autoClose = sanitizeDays(j.autoCloseResolvedDays);
+    }
   } catch { stored = null; }
   const transitions = stored ? sanitizeTransitions(stored) : sanitizeTransitions(DEFAULT_TRANSITIONS);
   _wfCache = {
@@ -175,13 +178,20 @@ async function getWorkflow() {
     defaults: sanitizeTransitions(DEFAULT_TRANSITIONS),
     statuses: STATUS_ORDER.slice(),
     terminal: [...TERMINAL],
+    autoCloseResolvedDays: autoClose,
     customized: !!stored,
   };
   _wfCacheAt = Date.now();
   return _wfCache;
 }
+function sanitizeDays(x) {
+  const n = Math.floor(Number(x) || 0);
+  return Math.max(0, Math.min(365, Number.isFinite(n) ? n : 0));
+}
+
 async function saveWorkflow(input) {
   const transitions = sanitizeTransitions((input && input.transitions) || input || {});
+  const autoCloseResolvedDays = sanitizeDays(input && input.autoCloseResolvedDays);
   // Guardrail: every non-terminal status needs at least one way out, or a ticket
   // could get stuck forever. Terminal states (resolved/closed/cancelled) may be
   // dead-ends by design, so they're exempt.
@@ -190,9 +200,32 @@ async function saveWorkflow(input) {
       throw HttpError.badRequest(`Status "${from}" has no outgoing transition — a ticket would get stuck there`);
     }
   }
-  await query('UPDATE app_settings SET ticket_workflow_json = $1::jsonb WHERE id = 1', [JSON.stringify({ transitions })]);
+  await query('UPDATE app_settings SET ticket_workflow_json = $1::jsonb WHERE id = 1', [JSON.stringify({ transitions, autoCloseResolvedDays })]);
   _wfCache = null;
   return getWorkflow();
+}
+
+/**
+ * Automation: close 'resolved' tickets that have sat untouched past the
+ * configured number of days (Workflow → auto-close). 0 = off. Records an
+ * activity line and cascades nothing (they're already resolved). Never throws.
+ */
+async function sweepAutoCloseResolved() {
+  try {
+    const wf = await getWorkflow();
+    const days = wf.autoCloseResolvedDays;
+    if (!days) return 0;
+    const { rows } = await query(
+      `UPDATE tickets SET status='closed', closed_at=now(), updated_at=now()
+        WHERE status='resolved' AND resolved_at IS NOT NULL AND resolved_at < now() - ($1 || ' days')::interval
+        RETURNING id`,
+      [String(days)]
+    );
+    for (const r of rows) {
+      logActivity(r.id, { name: 'system' }, 'auto_closed', `Auto-closed after ${days} day(s) resolved`).catch(() => {});
+    }
+    return rows.length;
+  } catch { return 0; }
 }
 function resetWorkflow() {
   return saveWorkflow({ transitions: DEFAULT_TRANSITIONS });
@@ -1096,5 +1129,5 @@ module.exports = {
   onRequestApproved, onRequestRejected, onRequestWithdrawn, closeForProblem,
   sweepSlaBreaches, SLA_TARGETS, stats, report, agentReport, getSlaConfig, saveSlaConfig, categories,
   getCannedResponses, saveCannedResponses, getManagedCategories, saveManagedCategories,
-  getWorkflow, saveWorkflow, resetWorkflow,
+  getWorkflow, saveWorkflow, resetWorkflow, sweepAutoCloseResolved,
 };

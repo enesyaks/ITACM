@@ -57,6 +57,9 @@ function start() {
       inappService.pruneOld()
         .then((n) => { if (n) console.log(`[scheduler] pruned ${n} old notification(s)`); })
         .catch((err) => { console.warn('[scheduler] notification prune failed:', err.message); });
+      ticketService.sweepAutoCloseResolved()
+        .then((n) => { if (n) console.log(`[scheduler] auto-closed ${n} resolved ticket(s)`); })
+        .catch((err) => { console.warn('[scheduler] auto-close sweep failed:', err.message); });
     }
   }, TICK_MS);
   // Don't keep the event loop alive just for the scheduler (clean shutdown / tests).

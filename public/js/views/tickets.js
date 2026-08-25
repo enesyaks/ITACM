@@ -934,7 +934,16 @@ Views.tickets = async function (el, params = {}) {
         <div class="wf-graph-scroll"><div id="wf-graph">${wfGraph(statuses, wf.transitions)}</div></div>
         <p class="cell-sub" style="margin:14px 0 6px">${esc(t('wf.matrixHint'))}</p>
         <div style="overflow-x:auto">${matrix}</div>
-        <p class="cell-sub" style="margin:10px 0 0"><span class="wf-req">*</span> ${esc(t('wf.needsExit'))}</p>`,
+        <p class="cell-sub" style="margin:10px 0 0"><span class="wf-req">*</span> ${esc(t('wf.needsExit'))}</p>
+        <div class="wf-auto">
+          <div class="wf-auto-head"><span class="ms">bolt</span> ${esc(t('wf.autoTitle'))}</div>
+          <label class="wf-auto-row">
+            <span>${esc(t('wf.autoClosePre'))}</span>
+            <input type="number" id="wf-autoclose" min="0" max="365" step="1" value="${esc(wf.autoCloseResolvedDays || 0)}">
+            <span>${esc(t('wf.autoClosePost'))}</span>
+          </label>
+          <p class="cell-sub" style="margin:6px 0 0">${esc(t('wf.autoCloseHint'))}</p>
+        </div>`,
       foot: `<button class="btn btn-ghost" id="wf-reset" style="margin-right:auto">${esc(t('wf.reset'))}</button>
              <button class="btn btn-outline" data-close>${esc(t('common.cancel'))}</button>
              <button class="btn btn-primary" id="wf-save">${esc(t('common.save'))}</button>`,
@@ -947,7 +956,8 @@ Views.tickets = async function (el, params = {}) {
           redraw();
         }));
         $('#wf-save', ov).addEventListener('click', async () => {
-          try { await api('/tickets/workflow', { method: 'PUT', body: { transitions: toObj() } });
+          const autoCloseResolvedDays = Math.max(0, Math.min(365, Number($('#wf-autoclose', ov).value) || 0));
+          try { await api('/tickets/workflow', { method: 'PUT', body: { transitions: toObj(), autoCloseResolvedDays } });
             closeModal(); toast(t('tk.saved'), 'success'); }
           catch (err) { toast(err.message, 'error'); }
         });

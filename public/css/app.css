@@ -6230,6 +6230,14 @@ body.ai-open .ai-panel { opacity: 1; visibility: visible; transform: none; }
 .wf-cell { width: 60px; }
 .wf-self { color: var(--outline); }
 .wf-req { color: var(--rose-600, #e11d48); font-weight: 700; }
+/* Workflow automation block */
+.wf-auto { margin-top: 20px; padding: 16px; border: 1px solid var(--outline-variant); border-radius: 12px;
+  background: var(--surface-low); }
+.wf-auto-head { display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--on-surface-variant); margin-bottom: 10px; }
+.wf-auto-head .ms { font-size: 18px; color: var(--amber-600, #d97706); }
+.wf-auto-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 14px; }
+.wf-auto-row input { width: 84px; text-align: center; font-variant-numeric: tabular-nums; }
 .wf-chk { display: inline-flex; cursor: pointer; }
 .wf-chk input { position: absolute; opacity: 0; width: 0; height: 0; }
 .wf-chk span { width: 18px; height: 18px; border-radius: 5px; border: 1.5px solid var(--outline);
