@@ -947,6 +947,8 @@ ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS ticket_categories_json JSONB;
 -- Editable ticket workflow (078): { transitions: { <from>: [<to>, ...] } }.
 -- Empty/absent = fall back to the built-in default transition map in code.
 ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS ticket_workflow_json JSONB;
+-- Email-to-ticket inbound IMAP config (081): encrypted mailbox settings.
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS imap_json JSONB;
 
 -- Knowledge base (068).
 CREATE TABLE IF NOT EXISTS kb_articles (
