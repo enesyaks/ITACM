@@ -4,7 +4,7 @@
 
 ### Self-hosted IT asset management, batteries included.
 
-Hardware & network inventory · employee handovers with printable PDF receipts · software licenses · mobile lines · vendors & contracts · repairs · physical stock counts · a natural-language AI assistant · a full audit trail — all behind a built-in, mobile-ready web UI running entirely on your own infrastructure.
+Hardware & network inventory · employee handovers with printable PDF receipts · software licenses · mobile lines · vendors & contracts · repairs · physical stock counts · an ITIL-aligned service desk (incidents, requests, approvals, SLAs) · a natural-language AI assistant · a full audit trail — all behind a built-in, mobile-ready web UI running entirely on your own infrastructure.
 
 <br />
 
@@ -102,8 +102,11 @@ Most asset trackers are either a spreadsheet that rots or a heavyweight SaaS you
 <tr>
 <td width="50%" valign="top">
 
+### 🎫 Service Desk (ITIL-aligned)
+A full ITSM suite living next to your inventory. **Incidents & requests** with **Impact × Urgency** priority, business-hours-aware **SLA** response/resolution timers (pause & breach), a **Jira-style workflow editor** (custom status transitions + *auto-close resolved* automation), canned replies and **CSAT** on closure. **Request templates** power a self-service **Portal** — the same login employees use for their assets — with **multi-step approval chains** (manager → IT team → final), delegation, reminders and escalation. **Three-level visibility** on comments & attachments — *public*, *approver-only*, *IT-only* — keeps price research and PO internals off the requester's view while approvers see what they need. Plus **Problem** and **Change** management, a **Knowledge Base** with portal deflection, a **"similar past tickets"** panel that surfaces how earlier tickets were solved, and **email-to-ticket (IMAP)** with **DMARC-verified** sender attribution and `[REQ-1234]` cross-linking.
+
 ### 🖥 Built-in, mobile-ready web UI
-Served by the backend itself — no build step, strict same-origin CSP. 17 modules, global search (Cmd/Ctrl+K), QR codes, dark-mode aware, **per-user customizable table columns** (show/hide + drag-to-reorder, remembered per browser), and a responsive shell with mobile bottom-nav + camera scanner. Just open `http://localhost:8000`.
+Served by the backend itself — no build step, strict same-origin CSP. 20+ modules, global search (Cmd/Ctrl+K), QR codes, dark-mode aware, **per-user customizable table columns** (show/hide + drag-to-reorder, remembered per browser), and a responsive shell with mobile bottom-nav + camera scanner. Just open `http://localhost:8000`.
 
 ### 🤝 Atomic handover basket
 Assign multiple assets to an employee in one all-or-nothing transaction, producing a printable handover receipt (Zimmet Tutanağı). Row locks make double-assignment impossible; reprints preserve the original issuer's name.
@@ -189,6 +192,11 @@ The sidebar maps 1:1 to the feature set, plus a floating **AI assistant** (⌘/C
 | **Reports** | 20 preset reports + a builder (data sources × columns × filters), CSV / letterhead print |
 | **Audit Log** | Unified, filterable activity timeline (Owner/Admin) |
 | **IT Users** | RBAC user management + **custom permission groups** (granular `resource:action` matrix with scoping) — create, role, disable/enable, delete (audited) |
+| **Service Desk** | Incidents & requests — Impact×Urgency priority, SLA timers, workflow editor + auto-close, canned replies, CSAT, three-level note visibility, email-to-ticket (IMAP) |
+| **Approvals** | Multi-step request approvals (manager → IT → final) with delegation, reminders and escalation; approvers see an internal worklog the requester never does |
+| **Problems** | Problem records with linked incidents and root-cause / workaround tracking |
+| **Changes** | Change requests with risk, approval, schedule and rollback plan |
+| **Knowledge Base** | Staff-authored articles; employees self-serve the published set (portal deflection) |
 
 ---
 
@@ -472,6 +480,13 @@ All responses are `{ success, data }` or `{ success: false, error, details? }`. 
 | POST | `/api/ai/query` | staff | **AI assistant** — SSE streaming, agentic tool loop, guarded read-only queries (per-user rate-limited) |
 | GET | `/api/ai/status` | staff | Assistant availability (provider/model) |
 | GET/PUT/DELETE | `/api/ai/config` | integration:read / manage | Read / save / clear AI settings (API key encrypted, masked) |
+| GET/POST/PUT | `/api/tickets` · `/:id` · `/:id/comments` · `/documents` | `ticket:*` | Incidents/requests — list, detail, create, update, comment, attachments (3-level visibility), CSAT |
+| GET/PUT | `/api/tickets/workflow` · `/sla` · `/categories/manage` · `/report` | ticket:read / configure / report | Status transitions + auto-close, SLA policy, managed categories, desk reports |
+| GET/POST | `/api/approvals` · `/:id/decide` | `approval:*` | Approval requests + approve/reject (delegation, escalation) |
+| GET/POST/PUT | `/api/problems` · `/api/changes` | `problem:*` / `change:*` | Problem & change management (linked incidents, risk, schedule) |
+| GET/POST | `/api/kb` · `/:id` | `kb:*` | Knowledge-base articles + attachments |
+| GET/PUT | `/api/integrations/inbound-mail` · `/test` · `/poll` | integration:read / manage | Email-to-ticket (IMAP) — config (password encrypted, masked), test connection, manual poll |
+| GET/POST | `/api/me/tickets` · `/approvals/:id/context` · `/kb` | Portal (self-service) | Own tickets + replies, approver worklog for pending approvals, published KB — scoped to the caller |
 
 <details>
 <summary><b>The atomic handover basket — how it works</b></summary>
@@ -503,6 +518,7 @@ If **any** asset is locked, the API returns `409` with a per-asset conflict list
 - **Secrets never live in the repo.** `.env` is git-ignored; the setup wizard writes it with `0600` permissions and generates a strong `JWT_SECRET` and DB password for you. Database backups (`backups/`) are git-ignored too.
 - **Auth:** passwords are bcrypt-hashed (cost 12); JWTs are signed HS256 with the algorithm **pinned** on verify; login uses a single error message and a constant-time compare (dummy hash for unknown emails) so it can't be used to enumerate accounts; every request re-checks the user row so role changes / disables / deletes apply instantly; **`Owner` accounts must have TOTP MFA enabled** — until they do, the middleware blocks every route except MFA enrolment, token verification and logout.
 - **Access control:** every API router mounts `authenticate`, and mutating routes add `requireRole(...)`. The audit log **redacts** sensitive keys (passwords, tokens, keys) before persisting.
+- **Service-desk boundaries:** Portal users are path-confined to `/api/me/*` and every read is scoped to their own employee record; ticket comments & attachments carry three visibility levels (**public / approver-only / IT-only**) enforced in the SQL `WHERE` clause of every read path, so internal notes never reach a requester and IT-only notes never reach an approver; **email-to-ticket** attributes a requester (and cross-links `[REQ-N]`) only on a provider-verified **DMARC pass**, so a forged `From` can't open a ticket as someone else.
 - **Uploads:** document routes validate the real file type by **magic bytes** (not the client's claim) and cap each file at 8 MB; downloads set a sanitized `Content-Disposition`. All SQL is parameterized; all rendered values are HTML-escaped.
 - **Abuse protection keys on identity, not just IP:** a per-**account** login lockout (persisted, `LOGIN_FAIL_LIMIT` / `LOGIN_LOCK_MIN`, audited on trip) so a shared office IP never locks colleagues out; a per-**user** fair-use limit for logged-in sessions; and a coarse per-IP API guard as a DoS backstop, with trusted networks exemptable (`RATE_LIMIT_TRUSTED_CIDRS`). All thresholds are env-tunable.
 - **Hardening:** strict Content-Security-Policy (no inline scripts, self-only), HSTS, nosniff / frame-deny / referrer / permissions-policy headers, same-origin-only CORS by default, 1 MB default body limit, `x-powered-by` disabled, a one-shot onboarding endpoint that locks itself after first use, and an `npm audit`-clean dependency tree.
