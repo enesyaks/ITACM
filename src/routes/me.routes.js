@@ -135,7 +135,9 @@ router.get('/approvals/:id/documents/:docId/download', requireTicketing, asyncHa
   const emp = await currentEmployee(req);
   const ticketId = await approvalService.approverDoc(req.params.id, emp && emp.id, req.params.docId); // authorizes
   const doc = await documentService.getTicketDoc(req.params.docId);
-  if (!doc || String(doc.ticketId) !== String(ticketId)) throw HttpError.notFound('Attachment not found');
+  // staff_only docs (IT-only, e.g. purchase-order internals) are hidden from the
+  // approver context and must not be downloadable either — mirror that filter here.
+  if (!doc || String(doc.ticketId) !== String(ticketId) || doc.staffOnly) throw HttpError.notFound('Attachment not found');
   res.setHeader('Content-Type', doc.mime || 'application/octet-stream');
   res.setHeader('Content-Disposition', contentDisposition(doc.filename, { inline: true }));
   res.send(doc.buffer);

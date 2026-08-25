@@ -108,8 +108,27 @@ async function employeeByEmail(email) {
 }
 
 /**
+ * Is the sender's From address cryptographically authenticated? We trust only
+ * what the receiving mail provider stamped in `Authentication-Results`: a
+ * `dmarc=pass` proves the visible From domain is aligned and not spoofed. SPF or
+ * DKIM alone don't guarantee From-alignment, so they don't count. No header (or
+ * no dmarc=pass) ⇒ treated as unauthenticated. This gates whether we attribute a
+ * ticket to a real employee and whether we cross-link into an existing ticket,
+ * so a forged `From: ceo@company.com` can't open a ticket "as the CEO" or inject
+ * a note into an arbitrary (enumerable) ticket number.
+ */
+function senderIsAuthenticated(parsed) {
+  const lines = (parsed && parsed.headerLines) || [];
+  const ar = lines
+    .filter((h) => h && h.key === 'authentication-results')
+    .map((h) => String(h.line || '').toLowerCase())
+    .join(' ; ');
+  return !!ar && /\bdmarc=pass\b/.test(ar);
+}
+
+/**
  * Turn one parsed email into a ticket action. Pure of IMAP — fully unit-testable.
- * `parsed`: { from, subject, text }. Returns { action, ticketId, number }.
+ * `parsed`: { from, subject, text, headerLines }. Returns { action, ticketId, number }.
  */
 async function createFromEmail(parsed, cfg) {
   const ticketService = require('./ticketService');
@@ -121,6 +140,9 @@ async function createFromEmail(parsed, cfg) {
   const bodyText = String((parsed && parsed.text) || '').trim().slice(0, 8000)
     || (parsed && parsed.html ? '(HTML e-posta)' : '');
 
+  // Anti-spoofing gate: only a DMARC-authenticated From is trusted for identity.
+  const authenticated = senderIsAuthenticated(parsed);
+
   // A designated system actor for created_by (the email intake, an Owner/Admin).
   const sys = (await query("SELECT id, username, email FROM users WHERE role IN ('Owner','Admin') ORDER BY role LIMIT 1")).rows[0];
   if (!sys) return { action: 'skipped', reason: 'no system user' };
@@ -128,7 +150,10 @@ async function createFromEmail(parsed, cfg) {
 
   // A referenced ticket in the subject ([REQ-1234]/[INC-1234]) → still open a NEW
   // ticket, but cross-reference the two so the link is visible from both sides.
-  const m = subjectRaw.match(REF_RE);
+  // Cross-linking is identity-sensitive (writes a staff-only note into ticket N),
+  // so it is gated on an authenticated sender to prevent injection into arbitrary
+  // enumerable ticket numbers.
+  const m = authenticated ? subjectRaw.match(REF_RE) : null;
   let related = null;
   if (m) {
     const number = m[1].toUpperCase();
@@ -136,8 +161,12 @@ async function createFromEmail(parsed, cfg) {
     if (tk) related = tk;
   }
 
-  const asEmployee = await employeeByEmail(fromAddr);
-  const description = related ? `${bodyText}\n\n— İlgili ticket: ${related.number}`.trim() : bodyText;
+  // Attribute to a real employee only when the sender is authenticated; otherwise
+  // the ticket is opened unattributed and flagged, so it never masquerades as a
+  // trusted requester in the portal or to the desk.
+  const asEmployee = authenticated ? await employeeByEmail(fromAddr) : null;
+  const unverifiedNote = authenticated ? '' : `\n\n— ⚠ Gönderen kimliği doğrulanamadı (${fromAddr}); talep eden otomatik eşlenmedi.`;
+  const description = `${related ? `${bodyText}\n\n— İlgili ticket: ${related.number}`.trim() : bodyText}${unverifiedNote}`.trim();
   const created = await ticketService.createTicket(
     { type: conf.defaultType, subject, description, category: conf.defaultCategory || undefined },
     sysUser,
@@ -152,7 +181,7 @@ async function createFromEmail(parsed, cfg) {
     );
     await query('UPDATE tickets SET updated_at = now() WHERE id = $1', [related.id]);
   }
-  return { action: 'created', ticketId: created.id, number: created.number, requesterMatched: !!asEmployee, relatedTo: related ? related.number : null };
+  return { action: 'created', ticketId: created.id, number: created.number, senderAuthenticated: authenticated, requesterMatched: !!asEmployee, relatedTo: related ? related.number : null };
 }
 
 /** Connect, process every unseen message, mark them seen. Returns a summary. */
