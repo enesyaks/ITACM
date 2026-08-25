@@ -6183,14 +6183,16 @@ body.ai-open .ai-panel { opacity: 1; visibility: visible; transform: none; }
 .rt-step-del:hover { background: var(--surface-low); color: var(--rose-600, #e11d48); }
 .rt-chain-empty { margin: 0; font-size: 13px; color: var(--on-surface-variant); padding: 10px 12px;
   border: 1px dashed var(--outline-variant); border-radius: 11px; text-align: center; }
-.rt-addstep-wrap { position: relative; align-self: flex-start; }
-.rt-addmenu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 5; min-width: 210px; padding: 6px;
-  display: flex; flex-direction: column; gap: 2px; background: var(--surface); border: 1px solid var(--outline-variant);
-  border-radius: 12px; box-shadow: 0 12px 30px rgba(0,0,0,.16); }
-.rt-addmenu button { display: flex; align-items: center; gap: 9px; text-align: left; font: inherit; font-size: 13.5px;
-  padding: 8px 10px; border: 0; background: transparent; color: var(--ink, var(--on-surface)); border-radius: 8px; cursor: pointer; }
-.rt-addmenu button:hover { background: var(--surface-low); }
-.rt-addmenu button .ms-sm { color: var(--primary); }
+/* "Add step" picker dialog — a small stacked modal with option tiles */
+.rt-addgrid { display: flex; flex-direction: column; gap: 8px; }
+.rt-addopt { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; font: inherit; font-size: 14.5px;
+  font-weight: 600; padding: 12px 14px; cursor: pointer; background: var(--surface); color: var(--on-surface);
+  border: 1px solid var(--outline-variant); border-radius: 12px; transition: border-color .12s, background .12s, box-shadow .12s; }
+.rt-addopt:hover { border-color: var(--primary); background: var(--surface-low); box-shadow: var(--shadow-card, 0 4px 12px rgba(0,0,0,.06)); }
+.rt-addopt:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.rt-addopt-ic { flex: none; display: grid; place-items: center; width: 38px; height: 38px; border-radius: 10px;
+  background: color-mix(in srgb, var(--primary) 12%, transparent); color: var(--primary); }
+.rt-addopt-ic .ms { font-size: 20px; }
 
 /* Service-desk report modal */
 .tkr-h { margin: 20px 0 10px; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--on-surface-variant); }

@@ -560,24 +560,13 @@ Views.tickets = async function (el, params = {}) {
             <span class="rt-sec-hint">${esc(t('rt.dragHint'))}</span></div>
           <div class="rt-chain">${chain.map((tok) => stepRowHtml(tok, threshold)).join('')}</div>
           <p class="rt-chain-empty${chain.length ? ' is-hidden' : ''}">${esc(t('rt.chainEmpty'))}</p>
-          <div class="rt-addstep-wrap">
-            <button class="btn btn-outline btn-sm rt-addstep" type="button"><span class="ms ms-sm">add</span> ${esc(t('rt.addStep'))}</button>
-            <div class="rt-addmenu is-hidden">
-              <button type="button" data-add="manager"><span class="ms ms-sm">person</span> ${esc(t('rt.manager'))}</button>
-              <button type="button" data-add="manager2"><span class="ms ms-sm">supervisor_account</span> ${esc(t('rt.manager2'))}</button>
-              <button type="button" data-add="department"><span class="ms ms-sm">apartment</span> ${esc(t('rt.department'))}</button>
-              <button type="button" data-add="role:it"><span class="ms ms-sm">groups</span> ${esc(t('rt.itTeam'))}</button>
-              <button type="button" data-add="emp"><span class="ms ms-sm">account_balance</span> ${esc(t('rt.specificPerson'))}</button>
-            </div>
-          </div>
+          <button class="btn btn-outline btn-sm rt-addstep" type="button"><span class="ms ms-sm">add</span> ${esc(t('rt.addStep'))}</button>
         </div>
       </div>`;
     };
-    let menuCloser = null; // document-level closer for the add-step menus
     openModal({
       title: t('rt.title'),
       wide: true,
-      onClose() { if (menuCloser) document.removeEventListener('pointerdown', menuCloser, true); },
       body: `<div class="rt-config">
           <label class="rt-config-main">
             <input type="checkbox" id="rt-approvals-on" ${cfg.enabled ? 'checked' : ''}>
@@ -626,20 +615,35 @@ Views.tickets = async function (el, params = {}) {
           });
           return closest.el;
         };
+        // Options shown in the "add step" picker dialog.
+        const STEP_OPTS = [
+          { v: 'manager', icon: 'person', label: t('rt.manager') },
+          { v: 'manager2', icon: 'supervisor_account', label: t('rt.manager2') },
+          { v: 'department', icon: 'apartment', label: t('rt.department') },
+          { v: 'role:it', icon: 'groups', label: t('rt.itTeam') },
+          { v: 'emp', icon: 'account_balance', label: t('rt.specificPerson') },
+        ];
         const wireCard = (card) => {
           const chain = card.querySelector('.rt-chain');
-          const addBtn = card.querySelector('.rt-addstep'); const menu = card.querySelector('.rt-addmenu');
+          const addBtn = card.querySelector('.rt-addstep');
+          // Clicking "Add step" opens a small stacked dialog — robust, no dropdown
+          // to dismiss. Picking an option appends the step and closes the dialog.
           addBtn.addEventListener('click', () => {
-            const wasHidden = menu.classList.contains('is-hidden');
-            ov.querySelectorAll('.rt-addmenu').forEach((m) => m.classList.add('is-hidden')); // only one menu open at a time
-            if (wasHidden) menu.classList.remove('is-hidden');
+            openModal({
+              title: t('rt.addStep'),
+              stack: true,
+              body: `<div class="rt-addgrid">${STEP_OPTS.map((o) => `<button type="button" class="rt-addopt" data-add="${esc(o.v)}"><span class="rt-addopt-ic"><span class="ms">${o.icon}</span></span><span>${esc(o.label)}</span></button>`).join('')}</div>`,
+              foot: `<button class="btn btn-outline" data-close>${esc(t('common.cancel'))}</button>`,
+              onMount(mov) {
+                mov.querySelectorAll('.rt-addopt').forEach((b) => b.addEventListener('click', () => {
+                  const tok = b.dataset.add === 'emp' ? 'emp:' : b.dataset.add;
+                  if (tok !== 'emp:' && [...chain.querySelectorAll('.rt-step')].some((s) => s.dataset.token === tok)) { closeModal(); return; }
+                  chain.insertAdjacentHTML('beforeend', stepRowHtml(tok, ''));
+                  mountPickers(); renumber(card); closeModal();
+                }));
+              },
+            });
           });
-          menu.querySelectorAll('button[data-add]').forEach((b) => b.addEventListener('click', () => {
-            const tok = b.dataset.add === 'emp' ? 'emp:' : b.dataset.add;
-            if (tok !== 'emp:' && [...chain.querySelectorAll('.rt-step')].some((s) => s.dataset.token === tok)) { menu.classList.add('is-hidden'); return; }
-            chain.insertAdjacentHTML('beforeend', stepRowHtml(tok, ''));
-            menu.classList.add('is-hidden'); mountPickers(); renumber(card);
-          }));
           chain.addEventListener('click', (e) => { const d = e.target.closest('.rt-step-del'); if (!d) return; d.closest('.rt-step').remove(); renumber(card); });
           chain.addEventListener('dragstart', (e) => { const s = e.target.closest('.rt-step'); if (!s) return; s.classList.add('rt-dragging'); e.dataTransfer.effectAllowed = 'move'; });
           chain.addEventListener('dragend', (e) => { const s = e.target.closest('.rt-step'); if (s) s.classList.remove('rt-dragging'); renumber(card); });
@@ -647,13 +651,6 @@ Views.tickets = async function (el, params = {}) {
         };
         [...listEl.querySelectorAll('.rt-card')].forEach(wireCard);
         wireDel(); mountPickers(); renumber();
-        // Close any open add-step menu on a pointerdown outside it — attached to
-        // DOCUMENT in capture phase so it always fires regardless of the modal's
-        // own handlers, scrolling or stopPropagation. Removed on modal close.
-        menuCloser = (e) => {
-          if (!e.target.closest('.rt-addstep-wrap')) ov.querySelectorAll('.rt-addmenu').forEach((m) => m.classList.add('is-hidden'));
-        };
-        document.addEventListener('pointerdown', menuCloser, true);
 
         $('#rt-add', ov).addEventListener('click', () => {
           listEl.insertAdjacentHTML('beforeend', rowHtml(null));
