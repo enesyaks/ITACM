@@ -555,6 +555,8 @@ Views.tickets = async function (el, params = {}) {
           <label class="rt-toggle"><input type="checkbox" class="rt-en" ${(tp && tp.enabled !== false) ? 'checked' : ''}> ${esc(t('rt.enabled'))}</label>
           <button class="btn btn-ghost btn-sm rt-del" type="button" title="${esc(t('common.remove') || 'Remove')}"><span class="ms">delete</span></button>
         </div>
+        <div class="rt-field rt-desc-field"><label class="rt-lbl">${esc(t('rt.description'))} <span class="cell-sub">${esc(t('rt.descHint'))}</span></label>
+          <input class="rt-desc" maxlength="2000" placeholder="${esc(t('rt.descPh'))}" value="${esc((tp && tp.description) || '')}"></div>
         <div class="rt-section">
           <div class="rt-sec-head"><span class="rt-lbl">${esc(t('rt.chainLabel'))}</span>
             <span class="rt-sec-hint">${esc(t('rt.dragHint'))}</span></div>
@@ -673,7 +675,7 @@ Views.tickets = async function (el, params = {}) {
                   }
                 } else if (tok) steps.push(tok);
               });
-              return { id: r.dataset.id || null, name: r.querySelector('.rt-name').value.trim(), category: r.querySelector('.rt-cat').value.trim(), approvalLevels: steps, amountThreshold, enabled: r.querySelector('.rt-en').checked };
+              return { id: r.dataset.id || null, name: r.querySelector('.rt-name').value.trim(), description: r.querySelector('.rt-desc').value.trim(), category: r.querySelector('.rt-cat').value.trim(), approvalLevels: steps, amountThreshold, enabled: r.querySelector('.rt-en').checked };
             });
             for (const orig of loaded) if (orig.id && !rows.find((x) => x.id === orig.id)) await api('/request-templates/' + orig.id, { method: 'DELETE' });
             for (const row of rows) {

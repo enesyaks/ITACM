@@ -6151,6 +6151,10 @@ body.ai-open .ai-panel { opacity: 1; visibility: visible; transform: none; }
 .rt-field { display: flex; flex-direction: column; gap: 4px; }
 .rt-grow { flex: 1; min-width: 160px; }
 .rt-cat-field { flex: 0 0 150px; }
+.rt-desc-field { margin-top: 12px; }
+.rt-desc-field input { width: 100%; }
+.rt-desc-field .rt-lbl { text-transform: none; }
+.rt-desc-field .cell-sub { font-weight: 400; letter-spacing: 0; }
 .rt-lbl { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--on-surface-variant); }
 .rt-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; white-space: nowrap; padding-bottom: 8px; cursor: pointer; }
 .rt-toggle input[type="checkbox"] { margin: 0; width: auto; flex: none; }
