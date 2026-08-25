@@ -111,11 +111,32 @@ function normalizeSmtpTransport(smtp) {
 
 async function getMailConfig() {
   const { rows } = await query(
-    'SELECT smtp_json, notify_json, company_name FROM app_settings WHERE id = 1'
+    'SELECT smtp_json, notify_json, company_name, company_logo, company_address FROM app_settings WHERE id = 1'
   );
   const smtp = materializeSmtp(rows[0]?.smtp_json || {});
   const notify = { ...DEFAULT_NOTIFY, ...(rows[0]?.notify_json || {}) };
-  return { smtp, notify, companyName: rows[0]?.company_name || 'ITACM' };
+  return {
+    smtp, notify,
+    companyName: rows[0]?.company_name || 'ITACM',
+    companyLogo: rows[0]?.company_logo || null,
+    companyAddress: rows[0]?.company_address || null,
+  };
+}
+
+// A company logo (stored as a data:image URI) → an inline CID attachment, which
+// email clients render reliably (unlike data: URIs, which most of them block).
+function logoAttachment(companyLogo) {
+  if (!companyLogo || typeof companyLogo !== 'string') return null;
+  const m = /^data:(image\/[a-z0-9.+-]+);base64,(.+)$/i.exec(companyLogo.trim());
+  if (!m) return null;
+  try {
+    const ext = (m[1].split('/')[1] || 'png').replace('+xml', '').replace('svg', 'svg');
+    return { filename: 'logo.' + ext, content: Buffer.from(m[2], 'base64'), cid: 'companylogo', contentType: m[1] };
+  } catch { return null; }
+}
+
+function escHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 }
 
 const MASKED_PASS = '••••••••';
@@ -266,7 +287,7 @@ function mapSmtpError(err, smtp = {}) {
   return HttpError.badRequest(`SMTP error: ${msg.slice(0, 180)}`);
 }
 
-async function sendMail({ to, subject, text, html }) {
+async function sendMail({ to, subject, text, html, attachments }) {
   const { smtp, companyName } = await getMailConfig();
   if (!smtp.host) throw HttpError.badRequest('SMTP host is required — save SMTP settings first');
   await assertSmtpHostSafe(smtp.host);
@@ -288,6 +309,7 @@ async function sendMail({ to, subject, text, html }) {
       subject: String(subject || '').slice(0, 200),
       text: text || '',
       html: html || undefined,
+      attachments: (Array.isArray(attachments) && attachments.length) ? attachments : undefined,
     });
   } catch (err) {
     throw mapSmtpError(err, smtp);
@@ -577,17 +599,39 @@ async function sendOnboardingWelcomeEmail({ onboardingId, to, extraNote } = {}) 
  * resolves (never throws) so the caller can fire-and-forget: SMTP problems and
  * a disabled feature both come back as `{ skipped }`.
  */
-/** Minimal HTML shell wrapping an editable template's body fragment. */
-function templateHtml(bodyHtml) {
-  return '<!DOCTYPE html><html><head><meta charset="utf-8"></head>'
-    + '<body style="font-family:system-ui,-apple-system,sans-serif;line-height:1.5;color:#1a1a1a;max-width:640px;margin:0 auto;padding:24px">'
-    + `${bodyHtml}</body></html>`;
+/**
+ * Branded, table-based HTML shell wrapping an editable template's body fragment.
+ * Renders a header band (company logo via CID, or the company name), a white
+ * content card and a footer. `opts`: { companyName, hasLogo, address }.
+ */
+function templateHtml(bodyHtml, opts = {}) {
+  const BRAND = '#3525cd';
+  const companyName = escHtml(opts.companyName || 'ITACM');
+  const brandCell = opts.hasLogo
+    ? `<img src="cid:companylogo" alt="${companyName}" height="40" style="height:40px;max-width:220px;display:block;border:0;outline:none;text-decoration:none">`
+    : `<div style="font-size:20px;font-weight:800;color:#ffffff;letter-spacing:.2px">${companyName}</div>`;
+  const address = opts.address ? ` &middot; ${escHtml(opts.address)}` : '';
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"></head>
+<body style="margin:0;padding:0;background:#f4f4f9;-webkit-font-smoothing:antialiased;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f9;padding:24px 12px">
+    <tr><td align="center">
+      <table role="presentation" cellpadding="0" cellspacing="0" style="width:600px;max-width:100%;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 1px 2px rgba(24,23,48,.05),0 10px 28px rgba(24,23,48,.06)">
+        <tr><td style="background:${BRAND};padding:22px 30px">${brandCell}</td></tr>
+        <tr><td style="padding:30px 30px 12px;color:#1a1830;font-size:15px;line-height:1.65">${bodyHtml}</td></tr>
+        <tr><td style="border-top:1px solid #ececf4;padding:18px 30px 24px;color:#8a889c;font-size:12px;line-height:1.6">
+          <strong style="color:#6c6a80">${companyName}</strong>${address}<br>
+          <span style="color:#b0aec4">Bu e-posta ITACM · IT Asset Control Pro tarafından gönderildi.</span>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`;
 }
 
 async function sendTicketNotification({ to, ticketNumber, subject, event, actorName, snippet }) {
   try {
     if (!to) return { skipped: true, reason: 'no recipient' };
-    const { notify, smtp, companyName } = await getMailConfig();
+    const { notify, smtp, companyName, companyLogo, companyAddress } = await getMailConfig();
     if (!notify.enabled || !notify.ticketUpdates) return { skipped: true, reason: 'ticket notifications off' };
     if (!smtp.host) return { skipped: true, reason: 'no smtp host' };
     const base = appBaseUrl(notify) || process.env.APP_URL || 'http://localhost:8000';
@@ -596,7 +640,10 @@ async function sendTicketNotification({ to, ticketNumber, subject, event, actorN
       companyName, ticketNumber, subject, event,
       actorName: actorName || 'Someone', snippet: snippet ? `"${snippet}"` : '', appUrl: base,
     });
-    return await sendMail({ to, subject: rendered.subject, text: rendered.bodyText, html: templateHtml(rendered.bodyHtml) });
+    const logo = logoAttachment(companyLogo);
+    return await sendMail({ to, subject: rendered.subject, text: rendered.bodyText,
+      html: templateHtml(rendered.bodyHtml, { companyName, hasLogo: !!logo, address: companyAddress }),
+      attachments: logo ? [logo] : undefined });
   } catch (err) {
     return { skipped: true, reason: err.message };
   }
@@ -619,7 +666,7 @@ async function sendApprovalNotice(request, { reminder = false } = {}) {
     const { rows } = await query('SELECT id, email FROM employees WHERE id = ANY($1)', [[...new Set(ids)]]);
     const recipients = rows.filter((r) => r.email);
     if (!recipients.length) return { skipped: true, reason: 'approver has no email' };
-    const { smtp, companyName, notify } = await getMailConfig();
+    const { smtp, companyName, companyLogo, companyAddress, notify } = await getMailConfig();
     if (!smtp.host) return { skipped: true, reason: 'no smtp host' };
     const base = appBaseUrl(notify) || process.env.APP_URL || 'http://localhost:8000';
     const templates = await getEmailTemplates();
@@ -631,10 +678,11 @@ async function sendApprovalNotice(request, { reminder = false } = {}) {
       appUrl: base,
     });
     const subject = reminder ? `[Reminder] ${rendered.subject}` : rendered.subject;
-    const html = templateHtml(rendered.bodyHtml);
+    const logo = logoAttachment(companyLogo);
+    const html = templateHtml(rendered.bodyHtml, { companyName, hasLogo: !!logo, address: companyAddress });
     const results = [];
     for (const r of recipients) {
-      results.push(await sendMail({ to: r.email, subject, text: rendered.bodyText, html }));
+      results.push(await sendMail({ to: r.email, subject, text: rendered.bodyText, html, attachments: logo ? [logo] : undefined }));
     }
     return { sent: results.length };
   } catch (err) {
@@ -649,7 +697,7 @@ async function sendApprovalDecisionEmail(request, { decision, deciderName } = {}
     const { rows } = await query('SELECT email FROM employees WHERE id = $1', [request.requesterEmployeeId]);
     const to = rows[0] && rows[0].email;
     if (!to) return { skipped: true, reason: 'requester has no email' };
-    const { smtp, companyName, notify } = await getMailConfig();
+    const { smtp, companyName, companyLogo, companyAddress, notify } = await getMailConfig();
     if (!smtp.host) return { skipped: true, reason: 'no smtp host' };
     const base = appBaseUrl(notify) || process.env.APP_URL || 'http://localhost:8000';
     const templates = await getEmailTemplates();
@@ -660,7 +708,10 @@ async function sendApprovalDecisionEmail(request, { decision, deciderName } = {}
       deciderName: deciderName ? `Decided by ${deciderName}.` : '',
       appUrl: base,
     });
-    return await sendMail({ to, subject: rendered.subject, text: rendered.bodyText, html: templateHtml(rendered.bodyHtml) });
+    const logo = logoAttachment(companyLogo);
+    return await sendMail({ to, subject: rendered.subject, text: rendered.bodyText,
+      html: templateHtml(rendered.bodyHtml, { companyName, hasLogo: !!logo, address: companyAddress }),
+      attachments: logo ? [logo] : undefined });
   } catch (err) {
     return { skipped: true, reason: err.message };
   }
