@@ -1169,16 +1169,6 @@ Views.tickets = async function (el, params = {}) {
                 <h4 class="tkd-h">${esc(t('tk.description'))}</h4>
                 <div class="tk-desc">${esc(tk.description || '—').replace(/\n/g, '<br>')}</div>
               </section>
-              ${(tk.similar && tk.similar.length) ? `<section class="tkd-sec">
-                <h4 class="tkd-h"><span class="ms ms-sm" style="vertical-align:-3px">history</span> ${esc(t('tk.similarTitle'))} <span class="cell-sub">(${tk.similar.length})</span></h4>
-                <div class="tkd-sim-list">${tk.similar.map((s) => `<div class="tkd-sim prio-${esc(s.priority || 'medium')}" data-open="${esc(s.id)}">
-                    <span class="tkd-sim-no mono">${esc(s.number)}</span>
-                    <div class="tkd-sim-main"><div class="tkd-sim-subj">${esc(s.subject)}</div>
-                      <div class="tkd-sim-meta">${pill(TK_STATUS_PILL[s.status] || 'pill-slate', tkStatusLabel(s.status))}${s.sameRequester ? ` <span class="tkd-sim-badge">${esc(t('tk.similarSameUser'))}</span>` : ''} <span class="cell-sub">${esc(String(s.createdAt || '').slice(0, 10))}</span></div>
-                    </div>
-                    <span class="ms ms-sm tkd-sim-chev">chevron_right</span>
-                  </div>`).join('')}</div>
-              </section>` : ''}
               <section class="tkd-sec">
                 <h4 class="tkd-h">${esc(t('tk.worklog'))}</h4>
                 <div class="tk-comments">${comments}</div>
@@ -1219,6 +1209,21 @@ Views.tickets = async function (el, params = {}) {
               </section>` : ''}
               <details class="tkd-activity"><summary class="cell-sub">${esc(t('tk.activity'))}</summary>
                 <ul class="tk-activity">${activity}</ul></details>
+              ${(tk.similar && tk.similar.length) ? `<section class="tkd-sec tkd-sim-sec">
+                <h4 class="tkd-h tkd-h-sm"><span class="ms ms-sm" style="vertical-align:-3px">history</span> ${esc(t('tk.similarTitle'))} <span class="cell-sub">(${tk.similar.length})</span></h4>
+                <div class="tkd-sim-list">${tk.similar.map((s) => {
+                  const solved = ['resolved', 'closed'].includes(s.status);
+                  const res = solved && s.resolutionNote ? String(s.resolutionNote).trim() : '';
+                  return `<div class="tkd-sim prio-${esc(s.priority || 'medium')}" data-open="${esc(s.id)}">
+                    <span class="tkd-sim-no mono">${esc(s.number)}</span>
+                    <div class="tkd-sim-main"><div class="tkd-sim-subj">${esc(s.subject)}</div>
+                      <div class="tkd-sim-meta">${pill(TK_STATUS_PILL[s.status] || 'pill-slate', tkStatusLabel(s.status))}${s.sameRequester ? ` <span class="tkd-sim-badge">${esc(t('tk.similarSameUser'))}</span>` : ''}${s.sameCategory ? ` <span class="tkd-sim-badge tkd-sim-badge-cat">${esc(t('tk.similarSameCat'))}</span>` : ''}${s.csatRating ? ` <span class="cell-sub">${'★'.repeat(s.csatRating)}</span>` : ''} <span class="cell-sub">${esc(String(s.createdAt || '').slice(0, 10))}</span></div>
+                      ${res ? `<div class="tkd-sim-res" title="${esc(res)}"><span class="ms ms-sm">lightbulb</span> <span class="tkd-sim-res-lbl">${esc(t('tk.similarSolution'))}:</span> ${esc(res.slice(0, 160))}${res.length > 160 ? '…' : ''}</div>` : ''}
+                    </div>
+                    <span class="ms ms-sm tkd-sim-chev">chevron_right</span>
+                  </div>`;
+                }).join('')}</div>
+              </section>` : ''}
             </div>
             <aside class="tkd-side">
               <div class="tkd-prop"><span class="tkd-plabel">${esc(t('tk.statusCol'))}</span>

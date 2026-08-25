@@ -431,12 +431,15 @@ async function findSimilar(ticket) {
     const conds = ['t.requester_employee_id = $2'];
     if (patterns.length) { params.push(patterns); conds.push(`t.subject ILIKE ANY($${params.length})`); }
     if (ticket.category) { params.push(ticket.category); conds.push(`t.category = $${params.length}`); }
+    const catIdx = ticket.category ? params.length : 0; // category was pushed last, if present
     const { rows } = await query(
       `SELECT t.id, t.number, t.subject, t.status, t.priority, t.category,
-              t.created_at AS "createdAt", (t.requester_employee_id = $2) AS "sameRequester"
+              t.resolution_note AS "resolutionNote", t.resolution_code AS "resolutionCode",
+              t.csat_rating AS "csatRating", t.created_at AS "createdAt",
+              (t.requester_employee_id = $2) AS "sameRequester"${catIdx ? `, (t.category = $${catIdx}) AS "sameCategory"` : ', false AS "sameCategory"'}
          FROM tickets t
         WHERE t.id <> $1 AND (${conds.join(' OR ')})
-        ORDER BY "sameRequester" DESC NULLS LAST, t.created_at DESC
+        ORDER BY (t.status IN ('resolved','closed')) DESC, "sameRequester" DESC NULLS LAST, t.created_at DESC
         LIMIT 6`, params
     );
     return rows;

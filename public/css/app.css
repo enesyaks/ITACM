@@ -5951,22 +5951,32 @@ body.ai-open .ai-panel { opacity: 1; visibility: visible; transform: none; }
 .tkd-side select, .tkd-side textarea, .tkd-side input { width: 100%; }
 .tkd-sla { flex-direction: column; align-items: stretch; gap: 6px; }
 .tkd-appr-actions { display: flex; gap: 8px; margin-top: 8px; }
-/* Similar past tickets (staff hint in the detail) */
-.tkd-sim-list { display: flex; flex-direction: column; gap: 8px; }
-.tkd-sim { display: flex; align-items: center; gap: 11px; padding: 9px 12px 9px 13px; cursor: pointer; position: relative;
-  background: var(--surface); border: 1px solid var(--outline-variant); border-radius: 10px; transition: border-color .12s, box-shadow .12s; }
-.tkd-sim::before { content: ''; position: absolute; left: 0; top: 8px; bottom: 8px; width: 3px; border-radius: 3px; background: var(--outline); }
+/* Similar past tickets — compact footer section at the bottom of the detail */
+.tkd-sim-sec { margin-top: 4px; padding-top: 12px; border-top: 1px dashed var(--outline-variant); }
+.tkd-h-sm { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--on-surface-variant); margin-bottom: 8px; }
+.tkd-sim-list { display: flex; flex-direction: column; gap: 4px; }
+.tkd-sim { display: flex; align-items: center; gap: 8px; padding: 5px 9px 5px 11px; cursor: pointer; position: relative;
+  background: var(--surface); border: 1px solid var(--outline-variant); border-radius: 8px; transition: border-color .12s, background .12s; }
+.tkd-sim::before { content: ''; position: absolute; left: 0; top: 6px; bottom: 6px; width: 2px; border-radius: 2px; background: var(--outline); }
 .tkd-sim.prio-urgent::before { background: var(--rose-600, #e11d48); }
 .tkd-sim.prio-high::before { background: var(--amber-600, #d97706); }
 .tkd-sim.prio-medium::before { background: var(--primary); }
 .tkd-sim.prio-low::before { background: var(--outline); }
-.tkd-sim:hover { border-color: var(--primary); box-shadow: var(--shadow-card, 0 4px 12px rgba(0,0,0,.06)); }
-.tkd-sim-no { flex: none; font-size: 12px; font-weight: 600; color: var(--primary); background: color-mix(in srgb, var(--primary) 10%, transparent); padding: 2px 8px; border-radius: 6px; }
-.tkd-sim-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-.tkd-sim-subj { font-size: 13.5px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tkd-sim-meta { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
-.tkd-sim-badge { font-size: 11px; font-weight: 600; color: var(--primary); background: color-mix(in srgb, var(--primary) 12%, transparent); padding: 2px 8px; border-radius: 999px; }
-.tkd-sim-chev { flex: none; color: var(--on-surface-variant); }
+.tkd-sim:hover { border-color: var(--primary); background: var(--surface-low); }
+.tkd-sim-no { flex: none; font-size: 11px; font-weight: 600; color: var(--primary); background: color-mix(in srgb, var(--primary) 10%, transparent); padding: 1px 6px; border-radius: 5px; }
+.tkd-sim-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.tkd-sim-subj { font-size: 12.5px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tkd-sim-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 11px; }
+.tkd-sim-meta .pill { font-size: 10.5px; padding: 1px 7px; }
+.tkd-sim-badge { font-size: 10.5px; font-weight: 600; color: var(--primary); background: color-mix(in srgb, var(--primary) 12%, transparent); padding: 1px 7px; border-radius: 999px; }
+.tkd-sim-badge-cat { color: var(--on-surface-variant); background: var(--surface-low); }
+.tkd-sim-chev { flex: none; color: var(--on-surface-variant); font-size: 18px; }
+.tkd-sim-res { display: flex; align-items: flex-start; gap: 5px; margin-top: 4px; padding: 4px 8px; font-size: 11.5px; line-height: 1.45;
+  color: var(--on-surface-variant); background: color-mix(in srgb, var(--emerald-600, #059669) 8%, transparent);
+  border-left: 2px solid color-mix(in srgb, var(--emerald-600, #059669) 45%, transparent); border-radius: 4px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tkd-sim-res .ms-sm { color: var(--emerald-600, #059669); flex: none; margin-top: 1px; font-size: 15px; }
+.tkd-sim-res-lbl { font-weight: 700; color: var(--emerald-700, #047857); }
 .tkd-need { outline: 2px solid var(--rose-600, #e11d48); outline-offset: 1px; border-radius: 8px; }
 .tkd-plabel.req::after { content: ' *'; color: var(--rose-600, #e11d48); }
 .tkd-side .form-field.full { margin: 0; }
