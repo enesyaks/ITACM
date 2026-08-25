@@ -1169,6 +1169,16 @@ Views.tickets = async function (el, params = {}) {
                 <h4 class="tkd-h">${esc(t('tk.description'))}</h4>
                 <div class="tk-desc">${esc(tk.description || '—').replace(/\n/g, '<br>')}</div>
               </section>
+              ${(tk.similar && tk.similar.length) ? `<section class="tkd-sec">
+                <h4 class="tkd-h"><span class="ms ms-sm" style="vertical-align:-3px">history</span> ${esc(t('tk.similarTitle'))} <span class="cell-sub">(${tk.similar.length})</span></h4>
+                <div class="tkd-sim-list">${tk.similar.map((s) => `<div class="tkd-sim prio-${esc(s.priority || 'medium')}" data-open="${esc(s.id)}">
+                    <span class="tkd-sim-no mono">${esc(s.number)}</span>
+                    <div class="tkd-sim-main"><div class="tkd-sim-subj">${esc(s.subject)}</div>
+                      <div class="tkd-sim-meta">${pill(TK_STATUS_PILL[s.status] || 'pill-slate', tkStatusLabel(s.status))}${s.sameRequester ? ` <span class="tkd-sim-badge">${esc(t('tk.similarSameUser'))}</span>` : ''} <span class="cell-sub">${esc(String(s.createdAt || '').slice(0, 10))}</span></div>
+                    </div>
+                    <span class="ms ms-sm tkd-sim-chev">chevron_right</span>
+                  </div>`).join('')}</div>
+              </section>` : ''}
               <section class="tkd-sec">
                 <h4 class="tkd-h">${esc(t('tk.worklog'))}</h4>
                 <div class="tk-comments">${comments}</div>
@@ -1261,6 +1271,10 @@ Views.tickets = async function (el, params = {}) {
           try { await api('/tickets/' + encodeURIComponent(id), { method: 'PATCH', body }); toast(t('tk.saved'), 'success'); refresh(); }
           catch (err) { toast(err.message, 'error'); }
         };
+        // Click a similar past ticket to open it.
+        ov.querySelectorAll('.tkd-sim[data-open]').forEach((row) => row.addEventListener('click', () => {
+          if (row.dataset.open) { closeModal(); openTicket(row.dataset.open); }
+        }));
         // Visibility segmented selector (Everyone / Approvers-only / IT-team-only);
         // the chosen level lives on the group's data-vis.
         ov.querySelectorAll('.tkd-vis').forEach((grp) => {

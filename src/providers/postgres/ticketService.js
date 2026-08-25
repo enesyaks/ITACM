@@ -409,8 +409,38 @@ async function getTicket(id, user, { ownEmployeeId = null } = {}) {
          FROM ticket_activity WHERE ticket_id = $1 ORDER BY created_at ASC`, [id]
     );
     ticket.activity = activity;
+    ticket.similar = await findSimilar(ticket);
   }
   return ownEmployeeId ? stripSla(ticket) : decorateSla(ticket);
+}
+
+/**
+ * Past tickets that look related to this one — the same requester (recurring
+ * issue for that person) or a similar subject / category. Staff-side hint shown
+ * in the ticket detail so IT can spot repeats. Most-recent first, same-requester
+ * matches ranked first. Best-effort — never throws.
+ */
+async function findSimilar(ticket) {
+  try {
+    const reqId = ticket.requesterEmployeeId || null;
+    const words = String(ticket.subject || '').toLowerCase()
+      .split(/[^a-z0-9çğışöüâîû]+/i).filter((w) => w.length >= 4).slice(0, 5);
+    const patterns = words.map((w) => '%' + w + '%');
+    if (!reqId && !patterns.length && !ticket.category) return [];
+    const params = [ticket.id, reqId];
+    const conds = ['t.requester_employee_id = $2'];
+    if (patterns.length) { params.push(patterns); conds.push(`t.subject ILIKE ANY($${params.length})`); }
+    if (ticket.category) { params.push(ticket.category); conds.push(`t.category = $${params.length}`); }
+    const { rows } = await query(
+      `SELECT t.id, t.number, t.subject, t.status, t.priority, t.category,
+              t.created_at AS "createdAt", (t.requester_employee_id = $2) AS "sameRequester"
+         FROM tickets t
+        WHERE t.id <> $1 AND (${conds.join(' OR ')})
+        ORDER BY "sameRequester" DESC NULLS LAST, t.created_at DESC
+        LIMIT 6`, params
+    );
+    return rows;
+  } catch { return []; }
 }
 
 // Whitelisted sort keys → SQL. Priority/status sort by workflow order, not
