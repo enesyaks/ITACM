@@ -4,6 +4,51 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.8.1] — 2026-08-30
+
+Hardening + correctness release for the Service Desk module (security review and a
+full test pass over the approval workflow).
+
+### Security
+- **Email-to-ticket sender spoofing fixed.** The DMARC check trusted any
+  `Authentication-Results` header, including one a sender embedded in the message —
+  so a forged `dmarc=pass` alongside the provider's real `dmarc=fail` let anyone
+  open a ticket "as the CEO" and inject staff-only notes into arbitrary ticket
+  numbers. The verdict is now believed only from an Owner-pinned **trusted
+  authserv-id**, a real `dmarc=fail` vetoes, and the pass is bound to the exact
+  From domain. Ships **fail-closed**: with no authserv-id configured, no inbound
+  mail is attributed to a real requester. Configure it in **Integrations → Email
+  (IMAP)**.
+- **Stored IMAP password no longer exfiltratable.** `Test connection` merged the
+  request body over the saved config and re-injected the decrypted password, so a
+  user with `integration:manage` could make the server log in to a host of their
+  choosing with a credential they cannot read. The test now refuses to reuse the
+  stored password for a different host/account, and the **SSRF host guard** that
+  SMTP already used is applied to IMAP save / test / poll (blocks localhost,
+  private/reserved IPs and internal names). The connection error returned to the
+  client is generic, so the endpoint is no longer a network oracle.
+- A failed IMAP connection no longer crashes the process (the async `error` event
+  is handled).
+
+### Fixed
+- **Approval chain could skip a mandatory approver.** When a step in the middle of
+  a chain could not be resolved (e.g. `department` with no department manager on
+  file), the request finalized as *approved* and silently skipped every later
+  step — including a fixed finance approver. Unresolvable steps are now **skipped
+  over**, not treated as the end of the chain; the same fix applies when the first
+  step is the unresolvable one.
+- **Service-request approvals could be under-routed by the requester.** A template's
+  fixed (e.g. finance) approver was dropped whenever the requester's self-declared
+  `amount` was missing or zero. A missing/zero amount now **fails closed** — the
+  fixed approver stays; it is dropped only for a real amount provably below the
+  threshold.
+- **Self-approval guard tightened.** No org shape can now resolve an approver to
+  the requester themselves, including a `manager2` skip-level that loops back
+  through a reporting cycle.
+- Portal requesters can now **withdraw their own pending request**
+  (`POST /api/me/approvals/:id/cancel`); previously the withdraw path was reachable
+  only by staff.
+
 ## [1.8.0] — 2026-08-30
 
 ### Added

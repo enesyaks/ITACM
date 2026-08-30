@@ -125,6 +125,15 @@ router.post('/approvals/:id/decide', asyncHandler(async (req, res) => {
     isAdmin: false,
   }) });
 }));
+// A Portal requester withdraws their OWN pending request (managers/requesters are
+// confined to /me/*). cancelByRequester enforces ownership; never admin here.
+router.post('/approvals/:id/cancel', asyncHandler(async (req, res) => {
+  const emp = await currentEmployee(req);
+  res.json({ success: true, data: await approvalService.cancelByRequester(req.params.id, {
+    requesterEmployeeId: emp && emp.id,
+    isAdmin: false,
+  }) });
+}));
 // The ticket worklog + attachments an approver may review — includes staff-internal
 // notes/files (e.g. IT's price research) that the requester never sees.
 router.get('/approvals/:id/context', requireTicketing, asyncHandler(async (req, res) => {

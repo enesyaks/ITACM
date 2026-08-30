@@ -297,9 +297,13 @@ async function applyTemplateApproval(ticket, template, { amount, requesterEmploy
   const amt = Number(amount);
   const hasAmount = Number.isFinite(amt) && amt >= 0;
   let levels = template.approvalLevels;
+  // A fixed approver (emp:<uuid> — e.g. finance sign-off) may be dropped ONLY when
+  // the requester-declared amount is present AND provably below the threshold.
+  // A missing/zero/unverified amount fails CLOSED — the fixed approver stays — so a
+  // requester can't strip the high-value approver by sending amount:0 or omitting it.
   if (template.amountThreshold != null && Number.isFinite(Number(template.amountThreshold))) {
-    const meets = hasAmount && amt >= Number(template.amountThreshold);
-    if (!meets) levels = levels.filter((l) => !(typeof l === 'string' && l.startsWith('emp:')));
+    const belowThreshold = hasAmount && amt > 0 && amt < Number(template.amountThreshold);
+    if (belowThreshold) levels = levels.filter((l) => !(typeof l === 'string' && l.startsWith('emp:')));
   }
   if (!levels.length) return;
   const approval = await require('./approvalService').createRequest({
@@ -310,7 +314,12 @@ async function applyTemplateApproval(ticket, template, { amount, requesterEmploy
     resourceRef: ticket.number,
     summary: `${template.name}: ${ticket.subject}${hasAmount ? ` — ₺${amt.toLocaleString('tr-TR')}` : ''}`,
     levels,
-  }).catch(() => ({ required: false }));
+  }).catch((err) => {
+    // Don't fail silently: a chain that should exist but couldn't be opened must be
+    // visible, not swallowed into an unapproved ticket.
+    console.error('[tickets] approval chain could not be opened for', ticket.number, '-', err && err.message);
+    return { required: false, error: true };
+  });
   if (approval && approval.required && approval.request) {
     await query('UPDATE tickets SET approval_request_id = $1 WHERE id = $2', [approval.request.id, ticket.id]);
     logActivity(ticket.id, { name: 'system' }, 'approval_requested', `Pending ${levels.join(' → ')}`).catch(() => {});

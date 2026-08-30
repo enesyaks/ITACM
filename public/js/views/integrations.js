@@ -216,6 +216,9 @@ Views.integrations = async function (el) {
             </select></div>
           <div class="form-field"><label>${esc(t('int.inbound.category'))}</label>
             <input id="int-imap-cat" value="${esc(inbound.defaultCategory || '')}" placeholder="${esc(t('int.inbound.categoryPh'))}"${inputDis}></div>
+          <div class="form-field full"><label>${esc(t('int.inbound.authserv'))}</label>
+            <input id="int-imap-authserv" value="${esc(inbound.authServId || '')}" placeholder="mx.google.com" autocomplete="off"${inputDis}>
+            <span class="ob-hint">${esc(t('int.inbound.authservHint'))}</span></div>
           <div class="form-field"><label style="padding-top:26px"><input type="checkbox" id="int-imap-secure" ${inbound.secure !== false ? 'checked' : ''}${chkDis}> TLS (SSL)</label></div>
           <div class="form-field full"><label><input type="checkbox" id="int-imap-enabled" ${inbound.enabled ? 'checked' : ''}${chkDis}> ${esc(t('int.inbound.enable'))}</label>
             <span class="ob-hint">${esc(t('int.inbound.enableHint'))}</span></div>
@@ -529,6 +532,7 @@ GET /api/integrations/licenses/:id/sam
     folder: $('#int-imap-folder', el)?.value.trim() || 'INBOX',
     defaultType: $('#int-imap-type', el)?.value || 'incident',
     defaultCategory: $('#int-imap-cat', el)?.value.trim() || '',
+    authServId: $('#int-imap-authserv', el)?.value.trim() || '',
   });
   $('#int-imap-save', el)?.addEventListener('click', async () => {
     const btn = $('#int-imap-save', el); btn.disabled = true;

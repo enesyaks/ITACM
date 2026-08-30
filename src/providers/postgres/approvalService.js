@@ -103,6 +103,10 @@ async function resolveLevel(requesterEmployeeId, lvl) {
   } else {
     base = await orgService.resolveApprover(requesterEmployeeId, s);
   }
+  // Never let the requester approve their own request, whatever the org shape
+  // produced (e.g. a 'manager2' skip-level that loops back through a reporting
+  // cycle). resolveApprover guards the direct hop; this guards the resolved end.
+  if (base && base.id === requesterEmployeeId) return null;
   return applyDelegate(base, requesterEmployeeId);
 }
 
@@ -194,21 +198,29 @@ async function createRequest({ type, requesterEmployeeId, requesterName, payload
   if (!levels) return { required: false };
   if (!isUuid(requesterEmployeeId)) return { required: false }; // no requester → cannot route
 
-  // Resolve step 0 (single or parallel). If the org chart yields no approver, skip.
-  const step0 = await resolveStepApprovers(requesterEmployeeId, levels[0]);
-  if (!step0.approvers.length) return { required: false };
-  const single = step0.approvers.length === 1 ? step0.approvers[0] : null;
-  const stepState = single ? null : JSON.stringify(step0.approvers.map((a) => ({ employeeId: a.id, name: a.fullName, status: 'pending' })));
+  // Find the first step that resolves to an approver. Earlier steps that can't be
+  // resolved (a half-configured org chart) are skipped so they don't block the
+  // request — but a later resolvable step (e.g. a fixed finance approver) is NOT
+  // skipped along with them. Only when NO step resolves does the action proceed
+  // with no approval.
+  let firstIndex = -1; let firstStep = null;
+  for (let i = 0; i < levels.length; i += 1) {
+    const step = await resolveStepApprovers(requesterEmployeeId, levels[i]);
+    if (step.approvers.length) { firstIndex = i; firstStep = step; break; }
+  }
+  if (firstIndex < 0 || !firstStep) return { required: false };
+  const single = firstStep.approvers.length === 1 ? firstStep.approvers[0] : null;
+  const stepState = single ? null : JSON.stringify(firstStep.approvers.map((a) => ({ employeeId: a.id, name: a.fullName, status: 'pending' })));
 
   const { rows } = await query(
     `INSERT INTO approval_requests
        (type, requester_employee_id, requester_name, approver_employee_id, approver_name,
         levels, current_level, payload, resource_ref, summary, step_state, step_mode)
-     VALUES ($1,$2,$3,$4,$5,$6,0,$7,$8,$9,$10::jsonb,$11)
+     VALUES ($1,$2,$3,$4,$5,$6,$12,$7,$8,$9,$10::jsonb,$11)
      RETURNING *`,
     [type, requesterEmployeeId, requesterName || null, single ? single.id : null, single ? single.fullName : null,
       JSON.stringify(levels), JSON.stringify(payload), resourceRef,
-      summary || TYPE_LABELS[type] || type, stepState, single ? null : step0.mode]
+      summary || TYPE_LABELS[type] || type, stepState, single ? null : firstStep.mode, firstIndex]
   );
   const request = mapRow(rows[0]);
   notify(request).catch(() => {});
@@ -353,15 +365,18 @@ async function decide(id, { decision, note = '', deciderName = '', deciderEmploy
 /** Move a request to its next step, or finalize (dispatch + approved) if none. */
 async function advance(req, { note = '', deciderName = '' } = {}) {
   const levels = Array.isArray(req.levels) ? req.levels : [];
-  const nextIndex = req.currentLevel + 1;
-  if (nextIndex < levels.length) {
+  // Walk forward to the next step that actually resolves to an approver. An
+  // unresolvable step (e.g. 'department' with no department manager on file) is
+  // SKIPPED, not treated as the end of the chain — otherwise a later, possibly
+  // mandatory step (a fixed finance approver) would be silently bypassed and the
+  // action auto-approved. Only when no remaining step resolves do we finalize.
+  for (let nextIndex = req.currentLevel + 1; nextIndex < levels.length; nextIndex += 1) {
     const ok = await setupStep(req.id, req.requesterEmployeeId, levels, nextIndex);
     if (ok) {
       const advanced = await getRequest(req.id);
       notify(advanced).catch(() => {});
       return advanced;
     }
-    // next step unresolvable → finalize as if this were the last step
   }
   await dispatch(req, { deciderName });
   await query(
