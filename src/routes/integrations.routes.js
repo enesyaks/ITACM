@@ -69,6 +69,22 @@ router.post('/sso/test', authenticate, requirePermission('integration', 'manage'
   res.json({ success: true, data: await require('../utils/oidc').discover(cfg) });
 }));
 
+/** ---------- Email-to-ticket / inbound IMAP (integration:read / manage) ---------- */
+const inboundMailService = require('../providers/postgres/inboundMailService');
+router.get('/inbound-mail', authenticate, requirePermission('integration', 'read'), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await inboundMailService.getConfig() });
+}));
+router.put('/inbound-mail', authenticate, requirePermission('integration', 'manage'), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await inboundMailService.saveConfig(req.body || {}) });
+}));
+router.post('/inbound-mail/test', authenticate, requirePermission('integration', 'manage'), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await inboundMailService.testConnection(req.body || {}) });
+}));
+// Fetch new mail right now instead of waiting for the scheduler.
+router.post('/inbound-mail/poll', authenticate, requirePermission('integration', 'manage'), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await inboundMailService.poll() });
+}));
+
 router.post('/notifications/digest', authenticate, requirePermission('integration', 'read'), asyncHandler(async (req, res) => {
   res.json({ success: true, data: await notificationService.runAlertDigest() });
 }));

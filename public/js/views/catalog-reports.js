@@ -6,11 +6,29 @@ Views.catalog = async function (el) {
   const items = await api('/catalog');
   const cats = [...new Set(items.map((c) => c.category))];
 
+  // Ticket categories are managed here too (they feed the ticket forms). Only a
+  // ticket manager sees this section.
+  const canTicketCats = Auth.canIam('ticket', 'manage');
+  const ticketCats = canTicketCats ? await api('/tickets/categories/manage').catch(() => []) : [];
+  const tcChip = (c) => `<span class="tk-cat-chip" data-cat="${esc(c)}">${esc(c)}<button type="button" class="tk-cat-x" title="${esc(t('common.remove') || 'Remove')}"><span class="ms ms-sm">close</span></button></span>`;
+  const tcCard = () => `<div class="card card-pad" id="tk-cat-card" style="margin-bottom:16px">
+      <h3 style="margin:0 0 4px">${esc(t('tk.catManageTitle'))}</h3>
+      <p class="cell-sub" style="margin:0 0 12px">${esc(t('tk.catManageHint'))}</p>
+      <div id="tk-cat-chips" class="tk-cat-chips">${(Array.isArray(ticketCats) ? ticketCats : []).map(tcChip).join('')}</div>
+      <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;align-items:center">
+        <input id="tk-cat-new" placeholder="${esc(t('tk.catAdd'))}" maxlength="120" style="flex:0 0 240px">
+        <button class="btn btn-outline btn-sm" id="tk-cat-add" type="button"><span class="ms ms-sm">add</span></button>
+        <span style="flex:1"></span>
+        <button class="btn btn-primary btn-sm" id="tk-cat-save">${esc(t('common.save'))}</button>
+      </div>
+    </div>`;
+
   el.innerHTML = `
     ${pageHead('cat.pageTitle', 'cat.pageSub', (canCreate || canUpdate) ? `
       ${canCreate || canUpdate ? `<button class="btn btn-outline" id="cat-import"><span class="ms">sync</span> ${esc(t('cat.importExisting'))}</button>` : ''}
       ${canCreate ? `<button class="btn btn-primary" id="cat-new"><span class="ms">add</span> ${esc(t('cat.addModel'))}</button>` : ''}
     ` : '')}
+    ${canTicketCats ? tcCard() : ''}
     ${items.length === 0 ? `
       <div class="card card-pad" style="text-align:center;padding:48px">
         <div class="cell-sub" style="margin-bottom:14px">${esc(t('cat.emptyHint'))}</div>
@@ -41,6 +59,26 @@ Views.catalog = async function (el) {
         </table></div>
       </div>`;
       }).join('')}`;
+
+  if (canTicketCats) {
+    const chips = $('#tk-cat-chips', el);
+    const wireX = () => chips.querySelectorAll('.tk-cat-x').forEach((b) => { b.onclick = () => b.closest('.tk-cat-chip').remove(); });
+    wireX();
+    const addCat = () => {
+      const inp = $('#tk-cat-new', el); const v = inp.value.trim();
+      if (v && ![...chips.querySelectorAll('.tk-cat-chip')].some((c) => c.dataset.cat.toLowerCase() === v.toLowerCase())) {
+        chips.insertAdjacentHTML('beforeend', tcChip(v)); wireX();
+      }
+      inp.value = ''; inp.focus();
+    };
+    $('#tk-cat-add', el)?.addEventListener('click', addCat);
+    $('#tk-cat-new', el)?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addCat(); } });
+    $('#tk-cat-save', el)?.addEventListener('click', async () => {
+      const items = [...chips.querySelectorAll('.tk-cat-chip')].map((c) => c.dataset.cat);
+      try { await api('/tickets/categories/manage', { method: 'PUT', body: { items } }); toast(t('tk.saved') || t('common.saved') || 'Saved', 'success'); }
+      catch (err) { toast(err.message, 'error'); }
+    });
+  }
 
   if (canCreate) {
     // Existing brands per category — the brand field lists them so you reuse a

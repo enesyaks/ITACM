@@ -104,10 +104,29 @@ async function getEmployee(id) {
   } else {
     emp.hasPortalAccess = false;
   }
+  // Reporting line: manager + direct reports (for the profile + org chart).
+  if (emp.managerEmployeeId) {
+    const { rows: mgr } = await query('SELECT id, full_name FROM employees WHERE id = $1', [emp.managerEmployeeId]);
+    emp.manager = mgr[0] ? { id: mgr[0].id, fullName: mgr[0].full_name } : null;
+  } else {
+    emp.manager = null;
+  }
+  // Approval delegate (out-of-office): resolve the name for the profile UI.
+  if (emp.approvalDelegateId) {
+    const { rows: del } = await query('SELECT id, full_name FROM employees WHERE id = $1', [emp.approvalDelegateId]);
+    emp.approvalDelegate = del[0] ? { id: del[0].id, fullName: del[0].full_name } : null;
+  } else {
+    emp.approvalDelegate = null;
+  }
+  const { rows: reports } = await query(
+    "SELECT id, full_name AS \"fullName\", title, department FROM employees WHERE manager_employee_id = $1 AND status = 'Active' ORDER BY full_name",
+    [emp.id]
+  );
+  emp.directReports = reports;
   return emp;
 }
 
-async function createEmployee({ fullName, email, department, title, status = 'Active', startDate = null }) {
+async function createEmployee({ fullName, email, department, title, status = 'Active', startDate = null, managerEmployeeId = null }) {
   if (!fullName || !email) throw HttpError.badRequest('fullName and email are required');
   if (!STATUSES.includes(status)) throw HttpError.badRequest('status must be Active or Inactive');
   const normEmail = String(email).trim().toLowerCase();
@@ -117,12 +136,17 @@ async function createEmployee({ fullName, email, department, title, status = 'Ac
     start = String(startDate).slice(0, 10);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(start)) throw HttpError.badRequest('startDate must be YYYY-MM-DD');
   }
+  let managerId = null;
+  if (managerEmployeeId) {
+    if (!isUuid(managerEmployeeId)) throw HttpError.badRequest('Invalid managerEmployeeId');
+    managerId = managerEmployeeId; // a brand-new employee can't create a cycle yet
+  }
 
   try {
     const { rows } = await query(
-      `INSERT INTO employees (full_name, email, department, title, status, start_date)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [fullName, normEmail, department || null, title || null, status, start]
+      `INSERT INTO employees (full_name, email, department, title, status, start_date, manager_employee_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [fullName, normEmail, department || null, title || null, status, start, managerId]
     );
     return mapRow(rows[0]);
   } catch (err) {
@@ -165,10 +189,46 @@ async function updateEmployee(id, body) {
   const colMap = {
     fullName: 'full_name', email: 'email', department: 'department',
     title: 'title', status: 'status', startDate: 'start_date',
+    managerEmployeeId: 'manager_employee_id',
+    approvalDelegateId: 'approval_delegate_id', approvalDelegateUntil: 'approval_delegate_until',
   };
   const data = {};
   for (const [key, col] of Object.entries(colMap)) {
     if (body[key] !== undefined) data[col] = body[key];
+  }
+  // Approval delegate (out-of-office): a specific active employee, not self.
+  if (data.approval_delegate_id !== undefined) {
+    const d = data.approval_delegate_id || null;
+    if (d) {
+      if (!isUuid(d)) throw HttpError.badRequest('Invalid approvalDelegateId');
+      if (d === id) throw HttpError.badRequest('An employee cannot delegate approvals to themselves');
+    }
+    data.approval_delegate_id = d;
+  }
+  if (data.approval_delegate_until !== undefined) {
+    const u = data.approval_delegate_until;
+    if (u === null || u === '') data.approval_delegate_until = null;
+    else {
+      data.approval_delegate_until = String(u).slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(data.approval_delegate_until)) throw HttpError.badRequest('approvalDelegateUntil must be YYYY-MM-DD');
+    }
+  }
+  // Manager (reports-to): validate uuid, forbid self, and reject reporting cycles.
+  if (data.manager_employee_id !== undefined) {
+    const m = data.manager_employee_id || null;
+    if (m) {
+      if (!isUuid(m)) throw HttpError.badRequest('Invalid managerEmployeeId');
+      if (m === id) throw HttpError.badRequest('An employee cannot be their own manager');
+      let cursor = m; const seen = new Set([id]);
+      while (cursor) {
+        if (cursor === id) throw HttpError.badRequest('This would create a reporting cycle');
+        if (seen.has(cursor)) break;
+        seen.add(cursor);
+        const r = await query('SELECT manager_employee_id FROM employees WHERE id = $1', [cursor]);
+        cursor = r.rows[0] ? r.rows[0].manager_employee_id : null;
+      }
+    }
+    data.manager_employee_id = m;
   }
   // Email links an employees row to its login (users.email) and is what
   // /api/me/zimmet resolves the caller by. The UNIQUE constraint is byte-exact,

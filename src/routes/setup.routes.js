@@ -119,12 +119,12 @@ router.put('/settings', authenticate, requirePermission('settings', 'manage'), a
   const {
     companyName, companyLogo, companyAddress, handoverTerms, defaultLocation, documentStorage,
     handoverTemplate, handoverTemplates, defaultTemplateId, language, currency, labelConfig,
-    assetTagPrefix, updateCheck, zimmetOcr,
+    assetTagPrefix, updateCheck, zimmetOcr, ticketingEnabled,
   } = req.body || {};
   const saved = await settingsService.saveSettings({
     companyName, companyLogo, companyAddress, handoverTerms, defaultLocation, documentStorage,
     handoverTemplate, handoverTemplates, defaultTemplateId, language, currency, labelConfig,
-    assetTagPrefix, updateCheck, zimmetOcr,
+    assetTagPrefix, updateCheck, zimmetOcr, ticketingEnabled,
   });
   res.json({ success: true, data: saved });
 }));

@@ -782,6 +782,8 @@ CREATE TABLE IF NOT EXISTS teams (
 CREATE INDEX IF NOT EXISTS idx_teams_dept ON teams (department_id);
 ALTER TABLE employees ADD COLUMN IF NOT EXISTS team_id UUID REFERENCES teams(id) ON DELETE SET NULL;
 ALTER TABLE employees ADD COLUMN IF NOT EXISTS manager_employee_id UUID REFERENCES employees(id) ON DELETE SET NULL;
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS approval_delegate_id UUID REFERENCES employees(id) ON DELETE SET NULL;
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS approval_delegate_until DATE;
 CREATE INDEX IF NOT EXISTS idx_emp_team ON employees (team_id) WHERE team_id IS NOT NULL;
 
 -- Generic approval workflow. Ships passive — gated by app_settings.approvals.enabled.
@@ -865,3 +867,241 @@ CREATE TABLE IF NOT EXISTS hr_request_items (
 CREATE INDEX IF NOT EXISTS idx_hr_request_items_req ON hr_request_items (request_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_hr_request_items_unique
   ON hr_request_items (request_id, category);
+
+-- ITIL service desk (optional module) — also 055_ticketing.sql
+CREATE TABLE IF NOT EXISTS tickets (
+  id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  number                 TEXT NOT NULL UNIQUE,
+  type                   TEXT NOT NULL DEFAULT 'incident'
+                           CHECK (type IN ('incident', 'request')),
+  subject                TEXT NOT NULL,
+  description            TEXT,
+  status                 TEXT NOT NULL DEFAULT 'new'
+                           CHECK (status IN ('new', 'open', 'in_progress', 'pending', 'resolved', 'closed', 'cancelled')),
+  priority               TEXT NOT NULL DEFAULT 'medium'
+                           CHECK (priority IN ('low', 'medium', 'high', 'urgent')),
+  category               TEXT,
+  requester_employee_id  UUID REFERENCES employees(id) ON DELETE SET NULL,
+  requester_user_id      UUID REFERENCES users(id) ON DELETE SET NULL,
+  assignee_user_id       UUID REFERENCES users(id) ON DELETE SET NULL,
+  asset_id               UUID REFERENCES assets(id) ON DELETE SET NULL,
+  created_by             UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_by_name        TEXT,
+  first_response_at      TIMESTAMPTZ,
+  resolved_at            TIMESTAMPTZ,
+  closed_at              TIMESTAMPTZ,
+  created_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at             TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_tickets_status    ON tickets (status, assignee_user_id);
+CREATE INDEX IF NOT EXISTS idx_tickets_requester ON tickets (requester_employee_id);
+CREATE INDEX IF NOT EXISTS idx_tickets_asset     ON tickets (asset_id);
+CREATE INDEX IF NOT EXISTS idx_tickets_created   ON tickets (created_at DESC);
+
+CREATE TABLE IF NOT EXISTS ticket_comments (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  ticket_id      UUID NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+  author_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  author_name    TEXT,
+  body           TEXT NOT NULL,
+  internal       BOOLEAN NOT NULL DEFAULT false,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_ticket_comments ON ticket_comments (ticket_id, created_at);
+-- Three visibility levels (080): public (default) → internal (staff + approvers,
+-- hidden from requester) → staff_only (IT team only, approvers don't see it).
+ALTER TABLE ticket_comments ADD COLUMN IF NOT EXISTS staff_only BOOLEAN NOT NULL DEFAULT false;
+
+CREATE TABLE IF NOT EXISTS ticket_activity (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  ticket_id   UUID NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+  actor_name  TEXT,
+  action      TEXT NOT NULL,
+  detail      TEXT,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_ticket_activity ON ticket_activity (ticket_id, created_at);
+
+CREATE SEQUENCE IF NOT EXISTS ticket_incident_seq START 1001;
+CREATE SEQUENCE IF NOT EXISTS ticket_request_seq  START 1001;
+
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS ticketing_enabled BOOLEAN NOT NULL DEFAULT false;
+
+-- Ticket SLA (056): per-priority response/resolution due timestamps + breach markers.
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS response_due_at      TIMESTAMPTZ;
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS resolve_due_at       TIMESTAMPTZ;
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS response_breached_at TIMESTAMPTZ;
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS resolve_breached_at  TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS idx_tickets_response_due ON tickets (response_due_at)
+  WHERE response_breached_at IS NULL AND first_response_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_tickets_resolve_due ON tickets (resolve_due_at)
+  WHERE resolve_breached_at IS NULL AND resolved_at IS NULL;
+
+-- Configurable SLA targets (057): { priority: { responseMins, resolveMins } }.
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS sla_json JSONB NOT NULL DEFAULT '{}'::jsonb;
+
+-- Canned responses (058): array of { title, body }.
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS ticket_canned_json JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS ticket_categories_json JSONB;
+
+-- Editable ticket workflow (078): { transitions: { <from>: [<to>, ...] } }.
+-- Empty/absent = fall back to the built-in default transition map in code.
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS ticket_workflow_json JSONB;
+-- Email-to-ticket inbound IMAP config (081): encrypted mailbox settings.
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS imap_json JSONB;
+
+-- Knowledge base (068).
+CREATE TABLE IF NOT EXISTS kb_articles (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title        TEXT NOT NULL,
+  body         TEXT,
+  category     TEXT,
+  published    BOOLEAN NOT NULL DEFAULT false,
+  author_name  TEXT,
+  views        INTEGER NOT NULL DEFAULT 0,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_kb_published ON kb_articles (published, updated_at DESC);
+CREATE TABLE IF NOT EXISTS kb_documents (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  article_id       UUID NOT NULL REFERENCES kb_articles(id) ON DELETE CASCADE,
+  filename         TEXT NOT NULL,
+  mime             TEXT NOT NULL,
+  byte_size        INTEGER NOT NULL,
+  content          BYTEA,
+  storage_path     TEXT,
+  uploaded_by      TEXT,
+  uploaded_by_name TEXT,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_kb_documents ON kb_documents (article_id, created_at);
+
+-- SLA clock-stop while 'pending' (059).
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS sla_paused_at TIMESTAMPTZ;
+
+-- Ticket attachments (060).
+CREATE TABLE IF NOT EXISTS ticket_documents (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  ticket_id        UUID NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+  filename         TEXT NOT NULL,
+  mime             TEXT NOT NULL,
+  byte_size        INTEGER NOT NULL,
+  content          BYTEA,
+  storage_path     TEXT,
+  uploaded_by      TEXT,
+  uploaded_by_name TEXT,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_ticket_documents ON ticket_documents (ticket_id, created_at);
+ALTER TABLE ticket_documents ADD COLUMN IF NOT EXISTS internal BOOLEAN NOT NULL DEFAULT false;
+-- Attachments raised as part of a worklog reply link back to that comment (079),
+-- so they can render beneath it. NULL = a standalone ticket attachment.
+ALTER TABLE ticket_documents ADD COLUMN IF NOT EXISTS comment_id UUID REFERENCES ticket_comments(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_ticket_documents_comment ON ticket_documents (comment_id);
+-- IT-team-only attachments (080): internal AND hidden from approvers too.
+ALTER TABLE ticket_documents ADD COLUMN IF NOT EXISTS staff_only BOOLEAN NOT NULL DEFAULT false;
+
+-- ITIL Problem Management (062).
+CREATE TABLE IF NOT EXISTS problems (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  number           TEXT NOT NULL UNIQUE,
+  title            TEXT NOT NULL,
+  description      TEXT,
+  status           TEXT NOT NULL DEFAULT 'new'
+                     CHECK (status IN ('new', 'investigating', 'known_error', 'resolved', 'closed')),
+  priority         TEXT NOT NULL DEFAULT 'medium'
+                     CHECK (priority IN ('low', 'medium', 'high', 'urgent')),
+  root_cause       TEXT,
+  workaround       TEXT,
+  assignee_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_by       UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_by_name  TEXT,
+  resolved_at      TIMESTAMPTZ,
+  closed_at        TIMESTAMPTZ,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_problems_status ON problems (status, created_at DESC);
+CREATE SEQUENCE IF NOT EXISTS problem_seq START 1001;
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS problem_id UUID REFERENCES problems(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_tickets_problem ON tickets (problem_id);
+
+-- ITIL Change Enablement (063).
+CREATE TABLE IF NOT EXISTS changes (
+  id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  number              TEXT NOT NULL UNIQUE,
+  title               TEXT NOT NULL,
+  description         TEXT,
+  type                TEXT NOT NULL DEFAULT 'normal'
+                        CHECK (type IN ('standard', 'normal', 'emergency')),
+  status              TEXT NOT NULL DEFAULT 'draft'
+                        CHECK (status IN ('draft', 'pending_approval', 'approved', 'rejected',
+                                          'scheduled', 'implementing', 'completed', 'failed', 'closed', 'cancelled')),
+  risk                TEXT NOT NULL DEFAULT 'medium' CHECK (risk IN ('low', 'medium', 'high')),
+  implementation_plan TEXT,
+  rollback_plan       TEXT,
+  assignee_user_id    UUID REFERENCES users(id) ON DELETE SET NULL,
+  requested_by        UUID REFERENCES users(id) ON DELETE SET NULL,
+  requested_by_name   TEXT,
+  approver_user_id    UUID REFERENCES users(id) ON DELETE SET NULL,
+  approver_name       TEXT,
+  approval_note       TEXT,
+  approved_at         TIMESTAMPTZ,
+  scheduled_start     TIMESTAMPTZ,
+  scheduled_end       TIMESTAMPTZ,
+  completed_at        TIMESTAMPTZ,
+  closed_at           TIMESTAMPTZ,
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_changes_status ON changes (status, created_at DESC);
+CREATE SEQUENCE IF NOT EXISTS change_seq START 1001;
+
+-- Impact × Urgency prioritization (064).
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS impact  TEXT CHECK (impact  IN ('low', 'medium', 'high'));
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS urgency TEXT CHECK (urgency IN ('low', 'medium', 'high'));
+
+-- ITIL closure: resolution categorization + note, and requester CSAT (065).
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS resolution_code TEXT
+  CHECK (resolution_code IN ('fixed', 'workaround', 'no_fault', 'duplicate', 'not_reproducible', 'user_education'));
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS resolution_note TEXT;
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS csat_rating  SMALLINT CHECK (csat_rating BETWEEN 1 AND 5);
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS csat_comment TEXT;
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS csat_at      TIMESTAMPTZ;
+
+-- Service Request templates + approval chain (066).
+CREATE TABLE IF NOT EXISTS request_templates (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name            TEXT NOT NULL,
+  description     TEXT,
+  category        TEXT,
+  approval_levels JSONB NOT NULL DEFAULT '[]'::jsonb,
+  enabled         BOOLEAN NOT NULL DEFAULT true,
+  sort_order      INTEGER NOT NULL DEFAULT 0,
+  amount_threshold NUMERIC,   -- gate the fixed final approver (emp:) on request amount; NULL = always
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_request_templates_enabled ON request_templates (enabled, sort_order);
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS approval_request_id UUID REFERENCES approval_requests(id) ON DELETE SET NULL;
+
+-- Parallel approvers within one step (067).
+ALTER TABLE approval_requests ADD COLUMN IF NOT EXISTS step_state JSONB;
+ALTER TABLE approval_requests ADD COLUMN IF NOT EXISTS step_mode  TEXT CHECK (step_mode IN ('any', 'all'));
+ALTER TABLE approval_requests ADD COLUMN IF NOT EXISTS history    JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE approval_requests ADD COLUMN IF NOT EXISTS last_reminded_at TIMESTAMPTZ;
+ALTER TABLE approval_requests ADD COLUMN IF NOT EXISTS escalated_at TIMESTAMPTZ;
+
+-- Persistent per-user in-app notifications (bell menu).
+CREATE TABLE IF NOT EXISTS notifications (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  type       TEXT NOT NULL,
+  title      TEXT NOT NULL,
+  body       TEXT,
+  link       TEXT,
+  read_at    TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications (user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notifications_unread ON notifications (user_id) WHERE read_at IS NULL;

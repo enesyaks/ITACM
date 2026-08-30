@@ -1,5 +1,5 @@
 const router = require('express').Router();
-const { authenticate, requireRole } = require('../middleware/auth');
+const { authenticate, requireRole, requirePermission, requireAnyPermission } = require('../middleware/auth');
 const { asyncHandler } = require('../utils/asyncHandler');
 const { approvalService, settingsService } = require('../services');
 const { query } = require('../providers/postgres/pool');
@@ -18,18 +18,26 @@ const isAdmin = (req) => ['Owner', 'Admin'].includes(req.user && req.user.role);
 
 /* ------------------------- Feature flag / policy ------------------------- */
 
-/** GET /api/approvals/config — current enabled state + per-action policy. Owner/Admin only. */
-router.get('/config', requireRole('Owner', 'Admin'), asyncHandler(async (req, res) => {
+/** GET /api/approvals/config — enabled state + policy. Readable by anyone who can
+ *  read tickets (approvers see it in the inbox; the template editor loads it). */
+router.get('/config', requirePermission('ticket', 'read'), asyncHandler(async (req, res) => {
   res.json({ success: true, data: await approvalService.getConfig() });
 }));
 
-/** PUT /api/approvals/config — turn the workflow on/off and set the policy. Owner/Admin only. */
-router.put('/config', requireRole('Owner', 'Admin'), asyncHandler(async (req, res) => {
+/** PUT /api/approvals/config — turn the workflow on/off + reminder/escalation.
+ *  Requires ticket:configure (Owner/Admin bypass). */
+router.put('/config', requireAnyPermission([['ticket', 'configure'], ['ticket', 'manage']]), asyncHandler(async (req, res) => {
   const cur = await approvalService.getConfig();
   const body = req.body || {};
   const next = {
     enabled: body.enabled !== undefined ? !!body.enabled : cur.enabled,
     policy: (body.policy && typeof body.policy === 'object') ? body.policy : cur.policy,
+    reminderDays: body.reminderDays !== undefined
+      ? Math.max(0, Math.min(90, Number(body.reminderDays) || 0))
+      : cur.reminderDays,
+    escalateDays: body.escalateDays !== undefined
+      ? Math.max(0, Math.min(90, Number(body.escalateDays) || 0))
+      : cur.escalateDays,
   };
   await settingsService.saveSettings({ approvals: next });
   res.json({ success: true, data: next });
@@ -61,6 +69,16 @@ router.post('/:id/decide', asyncHandler(async (req, res) => {
     note,
     deciderName: (emp && emp.fullName) || (req.user && req.user.email) || 'Unknown',
     deciderEmployeeId: emp && emp.id,
+    isAdmin: isAdmin(req),
+  });
+  res.json({ success: true, data });
+}));
+
+/** POST /api/approvals/:id/cancel — the requester withdraws their pending request. */
+router.post('/:id/cancel', asyncHandler(async (req, res) => {
+  const emp = await currentEmployee(req);
+  const data = await approvalService.cancelByRequester(req.params.id, {
+    requesterEmployeeId: emp && emp.id,
     isAdmin: isAdmin(req),
   });
   res.json({ success: true, data });

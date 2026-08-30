@@ -105,7 +105,8 @@ function createApp() {
   app.use((req, res, next) => {
     // Document-upload routes carry base64 scans and use their own 12MB parser;
     // skip the small global parser so it doesn't reject them first.
-    if (req.method === 'POST' && /^\/api\/(employees|maintenance|providers|contracts)\/[^/]+\/documents\/?$/.test(req.path)) return next();
+    if (req.method === 'POST' && /^\/api\/(employees|maintenance|providers|contracts|tickets|kb)\/[^/]+\/documents\/?$/.test(req.path)) return next();
+    if (req.method === 'POST' && /^\/api\/me\/tickets\/[^/]+\/documents\/?$/.test(req.path)) return next();
     if (req.method === 'POST' && req.path === '/api/import/inventory') return next(); // big CSV payloads
     if (req.method === 'POST' && req.path === '/api/import/zimmet/analyze') return next(); // base64 PDFs, own 80mb parser
     if (req.method === 'POST' && /^\/api\/integrations\/sync\//.test(req.path)) return next(); // sync JSON up to 6mb on route
@@ -224,6 +225,11 @@ function createApp() {
   app.use('/api/auth', require('./routes/auth.routes'));
   app.use('/api/dashboard', require('./routes/dashboard.routes'));
   app.use('/api/assets', require('./routes/assets.routes'));
+  app.use('/api/tickets', require('./routes/tickets.routes'));
+  app.use('/api/problems', require('./routes/problems.routes'));
+  app.use('/api/changes', require('./routes/changes.routes'));
+  app.use('/api/request-templates', require('./routes/request-templates.routes'));
+  app.use('/api/kb', require('./routes/kb.routes'));
   app.use('/api/employees', require('./routes/employees.routes'));
   app.use('/api/org', require('./routes/org.routes'));
   app.use('/api/approvals', require('./routes/approvals.routes'));

@@ -8,6 +8,10 @@
 const ROUTES = {
   '#/dashboard': { title: 'Dashboard', view: 'dashboard', icon: 'dashboard' },
   '#/zimmetlerim': { title: 'My Assets', view: 'myZimmet', icon: 'inventory_2' },
+  '#/my-tickets': { title: 'My Tickets', view: 'myTickets', icon: 'support_agent', module: 'ticketing', portalOnly: true },
+  '#/my-kb': { title: 'Help Center', view: 'myKb', icon: 'menu_book', module: 'ticketing', portalOnly: true },
+  // Portal users have no topbar bell, so their notifications live on a page.
+  '#/notifications': { title: 'Notifications', view: 'notifications', icon: 'notifications', portalOnly: true },
   // HR-only screen. IT never opens this page — they review and approve tickets
   // from the Dashboard HR card, so the filing surface and the approving surface
   // stay separate.
@@ -30,6 +34,26 @@ const ROUTES = {
   '#/org': { title: 'Organization', view: 'org', icon: 'account_tree' },
   '#/handover': { title: 'Handover Ops', view: 'handover', icon: 'assignment_turned_in' },
   '#/maintenance': { title: 'Maintenance & Repair', view: 'maintenance', icon: 'build' },
+  '#/tickets': {
+    title: 'Service Desk', view: 'tickets', icon: 'confirmation_number',
+    iam: [['ticket', 'read']], module: 'ticketing',
+  },
+  '#/problems': {
+    title: 'Problems', view: 'problems', icon: 'troubleshoot',
+    iam: [['problem', 'read']], module: 'ticketing',
+  },
+  '#/changes': {
+    title: 'Changes', view: 'changes', icon: 'published_with_changes',
+    iam: [['change', 'read']], module: 'ticketing',
+  },
+  '#/kb': {
+    title: 'Knowledge Base', view: 'kb', icon: 'menu_book',
+    iam: [['ticket', 'read']], module: 'ticketing',
+  },
+  // Approver inbox. Part of the service-desk (ticketing) module, so it hides when
+  // that module is off. Not gated on a specific permission — anyone may be routed
+  // a request to approve. Portal users approve from My Tickets instead.
+  '#/approvals': { title: 'Approvals', view: 'approvals', icon: 'approval', module: 'ticketing' },
   '#/stockcount': { title: 'Stock Count', view: 'stockcount', icon: 'fact_check' },
   '#/reports': { title: 'Reports', view: 'reports', icon: 'summarize' },
   '#/audit': { title: 'Audit Log', view: 'audit', icon: 'history', perm: 'canViewAudit' },
@@ -59,6 +83,11 @@ const HR_ALLOWED_HASHES = new Set(['#/hr', '#/zimmetlerim']);
 /** A route's `iam` list is ALL-of — every [resource, action] pair must pass. */
 function hasAllIam(pairs) {
   return (pairs || []).every(([resource, action]) => Auth.canIam(resource, action));
+}
+
+/** Is an optional module (e.g. 'ticketing') switched on for this instance? */
+function moduleOn(m) {
+  return !!(typeof AppConfig === 'object' && AppConfig && AppConfig[m + 'Enabled']);
 }
 
 /* ---------------- Sidebar customisation (per browser) ----------------
@@ -91,8 +120,11 @@ function saveNavPref() {
 /** Every route this account may open, in declaration order. */
 function permittedNavEntries() {
   return Object.entries(ROUTES).filter(([hash, r]) => {
-    if (isPortalUser()) return hash === PORTAL_HASH;
+    if (isPortalUser()) return hash === PORTAL_HASH || hash === '#/notifications' || (['#/my-tickets', '#/my-kb'].includes(hash) && moduleOn('ticketing'));
     if (isHrConfined()) return HR_ALLOWED_HASHES.has(hash);
+    if (r.portalOnly) return false; // self-service-only routes never show for staff
+    // Optional module (e.g. Service Desk): hidden unless the Owner enabled it.
+    if (r.module && !moduleOn(r.module)) return false;
     if (r.hrOnly) return isHrUser(); // HR screen: any HR account, grouped or not
     if (r.iam && !hasAllIam(r.iam)) return false;
     return !r.perm || Auth.can(r.perm);
@@ -300,9 +332,14 @@ async function navigate() {
 
   const hash = ROUTES[rawHash] ? rawHash : homeHash;
   const route = ROUTES[hash];
-  // Portal accounts are confined to their own zimmet page.
-  if (isPortalUser() && hash !== PORTAL_HASH) { location.hash = PORTAL_HASH; return; }
+  // Portal accounts are confined to their own zimmet page (+ their own tickets).
+  const portalOk = hash === PORTAL_HASH || hash === '#/notifications' || (['#/my-tickets', '#/my-kb'].includes(hash) && moduleOn('ticketing'));
+  if (isPortalUser() && !portalOk) { location.hash = PORTAL_HASH; return; }
   if (isHrConfined() && !HR_ALLOWED_HASHES.has(hash)) { location.hash = HR_HOME_HASH; return; }
+  // Mirror permittedNavEntries: a portalOnly route or a disabled optional module
+  // must bounce home on direct-URL / stale-bookmark hits (the sidebar hides them).
+  if (route.portalOnly && !isPortalUser()) { location.hash = homeHash; return; }
+  if (route.module && !moduleOn(route.module)) { location.hash = homeHash; return; }
   // Typing #/hr by hand must not work for IT either — approving happens on the
   // Dashboard, and this page is scoped to the people who file the tickets.
   if (route.hrOnly && !isHrUser()) { location.hash = homeHash; return; }
@@ -662,6 +699,10 @@ function showApp() {
     }
     if (typeof checkOnboardingDueOnLogin === 'function') {
       checkOnboardingDueOnLogin().catch(() => {});
+    }
+    // First look at the service desk after it's switched on → explain the module.
+    if (typeof maybeShowServiceDeskOnboarding === 'function') {
+      setTimeout(() => { try { maybeShowServiceDeskOnboarding(); } catch { /* ignore */ } }, 700);
     }
     if (typeof maybeShowUpdateNotice === 'function') {
       setTimeout(() => {
@@ -2578,8 +2619,41 @@ function clearDismissedNotifs() {
   localStorage.removeItem(notifDismissKey());
 }
 
+function notifIcon(type) {
+  if (String(type).startsWith('approval')) return 'how_to_reg';
+  if (type === 'ticket_assigned') return 'confirmation_number';
+  if (type === 'ticket_reply') return 'chat';
+  return 'notifications';
+}
+
+// Poll the unread count, paint the bell badge, and pop a toast when new ones land.
+let _lastNotifUnread = null;
+async function refreshNotifBadge() {
+  if (!Auth.profile) return;
+  try {
+    const d = await api('/me/notifications?unread=1&limit=1');
+    const n = (d && d.unread) || 0;
+    const badge = document.getElementById('notif-badge');
+    if (badge) { badge.textContent = n > 9 ? '9+' : String(n); badge.classList.toggle('hidden', !n); }
+    if (_lastNotifUnread != null && n > _lastNotifUnread) {
+      const diff = n - _lastNotifUnread;
+      toast(diff === 1 ? t('notif.one') : t('notif.many').replace('{n}', String(diff)), 'info');
+    }
+    _lastNotifUnread = n;
+  } catch { /* badge refresh is best-effort */ }
+}
+
 async function showNotifications() {
   const d = await api('/dashboard/stats');
+  const inapp = await api('/me/notifications?limit=20').catch(() => ({ items: [], unread: 0 }));
+  const inappItems = (inapp.items || []).map((n) => ({
+    id: `inapp:${n.id}`,
+    icon: notifIcon(n.type),
+    tone: n.readAt ? 'slate' : 'indigo',
+    text: n.title + (n.body ? ` — ${n.body}` : ''),
+    go: n.link || null,
+    unread: !n.readAt,
+  }));
   const todayStr = (() => {
     const t = new Date();
     return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
@@ -2587,6 +2661,7 @@ async function showNotifications() {
   const dismissed = loadDismissedNotifs();
   const onboardSched = d.alerts.onboardingScheduled || [];
   const raw = [
+    ...inappItems,
     ...onboardSched.map((o) => {
       const sd = String(o.startDate || '').slice(0, 10);
       const due = sd && sd <= todayStr;
@@ -2622,7 +2697,7 @@ async function showNotifications() {
     title: `Notifications (${items.length})`,
     body: items.length === 0 ? '<div class="table-empty">All clear — no active alerts.</div>' :
       items.map((n, i) => `
-      <div class="gs-item" data-note="${i}">
+      <div class="gs-item ${n.unread ? 'is-unread' : ''}" data-note="${i}">
         ${iconChip(n.icon, n.tone)}
         <div style="flex:1">${esc(n.label || n.text)}</div>
         <button type="button" class="btn btn-outline btn-sm" data-dismiss="${i}" title="Dismiss"><span class="ms">close</span></button>
@@ -2631,6 +2706,11 @@ async function showNotifications() {
     foot: `${items.length ? '<button class="btn btn-outline" id="notif-clear-all">Clear all</button>' : ''}
            <button class="btn btn-outline" data-close>Close</button>`,
     onMount(overlay) {
+      // Opening the bell marks the persistent (in-app) notifications read and
+      // clears the badge; the dashboard-derived alerts keep their dismiss flow.
+      if (inappItems.some((n) => n.unread)) {
+        api('/me/notifications/read-all', { method: 'POST' }).then(refreshNotifBadge).catch(() => {});
+      }
       overlay.querySelectorAll('[data-dismiss]').forEach((btn) => {
         btn.addEventListener('click', (e) => {
           e.stopPropagation();
@@ -3633,6 +3713,7 @@ async function init() {
       const result = await loginWithPassword(email, password, { rememberMe });
       if (result && result.mfaRequired) {
         $('#login-form').classList.add('hidden');
+        $('#login-sso')?.classList.add('hidden'); // SSO/“or” belongs to the password step only
         const mfaForm = $('#mfa-form');
         mfaForm.classList.remove('hidden');
         mfaForm.dataset.mfaToken = result.mfaToken;
@@ -3685,6 +3766,9 @@ async function init() {
       mfaForm.dataset.mfaToken = '';
       mfaForm.dataset.rememberMe = '';
       $('#login-form').classList.remove('hidden');
+      // Restore the SSO/“or” block that the MFA step hid (only if SSO is on).
+      const on = !!(AppConfig && AppConfig.sso && AppConfig.sso.enabled);
+      $('#login-sso')?.classList.toggle('hidden', !on);
       $('#mfa-error').classList.add('hidden');
     });
 
@@ -3793,6 +3877,16 @@ async function init() {
 
   // Topbar buttons
   $('#btn-notifications').addEventListener('click', () => { if (Auth.profile) showNotifications().catch((e2) => toast(e2.message, 'error')); });
+  (() => {
+    const bell = $('#btn-notifications');
+    if (bell && !$('#notif-badge')) {
+      const b = document.createElement('span');
+      b.id = 'notif-badge'; b.className = 'notif-badge hidden';
+      bell.appendChild(b);
+    }
+  })();
+  setInterval(() => { if (Auth.profile) refreshNotifBadge(); }, 60000);
+  setTimeout(() => { if (Auth.profile) refreshNotifBadge(); }, 1500);
   $('#btn-help').addEventListener('click', showHelp);
   $('#btn-settings').addEventListener('click', () => { if (Auth.profile) showSettings(); });
   $('#topbar-avatar').addEventListener('click', () => { if (Auth.profile) showProfile(); });

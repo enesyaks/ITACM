@@ -336,6 +336,12 @@ async function resolveApprover(employeeId, level = 'manager') {
 
   if (level === 'department') return departmentApprover();
 
+  // Skip-level: the manager's manager (walk two hops up the reporting line).
+  if (level === 'manager2') {
+    const m1 = await resolveApprover(employeeId, 'manager');
+    return m1 ? resolveApprover(m1.id, 'manager') : null;
+  }
+
   // level === 'manager'
   const direct = await nameOf(emp.manager_employee_id);
   if (direct) return direct;

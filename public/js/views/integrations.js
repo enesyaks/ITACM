@@ -21,6 +21,7 @@ Views.integrations = async function (el) {
     api('/ai/config').catch(() => ({ enabled: false, provider: 'ollama', providers: [] })),
   ]);
   const sso = await api('/integrations/sso').catch(() => ({}));
+  const inbound = await api('/integrations/inbound-mail').catch(() => ({}));
   // The server ships every template it knows about, with its label and
   // placeholders — no local copy of the list to drift out of sync.
   const tpls = emailTemplates || {};
@@ -132,6 +133,7 @@ Views.integrations = async function (el) {
             <label><input type="checkbox" id="int-notify-on" ${notify.enabled ? 'checked' : ''}${chkDis}> Enable digests</label>
             <label title="Only for servers that require implicit TLS on 465. Leave off for iCloud (587)."><input type="checkbox" id="int-smtp-secure" ${smtp.secure ? 'checked' : ''}${chkDis}> TLS (port 465)</label>
             <label><input type="checkbox" id="int-notify-ho" ${notify.handoverCompleted ? 'checked' : ''}${chkDis}> Email on handover</label>
+            <label title="Notify the requester and assignee on replies, status changes and assignment."><input type="checkbox" id="int-notify-tickets" ${notify.ticketUpdates ? 'checked' : ''}${chkDis}> Email on ticket updates</label>
           </div>
           <div class="form-field full" style="display:flex;flex-wrap:wrap;gap:12px;align-items:center">
             <label style="display:flex;align-items:center;gap:6px">Auto-send
@@ -190,6 +192,38 @@ Views.integrations = async function (el) {
         ${canManage ? `<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
           <button class="btn btn-primary" id="int-sso-save">${esc(t('int.sso.save') || 'Save SSO')}</button>
           <button class="btn btn-outline" id="int-sso-test">${esc(t('int.sso.test') || 'Test connection')}</button>
+        </div>` : ''}
+      </section>
+
+      <section class="card card-pad" style="margin-bottom:16px">
+        <h3 style="margin:0 0 8px"><span class="ms ms-sm" style="vertical-align:-3px">forward_to_inbox</span> ${esc(t('int.inbound.title'))}</h3>
+        <p class="cell-sub" style="margin:0 0 12px">${esc(t('int.inbound.hint'))}</p>
+        <div class="form-grid">
+          <div class="form-field"><label>${esc(t('int.inbound.host'))}</label>
+            <input id="int-imap-host" value="${esc(inbound.host || '')}" placeholder="imap.gmail.com"${inputDis}></div>
+          <div class="form-field"><label>${esc(t('int.inbound.port'))}</label>
+            <input id="int-imap-port" type="number" value="${esc(inbound.port || 993)}" placeholder="993"${inputDis}></div>
+          <div class="form-field"><label>${esc(t('int.inbound.user'))}</label>
+            <input id="int-imap-user" value="${esc(inbound.user || '')}" placeholder="destek@sirket.com" autocomplete="off"${inputDis}></div>
+          <div class="form-field"><label>${esc(t('int.inbound.pass'))} ${inbound.hasPass ? `<span class="ob-hint">${esc(t('int.inbound.keep'))}</span>` : ''}</label>
+            <input id="int-imap-pass" type="password" value="" placeholder="${inbound.hasPass ? '••••••••' : ''}" autocomplete="new-password"${inputDis}></div>
+          <div class="form-field"><label>${esc(t('int.inbound.folder'))}</label>
+            <input id="int-imap-folder" value="${esc(inbound.folder || 'INBOX')}" placeholder="INBOX"${inputDis}></div>
+          <div class="form-field"><label>${esc(t('int.inbound.type'))}</label>
+            <select id="int-imap-type" ${inputDis}>
+              <option value="incident" ${inbound.defaultType !== 'request' ? 'selected' : ''}>${esc(tkTypeLabel ? tkTypeLabel('incident') : 'Incident')}</option>
+              <option value="request" ${inbound.defaultType === 'request' ? 'selected' : ''}>${esc(tkTypeLabel ? tkTypeLabel('request') : 'Request')}</option>
+            </select></div>
+          <div class="form-field"><label>${esc(t('int.inbound.category'))}</label>
+            <input id="int-imap-cat" value="${esc(inbound.defaultCategory || '')}" placeholder="${esc(t('int.inbound.categoryPh'))}"${inputDis}></div>
+          <div class="form-field"><label style="padding-top:26px"><input type="checkbox" id="int-imap-secure" ${inbound.secure !== false ? 'checked' : ''}${chkDis}> TLS (SSL)</label></div>
+          <div class="form-field full"><label><input type="checkbox" id="int-imap-enabled" ${inbound.enabled ? 'checked' : ''}${chkDis}> ${esc(t('int.inbound.enable'))}</label>
+            <span class="ob-hint">${esc(t('int.inbound.enableHint'))}</span></div>
+        </div>
+        ${canManage ? `<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+          <button class="btn btn-primary" id="int-imap-save">${esc(t('common.save'))}</button>
+          <button class="btn btn-outline" id="int-imap-test">${esc(t('int.inbound.test'))}</button>
+          <button class="btn btn-outline" id="int-imap-poll">${esc(t('int.inbound.pollNow'))}</button>
         </div>` : ''}
       </section>
 
@@ -342,6 +376,17 @@ Views.integrations = async function (el) {
         </div>
       </section>` : ''}
 
+      <section class="card card-pad" style="margin-bottom:16px">
+        <h3 style="margin:0 0 8px">${esc(t('int.ticketing.title'))}</h3>
+        <p class="cell-sub" style="margin:0 0 12px">${esc(t('int.ticketing.hint'))}</p>
+        <label class="ob-check" style="margin-bottom:12px">
+          <input type="checkbox" id="int-ticketing" ${AppConfig.ticketingEnabled ? 'checked' : ''}${chkDis}>
+          <span>${esc(t('int.ticketing.toggle'))}</span>
+        </label>
+        ${canManage ? `<div><button type="button" class="btn btn-primary" id="int-ticketing-save">
+          <span class="ms">save</span> ${esc(t('common.save') || 'Save')}</button></div>` : ''}
+      </section>
+
       <section class="card card-pad">
         <h3 style="margin:0 0 8px">Sync connectors (API)</h3>
         <pre class="mono" style="white-space:pre-wrap;font-size:12px;background:#f6f5fa;padding:12px;border-radius:10px;overflow:auto">POST /api/integrations/sync/employees
@@ -473,6 +518,39 @@ GET /api/integrations/licenses/:id/sam
     } finally { btn.disabled = false; btn.textContent = label; }
   });
 
+  // Email-to-ticket (IMAP)
+  const imapBody = () => ({
+    enabled: !!$('#int-imap-enabled', el)?.checked,
+    host: $('#int-imap-host', el)?.value.trim() || '',
+    port: Number($('#int-imap-port', el)?.value) || 993,
+    secure: !!$('#int-imap-secure', el)?.checked,
+    user: $('#int-imap-user', el)?.value.trim() || '',
+    pass: $('#int-imap-pass', el)?.value || '',
+    folder: $('#int-imap-folder', el)?.value.trim() || 'INBOX',
+    defaultType: $('#int-imap-type', el)?.value || 'incident',
+    defaultCategory: $('#int-imap-cat', el)?.value.trim() || '',
+  });
+  $('#int-imap-save', el)?.addEventListener('click', async () => {
+    const btn = $('#int-imap-save', el); btn.disabled = true;
+    try { await api('/integrations/inbound-mail', { method: 'PUT', body: imapBody() }); toast(t('int.inbound.saved'), 'success'); Views.integrations(el); }
+    catch (err) { toast(err.message, 'error'); btn.disabled = false; }
+  });
+  $('#int-imap-test', el)?.addEventListener('click', async () => {
+    const btn = $('#int-imap-test', el); const label = btn.textContent;
+    btn.disabled = true; btn.textContent = t('common.loading') || '…';
+    try { await api('/integrations/inbound-mail/test', { method: 'POST', body: imapBody() }); toast(t('int.inbound.testOk'), 'success'); }
+    catch (err) { toast(t('int.inbound.testFail') + ': ' + err.message, 'error'); }
+    finally { btn.disabled = false; btn.textContent = label; }
+  });
+  $('#int-imap-poll', el)?.addEventListener('click', async () => {
+    const btn = $('#int-imap-poll', el); const label = btn.textContent;
+    btn.disabled = true; btn.textContent = t('common.loading') || '…';
+    try { const r = await api('/integrations/inbound-mail/poll', { method: 'POST' });
+      toast(r.skipped ? (t('int.inbound.pollSkipped') + (r.reason ? ' (' + r.reason + ')' : '')) : t('int.inbound.pollDone').replace('{n}', (r.created || 0) + (r.appended || 0)), r.skipped ? 'error' : 'success'); }
+    catch (err) { toast(err.message, 'error'); }
+    finally { btn.disabled = false; btn.textContent = label; }
+  });
+
   $('#int-smtp-save', el)?.addEventListener('click', async () => {
     try {
       const to = $('#int-notify-to', el).value.split(/[,;\s]+/).map((s) => s.trim()).filter(Boolean);
@@ -501,6 +579,7 @@ GET /api/integrations/licenses/:id/sam
             enabled: $('#int-notify-on', el).checked,
             to,
             handoverCompleted: $('#int-notify-ho', el).checked,
+            ticketUpdates: $('#int-notify-tickets', el).checked,
             schedule: $('#int-notify-schedule', el).value,
             hour: Number($('#int-notify-hour', el).value),
             weekday: Number($('#int-notify-weekday', el).value),
@@ -543,6 +622,7 @@ GET /api/integrations/licenses/:id/sam
             enabled: $('#int-notify-on', el).checked,
             to: toList,
             handoverCompleted: $('#int-notify-ho', el).checked,
+            ticketUpdates: $('#int-notify-tickets', el).checked,
             schedule: $('#int-notify-schedule', el).value,
             hour: Number($('#int-notify-hour', el).value),
             weekday: Number($('#int-notify-weekday', el).value),
@@ -625,6 +705,25 @@ GET /api/integrations/licenses/:id/sam
       // client-side re-render without a full reload.
       if (typeof AppConfig === 'object' && AppConfig) AppConfig.zimmetOcr = saved ? !!saved.zimmetOcr : on;
       toast(t('integration.ocrSaved'), 'success');
+    } catch (err) { toast(err.message, 'error'); }
+    finally { if (btn) btn.disabled = false; }
+  });
+
+  $('#int-ticketing-save', el)?.addEventListener('click', async () => {
+    const btn = $('#int-ticketing-save', el);
+    const on = !!$('#int-ticketing', el)?.checked;
+    if (btn) btn.disabled = true;
+    try {
+      const wasOff = !AppConfig.ticketingEnabled;
+      const saved = await api('/settings', { method: 'PUT', body: { ticketingEnabled: on } });
+      if (typeof AppConfig === 'object' && AppConfig) AppConfig.ticketingEnabled = saved ? !!saved.ticketingEnabled : on;
+      toast(t('int.ticketing.saved'), 'success');
+      if (typeof renderNav === 'function') renderNav(); // show/hide the Service Desk item
+      // Just switched the module on → walk the admin through what it offers.
+      if (on && wasOff) {
+        if (typeof resetServiceDeskOnboarding === 'function') resetServiceDeskOnboarding();
+        if (typeof showServiceDeskOnboarding === 'function') setTimeout(() => showServiceDeskOnboarding(true), 300);
+      }
     } catch (err) { toast(err.message, 'error'); }
     finally { if (btn) btn.disabled = false; }
   });

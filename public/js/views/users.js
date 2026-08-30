@@ -158,7 +158,7 @@ Views.users = async function (el) {
     'line', 'consumable', 'maintenance', 'stock_count', 'report',
     'audit', 'dashboard', 'settings', 'user_management',
     'integration', 'document', 'handover_document', 'catalog', 'handover', 'onboarding',
-    'ai',
+    'ai', 'ticket', 'problem', 'change',
   ];
   const ACTIONS_BY_RESOURCE = {
     asset: ['read', 'create', 'update', 'delete', 'assign', 'unassign', 'sell', 'export', 'import', 'manage'],
@@ -182,6 +182,11 @@ Views.users = async function (el) {
     user_management: ['read', 'create', 'update', 'delete'],
     integration: ['read', 'update', 'manage'],
     ai: ['use'],
+    // Service desk / ITIL. report = the Report screen; configure = request
+    // templates, SLA targets, approval settings; manage implies both.
+    ticket: ['read', 'create', 'update', 'assign', 'report', 'configure', 'manage'],
+    problem: ['read', 'create', 'update', 'manage'],
+    change: ['read', 'create', 'update', 'approve', 'manage'],
   };
   const IAM_ACTIONS_FLAT = [...new Set(Object.values(ACTIONS_BY_RESOURCE).flat())];
   const IAM_CONSTRAINTS = [
@@ -483,6 +488,73 @@ Views.users = async function (el) {
           keyRow('asset:export|import', 'CSV export and inventory import (manage does not include these).'),
         ],
       },
+      {
+        key: 'ticket',
+        icon: 'confirmation_number',
+        label: 'ticket',
+        title: 'Service desk (tickets)',
+        lead: 'Incidents and service requests. report and configure are separate from the day-to-day work so a regular IT user can’t open the report or change templates/SLA.',
+        shot: shot('Service Desk · toolbar', `
+          <div class="iam-shot-row">
+            <strong>read + update + assign</strong>
+            <span class="muted">works tickets</span>
+            <div class="iam-shot-btns"><em class="off">Report</em><em class="off">Templates</em>
+              <span class="iam-shot-callout warn">hidden</span></div>
+          </div>
+          <div class="iam-shot-row">
+            <strong>+ report / configure</strong>
+            <span class="muted">or manage</span>
+            <div class="iam-shot-btns"><em>Report</em><em>Templates</em>
+              <span class="iam-shot-callout ok">shown</span></div>
+          </div>`),
+        keys: [
+          keyRow('ticket:read', 'See and work tickets (list, detail, worklog).'),
+          keyRow('ticket:create', 'New ticket button.'),
+          keyRow('ticket:assign', 'Pick up / reassign tickets.'),
+          keyRow('ticket:report', 'Open the service-desk Report (SLA, CSAT, per-agent). Nothing else grants it except manage.'),
+          keyRow('ticket:configure', 'Request templates, SLA targets and the approval-workflow settings.'),
+          keyRow('ticket:manage', 'Queues, others’ tickets — and also read+update+assign+report+configure.'),
+        ],
+      },
+      {
+        key: 'problem',
+        icon: 'troubleshoot',
+        label: 'problem',
+        title: 'Problem management',
+        lead: 'Root-cause records that group recurring incidents (known errors).',
+        shot: shot('Problems', `
+          <div class="iam-shot-row">
+            <strong>read</strong><span class="muted">list &amp; detail</span>
+            <div class="iam-shot-btns"><em class="off">New problem</em>
+              <span class="iam-shot-callout warn">needs create</span></div>
+          </div>`),
+        keys: [
+          keyRow('problem:read', 'See problems and their linked incidents.'),
+          keyRow('problem:create', 'New problem button.'),
+          keyRow('problem:update', 'Edit root cause, workaround, status; link/unlink incidents.'),
+          keyRow('problem:manage', 'read + update.'),
+        ],
+      },
+      {
+        key: 'change',
+        icon: 'published_with_changes',
+        label: 'change',
+        title: 'Change enablement',
+        lead: 'Planned changes with an approval (CAB) decision distinct from editing.',
+        shot: shot('Changes', `
+          <div class="iam-shot-row">
+            <strong>update</strong><span class="muted">edit the change</span>
+            <div class="iam-shot-btns"><em class="off">Approve</em>
+              <span class="iam-shot-callout warn">needs approve</span></div>
+          </div>`),
+        keys: [
+          keyRow('change:read', 'See changes and their plans.'),
+          keyRow('change:create', 'New change button.'),
+          keyRow('change:update', 'Edit type, risk, schedule, plans.'),
+          keyRow('change:approve', 'CAB decision — approve / reject (separate from update).'),
+          keyRow('change:manage', 'read + update + approve.'),
+        ],
+      },
     ];
 
     const initial = topics.find((t) => t.key === startKey) ? startKey : 'general';
@@ -557,6 +629,9 @@ Views.users = async function (el) {
     line: 'employee',
     provider: 'provider',
     contract: 'provider',
+    ticket: 'ticket',
+    problem: 'problem',
+    change: 'change',
   };
 
   const refreshDetail = async (groupId, detail) => {
