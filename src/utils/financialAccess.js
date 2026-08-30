@@ -11,7 +11,9 @@ const COST_FIELDS_BY_RESOURCE = {
   line: ['monthlyCost'],
   license: ['purchaseAmount'],
   maintenance: ['cost'],
-  asset: ['purchaseCost', 'cost'],
+  // `cost`/`purchaseCost` are the stored figures; `bookValue` and `salvageValue`
+  // are derived monetary amounts that would otherwise leak the cost back out.
+  asset: ['purchaseCost', 'cost', 'bookValue', 'salvageValue'],
 };
 
 async function canViewCosts(user, resource) {

@@ -4,6 +4,34 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.8.2] — 2026-08-31
+
+Full-codebase security review (whole app, not just the Service Desk). One
+confidentiality gap fixed; the rest of the review came back clean.
+
+### Security
+- **Asset costs were not gated by `view_confidential`.** The financial-access
+  control (already applied to contracts, licences, mobile lines and maintenance)
+  was never wired into the asset routes, so any read-capable user without the
+  confidential-cost permission — including the read-only **Viewer** role — could
+  read every asset's purchase `cost`, `salvageValue` and derived `bookValue` on
+  the list and detail endpoints, and could set a cost on create/update. The asset
+  routes now redact those fields on read and reject a cost write from a caller
+  without the permission, matching the other resources. `bookValue` and
+  `salvageValue` were added to the redaction set so a derived figure can't leak
+  the cost back out.
+
+### Reviewed and clean (no change needed)
+- Query layer is uniformly parameterized; the AI advanced-query feature is
+  contained by a dedicated read-only DB role (`itacm_ai_ro`, `ai.*` views only,
+  read-only transaction) on top of its keyword/validator denylist.
+- JWT algorithm is pinned (`HS256`); webhook delivery uses a pinned
+  resolve-then-connect SSRF guard; the update check targets a fixed host.
+- Role confinement (Portal → `/api/me/*`, HR lane, Viewer read-only) verified
+  against a live instance; uploads go through the magic-byte guard; the migration
+  restore rejects path-traversal and symlink escapes; record updates are
+  whitelist-based (no mass assignment).
+
 ## [1.8.1] — 2026-08-30
 
 Hardening + correctness release for the Service Desk module (security review and a

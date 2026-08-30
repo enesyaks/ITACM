@@ -3,6 +3,7 @@ const { authenticate, requireAnyPermission } = require('../middleware/auth');
 const { asyncHandler } = require('../utils/asyncHandler');
 const { assetService, permissionService, approvalService, webhookService } = require('../services');
 const { HttpError } = require('../utils/httpError');
+const { redactCosts, gateCostWrite } = require('../utils/financialAccess');
 const { query: dbQuery } = require('../providers/postgres/pool');
 
 router.use(authenticate);
@@ -138,7 +139,8 @@ router.get('/', asyncHandler(async (req, res) => {
   if (caps.forcedStatuses) {
     query.status = caps.forcedStatuses.join(',');
   }
-  res.json({ success: true, data: await assetService.listAssets(query) });
+  const list = await assetService.listAssets(query);
+  res.json({ success: true, data: await redactCosts(req.user, 'asset', list) });
 }));
 
 /** GET /api/assets/next-tag — preview of the next auto-assigned tag. İzin: asset:create */
@@ -154,7 +156,7 @@ router.get('/:id', asyncHandler(async (req, res) => {
   }
   const asset = await assetService.getAsset(req.params.id);
   assertAssetInScope(caps, asset);
-  res.json({ success: true, data: asset });
+  res.json({ success: true, data: await redactCosts(req.user, 'asset', asset) });
 }));
 
 /** GET /api/assets/:id/qr — server-generated QR code (PNG data URL, works offline). */
@@ -174,7 +176,9 @@ router.get('/:id/qr', asyncHandler(async (req, res) => {
 
 /** POST /api/assets — register hardware. İzin: asset:create */
 router.post('/', requireAnyPermission([['asset', 'create']], getBodyContext), asyncHandler(async (req, res) => {
-  res.status(201).json({ success: true, data: await assetService.createAsset(req.body, req.user) });
+  await gateCostWrite(req.user, 'asset', req.body);
+  const created = await assetService.createAsset(req.body, req.user);
+  res.status(201).json({ success: true, data: await redactCosts(req.user, 'asset', created) });
 }));
 
 /** PUT /api/assets/:id — edit hardware. İzin: asset:update | manage */
@@ -188,6 +192,7 @@ router.put('/:id', requireAnyPermission([['asset', 'update'], ['asset', 'manage'
     const canSell = await permissionService.checkPermission(req.user, 'asset', 'sell', ctx);
     if (!canSell) throw HttpError.forbidden('You do not have permission to sell (mark as Sold) assets');
   }
+  await gateCostWrite(req.user, 'asset', req.body);
   const pending = await disposalApprovalGate(req);
   if (pending) return res.status(202).json({ success: true, data: pending });
   const updated = await assetService.updateAsset(req.params.id, req.body, req.user);
@@ -200,7 +205,7 @@ router.put('/:id', requireAnyPermission([['asset', 'update'], ['asset', 'manage'
     category: updated.category,
     updatedBy: (req.user && (req.user.username || req.user.email)) || null,
   });
-  res.json({ success: true, data: updated });
+  res.json({ success: true, data: await redactCosts(req.user, 'asset', updated) });
 }));
 
 /** POST /api/assets/:id/return — Assigned → In Stock. İzin: asset:unassign | manage */
