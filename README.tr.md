@@ -12,7 +12,7 @@ Donanım ve ağ envanteri · yazdırılabilir PDF tutanaklı personel zimmetleri
 [![Node](https://img.shields.io/badge/Node-%E2%89%A520-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?style=flat-square&logo=postgresql&logoColor=white)](https://www.postgresql.org)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=flat-square&logo=docker&logoColor=white)](https://docs.docker.com/compose/)
-[![Self-hosted](https://img.shields.io/badge/Kendi%20sunucunuzda-%100-0ea5e9?style=flat-square)](#-hızlı-başlangıç--docker-compose)
+[![Self-hosted](https://img.shields.io/badge/Kendi--sunucunuzda-100%25-0ea5e9?style=flat-square)](#-hızlı-başlangıç--docker-compose)
 [![Build adımı yok](https://img.shields.io/badge/Arayüz-Build%20adımı%20yok-f59e0b?style=flat-square)](#-proje-yapısı)
 [![Mobil uyumlu](https://img.shields.io/badge/Mobil-uyumlu-8b5cf6?style=flat-square)](#-mobil-uyumlu)
 [![i18n](https://img.shields.io/badge/i18n-12%20dil-14b8a6?style=flat-square)](#-öne-çıkan-özellikler)
@@ -59,10 +59,10 @@ Donanım ve ağ envanteri · yazdırılabilir PDF tutanaklı personel zimmetleri
 Çoğu envanter aracı ya zamanla çürüyen bir Excel dosyası ya da kendi sunucunuzda barındıramadığınız ağır bir SaaS'tır. ITACM tam ortada durur:
 
 - **Tek komutla çalışır.** `docker compose up -d` size veritabanını, şemayı, ilk yöneticiyi ve tam bir web arayüzünü verir — build adımı yok, ayrı bir frontend kurmanıza gerek yok.
-- **Sağlam zimmetler.** Her cihaz ataması, satır kilitli ve atomik bir işlemdir; şirket markanızla **Zimmet Tutanağı** (yazdırılabilir teslim formu) üretir.
+- **Zimmet.** Her cihaz ataması, satır kilitli ve otomik bir işlemdir; şirket markanızla **Zimmet Tutanağı** (yazdırılabilir teslim formu) üretir.
 - **Tüm şirket, tek taşıma.** Cihazlar, personel, tutanaklar, sözleşmeler ve denetim geçmişi PostgreSQL'dedir. Yüklenen belgeler dosya sisteminde (`DATA_DIR/documents`); tam taşıma için `npm run migrate:export` kullanın.
-- **Depoda da çalışır.** Arayüz tamamen duyarlı; mobil alt menü ve kamerayla QR/barkod tarama ile telefonunuzdan sayım yapabilir veya laptop zimmetleyebilirsiniz.
-- **Sizin kalır.** Telemetri yok, üreticiye bağımlılık yok, MIT lisanslı.
+- **Envanter sayımı.** Arayüz tamamen duyarlı; mobil alt menü ve kamerayla QR/barkod tarama ile telefonunuzdan sayım yapabilir veya laptop zimmetleyebilirsiniz.
+- **Verileriniz sizde kalır.** Telemetri yok, üreticiye bağımlılık yok, MIT lisanslı.
 
 ---
 
