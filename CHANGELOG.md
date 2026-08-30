@@ -4,6 +4,50 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.8.0] — 2026-08-30
+
+### Added
+- **Service Desk — an ITIL-aligned ITSM module** next to the inventory. Ships
+  **off by default**; enable it from Settings (nothing appears in the nav until
+  you do).
+  - **Incidents & service requests** with **Impact × Urgency** priority, SLA
+    response/resolution timers (pause while pending, breach markers,
+    auto-escalation), a Jira-style **workflow editor** (custom status
+    transitions + *auto-close resolved*), canned replies, saved list views, a
+    Kanban board, bulk actions, CSV export and **CSAT** on closure.
+  - **Request templates + multi-step approval chains** (manager → manager's
+    manager → department, sequential or parallel *any*/*all*), with delegation,
+    reminders and escalation. Approvals reuse the existing generic approval
+    engine and resolve approvers from the org chart.
+  - **Employee self-service Portal** — the same login employees use for their
+    assets — to open requests, follow their tickets, reply, attach files and
+    approve what is routed to them.
+  - **Three-level visibility** on comments & attachments (*public*,
+    *approver-only*, *IT-only*), enforced in the SQL `WHERE` clause of every
+    read path.
+  - **Problem management** (root cause / workaround, linked incidents) and
+    **Change enablement** (type, risk, CAB approval, schedule, rollback plan).
+  - **Knowledge Base** with staff authoring, inline PDF/image attachments and a
+    published-only Help Center in the portal (deflection).
+  - **Email-to-ticket over IMAP** — polls a mailbox, opens tickets and
+    cross-links `[REQ-1234]` replies. Sender identity is attributed only on a
+    provider-verified **DMARC pass**, so a forged `From` cannot open a ticket as
+    someone else.
+  - **"Similar past tickets"** panel showing how comparable tickets were
+    resolved.
+- **Per-employee manager** (`reports to`) in the employee form, and an HTML **org
+  tree** rebuilt around it — fold/unfold, avatars, and set-manager straight from
+  the chart. Approval chains resolve through it.
+
+### Changed
+- Express upgraded from 4.x to **5.2**; base image moved to `node:26-alpine`.
+- `README.md` documents the Service Desk; `README.tr.md` caught up with the
+  Service Desk module and the SSO support added in 1.7.0.
+
+### Security
+- Staff-only ticket documents are no longer downloadable by approvers.
+- Inbound email sender identity is DMARC-gated (see above).
+
 ## [1.7.0] — 2026-08-18
 
 ### Added

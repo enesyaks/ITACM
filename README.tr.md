@@ -4,7 +4,7 @@
 
 ### Kendi sunucunuzda çalışan, her şeyi içeren BT envanter yönetimi.
 
-Donanım ve ağ envanteri · yazdırılabilir PDF tutanaklı personel zimmetleri · yazılım lisansları · hat/SIM yönetimi · tedarikçi & sözleşmeler · onarım takibi · fiziksel sayım · tam denetim kaydı — hepsi tamamen kendi altyapınızda çalışan, mobil uyumlu dahili bir web arayüzünde.
+Donanım ve ağ envanteri · yazdırılabilir PDF tutanaklı personel zimmetleri · yazılım lisansları · hat/SIM yönetimi · tedarikçi & sözleşmeler · onarım takibi · fiziksel sayım · **ITIL uyumlu servis masası** (kayıtlar, talepler, onaylar, SLA) · doğal dil AI asistanı · tam denetim kaydı — hepsi tamamen kendi altyapınızda çalışan, mobil uyumlu dahili bir web arayüzünde.
 
 <br />
 
@@ -102,8 +102,11 @@ Donanım ve ağ envanteri · yazdırılabilir PDF tutanaklı personel zimmetleri
 <tr>
 <td width="50%" valign="top">
 
+### 🎫 Servis Masası (ITIL uyumlu)
+Envanterinizin yanında yaşayan eksiksiz bir ITSM paketi. **Kayıtlar (incident) ve talepler** — **Etki × Aciliyet** ile türetilen öncelik, mesai saatlerini bilen **SLA** yanıt/çözüm sayaçları (duraklatma ve ihlal), **Jira tarzı iş akışı editörü** (özel durum geçişleri + *çözülenleri otomatik kapat*), hazır yanıtlar ve kapanışta **CSAT** anketi. **Talep şablonları** self-service **Portal**'ı besler — personelin zimmetini gördüğü aynı giriş — **çok adımlı onay zincirleri** (yönetici → BT ekibi → son onay), vekâlet, hatırlatma ve eskalasyon ile. Yorum ve eklerde **üç seviyeli görünürlük** — *herkese açık*, *yalnızca onaycı*, *yalnızca BT* — fiyat araştırması ve satınalma detaylarını talep sahibinden gizler, onaycıya ise gerekeni gösterir. Ayrıca **Problem** ve **Değişiklik** yönetimi, portal yönlendirmeli **Bilgi Bankası**, geçmiş kayıtların nasıl çözüldüğünü gösteren **"benzer eski kayıtlar"** paneli ve `[REQ-1234]` çapraz bağlantısıyla **DMARC doğrulamalı e-postadan kayıt açma (IMAP)**.
+
 ### 🖥 Dahili, mobil uyumlu web arayüzü
-Backend'in kendisi sunar — build adımı yok, katı same-origin CSP. 17 modül, global arama (Cmd/Ctrl+K), QR kodlar, koyu tema uyumu, **kullanıcıya özel özelleştirilebilir tablo sütunları** (göster/gizle + sürükle-sırala, tarayıcıda kalıcı) ve mobil alt menü + kamera tarayıcılı duyarlı kabuk. Sadece `http://localhost:8000` adresini açın.
+Backend'in kendisi sunar — build adımı yok, katı same-origin CSP. 20+ modül, global arama (Cmd/Ctrl+K), QR kodlar, koyu tema uyumu, **kullanıcıya özel özelleştirilebilir tablo sütunları** (göster/gizle + sürükle-sırala, tarayıcıda kalıcı) ve mobil alt menü + kamera tarayıcılı duyarlı kabuk. Sadece `http://localhost:8000` adresini açın.
 
 ### 🤝 Atomik zimmet sepeti
 Birden çok cihazı tek "ya hep ya hiç" işlemle bir personele atayın; yazdırılabilir Zimmet Tutanağı üretir. Satır kilitleri çift atamayı imkânsız kılar; yeniden yazdırmada orijinal teslim edenin adı korunur.
@@ -133,7 +136,7 @@ Eski imzalı zimmet tutanaklarınız otomatik dağıtılır. Bir ya da yirmi PDF
 <td width="50%" valign="top">
 
 ### 🔐 Rol bazlı erişim kontrolü + izin matrisi
-Altı yerleşik rol — `Owner`, `Admin`, `Helpdesk`, `Viewer`, ayrıca **`HR`** (onboarding/offboarding *talebi* oluşturur, yalnızca kendi zimmetini görür) ve **`Portal`** (self-service çalışan girişi, yalnızca kendi cihazlarını görür) — **her** uç noktada uygulanır ve her istekte yeniden denetlenir; değişiklikler anında geçerli olur. Rolden daha ince kontrol mü lazım? IAM matrisinde **özel izin grubu** oluşturun: herhangi bir `resource:action` (ör. `asset:sell`, `license:assign`) verin ve departman / lokasyon / kategori / maliyet limiti ile kısıtlayın. Sahipler hesapları devre dışı bırakabilir veya silebilir — her pasifleştirme/aktifleştirme/silme/rol değişikliği kaydedilir. Giriş yerel e-posta/parola ile; **TOTP MFA** her rol için opsiyonel, **`Owner` hesapları için zorunludur**: bir Owner uygulamayı kullanmadan önce MFA'yı etkinleştirmek zorundadır, kapatamaz ve MFA'sı olmayan hiç kimse Owner'a yükseltilemez. Ayrıca parola değişikliği ve sunucu taraflı çıkış (JWT iptali). SSO / Entra girişi yoktur.
+Altı yerleşik rol — `Owner`, `Admin`, `Helpdesk`, `Viewer`, ayrıca **`HR`** (onboarding/offboarding *talebi* oluşturur, yalnızca kendi zimmetini görür) ve **`Portal`** (self-service çalışan girişi, yalnızca kendi cihazlarını görür) — **her** uç noktada uygulanır ve her istekte yeniden denetlenir; değişiklikler anında geçerli olur. Rolden daha ince kontrol mü lazım? IAM matrisinde **özel izin grubu** oluşturun: herhangi bir `resource:action` (ör. `asset:sell`, `license:assign`) verin ve departman / lokasyon / kategori / maliyet limiti ile kısıtlayın. Sahipler hesapları devre dışı bırakabilir veya silebilir — her pasifleştirme/aktifleştirme/silme/rol değişikliği kaydedilir. Giriş yerel e-posta/parola ile; **TOTP MFA** her rol için opsiyonel, **`Owner` hesapları için zorunludur**: bir Owner uygulamayı kullanmadan önce MFA'yı etkinleştirmek zorundadır, kapatamaz ve MFA'sı olmayan hiç kimse Owner'a yükseltilemez. Ayrıca parola değişikliği ve sunucu taraflı çıkış (JWT iptali). **OpenID Connect ile çoklu oturum açma (SSO)** de vardır — davet usulü, varsayılan olarak kapalı: Google Workspace / Microsoft Entra / Okta / Auth0 / Keycloak ile giriş yapılır, PKCE'li Authorization Code akışı kullanılır, hesap **oluşturmaz** (yalnızca ITACM'de zaten var olan, e-postası **doğrulanmış** kullanıcıyı tanır) ve yerel parola girişi acil durum yolu olarak açık kalır. Arayüzden yapılandırılır: **Entegrasyonlar → SSO**.
 
 ### 🧾 Sistem geneli denetim kaydı
 Cihaz, kullanıcı, belge, zimmet, giriş, ayar ve dahasını kapsayan; append-only denetim tablosunu eski alan geçmişleriyle birleştiren birleşik, filtrelenebilir zaman çizelgesi. Kaynağa, aktöre ve tarihe göre arama; sırlar saklanmadan önce maskelenir.
@@ -187,6 +190,11 @@ Kenar menü, özellik setiyle bire bir eşleşir:
 | **Raporlar** | 20 hazır rapor + oluşturucu (kaynak × sütun × filtre), CSV / antetli yazdırma |
 | **Denetim Kaydı** | Birleşik, filtrelenebilir hareket zaman çizelgesi (Owner/Admin) |
 | **BT Kullanıcıları** | RBAC kullanıcı yönetimi + **özel izin grupları** (kısıtlanabilir, granular `resource:action` matrisi) — oluştur, rol, pasifleştir/aktifleştir, sil (kayıtlı) |
+| **Servis Masası** | Kayıtlar & talepler — Etki×Aciliyet önceliği, SLA sayaçları, iş akışı editörü + otomatik kapatma, hazır yanıtlar, CSAT, üç seviyeli not görünürlüğü, e-postadan kayıt açma (IMAP) |
+| **Onaylar** | Çok adımlı talep onayları (yönetici → BT → son onay); vekâlet, hatırlatma ve eskalasyon — onaycılar talep sahibinin göremediği dahili iş kaydını görür |
+| **Problemler** | Kök neden / geçici çözüm takipli problem kayıtları, ilişkili incident bağlantılarıyla |
+| **Değişiklikler** | Risk, onay, planlanan pencere ve geri alma planı ile değişiklik talepleri |
+| **Bilgi Bankası** | BT'nin yazdığı makaleler; personel yayımlanmış olanları self-service okur (portal yönlendirme) |
 
 ---
 
@@ -205,7 +213,7 @@ Uygulamanın tamamı duyarlıdır — ayrı bir mobil build yok:
 
 | Katman | Teknoloji |
 |---|---|
-| **Çalışma zamanı** | Node.js ≥ 20, Express 4 |
+| **Çalışma zamanı** | Node.js ≥ 20, Express 5 |
 | **Veritabanı** | PostgreSQL 16 — idempotent `schema.sql` + izlenen sürümlü migration'lar, açılışta uygulanır |
 | **Kimlik doğrulama** | JWT (HS256, algoritma sabitlenmiş) + bcrypt (maliyet 12), her istekte yeniden denetlenen rol middleware'i |
 | **Arayüz** | Backend'in sunduğu vanilla JS SPA — **build adımı yok**, ekran başına modüllere bölünmüş |
@@ -373,6 +381,13 @@ Tüm yanıtlar `{ success, data }` veya `{ success: false, error, details? }` bi
 | POST | `/api/import/zimmet/analyze` · `/commit` | `handover_document:upload` + `employee:view_handover` | **Toplu zimmet PDF içe aktarımı** — ayır + isim eşle, bekleyen gruba yaz, sonra profillere ekle |
 | GET | `/api/audit` · `/:bucket/:id` | Owner, Admin | Birleşik denetim zaman çizelgesi + olay detayı |
 | GET | `/api/documents/:id/download` | tümü | Kayıtlı belgeyi akıt (inline/attachment) |
+| GET/POST/PUT | `/api/tickets` · `/:id` · `/:id/comments` · `/documents` | `ticket:*` | Kayıtlar/talepler — liste, detay, oluştur, güncelle, yorum, ekler (3 seviyeli görünürlük), CSAT |
+| GET/PUT | `/api/tickets/workflow` · `/sla` · `/categories/manage` · `/report` | ticket:read / configure / report | Durum geçişleri + otomatik kapatma, SLA politikası, yönetilen kategoriler, servis masası raporları |
+| GET/POST | `/api/approvals` · `/:id/decide` · `/request-templates` | `approval:*` / ticket:manage | Çok adımlı onay zincirleri, karar verme, talep şablonu editörü |
+| GET/POST | `/api/problems` · `/api/changes` | `problem:*` / `change:*` | Problem kayıtları (kök neden/geçici çözüm) · değişiklik talepleri (risk, CAB onayı, plan) |
+| GET/POST | `/api/kb` · `/:id/documents` | ticket:read / ticket:manage | Bilgi bankası makaleleri + ekleri (yayımla/taslak) |
+| GET/PUT | `/api/integrations/inbound-mail` · `/test` · `/poll` | integration:read / manage | E-postadan kayıt açma (IMAP) — yapılandırma (parola şifreli, maskeli), bağlantı testi, elle çekme |
+| GET/POST | `/api/me/tickets` · `/approvals/:id/context` · `/kb` | Portal (self-service) | Kendi kayıtları + yanıtları, bekleyen onaylar için onaycı iş kaydı, yayımlanmış bilgi bankası — yalnızca çağıranın kapsamında |
 
 <details>
 <summary><b>Atomik zimmet sepeti — nasıl çalışır</b></summary>
@@ -406,6 +421,7 @@ POST /api/handovers
 - **Erişim kontrolü:** her API router'ı `authenticate` uygular, değiştiren rotalar `requireRole(...)` ekler. Denetim kaydı, saklamadan önce hassas anahtarları (parola, token, key) **maskeler**.
 - **Yüklemeler:** belge rotaları gerçek dosya türünü **magic byte** ile doğrular (istemcinin iddiasına değil) ve her dosyayı 8 MB ile sınırlar; indirmeler temizlenmiş bir `Content-Disposition` ayarlar. Tüm SQL parametrelidir; tüm gösterilen değerler HTML olarak kaçışlanır.
 - **Sıkılaştırma:** katı Content-Security-Policy (satır içi script yok, self-only), HSTS, nosniff / frame-deny / referrer / permissions-policy başlıkları, giriş hız sınırı (20 / 15 dk / IP), global API hız sınırı (1000 / 5 dk / IP), varsayılan same-origin CORS, 1 MB varsayılan gövde limiti, `x-powered-by` kapalı, ilk kullanımdan sonra kendini kilitleyen tek seferlik onboarding uç noktası ve `npm audit`-temiz bağımlılık ağacı.
+- **Servis masası sınırları:** Portal kullanıcıları yol düzeyinde `/api/me/*` ile sınırlıdır ve her okuma kendi personel kaydına daraltılır; kayıt yorumları ve ekleri üç görünürlük seviyesi taşır (**herkese açık / yalnızca onaycı / yalnızca BT**) ve bu, her okuma yolunun SQL `WHERE` cümlesinde uygulanır — dahili notlar talep sahibine, yalnızca-BT notları onaycıya asla ulaşmaz. **E-postadan kayıt açma**, talep sahibini (ve `[REQ-N]` çapraz bağını) yalnızca sağlayıcı tarafından doğrulanmış bir **DMARC geçişinde** eşleştirir; sahte bir `From` başkasının adına kayıt açamaz.
 - **Taşıma:** API'nin önüne HTTPS koyun (Caddy / Nginx / Traefik). Frontend origin'iniz farklıysa `CORS_ORIGINS` değerini tam origin'inize ayarlayın.
 
 ---
