@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Full demo dataset: seed-demo → seed-infra → seed-providers.
+ * Full demo dataset: seed-demo → seed-infra → seed-providers → seed-tickets.
  *
  *   npm run seed:all -- --reset
  *   docker compose exec api npm run seed:all -- --reset
@@ -17,6 +17,7 @@ const steps = [
   ['scripts/seed-demo.js', args],
   ['scripts/seed-infra-demo.js', []],
   ['scripts/seed-providers-demo.js', []],
+  ['scripts/seed-tickets-demo.js', []],
 ];
 
 for (const [script, scriptArgs] of steps) {

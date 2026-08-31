@@ -15,6 +15,7 @@
     "seed:demo": "node scripts/seed-demo.js",
     "seed:infra": "node scripts/seed-infra-demo.js",
     "seed:providers": "node scripts/seed-providers-demo.js",
+    "seed:tickets": "node scripts/seed-tickets-demo.js",
     "backup": "bash scripts/backup.sh",
     "restore": "bash scripts/restore.sh",
     "migrate:export": "bash scripts/migrate-export.sh",
