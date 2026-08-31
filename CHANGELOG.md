@@ -4,6 +4,17 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.8.3] — 2026-08-31
+
+### Fixed
+- **A decimal asset cost was rejected with a 500 error.** Registering hardware with
+  a non-integer purchase cost (e.g. `42999.50`) crashed the insert with
+  `invalid input syntax for type integer`. The cause was `COALESCE($30, 0)` in the
+  asset INSERT: the untyped integer literal `0` made PostgreSQL infer the bound
+  cost parameter as an integer, so any value with decimals failed. The parameter
+  is now cast to `numeric`, so fractional costs (money always has them) are stored
+  correctly. Found during a full end-to-end pass over every module.
+
 ## [1.8.2] — 2026-08-31
 
 Full-codebase security review (whole app, not just the Service Desk). One

@@ -502,7 +502,7 @@ async function createAsset(body, itUser) {
                                firmware_version, firmware_updated_at, mgmt_ip, parent_asset_id,
                                cost, salvage_value)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,COALESCE($10,'{}'::jsonb),COALESCE($11,'In Stock'),$12,$13,$14,$15,$16,COALESCE($17,''),$18,$19,$20,
-                   $21,$22,$23,$24,$25,$26,$27,$28,$29,COALESCE($30,0),$31)
+                   $21,$22,$23,$24,$25,$26,$27,$28,$29,COALESCE($30::numeric,0),$31)
            RETURNING id, asset_tag`,
           [
             data.asset_tag, data.serial_number, data.brand, data.model, data.category,
