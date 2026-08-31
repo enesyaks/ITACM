@@ -289,4 +289,4 @@ async function poll() {
   return { created, appended, failed };
 }
 
-module.exports = { getConfig, getConfigRaw, saveConfig, clearConfig, testConnection, createFromEmail, poll, senderIsAuthenticated };
+module.exports = { getConfig, getConfigRaw, saveConfig, clearConfig, testConnection, createFromEmail, poll };
