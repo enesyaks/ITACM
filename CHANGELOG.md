@@ -4,6 +4,28 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.9.4] — 2026-09-01
+
+### Fixed
+- **1.9.3 stopped deactivating anyone who had already left.** Scoping
+  deactivation to a directory fingerprint meant rows linked before that release
+  carry none — and a person already removed from the directory can never be
+  reached by a run to have one filled in, so they stayed Active forever. A sync
+  now claims the unstamped rows when this install has never recorded a
+  different fingerprint: they can only have come from the directory configured
+  now. If a second fingerprint is on file the install genuinely talks to more
+  than one directory, a NULL is ambiguous, and those rows stay untouched —
+  which is the protection 1.9.3 added in the first place. Reported from a real
+  install where a user deleted in AD refused to go inactive.
+
+### Added
+- **The sync summary says why people were skipped.** A run reporting
+  "3 skipped" now breaks that down — no email address, no unique id attribute,
+  no display name, or an email that already belongs to someone else — so a
+  mis-mapped attribute is visible instead of looking like a silent no-op.
+  Directory accounts without a mailbox (service and machine accounts) are the
+  usual answer.
+
 ## [1.9.3] — 2026-09-01
 
 ### Fixed

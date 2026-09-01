@@ -645,7 +645,9 @@ GET /api/integrations/licenses/:id/sam
         ${line(t('int.ldap.skipped'), r.skipped)}
         ${r.users && (r.users.created || r.users.roleChanged) ? line(t('int.ldap.itAccounts'), `${r.users.created} / ${r.users.roleChanged}`) : ''}
         ${r.users && r.users.portalCreated ? line(t('int.ldap.portalAccounts'), r.users.portalCreated) : ''}
+        ${r.users && r.users.portalDisabled ? line(t('int.ldap.portalDisabled'), r.users.portalDisabled) : ''}
       </ul>
+      ${r.skipped && r.skippedReasons ? `<p class="cell-sub" style="margin:8px 0 0">${esc(t('int.ldap.skippedWhy'))}: ${Object.entries(r.skippedReasons).map(([k, v]) => `${esc(t('int.ldap.skip.' + k) || k)} — <strong>${esc(String(v))}</strong>`).join(' · ')}</p>` : ''}
       ${(r.warnings || []).map((w) => `<p class="banner banner-amber" style="margin:8px 0 0">${esc(w)}</p>`).join('')}
       ${(r.samples || []).length ? `<ul class="int-ldap-samples">${r.samples.map((sm) => `<li><span class="pill pill-slate">${esc(t('int.ldap.act.' + sm.action) || sm.action)}</span> ${esc(sm.name)} <span class="cell-sub">${esc(sm.email || '')}${sm.changes ? ' · ' + esc(sm.changes.join(', ')) : ''}</span></li>`).join('')}</ul>` : ''}`;
   };

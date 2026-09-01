@@ -559,17 +559,42 @@ async function runSync({ dryRun = false, trigger = 'manual', actorName = null, u
     }
   }
 
+  // Rows linked before the source fingerprint existed carry none. When this
+  // install has never recorded a fingerprint — or has only ever recorded this
+  // one — those rows can only have come from the directory configured now, so
+  // stamp them. Without this a person who left before the upgrade is invisible
+  // to deactivation forever: they are gone from the directory, so no run can
+  // ever reach them to fill the fingerprint in.
+  //
+  // If a DIFFERENT fingerprint is already on file, the install has talked to
+  // more than one directory and a NULL is genuinely ambiguous — those rows stay
+  // untouched, which is the whole point of scoping.
+  const { rows: knownSources } = await query(
+    'SELECT DISTINCT ldap_source AS s FROM employees WHERE ldap_guid IS NOT NULL AND ldap_source IS NOT NULL'
+  );
+  const claimsUnstamped = knownSources.every((r) => r.s === source);
+  if (claimsUnstamped && !dryRun) {
+    const { rowCount } = await query(
+      'UPDATE employees SET ldap_source = $1 WHERE ldap_guid IS NOT NULL AND ldap_source IS NULL',
+      [source]
+    );
+    if (rowCount) console.log(`[ldap] stamped ${rowCount} pre-existing employee row(s) with this directory's source`);
+  }
+
   // Leavers: previously synced, absent from this run.
   if (cfg.deactivateMissing && seenGuids.length) {
     const { rows: goneRows } = await query(
       `SELECT id, full_name, email FROM employees
         WHERE ldap_guid IS NOT NULL AND status = 'Active'
-          AND ldap_source = $2 AND ldap_guid <> ALL($1::text[])`,
-      [seenGuids, source]
+          AND (ldap_source = $2 OR (ldap_source IS NULL AND $3))
+          AND ldap_guid <> ALL($1::text[])`,
+      [seenGuids, source, claimsUnstamped]
     );
     const { rows: totalRows } = await query(
-      "SELECT count(*)::int AS n FROM employees WHERE ldap_guid IS NOT NULL AND status = 'Active' AND ldap_source = $1",
-      [source]
+      `SELECT count(*)::int AS n FROM employees
+        WHERE ldap_guid IS NOT NULL AND status = 'Active'
+          AND (ldap_source = $1 OR (ldap_source IS NULL AND $2))`,
+      [source, claimsUnstamped]
     );
     const total = (totalRows[0] && totalRows[0].n) || 0;
     const ratio = total ? goneRows.length / total : 0;
