@@ -37,7 +37,11 @@ const { pool, query, withTransaction } = require('../src/providers/postgres/pool
 const { DEFAULT_LOCATIONS } = require('../src/utils/defaults');
 const { ensureDatabase } = require('../src/providers/postgres/migrate');
 
-const DEMO_PASSWORD = 'Demo123!';
+// The demo logins share one password so the documented walkthrough works. That
+// is fine on a laptop and dangerous the moment the instance is reachable from
+// the network — one of these accounts is an Admin. SEED_DEMO_PASSWORD overrides
+// it, and the seed says out loud what it just created.
+const DEMO_PASSWORD = process.env.SEED_DEMO_PASSWORD || 'Demo123!';
 const DEMO_EMAIL_RE = /^demo\.(admin|helpdesk|viewer|user\d+)@example\.com$/i;
 
 const rnd = (n) => Math.floor(Math.random() * n);
@@ -170,6 +174,48 @@ function buildDemoPdf() {
 const DEMO_PDF = buildDemoPdf();
 
 
+/**
+ * `--reset` TRUNCATEs the whole domain: employees, assets, handovers, licences,
+ * repairs, approvals. On a real instance that is the inventory of a company,
+ * and the only thing standing between a mistyped terminal and losing it used to
+ * be a comment saying "do not run against production".
+ *
+ * NODE_ENV is no help: the Dockerfile sets it to `production` for every install,
+ * demo ones included. So the guard asks the database instead — does this look
+ * like somebody's real data? Anything that does not match the demo seed's own
+ * fingerprints (its email pattern, its asset-tag prefix, its ticket marker)
+ * counts as real, and a directory-synced employee counts loudest of all.
+ *
+ * SEED_ALLOW_DESTRUCTIVE=1 is the deliberate override, for when the answer is
+ * genuinely "yes, wipe it".
+ */
+async function assertResetIsSafe(tagPrefix) {
+  if (process.env.SEED_ALLOW_DESTRUCTIVE === '1') {
+    console.log('[seed] SEED_ALLOW_DESTRUCTIVE=1 — skipping the real-data check');
+    return;
+  }
+  const { rows } = await query(
+    `SELECT
+       (SELECT count(*)::int FROM employees WHERE email !~* $1) AS employees,
+       (SELECT count(*)::int FROM employees WHERE ldap_guid IS NOT NULL) AS directory,
+       (SELECT count(*)::int FROM assets WHERE asset_tag NOT LIKE $2) AS assets,
+       (SELECT count(*)::int FROM tickets WHERE created_by_name IS DISTINCT FROM 'Demo Seed') AS tickets`,
+    [DEMO_EMAIL_RE.source, `${tagPrefix}-%`]
+  ).catch(() => ({ rows: [{ employees: 0, directory: 0, assets: 0, tickets: 0 }] }));
+  const r = rows[0];
+  const total = r.employees + r.assets + r.tickets;
+  if (!total) return;
+
+  console.error('\n[seed] REFUSING TO RESET — this database holds data the demo seed did not write:');
+  if (r.employees) console.error(`  · ${r.employees} employee(s) outside the demo email pattern${r.directory ? ` (${r.directory} synced from a directory)` : ''}`);
+  if (r.assets) console.error(`  · ${r.assets} asset(s) not tagged ${tagPrefix}-…`);
+  if (r.tickets) console.error(`  · ${r.tickets} ticket(s) not written by the demo seed`);
+  console.error('\n  --reset TRUNCATEs employees, assets, handovers, licences, repairs and approvals.');
+  console.error('  Take a backup first (npm run backup), then re-run with SEED_ALLOW_DESTRUCTIVE=1');
+  console.error('  if wiping this data is genuinely what you want.\n');
+  process.exit(1);
+}
+
 async function main() {
   const force = process.argv.includes('--force');
   const reset = process.argv.includes('--reset');
@@ -182,6 +228,7 @@ async function main() {
   const TAG_PREFIX = (prefixRows[0] && prefixRows[0].p) || 'IT';
 
   if (reset) {
+    await assertResetIsSafe(TAG_PREFIX);
     console.log('[seed] --reset: wiping domain tables (Owner + non-demo users + settings kept)…');
     await query(`
       TRUNCATE
@@ -739,6 +786,11 @@ async function main() {
   console.log('[seed] done:', stats.rows[0]);
   console.log('[seed] next: npm run seed:infra && npm run seed:providers  (or npm run seed:all)');
   console.log(`[seed] demo logins → demo.admin|helpdesk|viewer|hr|user01@example.com / ${DEMO_PASSWORD}`);
+  if (!process.env.SEED_DEMO_PASSWORD) {
+    console.log('[seed] ⚠ these accounts share a well-known password and one of them is an Admin.');
+    console.log('[seed]   If this instance is reachable beyond localhost, set SEED_DEMO_PASSWORD');
+    console.log('[seed]   or bind the API to 127.0.0.1 before leaving it running.');
+  }
   await pool.end();
 }
 
