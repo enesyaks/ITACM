@@ -1154,3 +1154,9 @@ CREATE TABLE IF NOT EXISTS ldap_sync_runs (
   actor_name   TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_ldap_sync_runs_started ON ldap_sync_runs (started_at DESC);
+
+-- Which directory a person was synced from (084) — deactivation is scoped to
+-- one source so a run against a second directory cannot sweep the first's people.
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS ldap_source TEXT;
+ALTER TABLE users     ADD COLUMN IF NOT EXISTS ldap_source TEXT;
+CREATE INDEX IF NOT EXISTS idx_employees_ldap_source ON employees (ldap_source) WHERE ldap_source IS NOT NULL;

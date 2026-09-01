@@ -350,6 +350,19 @@ async function authenticate(username, password) {
   }
 }
 
+/**
+ * A short, stable fingerprint of "which directory is this": the server URL plus
+ * the search base, hashed. Stamped on every row a sync touches so deactivation
+ * can be scoped to the directory that actually reported the absence — pointing
+ * the integration at a second directory must never sweep the first one's people.
+ */
+function sourceKey(cfg) {
+  return crypto.createHash('sha256')
+    .update(`${String(cfg.url || '').trim().toLowerCase()}|${String(cfg.baseDn || '').trim().toLowerCase()}`)
+    .digest('hex')
+    .slice(0, 32);
+}
+
 /** True for LDAP result 49 — the family of "your credentials are wrong" answers. */
 function isInvalidCredentials(err) {
   if (!err) return false;
@@ -441,9 +454,10 @@ async function runSync({ dryRun = false, trigger = 'manual', actorName = null, u
   }
 
   const started = new Date();
+  const source = sourceKey(cfg);
   const result = {
     dryRun, trigger, created: 0, updated: 0, deactivated: 0, skipped: 0,
-    skippedReasons: {}, users: { created: 0, roleChanged: 0, portalCreated: 0 }, samples: [], warnings: [],
+    skippedReasons: {}, users: { created: 0, roleChanged: 0, portalCreated: 0, portalDisabled: 0 }, samples: [], warnings: [],
   };
   const skip = (reason) => {
     result.skipped += 1;
@@ -493,9 +507,9 @@ async function runSync({ dryRun = false, trigger = 'manual', actorName = null, u
     if (!existing) {
       if (dryRun) { result.created += 1; if (result.samples.length < 8) result.samples.push({ action: 'create', name: p.fullName, email: p.email }); continue; }
       const ins = await query(
-        `INSERT INTO employees (full_name, email, department, title, status, ldap_guid, ldap_dn, ldap_synced_at)
-         VALUES ($1,$2,$3,$4,'Active',$5,$6, now()) RETURNING id`,
-        [p.fullName, p.email, p.department || null, p.title || null, p.guid, p.dn]
+        `INSERT INTO employees (full_name, email, department, title, status, ldap_guid, ldap_dn, ldap_source, ldap_synced_at)
+         VALUES ($1,$2,$3,$4,'Active',$5,$6,$7, now()) RETURNING id`,
+        [p.fullName, p.email, p.department || null, p.title || null, p.guid, p.dn, source]
       ).catch((err) => {
         // A duplicate email belongs to somebody already linked to a different
         // directory object; report it rather than fail the whole run.
@@ -519,7 +533,7 @@ async function runSync({ dryRun = false, trigger = 'manual', actorName = null, u
     if (existing.status !== 'Active') changes.push('reactivated');
 
     if (!changes.length) {
-      if (!dryRun) await query('UPDATE employees SET ldap_synced_at = now(), ldap_dn = $2 WHERE id = $1', [existing.id, p.dn]);
+      if (!dryRun) await query('UPDATE employees SET ldap_synced_at = now(), ldap_dn = $2, ldap_source = $3 WHERE id = $1', [existing.id, p.dn, source]);
       continue;
     }
     result.updated += 1;
@@ -527,9 +541,9 @@ async function runSync({ dryRun = false, trigger = 'manual', actorName = null, u
     if (dryRun) continue;
     await query(
       `UPDATE employees SET full_name = $2, department = $3, title = $4, status = 'Active',
-              ldap_guid = $5, ldap_dn = $6, ldap_synced_at = now()
+              ldap_guid = $5, ldap_dn = $6, ldap_source = $7, ldap_synced_at = now()
          WHERE id = $1`,
-      [existing.id, p.fullName, p.department || null, p.title || null, p.guid, p.dn]
+      [existing.id, p.fullName, p.department || null, p.title || null, p.guid, p.dn, source]
     );
   }
 
@@ -548,10 +562,15 @@ async function runSync({ dryRun = false, trigger = 'manual', actorName = null, u
   // Leavers: previously synced, absent from this run.
   if (cfg.deactivateMissing && seenGuids.length) {
     const { rows: goneRows } = await query(
-      "SELECT id, full_name, email FROM employees WHERE ldap_guid IS NOT NULL AND status = 'Active' AND ldap_guid <> ALL($1::text[])",
-      [seenGuids]
+      `SELECT id, full_name, email FROM employees
+        WHERE ldap_guid IS NOT NULL AND status = 'Active'
+          AND ldap_source = $2 AND ldap_guid <> ALL($1::text[])`,
+      [seenGuids, source]
     );
-    const { rows: totalRows } = await query("SELECT count(*)::int AS n FROM employees WHERE ldap_guid IS NOT NULL AND status = 'Active'");
+    const { rows: totalRows } = await query(
+      "SELECT count(*)::int AS n FROM employees WHERE ldap_guid IS NOT NULL AND status = 'Active' AND ldap_source = $1",
+      [source]
+    );
     const total = (totalRows[0] && totalRows[0].n) || 0;
     const ratio = total ? goneRows.length / total : 0;
     if (goneRows.length && ratio > DEACTIVATE_SAFETY_RATIO) {
@@ -562,6 +581,20 @@ async function runSync({ dryRun = false, trigger = 'manual', actorName = null, u
       result.deactivated = goneRows.length;
       if (!dryRun) {
         await query("UPDATE employees SET status = 'Inactive' WHERE id = ANY($1::uuid[])", [goneRows.map((r) => r.id)]);
+        // The portal login goes with the person. Sign-in already fails for them
+        // — the directory no longer vouches for the account — but an Active row
+        // is a loose end: switch directory sign-in off later, or set a local
+        // password on it, and a leaver has a live login again. Staff accounts
+        // sharing the address are untouched, as everywhere else here.
+        const emails = goneRows.map((r) => String(r.email || '').toLowerCase()).filter(Boolean);
+        if (emails.length) {
+          const { rowCount } = await query(
+            `UPDATE users SET status = 'Disabled', sessions_revoked_at = now()
+              WHERE role = 'Portal' AND status <> 'Disabled' AND lower(email) = ANY($1::text[])`,
+            [emails]
+          );
+          if (rowCount) result.users.portalDisabled = rowCount;
+        }
       }
       for (const g of goneRows.slice(0, 5)) {
         if (result.samples.length < 12) result.samples.push({ action: 'deactivate', name: g.full_name, email: g.email });

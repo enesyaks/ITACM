@@ -4,6 +4,31 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.9.3] — 2026-09-01
+
+### Fixed
+- **A sync against one directory could deactivate another directory's people.**
+  "Deactivate employees who disappear from the directory" compared a run's
+  results against *every* directory-linked employee, whichever server they came
+  from. Point the integration somewhere else — a test instance, a domain
+  migration, a typo in the base DN — and everyone from the previous directory is
+  missing from that run, so they are deactivated. The 30% safety limit does not
+  catch it when the two populations are mixed. Every row a sync touches is now
+  stamped with a fingerprint of the server and search base, and deactivation
+  only considers rows carrying the fingerprint of the directory that actually
+  reported the absence. Rows with no fingerprint — linked before this release,
+  or by hand — are left alone rather than assumed to belong to the current
+  directory. Found while testing the deletion path against a second directory.
+
+### Changed
+- **A leaver's portal login is disabled along with their employee record.**
+  Sign-in already failed for someone removed from the directory — it no longer
+  vouches for them — but the account stayed `Active`, which is a loose end: turn
+  directory sign-in off later, or set a local password on it, and a leaver has a
+  working login again. Deactivation now disables the matching Portal account and
+  revokes its sessions. Staff accounts sharing the address are untouched, as
+  everywhere else in this integration.
+
 ## [1.9.2] — 2026-09-01
 
 ### Fixed
