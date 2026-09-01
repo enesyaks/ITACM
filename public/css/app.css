@@ -1171,6 +1171,7 @@ code, .mono { font-family: var(--mono); font-size: 12px; }
 .banner .grow { flex: 1; }
 .banner-amber { background: var(--amber-50); border: 1px solid var(--amber-100); color: var(--amber-600); }
 .banner-rose { background: #fee2e2; color: var(--rose-700); }
+.banner-emerald { background: var(--emerald-50, #ecfdf5); border: 1px solid var(--emerald-100, #d1fae5); color: var(--emerald-700, #047857); }
 .banner .btn-banner-amber { background: var(--amber-100); color: var(--amber-600); border: none; }
 .banner .btn-banner-amber:hover { background: var(--amber-200); }
 .banner .btn-banner-rose { background: #fff; color: var(--rose-700); border: 1px solid var(--rose-700); }
@@ -6371,3 +6372,51 @@ th.tk-sortable.active { color: var(--primary); }
 .tk-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
 .tk-card-title { font-size: 13.5px; font-weight: 500; line-height: 1.35; margin-bottom: 8px; }
 .tk-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+
+/* ---- Service-desk automation rules editor (atr.*) ---- */
+.tr-card { position: relative; }
+.tr-sec { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--outline-variant); }
+.tr-sec-head { display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .05em; color: var(--on-surface-variant); margin-bottom: 10px; }
+.tr-sec-head .ms { color: var(--primary); }
+.tr-match-sel { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 400; max-width: 220px; }
+.tr-conds { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
+.tr-cond { display: grid; grid-template-columns: minmax(120px, 1.1fr) minmax(110px, .9fr) minmax(120px, 1.4fr) auto;
+  gap: 8px; align-items: center; }
+.tr-cond .tr-c-val { min-width: 0; }
+.tr-cond .tr-c-val:disabled { opacity: .45; }
+.tr-cond .tr-c-del { color: var(--on-surface-variant); }
+.tr-cond .tr-c-del:hover { color: var(--rose-600, #e11d48); }
+.tr-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.tr-actions .rt-field { min-width: 140px; }
+.tr-note-field { margin-top: 10px; }
+.tr-note-field textarea { width: 100%; }
+.tr-foot { display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--outline-variant); }
+.tr-foot .rt-toggle { padding-bottom: 0; }
+.tr-stat { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; }
+.tr-test-grid { display: grid; grid-template-columns: 2fr 1fr 1.4fr; gap: 8px; }
+.tr-test-out:not(:empty) { margin-top: 10px; padding: 10px 12px; border-radius: 10px;
+  background: var(--surface-container); font-size: 13px; }
+.tr-test-hit { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.tr-test-acts { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 3px; }
+@media (max-width: 720px) {
+  .tr-cond { grid-template-columns: 1fr auto; }
+  .tr-cond .tr-c-field, .tr-cond .tr-c-op { grid-column: 1 / -1; }
+  .tr-cond .tr-c-del { justify-self: end; }
+  .tr-test-grid { grid-template-columns: 1fr; }
+  .tr-match-sel { margin-left: 0; max-width: none; }
+}
+
+/* ---- Directory (AD/LDAP) integration card ---- */
+.int-ldap-attrs > summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--on-surface-variant); }
+.int-ldap-groups { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--outline-variant); }
+.int-ldap-sub { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--on-surface-variant); margin-bottom: 6px; }
+.int-ldap-grow { display: grid; grid-template-columns: 1fr 160px auto; gap: 8px; align-items: center; margin-bottom: 8px; }
+.int-ldap-grow .int-ldap-gdel { color: var(--on-surface-variant); }
+.int-ldap-grow .int-ldap-gdel:hover { color: var(--rose-600, #e11d48); }
+.int-ldap-out:not(:empty) { margin-top: 12px; }
+.int-ldap-stats { display: flex; flex-wrap: wrap; gap: 6px 18px; list-style: none; margin: 10px 0 0; padding: 0; font-size: 13px; }
+.int-ldap-samples { margin: 10px 0 0; padding-left: 18px; font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
+@media (max-width: 640px) { .int-ldap-grow { grid-template-columns: 1fr auto; } }

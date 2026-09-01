@@ -1105,3 +1105,52 @@ CREATE TABLE IF NOT EXISTS notifications (
 );
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications (user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_notifications_unread ON notifications (user_id) WHERE read_at IS NULL;
+
+-- Service-desk automation rules (082): "when a ticket is opened, if
+-- <conditions> then <actions>". Evaluated in `position` order at creation
+-- time only, so a rule never fires on its own edits.
+CREATE TABLE IF NOT EXISTS ticket_rules (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name            TEXT NOT NULL,
+  enabled         BOOLEAN NOT NULL DEFAULT true,
+  position        INTEGER NOT NULL DEFAULT 0,
+  match_all       BOOLEAN NOT NULL DEFAULT true,
+  conditions      JSONB NOT NULL DEFAULT '[]'::jsonb,
+  actions         JSONB NOT NULL DEFAULT '{}'::jsonb,
+  stop_on_match   BOOLEAN NOT NULL DEFAULT false,
+  match_count     INTEGER NOT NULL DEFAULT 0,
+  last_matched_at TIMESTAMPTZ,
+  created_by_name TEXT,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_ticket_rules_order ON ticket_rules (position, created_at);
+
+-- Active Directory / LDAP integration (083). Config in app_settings.ldap_json
+-- (bind password encrypted); directory identity on employees + users, keyed by
+-- the immutable objectGUID/entryUUID rather than the DN, which moves with the OU.
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS ldap_json JSONB NOT NULL DEFAULT '{}'::jsonb;
+
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS ldap_guid TEXT;
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS ldap_dn   TEXT;
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS ldap_synced_at TIMESTAMPTZ;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_employees_ldap_guid ON employees (ldap_guid) WHERE ldap_guid IS NOT NULL;
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS ldap_guid TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS ldap_dn   TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_ldap_guid ON users (ldap_guid) WHERE ldap_guid IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS ldap_sync_runs (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  started_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  finished_at  TIMESTAMPTZ,
+  trigger      TEXT NOT NULL DEFAULT 'manual',
+  dry_run      BOOLEAN NOT NULL DEFAULT false,
+  created      INTEGER NOT NULL DEFAULT 0,
+  updated      INTEGER NOT NULL DEFAULT 0,
+  deactivated  INTEGER NOT NULL DEFAULT 0,
+  skipped      INTEGER NOT NULL DEFAULT 0,
+  error        TEXT,
+  actor_name   TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_ldap_sync_runs_started ON ldap_sync_runs (started_at DESC);

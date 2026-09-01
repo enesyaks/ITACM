@@ -326,7 +326,89 @@ async function applyTemplateApproval(ticket, template, { amount, requesterEmploy
   }
 }
 
-async function createTicket(body, user, { asEmployee = null } = {}) {
+/**
+ * Creation-time automation: run the enabled rules against the new ticket and
+ * apply the merged outcome (category / impact / urgency / priority / assignee /
+ * an internal note).
+ *
+ * Runs exactly once, at creation, and never re-enters: the writes below go
+ * straight to SQL rather than through updateTicket, so a rule cannot trigger
+ * another evaluation pass. It also bypasses the IAM assign check on purpose —
+ * the actor here is the rule set, configured by someone who already holds
+ * `ticket:configure`, not the person opening the ticket.
+ *
+ * Never throws: a broken rule must not cost the user their ticket.
+ */
+async function applyRules(ticket, ctx, a) {
+  const ruleService = require('./ticketRuleService');
+  let outcome = null;
+  try {
+    const rules = await ruleService.activeRules();
+    if (!rules.length) return null;
+    outcome = ruleService.evaluateRules(rules, ctx);
+  } catch (err) {
+    console.error('[tickets] rule evaluation failed for', ticket.number, '-', err && err.message);
+    return null;
+  }
+  if (!outcome.matched.length) return null;
+
+  try {
+    const act = outcome.actions || {};
+    const sets = [];
+    const vals = [];
+    const set = (col, val) => { vals.push(val); sets.push(`${col} = $${vals.length}`); };
+    const changed = [];
+
+    if (act.setCategory && act.setCategory !== ticket.category) {
+      set('category', act.setCategory);
+      changed.push(`category → ${act.setCategory}`);
+    }
+    const effImpact = act.setImpact || ticket.impact;
+    const effUrgency = act.setUrgency || ticket.urgency;
+    if (act.setImpact && act.setImpact !== ticket.impact) { set('impact', act.setImpact); changed.push(`impact → ${act.setImpact}`); }
+    if (act.setUrgency && act.setUrgency !== ticket.urgency) { set('urgency', act.setUrgency); changed.push(`urgency → ${act.setUrgency}`); }
+    // Impact × Urgency wins over an explicit setPriority, matching the manual
+    // edit path (updateTicket) so the two can never disagree.
+    const nextPriority = (effImpact && effUrgency && (act.setImpact || act.setUrgency))
+      ? derivePriority(effImpact, effUrgency)
+      : (act.setPriority || null);
+    if (nextPriority && nextPriority !== ticket.priority) {
+      set('priority', nextPriority);
+      changed.push(`priority → ${nextPriority}`);
+      // The SLA clocks were stamped from the pre-rule priority; re-target them
+      // from creation so an escalated ticket gets the tighter deadline it earned.
+      const due = slaDueDates(await getSlaConfig(), nextPriority, ticket.createdAt);
+      set('response_due_at', due.responseDueAt);
+      set('resolve_due_at', due.resolveDueAt);
+    }
+    if (act.setAssigneeUserId && act.setAssigneeUserId !== ticket.assigneeUserId) {
+      set('assignee_user_id', act.setAssigneeUserId);
+      changed.push('assigned');
+    }
+    if (sets.length) {
+      vals.push(ticket.id);
+      await query(`UPDATE tickets SET ${sets.join(', ')}, updated_at = now() WHERE id = $${vals.length}`, vals);
+    }
+    if (act.addNote) {
+      await query(
+        'INSERT INTO ticket_comments (ticket_id, author_name, body, internal, staff_only) VALUES ($1,$2,$3,true,false)',
+        [ticket.id, 'Automation', act.addNote]
+      );
+    }
+    const names = outcome.matched.map((m) => m.name).join(', ');
+    await logActivity(ticket.id, { name: 'Automation' }, 'rule_applied',
+      `${names}${changed.length ? ': ' + changed.join(', ') : ''}`);
+    audit('ticket.rule_applied', `${ticket.number}: ${names}${changed.length ? ' — ' + changed.join(', ') : ''}`,
+      a, ticket.id, ticket.number);
+    await ruleService.recordMatches(outcome.matched.map((m) => m.id));
+  } catch (err) {
+    // The ticket already exists and is valid; log loudly and move on.
+    console.error('[tickets] rule actions failed for', ticket.number, '-', err && err.message);
+  }
+  return outcome;
+}
+
+async function createTicket(body, user, { asEmployee = null, source = 'staff', senderEmail = '' } = {}) {
   // Optional request template: forces type=request and carries a category + an
   // approval chain that must clear before the desk fulfils the request.
   let template = null;
@@ -375,6 +457,29 @@ async function createTicket(body, user, { asEmployee = null } = {}) {
   const id = rows[0].id;
   await logActivity(id, a, 'created', `${type} · ${priority}`);
   audit('ticket.create', `Opened ${number}: ${subject}`, a, id, number);
+
+  // Automation rules run BEFORE the approval chain: a rule may re-categorise or
+  // escalate the ticket, and the approval summary should carry the final values.
+  const created = await getTicket(id, user);
+  let requester = null;
+  if (created.requesterEmployeeId) {
+    const r = await query('SELECT email, department FROM employees WHERE id = $1', [created.requesterEmployeeId]).catch(() => null);
+    requester = (r && r.rows[0]) || null;
+  }
+  await applyRules(created, {
+    subject,
+    description: description || '',
+    category: created.category || '',
+    type,
+    source,
+    requesterName: created.requesterName || '',
+    // An unverified email sender has no employee row; the raw From: address is
+    // still the most useful thing a rule can match on.
+    requesterEmail: (requester && requester.email) || senderEmail || '',
+    requesterDepartment: (requester && requester.department) || '',
+    templateName: (template && template.name) || '',
+  }, a);
+
   if (template) {
     const t0 = await getTicket(id, user);
     await applyTemplateApproval(t0, template, {
@@ -910,7 +1015,7 @@ async function createMyTicket(body, user) {
     subject: body && body.subject,
     description: body && body.description,
     amount: body && body.amount,
-  }, user, { asEmployee: emp });
+  }, user, { asEmployee: emp, source: 'portal' });
   return getMyTicket(ticket.id, user);
 }
 

@@ -398,6 +398,7 @@ Views.tickets = async function (el, params = {}) {
         + `${canConfigure ? `<button class="btn btn-outline" id="tk-templates"><span class="ms">assignment</span> ${esc(t('rt.title'))}</button>` : ''}`
         + `${canConfigure ? `<button class="btn btn-outline" id="tk-sla"><span class="ms">schedule</span> ${esc(t('tk.slaSettings'))}</button>` : ''}`
         + `${canConfigure ? `<button class="btn btn-outline" id="tk-workflow"><span class="ms">account_tree</span> ${esc(t('wf.title'))}</button>` : ''}`
+        + `${canConfigure ? `<button class="btn btn-outline" id="tk-rules"><span class="ms">bolt</span> ${esc(t('atr.title'))}</button>` : ''}`
         + `${canCreate ? `<button class="btn btn-primary" id="tk-new"><span class="ms">add</span> ${esc(t('tk.new'))}</button>` : ''}`)}
       <div id="tk-stats">${statsHtml(stats0)}</div>
       <div class="card card-pad" style="margin-bottom:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
@@ -438,6 +439,8 @@ Views.tickets = async function (el, params = {}) {
     if (sb) sb.addEventListener('click', openSlaEditor);
     const wb = $('#tk-workflow', el);
     if (wb) wb.addEventListener('click', openWorkflowEditor);
+    const rb = $('#tk-rules', el);
+    if (rb) rb.addEventListener('click', openRulesEditor);
     const tb = $('#tk-templates', el);
     if (tb) tb.addEventListener('click', openRequestTemplates);
     $('#tk-report', el)?.addEventListener('click', openReport);
@@ -971,6 +974,206 @@ Views.tickets = async function (el, params = {}) {
           });
           redraw();
           toast(t('wf.resetDone'), 'info');
+        });
+      },
+    });
+  }
+
+  /* ------- Automation rules: "when a ticket is opened, if X then Y" ------- */
+
+  // Field / operator vocabularies mirror ticketRuleService.FIELDS / .OPS — the
+  // server re-validates both, so a stale client can only ever get a 400.
+  const TR_FIELDS = ['subject', 'description', 'text', 'category', 'type', 'source',
+    'requesterName', 'requesterEmail', 'requesterDepartment', 'templateName'];
+  const TR_OPS = ['contains', 'not_contains', 'equals', 'not_equals',
+    'starts_with', 'ends_with', 'is_empty', 'is_not_empty'];
+  const TR_VALUELESS = new Set(['is_empty', 'is_not_empty']);
+  const TR_PRIORITIES = ['low', 'medium', 'high', 'urgent'];
+  const TR_LEVELS = ['low', 'medium', 'high'];
+
+  async function openRulesEditor() {
+    const saved = await api('/tickets/rules').catch(() => null);
+    if (!saved) { toast(t('common.error') || 'Error', 'error'); return; }
+    let rules = Array.isArray(saved) ? saved : [];
+
+    const sel = (opts, cur, blank) => (blank ? `<option value="">${esc(blank)}</option>` : '')
+      + opts.map((o) => `<option value="${esc(o.v)}"${o.v === cur ? ' selected' : ''}>${esc(o.l)}</option>`).join('');
+    const fieldOpts = () => TR_FIELDS.map((f) => ({ v: f, l: t('atr.field.' + f) }));
+    const opOpts = () => TR_OPS.map((o) => ({ v: o, l: t('atr.op.' + o) }));
+    const prioOpts = () => TR_PRIORITIES.map((v) => ({ v, l: tkPriorityLabel(v) }));
+    const levelOpts = () => TR_LEVELS.map((v) => ({ v, l: tkPriorityLabel(v) }));
+    const agentOpts = () => staffList
+      .filter((u) => ['Owner', 'Admin', 'Helpdesk'].includes(u.role))
+      .map((u) => ({ v: u.uid, l: u.username }));
+
+    const condRow = (c) => {
+      const op = (c && c.op) || 'contains';
+      return `<div class="tr-cond">
+        <select class="tr-c-field ops-select">${sel(fieldOpts(), (c && c.field) || 'subject')}</select>
+        <select class="tr-c-op ops-select">${sel(opOpts(), op)}</select>
+        <input class="tr-c-val" maxlength="200" placeholder="${esc(t('atr.valuePh'))}"
+               value="${esc((c && c.value) || '')}"${TR_VALUELESS.has(op) ? ' disabled' : ''}>
+        <button type="button" class="btn btn-ghost btn-sm tr-c-del" title="${esc(t('common.remove') || 'Remove')}"><span class="ms">close</span></button>
+      </div>`;
+    };
+
+    const card = (r) => {
+      const a = (r && r.actions) || {};
+      const conds = (r && r.conditions && r.conditions.length) ? r.conditions : [{ field: 'subject', op: 'contains', value: '' }];
+      const stats = (r && r.matchCount)
+        ? `<span class="cell-sub tr-stat"><span class="ms ms-sm">check_circle</span> ${esc(String(r.matchCount))} ${esc(t('atr.matches'))}${r.lastMatchedAt ? ' · ' + esc(String(r.lastMatchedAt).replace('T', ' ').slice(0, 16)) : ''}</span>`
+        : `<span class="cell-sub tr-stat">${esc(t('atr.neverMatched'))}</span>`;
+      return `<div class="rt-card tr-card" data-id="${esc((r && r.id) || '')}">
+        <div class="rt-card-head">
+          <div class="rt-field rt-grow"><label class="rt-lbl">${esc(t('atr.name'))}</label>
+            <input class="tr-name" maxlength="120" value="${esc((r && r.name) || '')}" placeholder="${esc(t('atr.namePh'))}"></div>
+          <label class="rt-toggle"><input type="checkbox" class="tr-enabled" ${r && r.enabled === false ? '' : 'checked'}> ${esc(t('atr.enabled'))}</label>
+          <button type="button" class="btn btn-ghost btn-sm rt-del tr-del" title="${esc(t('common.remove') || 'Remove')}"><span class="ms">delete</span></button>
+        </div>
+
+        <div class="tr-sec">
+          <div class="tr-sec-head"><span class="ms ms-sm">filter_alt</span> ${esc(t('atr.when'))}
+            <select class="tr-match ops-select tr-match-sel">${sel([{ v: 'all', l: t('atr.matchAll') }, { v: 'any', l: t('atr.matchAny') }], r && r.matchAll === false ? 'any' : 'all')}</select>
+          </div>
+          <div class="tr-conds">${conds.map(condRow).join('')}</div>
+          <button type="button" class="btn btn-outline btn-sm tr-c-add"><span class="ms ms-sm">add</span> ${esc(t('atr.addCondition'))}</button>
+        </div>
+
+        <div class="tr-sec">
+          <div class="tr-sec-head"><span class="ms ms-sm">bolt</span> ${esc(t('atr.then'))}</div>
+          <div class="tr-actions">
+            <div class="rt-field"><label class="rt-lbl">${esc(t('tk.category'))}</label>
+              <select class="tr-a-cat ops-select">${sel(catList.map((c) => ({ v: c, l: c })), a.setCategory || '', t('atr.noChange'))}</select></div>
+            <div class="rt-field"><label class="rt-lbl">${esc(t('tk.priorityCol'))}</label>
+              <select class="tr-a-prio ops-select">${sel(prioOpts(), a.setPriority || '', t('atr.noChange'))}</select></div>
+            <div class="rt-field"><label class="rt-lbl">${esc(t('tk.impact'))}</label>
+              <select class="tr-a-imp ops-select">${sel(levelOpts(), a.setImpact || '', t('atr.noChange'))}</select></div>
+            <div class="rt-field"><label class="rt-lbl">${esc(t('tk.urgency'))}</label>
+              <select class="tr-a-urg ops-select">${sel(levelOpts(), a.setUrgency || '', t('atr.noChange'))}</select></div>
+            <div class="rt-field rt-grow"><label class="rt-lbl">${esc(t('tk.assignee'))}</label>
+              <select class="tr-a-asg ops-select">${sel(agentOpts(), a.setAssigneeUserId || '', t('atr.noChange'))}</select></div>
+          </div>
+          <div class="rt-field tr-note-field"><label class="rt-lbl">${esc(t('atr.addNote'))}</label>
+            <textarea class="tr-a-note" rows="2" maxlength="2000" placeholder="${esc(t('atr.addNotePh'))}">${esc(a.addNote || '')}</textarea></div>
+        </div>
+
+        <div class="tr-foot">
+          <label class="rt-toggle"><input type="checkbox" class="tr-stop" ${r && r.stopOnMatch ? 'checked' : ''}> ${esc(t('atr.stopOnMatch'))}</label>
+          ${stats}
+        </div>
+      </div>`;
+    };
+
+    // Read the whole editor back out of the DOM — same approach as the canned-
+    // reply and category editors, so there is no parallel state to drift.
+    const collect = (ov) => [...ov.querySelectorAll('.tr-card')].map((el2) => {
+      const val = (q) => { const n = el2.querySelector(q); return n ? n.value.trim() : ''; };
+      const actions = {};
+      if (val('.tr-a-cat')) actions.setCategory = val('.tr-a-cat');
+      if (val('.tr-a-prio')) actions.setPriority = val('.tr-a-prio');
+      if (val('.tr-a-imp')) actions.setImpact = val('.tr-a-imp');
+      if (val('.tr-a-urg')) actions.setUrgency = val('.tr-a-urg');
+      if (val('.tr-a-asg')) actions.setAssigneeUserId = val('.tr-a-asg');
+      if (val('.tr-a-note')) actions.addNote = val('.tr-a-note');
+      return {
+        id: el2.dataset.id || null,
+        name: val('.tr-name'),
+        enabled: el2.querySelector('.tr-enabled').checked,
+        matchAll: val('.tr-match') !== 'any',
+        stopOnMatch: el2.querySelector('.tr-stop').checked,
+        conditions: [...el2.querySelectorAll('.tr-cond')].map((c) => ({
+          field: c.querySelector('.tr-c-field').value,
+          op: c.querySelector('.tr-c-op').value,
+          value: c.querySelector('.tr-c-val').value.trim(),
+        })).filter((c) => TR_VALUELESS.has(c.op) || c.value),
+        actions,
+      };
+    });
+
+    openModal({
+      title: t('atr.title'),
+      wide: true,
+      body: `<p class="cell-sub" style="margin:0 0 14px">${esc(t('atr.hint'))}</p>
+        <div id="tr-list">${(rules.length ? rules : [null]).map(card).join('')}</div>
+        <button class="btn btn-outline btn-sm rt-add-btn" id="tr-add" type="button"><span class="ms ms-sm">add</span> ${esc(t('atr.addRule'))}</button>
+        <div class="wf-auto tr-test">
+          <div class="wf-auto-head"><span class="ms">science</span> ${esc(t('atr.testTitle'))}</div>
+          <p class="cell-sub" style="margin:0 0 10px">${esc(t('atr.testHint'))}</p>
+          <div class="tr-test-grid">
+            <input id="tr-t-subject" placeholder="${esc(t('atr.testSubjectPh'))}" maxlength="300">
+            <select id="tr-t-source" class="ops-select">
+              <option value="staff">${esc(t('atr.source.staff'))}</option>
+              <option value="portal">${esc(t('atr.source.portal'))}</option>
+              <option value="email">${esc(t('atr.source.email'))}</option>
+            </select>
+            <input id="tr-t-email" placeholder="${esc(t('atr.testEmailPh'))}" maxlength="200">
+          </div>
+          <textarea id="tr-t-body" rows="2" placeholder="${esc(t('atr.testBodyPh'))}" maxlength="2000" style="width:100%;margin-top:8px"></textarea>
+          <button class="btn btn-outline btn-sm" id="tr-test" type="button" style="margin-top:8px"><span class="ms ms-sm">play_arrow</span> ${esc(t('atr.runTest'))}</button>
+          <div id="tr-test-out" class="tr-test-out"></div>
+        </div>`,
+      foot: `<button class="btn btn-outline" data-close>${esc(t('common.cancel'))}</button>
+             <button class="btn btn-primary" id="tr-save">${esc(t('common.save'))}</button>`,
+      onMount(ov) {
+        const list = $('#tr-list', ov);
+        // One delegated listener for the whole editor: rows and cards come and go,
+        // so per-node wiring would have to be redone on every add.
+        list.addEventListener('click', (e) => {
+          const del = e.target.closest('.tr-del');
+          if (del) { del.closest('.tr-card').remove(); return; }
+          const cdel = e.target.closest('.tr-c-del');
+          if (cdel) {
+            const box = cdel.closest('.tr-conds');
+            if (box.querySelectorAll('.tr-cond').length > 1) cdel.closest('.tr-cond').remove();
+            else toast(t('atr.needsCondition'), 'info');
+            return;
+          }
+          const cadd = e.target.closest('.tr-c-add');
+          if (cadd) {
+            cadd.closest('.tr-sec').querySelector('.tr-conds')
+              .insertAdjacentHTML('beforeend', condRow({ field: 'subject', op: 'contains', value: '' }));
+          }
+        });
+        // "is empty" / "is not empty" take no value — grey the box out so the rule
+        // reads the way it will actually run.
+        list.addEventListener('change', (e) => {
+          if (!e.target.classList.contains('tr-c-op')) return;
+          const row = e.target.closest('.tr-cond');
+          const box = row.querySelector('.tr-c-val');
+          box.disabled = TR_VALUELESS.has(e.target.value);
+          if (box.disabled) box.value = '';
+        });
+        $('#tr-add', ov).addEventListener('click', () => {
+          list.insertAdjacentHTML('beforeend', card(null));
+          list.lastElementChild.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        });
+
+        $('#tr-test', ov).addEventListener('click', async () => {
+          const out = $('#tr-test-out', ov);
+          const sample = {
+            subject: $('#tr-t-subject', ov).value,
+            description: $('#tr-t-body', ov).value,
+            source: $('#tr-t-source', ov).value,
+            requesterEmail: $('#tr-t-email', ov).value,
+          };
+          try {
+            // Test the UNSAVED draft, so a rule can be tried before committing it.
+            const res = await api('/tickets/rules/test', { method: 'POST', body: { sample, items: collect(ov) } });
+            const acts = Object.entries(res.actions || {});
+            out.innerHTML = res.matched.length
+              ? `<div class="tr-test-hit"><strong>${esc(t('atr.testMatched'))}:</strong> ${res.matched.map((m) => `<span class="pill pill-emerald">${esc(m.name)}</span>`).join(' ')}</div>`
+                + (acts.length ? `<ul class="tr-test-acts">${acts.map(([k, v]) => `<li>${esc(t('atr.act.' + k) || k)}: <strong>${esc(String(v))}</strong></li>`).join('')}</ul>` : '')
+              : `<div class="cell-sub">${esc(t('atr.testNoMatch'))}</div>`;
+          } catch (err) { out.innerHTML = `<div class="cell-sub" style="color:var(--rose-600)">${esc(err.message)}</div>`; }
+        });
+
+        $('#tr-save', ov).addEventListener('click', async () => {
+          const items = collect(ov).filter((r) => r.name || Object.keys(r.actions).length);
+          try {
+            rules = await api('/tickets/rules', { method: 'PUT', body: { items } });
+            closeModal();
+            toast(t('tk.saved'), 'success');
+          } catch (err) { toast(err.message, 'error'); }
         });
       },
     });

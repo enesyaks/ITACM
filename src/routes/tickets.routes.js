@@ -7,7 +7,7 @@ const express = require('express');
 const router = express.Router();
 const { authenticate, requirePermission, requireAnyPermission } = require('../middleware/auth');
 const { asyncHandler } = require('../utils/asyncHandler');
-const { ticketService, settingsService, documentService } = require('../services');
+const { ticketService, ticketRuleService, settingsService, documentService } = require('../services');
 const { validateUpload } = require('../utils/uploadGuard');
 const { contentDisposition } = require('../utils/contentDisposition');
 const { HttpError } = require('../utils/httpError');
@@ -86,6 +86,26 @@ router.get('/categories/manage', requirePermission('ticket', 'read'), asyncHandl
 }));
 router.put('/categories/manage', requirePermission('ticket', 'manage'), asyncHandler(async (req, res) => {
   res.json({ success: true, data: await ticketService.saveManagedCategories((req.body && req.body.items) || []) });
+}));
+
+/* ---- Automation rules: "when a ticket is opened, if X then Y" ---- */
+
+// GET /api/tickets/rules — the ordered rule set (before /:id)
+// Reading the rules is a configuration view, not a ticket view: the set carries
+// internal triage notes and who work is routed to, so it follows `configure`
+// rather than `read` (which every Viewer holds).
+router.get('/rules', requireAnyPermission([['ticket', 'configure'], ['ticket', 'manage']]), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await ticketRuleService.listRules() });
+}));
+// PUT /api/tickets/rules — replace the whole set (order = array index)
+router.put('/rules', requireAnyPermission([['ticket', 'configure'], ['ticket', 'manage']]), asyncHandler(async (req, res) => {
+  const actorName = (req.user && (req.user.username || req.user.email)) || null;
+  res.json({ success: true, data: await ticketRuleService.saveRules((req.body && req.body.items) || [], actorName, req.user) });
+}));
+// POST /api/tickets/rules/test — dry-run a sample ticket against the saved
+// rules, or against the unsaved draft the editor sends in `items`.
+router.post('/rules/test', requireAnyPermission([['ticket', 'configure'], ['ticket', 'manage']]), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await ticketRuleService.testRules((req.body && req.body.sample) || {}, req.body && req.body.items) });
 }));
 
 // GET/PUT /api/tickets/canned — quick-reply templates (before /:id)

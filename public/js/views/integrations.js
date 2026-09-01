@@ -22,6 +22,7 @@ Views.integrations = async function (el) {
   ]);
   const sso = await api('/integrations/sso').catch(() => ({}));
   const inbound = await api('/integrations/inbound-mail').catch(() => ({}));
+  const ldapCfg = await api('/integrations/ldap').catch(() => ({}));
   // The server ships every template it knows about, with its label and
   // placeholders — no local copy of the list to drift out of sync.
   const tpls = emailTemplates || {};
@@ -193,6 +194,93 @@ Views.integrations = async function (el) {
           <button class="btn btn-primary" id="int-sso-save">${esc(t('int.sso.save') || 'Save SSO')}</button>
           <button class="btn btn-outline" id="int-sso-test">${esc(t('int.sso.test') || 'Test connection')}</button>
         </div>` : ''}
+      </section>
+
+      <section class="card card-pad" style="margin-bottom:16px">
+        <h3 style="margin:0 0 8px"><span class="ms ms-sm" style="vertical-align:-3px">domain</span> ${esc(t('int.ldap.title'))}</h3>
+        <p class="cell-sub" style="margin:0 0 12px">${esc(t('int.ldap.hint'))}</p>
+        <div class="form-grid">
+          <div class="form-field full"><label>${esc(t('int.ldap.url'))}</label>
+            <input id="int-ldap-url" value="${esc(ldapCfg.url || '')}" placeholder="ldaps://dc01.sirket.local:636"${inputDis}>
+            <span class="ob-hint">${esc(t('int.ldap.urlHint'))}</span></div>
+          <div class="form-field"><label>${esc(t('int.ldap.bindDn'))}</label>
+            <input id="int-ldap-binddn" value="${esc(ldapCfg.bindDn || '')}" placeholder="CN=itacm-svc,OU=Service,DC=sirket,DC=local" autocomplete="off"${inputDis}></div>
+          <div class="form-field"><label>${esc(t('int.ldap.bindPw'))} ${ldapCfg.passwordConfigured ? `<span class="ob-hint">${esc(t('int.ldap.savedBlank'))}</span>` : ''}</label>
+            ${readOnly && ldapCfg.passwordConfigured
+              ? secretLocked('••••••••••••', true)
+              : `<input id="int-ldap-bindpw" type="password" value="" placeholder="${ldapCfg.passwordConfigured ? '••••••••' : ''}" autocomplete="new-password"${inputDis}>`}
+          </div>
+          <div class="form-field full"><label>${esc(t('int.ldap.baseDn'))}</label>
+            <input id="int-ldap-basedn" value="${esc(ldapCfg.baseDn || '')}" placeholder="OU=Personel,DC=sirket,DC=local"${inputDis}></div>
+          <div class="form-field full"><label><input type="checkbox" id="int-ldap-tls" ${ldapCfg.tlsRejectUnauthorized === false ? '' : 'checked'}${chkDis}> ${esc(t('int.ldap.verifyTls'))}</label>
+            <span class="ob-hint">${esc(t('int.ldap.verifyTlsHint'))}</span></div>
+
+          <div class="form-field full"><label>${esc(t('int.ldap.userFilter'))}</label>
+            <input id="int-ldap-userfilter" value="${esc(ldapCfg.userFilter || '')}"${inputDis}>
+            <span class="ob-hint">${esc(t('int.ldap.userFilterHint'))}</span></div>
+          <div class="form-field full"><label>${esc(t('int.ldap.loginFilter'))}</label>
+            <input id="int-ldap-loginfilter" value="${esc(ldapCfg.loginFilter || '')}"${inputDis}>
+            <span class="ob-hint">${esc(t('int.ldap.loginFilterHint'))}</span></div>
+        </div>
+
+        <details class="int-ldap-attrs" style="margin-top:12px">
+          <summary>${esc(t('int.ldap.attrsTitle'))}</summary>
+          <div class="form-grid" style="margin-top:10px">
+            ${['guid', 'username', 'email', 'displayName', 'department', 'title', 'manager'].map((k) => `
+              <div class="form-field"><label>${esc(t('int.ldap.attr.' + k))}</label>
+                <input id="int-ldap-attr-${k}" value="${esc((ldapCfg.attrs && ldapCfg.attrs[k]) || '')}"${inputDis}></div>`).join('')}
+          </div>
+          <p class="ob-hint" style="margin-top:8px">${esc(t('int.ldap.attrsHint'))}</p>
+        </details>
+
+        <div class="form-grid" style="margin-top:12px">
+          <div class="form-field full"><label><input type="checkbox" id="int-ldap-login" ${ldapCfg.loginEnabled ? 'checked' : ''}${chkDis}> ${esc(t('int.ldap.loginEnable'))}</label>
+            <span class="ob-hint">${esc(t('int.ldap.loginEnableHint'))}</span></div>
+          <div class="form-field full"><label><input type="checkbox" id="int-ldap-syncemp" ${ldapCfg.syncEmployees === false ? '' : 'checked'}${chkDis}> ${esc(t('int.ldap.syncEmployees'))}</label></div>
+          <div class="form-field full"><label><input type="checkbox" id="int-ldap-createusers" ${ldapCfg.createUsers ? 'checked' : ''}${chkDis}> ${esc(t('int.ldap.createUsers'))}</label>
+            <span class="ob-hint">${esc(t('int.ldap.createUsersHint'))}</span></div>
+          <div class="form-field full"><label><input type="checkbox" id="int-ldap-deactivate" ${ldapCfg.deactivateMissing ? 'checked' : ''}${chkDis}> ${esc(t('int.ldap.deactivate'))}</label>
+            <span class="ob-hint">${esc(t('int.ldap.deactivateHint'))}</span></div>
+        </div>
+
+        <div class="int-ldap-groups">
+          <div class="int-ldap-sub">${esc(t('int.ldap.groupsTitle'))}</div>
+          <p class="ob-hint" style="margin:0 0 8px">${esc(t('int.ldap.groupsHint'))}</p>
+          <div id="int-ldap-grouplist">
+            ${((ldapCfg.groupRoleMap && ldapCfg.groupRoleMap.length) ? ldapCfg.groupRoleMap : [{ group: '', role: 'Helpdesk' }]).map((g) => `
+              <div class="int-ldap-grow">
+                <input class="int-ldap-g" value="${esc(g.group || '')}" placeholder="IT-Helpdesk"${inputDis}>
+                <select class="int-ldap-r"${inputDis}>${['Admin', 'Helpdesk', 'Viewer', 'HR'].map((r) => `<option value="${r}"${r === g.role ? ' selected' : ''}>${r}</option>`).join('')}</select>
+                <button type="button" class="btn btn-ghost btn-sm int-ldap-gdel"${inputDis}><span class="ms">close</span></button>
+              </div>`).join('')}
+          </div>
+          ${canManage ? `<button type="button" class="btn btn-outline btn-sm" id="int-ldap-gadd"><span class="ms ms-sm">add</span> ${esc(t('int.ldap.addGroup'))}</button>` : ''}
+        </div>
+
+        <div class="form-grid" style="margin-top:12px">
+          <div class="form-field"><label>${esc(t('int.ldap.schedule'))}</label>
+            <select id="int-ldap-schedule"${inputDis}>
+              ${['off', 'hourly', 'daily'].map((v) => `<option value="${v}"${(ldapCfg.syncSchedule || 'off') === v ? ' selected' : ''}>${esc(t('int.ldap.sched.' + v))}</option>`).join('')}
+            </select></div>
+          <div class="form-field"><label>${esc(t('int.ldap.scheduleHour'))}</label>
+            <input id="int-ldap-hour" type="number" min="0" max="23" value="${esc(String(ldapCfg.syncHour == null ? 3 : ldapCfg.syncHour))}"${inputDis}></div>
+          <div class="form-field full"><label><input type="checkbox" id="int-ldap-enabled" ${ldapCfg.enabled ? 'checked' : ''}${chkDis}> ${esc(t('int.ldap.enable'))}</label></div>
+        </div>
+
+        ${ldapCfg.lastRun ? `<p class="cell-sub" style="margin:10px 0 0">${esc(t('int.ldap.lastRun'))}:
+          ${esc(String(ldapCfg.lastRun.startedAt).replace('T', ' ').slice(0, 16))} ·
+          ${esc(t('int.ldap.created'))} ${esc(String(ldapCfg.lastRun.created))} ·
+          ${esc(t('int.ldap.updated'))} ${esc(String(ldapCfg.lastRun.updated))} ·
+          ${esc(t('int.ldap.deactivated'))} ${esc(String(ldapCfg.lastRun.deactivated))}
+          ${ldapCfg.lastRun.error ? `<span style="color:var(--rose-600,#e11d48)"> · ${esc(ldapCfg.lastRun.error)}</span>` : ''}</p>` : ''}
+
+        ${canManage ? `<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+          <button class="btn btn-primary" id="int-ldap-save">${esc(t('common.save'))}</button>
+          <button class="btn btn-outline" id="int-ldap-test">${esc(t('int.ldap.test'))}</button>
+          <button class="btn btn-outline" id="int-ldap-preview">${esc(t('int.ldap.preview'))}</button>
+          <button class="btn btn-outline" id="int-ldap-sync">${esc(t('int.ldap.syncNow'))}</button>
+        </div>` : ''}
+        <div id="int-ldap-out" class="int-ldap-out"></div>
       </section>
 
       <section class="card card-pad" style="margin-bottom:16px">
@@ -520,6 +608,97 @@ GET /api/integrations/licenses/:id/sam
       toast((t('int.sso.testFail') || 'Could not reach provider') + ': ' + err.message, 'error');
     } finally { btn.disabled = false; btn.textContent = label; }
   });
+
+  /* ---- Directory (AD / LDAP) ---- */
+  const ldapBody = () => ({
+    enabled: !!$('#int-ldap-enabled', el)?.checked,
+    url: $('#int-ldap-url', el)?.value.trim() || '',
+    bindDn: $('#int-ldap-binddn', el)?.value.trim() || '',
+    bindPassword: $('#int-ldap-bindpw', el)?.value || '',
+    baseDn: $('#int-ldap-basedn', el)?.value.trim() || '',
+    tlsRejectUnauthorized: !!$('#int-ldap-tls', el)?.checked,
+    userFilter: $('#int-ldap-userfilter', el)?.value.trim() || '',
+    loginFilter: $('#int-ldap-loginfilter', el)?.value.trim() || '',
+    attrs: ['guid', 'username', 'email', 'displayName', 'department', 'title', 'manager']
+      .reduce((o, k) => { o[k] = $('#int-ldap-attr-' + k, el)?.value.trim() || ''; return o; }, {}),
+    loginEnabled: !!$('#int-ldap-login', el)?.checked,
+    syncEmployees: !!$('#int-ldap-syncemp', el)?.checked,
+    createUsers: !!$('#int-ldap-createusers', el)?.checked,
+    deactivateMissing: !!$('#int-ldap-deactivate', el)?.checked,
+    groupRoleMap: [...el.querySelectorAll('.int-ldap-grow')]
+      .map((row) => ({ group: row.querySelector('.int-ldap-g').value.trim(), role: row.querySelector('.int-ldap-r').value }))
+      .filter((g) => g.group),
+    syncSchedule: $('#int-ldap-schedule', el)?.value || 'off',
+    syncHour: Number($('#int-ldap-hour', el)?.value) || 0,
+  });
+
+  const ldapOut = (html) => { const o = $('#int-ldap-out', el); if (o) o.innerHTML = html; };
+  const ldapSummary = (r) => {
+    const line = (label, n) => `<li>${esc(label)}: <strong>${esc(String(n))}</strong></li>`;
+    return `<ul class="int-ldap-stats">
+        ${line(t('int.ldap.created'), r.created)}
+        ${line(t('int.ldap.updated'), r.updated)}
+        ${line(t('int.ldap.deactivated'), r.deactivated)}
+        ${line(t('int.ldap.skipped'), r.skipped)}
+        ${r.users && (r.users.created || r.users.roleChanged) ? line(t('int.ldap.itAccounts'), `${r.users.created} / ${r.users.roleChanged}`) : ''}
+      </ul>
+      ${(r.warnings || []).map((w) => `<p class="banner banner-amber" style="margin:8px 0 0">${esc(w)}</p>`).join('')}
+      ${(r.samples || []).length ? `<ul class="int-ldap-samples">${r.samples.map((sm) => `<li><span class="pill pill-slate">${esc(t('int.ldap.act.' + sm.action) || sm.action)}</span> ${esc(sm.name)} <span class="cell-sub">${esc(sm.email || '')}${sm.changes ? ' · ' + esc(sm.changes.join(', ')) : ''}</span></li>`).join('')}</ul>` : ''}`;
+  };
+
+  // Directory calls take seconds against a real DC, so every button locks while
+  // it runs — a double-click on "Sync now" must not start a second pass.
+  const ldapRun = async (btnId, fn) => {
+    const btn = $(btnId, el);
+    if (!btn) return;
+    const label = btn.textContent;
+    btn.disabled = true; btn.textContent = t('common.loading') || 'Loading…';
+    try { await fn(); } catch (err) { ldapOut(`<p class="banner banner-rose">${esc(err.message)}</p>`); toast(err.message, 'error'); }
+    finally { btn.disabled = false; btn.textContent = label; }
+  };
+
+  $('#int-ldap-gadd', el)?.addEventListener('click', () => {
+    const list = $('#int-ldap-grouplist', el);
+    list.insertAdjacentHTML('beforeend', `<div class="int-ldap-grow">
+      <input class="int-ldap-g" value="" placeholder="IT-Helpdesk">
+      <select class="int-ldap-r">${['Admin', 'Helpdesk', 'Viewer', 'HR'].map((r) => `<option value="${r}"${r === 'Helpdesk' ? ' selected' : ''}>${r}</option>`).join('')}</select>
+      <button type="button" class="btn btn-ghost btn-sm int-ldap-gdel"><span class="ms">close</span></button>
+    </div>`);
+  });
+  $('#int-ldap-grouplist', el)?.addEventListener('click', (e) => {
+    const del = e.target.closest('.int-ldap-gdel');
+    if (del) del.closest('.int-ldap-grow').remove();
+  });
+
+  $('#int-ldap-save', el)?.addEventListener('click', () => ldapRun('#int-ldap-save', async () => {
+    await api('/integrations/ldap', { method: 'PUT', body: ldapBody() });
+    toast(t('int.ldap.saved'), 'success');
+    Views.integrations(el);
+  }));
+
+  $('#int-ldap-test', el)?.addEventListener('click', () => ldapRun('#int-ldap-test', async () => {
+    // Save first, so "Test" always checks what is on screen rather than what
+    // was stored on the last visit.
+    await api('/integrations/ldap', { method: 'PUT', body: ldapBody() });
+    const r = await api('/integrations/ldap/test', { method: 'POST' });
+    ldapOut(`<p class="banner banner-emerald">${esc(t('int.ldap.testOk'))} — ${esc(String(r.sampleCount))} ${esc(t('int.ldap.peopleFound'))}</p>
+      ${(r.warnings || []).map((w) => `<p class="banner banner-amber" style="margin-top:8px">${esc(w)}</p>`).join('')}
+      <ul class="int-ldap-samples">${(r.sample || []).map((p2) => `<li>${esc(p2.name || '—')} <span class="cell-sub">${esc(p2.email || t('int.ldap.noEmail'))}</span></li>`).join('')}</ul>`);
+    toast(t('int.ldap.testOk'), 'success');
+  }));
+
+  $('#int-ldap-preview', el)?.addEventListener('click', () => ldapRun('#int-ldap-preview', async () => {
+    await api('/integrations/ldap', { method: 'PUT', body: ldapBody() });
+    const r = await api('/integrations/ldap/preview', { method: 'POST' });
+    ldapOut(`<p class="banner banner-amber">${esc(t('int.ldap.previewNote'))}</p>${ldapSummary(r)}`);
+  }));
+
+  $('#int-ldap-sync', el)?.addEventListener('click', () => ldapRun('#int-ldap-sync', async () => {
+    await api('/integrations/ldap', { method: 'PUT', body: ldapBody() });
+    const r = await api('/integrations/ldap/sync', { method: 'POST' });
+    ldapOut(`<p class="banner banner-emerald">${esc(t('int.ldap.syncDone'))}</p>${ldapSummary(r)}`);
+    toast(t('int.ldap.syncDone'), 'success');
+  }));
 
   // Email-to-ticket (IMAP)
   const imapBody = () => ({

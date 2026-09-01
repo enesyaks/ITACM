@@ -69,6 +69,33 @@ router.post('/sso/test', authenticate, requirePermission('integration', 'manage'
   res.json({ success: true, data: await require('../utils/oidc').discover(cfg) });
 }));
 
+/* ---- Directory (Active Directory / LDAP) — bind password is write-only ---- */
+const ldapService = require('../providers/postgres/ldapService');
+
+router.get('/ldap', authenticate, requirePermission('integration', 'read'), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await ldapService.getForUi() });
+}));
+router.put('/ldap', authenticate, requirePermission('integration', 'manage'), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await ldapService.saveConfig(req.body || {}, req.user) });
+}));
+// Bind with the service account and read a few people back — no writes.
+router.post('/ldap/test', authenticate, requirePermission('integration', 'manage'), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await ldapService.testConnection() });
+}));
+// Dry run: what a sync would create / update / deactivate, nothing written.
+router.post('/ldap/preview', authenticate, requirePermission('integration', 'manage'), asyncHandler(async (req, res) => {
+  const actorName = (req.user && (req.user.username || req.user.email)) || null;
+  res.json({ success: true, data: await ldapService.runSync({ dryRun: true, trigger: 'preview', actorName, user: req.user }) });
+}));
+// The real thing. Creates and updates employees / IT accounts; audited.
+router.post('/ldap/sync', authenticate, requirePermission('integration', 'manage'), asyncHandler(async (req, res) => {
+  const actorName = (req.user && (req.user.username || req.user.email)) || null;
+  res.json({ success: true, data: await ldapService.runSync({ trigger: 'manual', actorName, user: req.user }) });
+}));
+router.get('/ldap/runs', authenticate, requirePermission('integration', 'read'), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await ldapService.listRuns(req.query.limit) });
+}));
+
 /** ---------- Email-to-ticket / inbound IMAP (integration:read / manage) ---------- */
 const inboundMailService = require('../providers/postgres/inboundMailService');
 router.get('/inbound-mail', authenticate, requirePermission('integration', 'read'), asyncHandler(async (req, res) => {

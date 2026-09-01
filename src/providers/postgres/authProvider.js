@@ -230,6 +230,36 @@ function auditLockout(user, count, meta) {
   } catch { /* never block login on audit */ }
 }
 
+/**
+ * Verify a password against the configured directory for an existing user.
+ *
+ * Returns false (never throws) for a wrong password, an unreachable server or a
+ * missing configuration — a directory outage must look like a failed password,
+ * not a 500 that leaks the integration's state to an anonymous caller.
+ *
+ * On the first successful directory sign-in the account is linked by its
+ * immutable object id, so later renames in AD keep resolving to this user.
+ */
+async function verifyAgainstDirectory(user, password) {
+  try {
+    const ldapService = require('./ldapService');
+    const person = await ldapService.authenticate(user.email, password);
+    if (!person) return false;
+    // The filter could, if mis-written, match a different person than the one
+    // whose row we are about to sign in. Bind proves the password belongs to
+    // `person`; this proves `person` is the account being signed into.
+    if (String(person.email || '').toLowerCase() !== String(user.email || '').toLowerCase()) return false;
+    if (person.guid && !user.ldap_guid) {
+      await query('UPDATE users SET ldap_guid = $2, ldap_dn = $3 WHERE id = $1 AND ldap_guid IS NULL',
+        [user.id, person.guid, person.dn]).catch(() => {});
+    }
+    return true;
+  } catch (err) {
+    console.warn('[auth] directory sign-in unavailable:', err && err.message);
+    return false;
+  }
+}
+
 async function login({ email, password, rememberMe }, meta = {}) {
   if (!email || !password) throw HttpError.badRequest('email and password are required');
 
@@ -237,7 +267,15 @@ async function login({ email, password, rememberMe }, meta = {}) {
   const user = rows[0];
   assertNotLocked(user);
   const match = await bcrypt.compare(password, user ? user.password_hash : DUMMY_HASH);
-  const valid = user && match;
+  let valid = user && match;
+  // Directory (AD/LDAP) fallback. Invite-only, like SSO: the directory can
+  // verify the password of an account that ALREADY exists here, but a
+  // successful bind never creates one. Accounts arrive via a sync run or an
+  // admin. A directory-provisioned user has an unguessable random local hash,
+  // so this is the only way in for them.
+  if (!valid && user && user.status !== 'Disabled') {
+    valid = await verifyAgainstDirectory(user, password);
+  }
   if (!valid) {
     await recordLoginFailure(user, meta);
     throw HttpError.unauthorized('Invalid email or password');

@@ -17,12 +17,14 @@ const ticketService = require('../providers/postgres/ticketService');
 const approvalService = require('../providers/postgres/approvalService');
 const inappService = require('../providers/postgres/inappService');
 const inboundMailService = require('../providers/postgres/inboundMailService');
+const ldapService = require('../providers/postgres/ldapService');
 
 const TICK_MS = 60 * 1000;
 const PURGE_EVERY_TICKS = 60; // hourly
 const REMINDER_EVERY_TICKS = 60; // hourly — reminders only need daily granularity
 const NOTIF_PRUNE_EVERY_TICKS = 60 * 24; // once a day — bound the notifications table
 const INBOUND_MAIL_EVERY_TICKS = 2; // every ~2 min — email-to-ticket poll (no-op when off)
+const LDAP_SYNC_EVERY_TICKS = 15; // every ~15 min — directory sync due-check (no-op when off)
 let timer = null;
 let ticks = 0;
 
@@ -59,6 +61,13 @@ function start() {
       inboundMailService.poll()
         .then((r) => { if (r && (r.created || r.appended)) console.log(`[scheduler] email-to-ticket: ${r.created || 0} new, ${r.appended || 0} appended`); })
         .catch((err) => { console.warn('[scheduler] inbound mail poll failed:', err.message); });
+    }
+    if (ticks % LDAP_SYNC_EVERY_TICKS === 0) {
+      // runIfDue is a no-op unless a schedule is configured and this hour/day
+      // has not run yet, so the tick itself costs one settings read.
+      ldapService.runIfDue()
+        .then((r) => { if (r) console.log(`[scheduler] directory sync: ${r.created} created, ${r.updated} updated, ${r.deactivated} deactivated`); })
+        .catch((err) => { console.warn('[scheduler] directory sync failed:', err.message); });
     }
     if (ticks % NOTIF_PRUNE_EVERY_TICKS === 0) {
       inappService.pruneOld()
