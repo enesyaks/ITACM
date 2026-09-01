@@ -360,6 +360,22 @@ function empDeviceHistoryBadge(type) {
 /** Toast / alert after POST grant-access — never claim email sent unless emailStatus === 'sent'. */
 function reportPortalGrantResult(r) {
   if (!r) return;
+  // A directory-backed account has no password to hand over: the person signs in
+  // with the one they already use for the domain. Saying so is the whole point —
+  // otherwise the admin waits for a temp password that is never coming.
+  if (r.directory) {
+    if (r.emailStatus === 'sent') toast(t('emp.grantSentDirectory'), 'success');
+    else {
+      openModal({
+        title: t('emp.portalCreated'),
+        stack: true,
+        body: `<div class="banner banner-emerald" style="margin-bottom:14px"><span class="ms">domain</span> ${esc(t('emp.grantDirectory'))}</div>
+          <p class="cell-sub" style="margin:0">${esc((r.user && r.user.email) || '')}</p>`,
+        foot: `<button class="btn btn-primary" data-close>${esc(t('common.ok'))}</button>`,
+      });
+    }
+    return true;
+  }
   if (r.emailStatus === 'sent') {
     toast(t('emp.grantSent'), 'success');
     return;

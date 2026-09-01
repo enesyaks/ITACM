@@ -1083,10 +1083,43 @@ async function ownerTransferPreflight(actor) {
 }
 
 /**
+ * Is this employee one the directory already vouches for, with directory
+ * sign-in switched on? Returns their directory identity, or null.
+ *
+ * Used to decide whether a portal login needs a password of its own at all: a
+ * person synced from AD already has one, and issuing a second one both confuses
+ * them and — because a temp password forces a change on first login — locks
+ * them out of the app behind a "set a new password" screen they cannot clear
+ * with their AD credentials.
+ */
+async function directoryIdentityFor(email) {
+  try {
+    const cfg = await require('./ldapService').getConfig();
+    if (!cfg.ready || !cfg.loginEnabled) return null;
+    const { rows } = await query(
+      'SELECT ldap_guid, ldap_dn FROM employees WHERE lower(email) = $1 AND ldap_guid IS NOT NULL LIMIT 1',
+      [email]
+    );
+    return rows[0] ? { guid: rows[0].ldap_guid, dn: rows[0].ldap_dn } : null;
+  } catch {
+    return null; // a directory problem must never block granting access
+  }
+}
+
+/**
  * Grant (or re-provision) a self-service Portal login for an employee, keyed by
- * the employee's email. Returns a fresh temporary password the caller can email
- * or hand over. Never touches a non-Portal (staff) account that happens to share
- * the email — those are refused so a directory action can't reset a real login.
+ * the employee's email. Never touches a non-Portal (staff) account that happens
+ * to share the email — those are refused so a directory action can't reset a
+ * real login.
+ *
+ * Two shapes, depending on where the person's password lives:
+ *
+ * - **Directory-backed** (synced from AD, directory sign-in on): no temporary
+ *   password is issued and `must_change_password` stays off. The account gets
+ *   an unguessable random local hash and is linked by directory object id, so
+ *   the only way in is the person's own AD password. Returns `tempPassword:
+ *   null` and `directory: true` so the caller emails the right instructions.
+ * - **Local**: a fresh temporary password, flagged for change on first login.
  */
 async function grantPortalAccess({ employee }, actor) {
   const email = String((employee && employee.email) || '').trim().toLowerCase();
@@ -1098,8 +1131,12 @@ async function grantPortalAccess({ employee }, actor) {
   if (status !== 'Active') {
     throw HttpError.badRequest('Cannot grant web access to an inactive (offboarded) employee');
   }
-  const tempPassword = crypto.randomBytes(12).toString('base64url');
-  const hash = await bcrypt.hash(tempPassword, 12);
+  const directory = await directoryIdentityFor(email);
+  // A directory account never learns this value: it is random, never shown and
+  // never emailed. It exists only to satisfy the NOT NULL column while every
+  // real sign-in goes through the directory.
+  const tempPassword = directory ? null : crypto.randomBytes(12).toString('base64url');
+  const hash = await bcrypt.hash(tempPassword || crypto.randomBytes(32).toString('hex'), 12);
 
   const { rows: existing } = await query(
     'SELECT id, role FROM users WHERE lower(email) = $1',
@@ -1120,23 +1157,27 @@ async function grantPortalAccess({ employee }, actor) {
         + 'under "Zimmetlerim". To reset this password, use IT Users instead.'
       );
     }
-    // Re-provision: reset the temp password, force change on next login, revoke old sessions.
+    // Re-provision. For a local account that means a new temp password and a
+    // forced change; for a directory account there is nothing to reset, so the
+    // change flag is cleared instead — leaving it set would trap the person on
+    // the password screen with credentials the app does not own.
     const { rows } = await query(
       `UPDATE users
-         SET password_hash = $2, status = 'Active', must_change_password = true,
-             sessions_revoked_at = now()
+         SET password_hash = $2, status = 'Active', must_change_password = $3,
+             sessions_revoked_at = now(),
+             ldap_guid = COALESCE($4, ldap_guid), ldap_dn = COALESCE($5, ldap_dn)
        WHERE id = $1
        RETURNING id, username, email, role`,
-      [existing[0].id, hash]
+      [existing[0].id, hash, !directory, directory ? directory.guid : null, directory ? directory.dn : null]
     );
     userRow = rows[0];
     created = false;
   } else {
     const { rows } = await query(
-      `INSERT INTO users (username, email, password_hash, role, must_change_password)
-       VALUES ($1, $2, $3, 'Portal', true)
+      `INSERT INTO users (username, email, password_hash, role, must_change_password, ldap_guid, ldap_dn)
+       VALUES ($1, $2, $3, 'Portal', $4, $5, $6)
        RETURNING id, username, email, role`,
-      [name, email, hash]
+      [name, email, hash, !directory, directory ? directory.guid : null, directory ? directory.dn : null]
     );
     userRow = rows[0];
     created = true;
@@ -1154,6 +1195,7 @@ async function grantPortalAccess({ employee }, actor) {
     user: { uid: userRow.id, username: userRow.username, email: userRow.email, role: userRow.role },
     tempPassword,
     created,
+    directory: !!directory,
   };
 }
 

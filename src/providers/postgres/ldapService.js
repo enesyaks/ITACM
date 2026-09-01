@@ -57,6 +57,7 @@ const DEFAULTS = Object.freeze({
   loginEnabled: false,
   syncEmployees: true,
   createUsers: false,
+  createPortalUsers: false,
   deactivateMissing: false,
   groupRoleMap: Object.freeze([]),
   syncSchedule: 'off', // off | hourly | daily
@@ -154,11 +155,11 @@ function isBlankOrMasked(s) {
 async function assertSyncWriteRights(payload, user) {
   if (!user) return; // internal callers (scheduler, tests) act as the system
   const perms = require('./permissionService');
-  if (payload.createUsers) {
+  if (payload.createUsers || payload.createPortalUsers) {
     const ok = await perms.checkPermission(user, 'user_management', 'create')
       || await perms.checkPermission(user, 'user_management', 'manage');
     if (!ok) {
-      throw HttpError.forbidden('Creating IT accounts from the directory needs the user-management permission');
+      throw HttpError.forbidden('Creating accounts from the directory needs the user-management permission');
     }
   }
   if (payload.syncEmployees || payload.deactivateMissing) {
@@ -230,6 +231,7 @@ async function saveConfig(input, user = null) {
     loginEnabled: !!input.loginEnabled,
     syncEmployees: input.syncEmployees !== false,
     createUsers: !!input.createUsers,
+    createPortalUsers: !!input.createPortalUsers,
     deactivateMissing: !!input.deactivateMissing,
     groupRoleMap: normalizeGroupMap(input.groupRoleMap),
     syncSchedule: schedule,
@@ -434,14 +436,14 @@ async function runSync({ dryRun = false, trigger = 'manual', actorName = null, u
   // Triggering a run performs the same writes as saving the switches, so the
   // person pressing the button is held to the same rights.
   await assertSyncWriteRights(cfg, user);
-  if (!cfg.syncEmployees && !cfg.createUsers) {
-    throw HttpError.badRequest('Nothing to sync — enable employee sync or IT-account provisioning');
+  if (!cfg.syncEmployees && !cfg.createUsers && !cfg.createPortalUsers) {
+    throw HttpError.badRequest('Nothing to sync — enable employee sync or account provisioning');
   }
 
   const started = new Date();
   const result = {
     dryRun, trigger, created: 0, updated: 0, deactivated: 0, skipped: 0,
-    skippedReasons: {}, users: { created: 0, roleChanged: 0 }, samples: [], warnings: [],
+    skippedReasons: {}, users: { created: 0, roleChanged: 0, portalCreated: 0 }, samples: [], warnings: [],
   };
   const skip = (reason) => {
     result.skipped += 1;
@@ -609,6 +611,52 @@ async function runSync({ dryRun = false, trigger = 'manual', actorName = null, u
     }
   }
 
+  // Self-service (Portal) logins for the people just synced. This is what lets a
+  // directory-provisioned employee sign in at all: directory sign-in is
+  // invite-only, so without a `users` row there is nothing for it to
+  // authenticate against and the person is stuck until an admin grants access
+  // by hand.
+  //
+  // The account carries no password of its own — a random, never-disclosed hash
+  // satisfies the NOT NULL column while the person signs in with their AD
+  // password — and `must_change_password` stays off, which would otherwise trap
+  // them on a "set a new password" screen they cannot clear with credentials
+  // the app does not own.
+  if (cfg.createPortalUsers) {
+    if (!cfg.loginEnabled) {
+      result.warnings.push('Portal logins were created, but directory sign-in is off — nobody can use them until you turn it on.');
+    }
+    for (const p of people) {
+      if (!p.email || !p.guid) continue;
+      const existing = (await query(
+        'SELECT id, role, ldap_guid FROM users WHERE lower(email) = $1 LIMIT 1', [p.email]
+      )).rows[0];
+      if (existing) {
+        // A staff account sharing the address is left alone: turning an Admin
+        // into a Portal user, or resetting their password, is not this
+        // feature's business. Only an existing Portal login gets its directory
+        // link filled in, so it stops asking for a local password.
+        if (existing.role === 'Portal' && !existing.ldap_guid && !dryRun) {
+          await query(
+            'UPDATE users SET ldap_guid = $2, ldap_dn = $3, must_change_password = false WHERE id = $1',
+            [existing.id, p.guid, p.dn]
+          ).catch(() => {});
+        }
+        continue;
+      }
+      result.users.portalCreated += 1;
+      if (dryRun) continue;
+      const hash = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 10);
+      await query(
+        `INSERT INTO users (username, email, password_hash, role, status, must_change_password, ldap_guid, ldap_dn)
+         VALUES ($1,$2,$3,'Portal','Active',false,$4,$5) ON CONFLICT (email) DO NOTHING`,
+        [p.fullName || p.email, p.email, hash, p.guid, p.dn]
+      ).catch((err) => {
+        console.error('[ldap] portal login could not be created for', p.email, '-', err && err.message);
+        result.users.portalCreated -= 1;
+      });
+    }
+  }
   await recordRun(started, result, actorName);
   audit(dryRun ? 'ldap.sync_preview' : 'ldap.sync',
     `Directory sync${dryRun ? ' (preview)' : ''}: ${result.created} created, ${result.updated} updated, ${result.deactivated} deactivated, ${result.skipped} skipped`,

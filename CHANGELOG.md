@@ -4,6 +4,34 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.9.2] — 2026-09-01
+
+### Fixed
+- **A directory user granted web access was handed a password the directory
+  does not own.** Granting portal access always minted a temporary password and
+  set `must_change_password`, whoever the employee was. For someone synced from
+  AD that is the wrong password *and* a trap: signing in with their real
+  directory credentials landed them on the "set a new password" screen, which
+  they cannot clear, so it looked as though their password had been changed.
+  Granting access now checks whether the employee is directory-backed and
+  directory sign-in is on; if so no temporary password is issued, the forced
+  change stays off, and the account is linked by directory object id so the only
+  way in is the person's own AD password. The mail and the confirmation dialog
+  say that instead of showing a blank credential. Employees who are not in the
+  directory keep the temporary-password flow exactly as before.
+
+### Added
+- **Directory sync can create the portal logins itself.** A new
+  *"Give synced employees a self-service portal login"* switch under
+  Integrations → Directory means a person synced from AD can sign in without an
+  admin granting access one by one — which was the only way to get in, since
+  directory sign-in is invite-only and needs an account to authenticate against.
+  The accounts carry no password of their own and are never asked to change one.
+  A staff account that happens to share an address is left untouched; an
+  existing portal login only gets its directory link filled in. Like the IT
+  account provisioning it already sat next to, the switch requires the
+  user-management permission, and it warns if directory sign-in is still off.
+
 ## [1.9.1] — 2026-09-01
 
 ### Security

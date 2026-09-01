@@ -337,6 +337,7 @@ Point ITACM at your AD (or any LDAP server) for two independent things — each 
 **Sync.** A run reads the directory and keeps people in step:
 
 - **Employees** — creates and updates name, email, department and job title, and resolves `manager` into ITACM's own manager link, so the **approval chain routes itself** off the org structure your directory already knows.
+- **Portal logins** — optionally gives each synced employee a self-service login so they can see their own assets straight away. They sign in with their **directory password**: no temporary password is issued and nobody is asked to change one, which is what would otherwise strand a directory user on the "set a new password" screen. Granting web access by hand from the employee page behaves the same way once the person is directory-backed.
 - **IT accounts** — an optional **group → role** mapping provisions `Admin` / `Helpdesk` / `Viewer` / `HR` operator accounts from directory group membership. **`Owner` can never be granted this way**, and a sync never touches an existing Owner. Membership is read from `memberOf` when the directory supplies it (AD always does) and from the group objects themselves otherwise (OpenLDAP without the memberof overlay).
 - **Leavers** — optionally deactivates employees who disappear from the directory. This is guarded: if more than **30%** of synced employees are missing in one run, deactivation is skipped and reported, because that is a filter mistake rather than a third of the company resigning.
 

@@ -239,6 +239,8 @@ Views.integrations = async function (el) {
           <div class="form-field full"><label><input type="checkbox" id="int-ldap-syncemp" ${ldapCfg.syncEmployees === false ? '' : 'checked'}${chkDis}> ${esc(t('int.ldap.syncEmployees'))}</label></div>
           <div class="form-field full"><label><input type="checkbox" id="int-ldap-createusers" ${ldapCfg.createUsers ? 'checked' : ''}${chkDis}> ${esc(t('int.ldap.createUsers'))}</label>
             <span class="ob-hint">${esc(t('int.ldap.createUsersHint'))}</span></div>
+          <div class="form-field full"><label><input type="checkbox" id="int-ldap-portal" ${ldapCfg.createPortalUsers ? 'checked' : ''}${chkDis}> ${esc(t('int.ldap.createPortal'))}</label>
+            <span class="ob-hint">${esc(t('int.ldap.createPortalHint'))}</span></div>
           <div class="form-field full"><label><input type="checkbox" id="int-ldap-deactivate" ${ldapCfg.deactivateMissing ? 'checked' : ''}${chkDis}> ${esc(t('int.ldap.deactivate'))}</label>
             <span class="ob-hint">${esc(t('int.ldap.deactivateHint'))}</span></div>
         </div>
@@ -624,6 +626,7 @@ GET /api/integrations/licenses/:id/sam
     loginEnabled: !!$('#int-ldap-login', el)?.checked,
     syncEmployees: !!$('#int-ldap-syncemp', el)?.checked,
     createUsers: !!$('#int-ldap-createusers', el)?.checked,
+    createPortalUsers: !!$('#int-ldap-portal', el)?.checked,
     deactivateMissing: !!$('#int-ldap-deactivate', el)?.checked,
     groupRoleMap: [...el.querySelectorAll('.int-ldap-grow')]
       .map((row) => ({ group: row.querySelector('.int-ldap-g').value.trim(), role: row.querySelector('.int-ldap-r').value }))
@@ -641,6 +644,7 @@ GET /api/integrations/licenses/:id/sam
         ${line(t('int.ldap.deactivated'), r.deactivated)}
         ${line(t('int.ldap.skipped'), r.skipped)}
         ${r.users && (r.users.created || r.users.roleChanged) ? line(t('int.ldap.itAccounts'), `${r.users.created} / ${r.users.roleChanged}`) : ''}
+        ${r.users && r.users.portalCreated ? line(t('int.ldap.portalAccounts'), r.users.portalCreated) : ''}
       </ul>
       ${(r.warnings || []).map((w) => `<p class="banner banner-amber" style="margin:8px 0 0">${esc(w)}</p>`).join('')}
       ${(r.samples || []).length ? `<ul class="int-ldap-samples">${r.samples.map((sm) => `<li><span class="pill pill-slate">${esc(t('int.ldap.act.' + sm.action) || sm.action)}</span> ${esc(sm.name)} <span class="cell-sub">${esc(sm.email || '')}${sm.changes ? ' · ' + esc(sm.changes.join(', ')) : ''}</span></li>`).join('')}</ul>` : ''}`;

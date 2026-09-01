@@ -117,7 +117,7 @@ router.post('/:id/grant-access',
   requirePermission('user_management', 'create'),
   asyncHandler(async (req, res) => {
     const employee = await employeeService.getEmployee(req.params.id);
-    const { user, tempPassword, created } = await authProvider.grantPortalAccess({ employee }, req.user);
+    const { user, tempPassword, created, directory } = await authProvider.grantPortalAccess({ employee }, req.user);
 
     const { smtp } = await notificationService.getMailConfig();
     const smtpOn = !!(smtp && smtp.host);
@@ -129,6 +129,7 @@ router.post('/:id/grant-access',
           to: user.email,
           username: user.username,
           tempPassword,
+          directory,
         });
         emailStatus = 'sent';
       } catch (err) {
@@ -138,12 +139,15 @@ router.post('/:id/grant-access',
       }
     }
     // Reveal the temp password only when it wasn't (successfully) emailed.
+    // A directory account has none — `directory` tells the client to say
+    // "they sign in with their work password" rather than showing a blank.
     const reveal = !smtpOn || emailStatus === 'failed';
     res.json({
       success: true,
       data: {
         user,
         created,
+        directory,
         smtpUsed: smtpOn,
         emailStatus,
         emailError: emailError || undefined,

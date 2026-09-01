@@ -717,7 +717,11 @@ async function sendApprovalDecisionEmail(request, { decision, deciderName } = {}
   }
 }
 
-async function sendPortalAccessEmail({ to, username, tempPassword }) {
+/**
+ * `tempPassword` is null for a directory-backed account: there is no password
+ * to hand over, so the mail tells the person to use the one they already have.
+ */
+async function sendPortalAccessEmail({ to, username, tempPassword, directory = false }) {
   const [{ companyName }, templates] = await Promise.all([getMailConfig(), getEmailTemplates()]);
   const tpl = templates.portal_access;
   const appUrl = process.env.APP_URL || process.env.PUBLIC_URL || 'http://localhost:8000';
@@ -727,7 +731,10 @@ async function sendPortalAccessEmail({ to, username, tempPassword }) {
     employeeName: username || to,
     employeeEmail: to,
     appUrl,
-    tempPassword,
+    // The template's {{tempPassword}} slot carries the instruction instead of a
+    // secret, so a directory account gets a mail that makes sense without
+    // needing a second template to drift out of sync with the first.
+    tempPassword: tempPassword || (directory ? '— (kurumsal / AD parolanız · your work account password)' : ''),
   });
 
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8"></head>`
