@@ -34,7 +34,13 @@ jobs:
       - run: npm run lint
       # No TEST_DATABASE_URL here on purpose: this proves the unit suite still
       # runs with no database anywhere near it.
-      - run: npm test
+      #
+      # --test-concurrency=1: the runner talks to one child process per test
+      # file over a V8-serialized channel, and running them in parallel has
+      # intermittently produced "Unable to deserialize cloned data" on Node 24
+      # with no code change involved (the same commit passes on a re-run).
+      # The suite takes about a second, so serialising it costs nothing.
+      - run: npm test -- --test-concurrency=1
 
   integration:
     name: Integration tests (real PostgreSQL)

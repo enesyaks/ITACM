@@ -4,6 +4,82 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.9.0] — 2026-09-01
+
+Two features aimed at the gaps most often raised against GLPI, and the
+permission gates that attacking them turned out to need.
+
+### Added
+- **Service-desk automation rules.** "When a ticket is opened, if <conditions>
+  then <actions>", configured from Service Desk → Automation rules. Conditions
+  read the subject, description, category, type, source (staff / portal /
+  email), requester name, email, department and request template; actions set
+  the category, impact, urgency, priority, assignee or an internal note. Rules
+  run in order at creation time only and write through plain SQL rather than
+  `updateTicket`, so a rule can never trigger another evaluation pass. A later
+  rule overrides an earlier one per field and `stopOnMatch` lets a specific rule
+  shield a catch-all. Changing the priority re-targets the SLA clocks from
+  creation. Text comparison folds Turkish and accented characters, so a rule
+  written "yazıcı" also matches a subject typed "YAZICI". The editor carries a
+  dry-run tester that evaluates unsaved drafts, and every rule keeps a match
+  counter so one that never fires is visible without reading the audit log.
+- **Active Directory / LDAP.** Sign-in and directory sync, each switchable on
+  its own and both off by default, under Integrations → Directory. Sign-in is
+  invite-only like SSO: the directory verifies the password of an account that
+  already exists here and never creates one at the login screen. Sync creates
+  and updates employees, resolves `manager` into the manager link the approval
+  chain routes on, optionally provisions IT accounts from a group→role mapping,
+  and optionally deactivates leavers. People are keyed on the directory's
+  immutable object id (`objectGUID` on AD, `entryUUID` on OpenLDAP) rather than
+  the DN, so a rename or an OU move updates the row instead of duplicating the
+  person. Group membership is read from `memberOf` where the directory supplies
+  it and from the group objects otherwise — what OpenLDAP without the memberof
+  overlay needs. Run it manually, preview it first (a dry run that writes
+  nothing), or schedule it hourly / daily. Attribute names are configurable;
+  the defaults are Active Directory's.
+
+### Security
+Found while attacking the new endpoints with a least-privilege account holding
+only `integration:manage`:
+
+- **Directory sync could provision Admin accounts without the user-management
+  right.** A holder of `integration:manage` — the group you would hand someone
+  to look after SMTP and webhooks, and which is refused by
+  `POST /api/auth/users` — could point the integration at a directory of their
+  own, map one of its groups to `Admin`, and sign in as the account the sync
+  created. `createUsers` now requires `user_management:create|manage`, checked
+  on the value being saved rather than the transition, so an enabled switch
+  cannot be kept while the directory underneath it is re-pointed.
+- **Directory sign-in could be enabled without the user-management right.**
+  Whoever turns it on while choosing the server can stand up a directory that
+  answers yes to any bind for an existing address. `loginEnabled` now requires
+  the same right.
+- **Employee sync wrote employee rows without an employee right.**
+  `syncEmployees` and `deactivateMissing` now require `employee:update|manage`,
+  enforced both when saving the configuration and when triggering a run.
+- **Credentials embedded in the directory URL** (`ldap://user:pass@host`) were
+  stored and echoed back in cleartext; they are now rejected, since the bind
+  password has an encrypted field precisely so it never sits there.
+- **A rule that assigns tickets** now requires `ticket:assign`, the action
+  `updateTicket` already re-checks on every manual assignee change.
+- **Reading the rule set** moved from `ticket:read` to `ticket:configure` — it
+  carries internal triage notes and shows who work is routed to.
+
+Deactivation carries its own guard: if more than 30% of synced employees are
+missing from one run it is skipped and reported, because that is a filter
+mistake rather than a third of the company resigning.
+
+### Fixed
+- **The SLA claim in both READMEs did not match the code.** The timers run on a
+  24/7 clock and pause while a ticket is *pending*; there is no business-hours
+  calendar. The documentation now says so.
+
+### Changed
+- CI runs the unit suite with `--test-concurrency=1`. Running one child process
+  per test file in parallel intermittently produced "Unable to deserialize
+  cloned data" on Node 24 with no code change involved — the same commit passed
+  on a re-run. The suite takes about a second, so serialising it costs nothing.
+
 ## [1.8.3] — 2026-08-31
 
 ### Fixed
