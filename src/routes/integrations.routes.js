@@ -61,7 +61,7 @@ router.get('/sso', authenticate, requirePermission('integration', 'read'), async
   res.json({ success: true, data: await ssoService.getSsoForUi() });
 }));
 router.put('/sso', authenticate, requirePermission('integration', 'manage'), asyncHandler(async (req, res) => {
-  res.json({ success: true, data: await ssoService.saveSsoConfig(req.body || {}) });
+  res.json({ success: true, data: await ssoService.saveSsoConfig(req.body || {}, req.user) });
 }));
 // Verify the provider is reachable (OIDC discovery) without performing a login.
 router.post('/sso/test', authenticate, requirePermission('integration', 'manage'), asyncHandler(async (req, res) => {

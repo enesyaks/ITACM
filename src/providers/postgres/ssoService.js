@@ -79,7 +79,25 @@ function isBlankOrMasked(s) {
   return t === '' || /^[•*]+$/.test(t);
 }
 
-async function saveSsoConfig(input) {
+/**
+ * Enabling SSO decides WHO CAN SIGN IN, which is a user-management decision
+ * rather than an integration setting. Whoever can turn it on while also
+ * choosing the issuer can stand up an identity provider of their own that
+ * asserts `email_verified` for an existing address and sign in as that user —
+ * the same escalation the directory integration gates on. `integration:manage`
+ * alone (the group you would hand someone for SMTP and webhooks) is therefore
+ * not enough. Gated on the value being SAVED, so an enabled switch cannot be
+ * kept while the issuer underneath it is re-pointed.
+ */
+async function assertSignInRights(enabled, user) {
+  if (!enabled || !user) return; // internal callers act as the system
+  const perms = require('./permissionService');
+  const ok = await perms.checkPermission(user, 'user_management', 'manage')
+    || await perms.checkPermission(user, 'user_management', 'update');
+  if (!ok) throw HttpError.forbidden('Enabling SSO sign-in needs the user-management permission');
+}
+
+async function saveSsoConfig(input, user = null) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
     throw HttpError.badRequest('sso must be an object');
   }
@@ -112,6 +130,7 @@ async function saveSsoConfig(input) {
     buttonLabel: String(input.buttonLabel || '').trim().slice(0, 60),
     requireSso: !!input.requireSso,
   };
+  await assertSignInRights(payload.enabled, user);
   await query('UPDATE app_settings SET sso_json = $1::jsonb WHERE id = 1', [JSON.stringify(payload)]);
   return getSsoForUi();
 }

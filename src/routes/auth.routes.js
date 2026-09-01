@@ -118,7 +118,8 @@ router.get('/sso/callback', asyncHandler(async (req, res) => {
   const stashRaw = readCookie(req, SSO_COOKIE);
   res.clearCookie(SSO_COOKIE, { path: '/api/auth/sso' });
   let stash;
-  try { stash = jwt.verify(stashRaw || '', config.jwtSecret); }
+  // Pin the algorithm here too, like every other verify in the codebase.
+  try { stash = jwt.verify(stashRaw || '', config.jwtSecret, { algorithms: ['HS256'] }); }
   catch { return res.redirect('/#sso_error=expired'); }
   const cfg = await ssoService.getSsoConfig();
   const callbackUrl = new URL(cfg.redirectUri).origin + req.originalUrl;

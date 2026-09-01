@@ -4,6 +4,33 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.9.1] — 2026-09-01
+
+### Security
+A full-application review followed the 1.9.0 one, which had only covered the
+new endpoints. Two findings, both the same shape as the directory ones:
+
+- **SSO sign-in could be enabled without the user-management right.** Turning
+  SSO on while choosing the issuer lets you stand up an identity provider that
+  asserts `email_verified` for an existing address and sign in as that user, so
+  `integration:manage` alone — the group you would hand someone for SMTP and
+  webhooks — was enough to take over any account. Enabling it now requires
+  `user_management:manage|update`, gated on the value being saved so an enabled
+  switch cannot be kept while the issuer underneath it is re-pointed. This is
+  the SSO twin of the directory gate added in 1.9.0.
+- **One `jwt.verify` did not pin its algorithm.** The SSO PKCE stash cookie was
+  verified without `algorithms: ['HS256']`, unlike every other verify in the
+  codebase. Pinned for consistency.
+
+Everything else the review exercised came back clean: SQL injection (all
+dynamic SQL is code-controlled identifiers with bound values, ORDER BY is
+whitelisted), command injection (`spawn` with an argument array, no shell),
+path traversal on document download, stored and reflected XSS, JWT tampering
+and `alg: none`, session revocation after logout, the role × endpoint matrix,
+portal and HR confinement, horizontal access between portal accounts, mass
+assignment, account lockout, secret exposure in responses, logs and the audit
+trail, upload type sniffing, and the AI query guard's view-to-permission map.
+
 ## [1.9.0] — 2026-09-01
 
 Two features aimed at the gaps most often raised against GLPI, and the
