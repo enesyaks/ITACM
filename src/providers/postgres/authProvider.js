@@ -46,13 +46,18 @@ function sessionExpiresIn(rememberMe) {
   return config.jwtExpiresIn || '12h';
 }
 
-async function issueSession(user, meta = {}, { rememberMe = false, sso = false } = {}) {
+async function issueSession(user, meta = {}, { rememberMe = false, sso = false, directory = false } = {}) {
   const jti = crypto.randomUUID();
   const expiresIn = sessionExpiresIn(rememberMe);
   const token = jwt.sign(
     // `sso: true` marks an IdP-authenticated session (signed → not forgeable), so
     // the post-auth gates can skip the app's own password/MFA-setup nags.
-    { sub: user.id, email: user.email, role: user.role, jti, ...(sso ? { sso: true } : {}) },
+    // `dir: true` marks one proved by the directory: the app does not own that
+    // password, so asking the person to "set a new password" is asking them to
+    // change something that has no effect on how they sign in. MFA enrolment is
+    // NOT skipped for these — a directory password is still one factor.
+    { sub: user.id, email: user.email, role: user.role, jti,
+      ...(sso ? { sso: true } : {}), ...(directory ? { dir: true } : {}) },
     config.jwtSecret,
     { expiresIn, issuer: 'itacm', algorithm: 'HS256' }
   );
@@ -82,7 +87,7 @@ async function issueSession(user, meta = {}, { rememberMe = false, sso = false }
   };
 }
 
-function issueMfaChallenge(user, { rememberMe = false } = {}) {
+function issueMfaChallenge(user, { rememberMe = false, directory = false } = {}) {
   const jti = crypto.randomUUID();
   const mfaToken = jwt.sign(
     {
@@ -91,6 +96,9 @@ function issueMfaChallenge(user, { rememberMe = false } = {}) {
       email: user.email,
       jti,
       ...(rememberMe ? { rm: true } : {}),
+      // Carried across the MFA step so the finished session still knows the
+      // password came from the directory.
+      ...(directory ? { dir: true } : {}),
     },
     config.jwtSecret,
     { expiresIn: '5m', issuer: 'itacm', algorithm: 'HS256' }
@@ -142,6 +150,7 @@ async function verifyMfaChallengeToken(mfaToken) {
     jti: payload.jti || null,
     tokenExp: payload.exp ? new Date(payload.exp * 1000) : new Date(Date.now() + 5 * 60 * 1000),
     rememberMe: !!payload.rm,
+    directory: !!payload.dir,
   };
 }
 
@@ -253,6 +262,13 @@ async function verifyAgainstDirectory(user, password) {
       await query('UPDATE users SET ldap_guid = $2, ldap_dn = $3 WHERE id = $1 AND ldap_guid IS NULL',
         [user.id, person.guid, person.dn]).catch(() => {});
     }
+    // Clear a leftover "must change password" from before this account was
+    // directory-backed. Whatever password they set would be ignored — the
+    // directory decides — so the prompt is a dead end, not a safeguard.
+    if (user.must_change_password) {
+      await query('UPDATE users SET must_change_password = false WHERE id = $1', [user.id]).catch(() => {});
+      user.must_change_password = false;
+    }
     return true;
   } catch (err) {
     console.warn('[auth] directory sign-in unavailable:', err && err.message);
@@ -268,6 +284,7 @@ async function login({ email, password, rememberMe }, meta = {}) {
   assertNotLocked(user);
   const match = await bcrypt.compare(password, user ? user.password_hash : DUMMY_HASH);
   let valid = user && match;
+  let viaDirectory = false;
   // Directory (AD/LDAP) fallback. Invite-only, like SSO: the directory can
   // verify the password of an account that ALREADY exists here, but a
   // successful bind never creates one. Accounts arrive via a sync run or an
@@ -275,6 +292,7 @@ async function login({ email, password, rememberMe }, meta = {}) {
   // so this is the only way in for them.
   if (!valid && user && user.status !== 'Disabled') {
     valid = await verifyAgainstDirectory(user, password);
+    viaDirectory = valid;
   }
   if (!valid) {
     await recordLoginFailure(user, meta);
@@ -295,9 +313,9 @@ async function login({ email, password, rememberMe }, meta = {}) {
 
   const remember = !!rememberMe;
   if (user.mfa_enabled && user.mfa_secret) {
-    return issueMfaChallenge(user, { rememberMe: remember });
+    return issueMfaChallenge(user, { rememberMe: remember, directory: viaDirectory });
   }
-  return issueSession(user, meta, { rememberMe: remember });
+  return issueSession(user, meta, { rememberMe: remember, directory: viaDirectory });
 }
 
 /** Admin: remove an SSO link so the user must re-link or use a password. */
@@ -401,7 +419,7 @@ function auditSsoLogin(user, iss, meta) {
 }
 
 async function verifyMfaLogin({ mfaToken, code, backupCode, rememberMe }, meta = {}) {
-  const { user, jti, tokenExp, rememberMe: challengeRemember } = await verifyMfaChallengeToken(mfaToken);
+  const { user, jti, tokenExp, rememberMe: challengeRemember, directory } = await verifyMfaChallengeToken(mfaToken);
   if (!user.mfa_enabled || !user.mfa_secret) {
     throw HttpError.badRequest('MFA is not enabled for this account');
   }
@@ -416,7 +434,7 @@ async function verifyMfaLogin({ mfaToken, code, backupCode, rememberMe }, meta =
   const totpOk = code && authenticator.verify({ token: String(code).replace(/\s/g, ''), secret: user.mfa_secret });
   if (totpOk) {
     await consumeChallenge();
-    return issueSession(user, meta, { rememberMe: remember });
+    return issueSession(user, meta, { rememberMe: remember, directory });
   }
 
   if (backupCode) {
@@ -426,7 +444,7 @@ async function verifyMfaLogin({ mfaToken, code, backupCode, rememberMe }, meta =
         const next = hashes.slice(0, i).concat(hashes.slice(i + 1));
         await query('UPDATE users SET mfa_backup_hashes = $2 WHERE id = $1', [user.id, next]);
         await consumeChallenge();
-        return issueSession(user, meta, { rememberMe: remember });
+        return issueSession(user, meta, { rememberMe: remember, directory });
       }
     }
   }
@@ -482,6 +500,7 @@ async function verifyToken(token) {
     jti: payload.jti || null,
     tokenExp: payload.exp ? new Date(payload.exp * 1000) : parseExpiryToDate(config.jwtExpiresIn),
     sso: !!payload.sso,
+    directory: !!payload.dir,
   };
 }
 

@@ -4,6 +4,22 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.9.5] — 2026-09-01
+
+### Fixed
+- **A directory user could still be asked to set a new password.** 1.9.2 stopped
+  *issuing* one when web access is granted, but any account already carrying the
+  `must change password` flag — set before it was directory-backed, or by a
+  later password reset — still hit the "set a new password" screen on sign-in.
+  For someone authenticating against AD that prompt is a dead end: whatever they
+  set is ignored, because the directory decides the password. A session proved
+  by the directory now carries a signed marker and skips that gate, and a stale
+  flag is cleared the first time the directory verifies the account.
+
+  MFA enrolment is deliberately **not** skipped: a directory password is one
+  factor, and an Owner still has to enrol. Accounts with no directory link keep
+  the temporary-password flow and the forced change exactly as before.
+
 ## [1.9.4] — 2026-09-01
 
 ### Fixed

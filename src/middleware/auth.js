@@ -51,7 +51,13 @@ function applyPostAuthGates(req) {
     // Forced password change first — matches the UI (temp password → new password
     // → Owner MFA enrol). Otherwise --clear-mfa recovery blocks /api/auth/password
     // behind MFA_ENROLLMENT_REQUIRED and the user cannot finish either step.
-    if (needsPasswordChange(req.user) && !isPasswordChangeAllowedPath(req.originalUrl)) {
+    //
+    // Skipped for a session the DIRECTORY proved: the app does not own that
+    // password, so "set a new password" would change something that has no
+    // bearing on how the person signs in — a dead end rather than a safeguard.
+    // MFA enrolment below is NOT skipped: a directory password is one factor,
+    // and an Owner still has to enrol.
+    if (!req.user.directory && needsPasswordChange(req.user) && !isPasswordChangeAllowedPath(req.originalUrl)) {
       throw HttpError.forbidden(
         'You must set a new password before continuing',
         { code: 'PASSWORD_CHANGE_REQUIRED' }
