@@ -295,7 +295,14 @@ async function ocrPages(buffer, opts = {}) {
         text: chunks.join('\n').replace(/[^\S\n]+/g, ' ').replace(/\n{2,}/g, '\n').trim(),
         // null, not 0: "we never read this page" and "we read it and understood
         // nothing" lead to different decisions upstream.
-        conf: confChars ? Math.round(confWeighted / confChars) : null,
+        //
+        // Clamped to the 0-100 the column accepts. The value comes out of a
+        // third-party recogniser, and the row is written inside the batch
+        // transaction — one out-of-range number would fail the CHECK and take
+        // the whole import down with it.
+        conf: confChars
+          ? Math.min(100, Math.max(0, Math.round(confWeighted / confChars)))
+          : null,
       });
     }
   } finally {
