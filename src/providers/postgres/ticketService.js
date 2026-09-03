@@ -1159,9 +1159,9 @@ async function submitMyCsat(id, body, user) {
  */
 async function sweepSlaBreaches() {
   const legs = [
-    { col: 'response_breached_at', done: 'first_response_at', due: 'response_due_at', action: 'sla_response', detail: 'First-response SLA breached', extra: '' },
+    { col: 'response_breached_at', done: 'first_response_at', due: 'response_due_at', action: 'sla_response', detail: 'First-response SLA breached', label: 'First response', extra: '' },
     // resolution clock is paused while 'pending' → don't flag a breach then
-    { col: 'resolve_breached_at', done: 'resolved_at', due: 'resolve_due_at', action: 'sla_resolve', detail: 'Resolution SLA breached', extra: ' AND sla_paused_at IS NULL' },
+    { col: 'resolve_breached_at', done: 'resolved_at', due: 'resolve_due_at', action: 'sla_resolve', detail: 'Resolution SLA breached', label: 'Resolution', extra: ' AND sla_paused_at IS NULL' },
   ];
   let flagged = 0;
   const breached = new Map(); // dedup escalation to one email per ticket per sweep
@@ -1170,14 +1170,17 @@ async function sweepSlaBreaches() {
       `UPDATE tickets SET ${l.col} = now()
         WHERE ${l.col} IS NULL AND ${l.done} IS NULL AND ${l.due} IS NOT NULL AND ${l.due} < now()
           AND status NOT IN ('resolved','closed','cancelled')${l.extra}
-        RETURNING id, number, subject, assignee_user_id AS "assigneeUserId"`
+        RETURNING id, number, subject, priority, assignee_user_id AS "assigneeUserId", ${l.due} AS "dueAt"`
     );
     for (const r of rows) {
       await query(
         'INSERT INTO ticket_activity (ticket_id, actor_name, action, detail) VALUES ($1,$2,$3,$4)',
         [r.id, 'system', l.action, l.detail]
       );
-      breached.set(r.id, r);
+      // Both legs can breach in the same tick. One mail per ticket, naming each.
+      const seen = breached.get(r.id);
+      if (seen) seen.legs.push(l.label);
+      else breached.set(r.id, { ...r, legs: [l.label] });
       flagged += 1;
     }
   }
@@ -1187,22 +1190,60 @@ async function sweepSlaBreaches() {
 
 // Auto-escalation: on a fresh SLA breach, notify the assignee — or the ops
 // recipients (notify.to) when the ticket is unassigned. Never throws.
+/** "2h 15m" from a due timestamp to now; the mail says how late, not just that. */
+function overdueSince(dueAt) {
+  const due = dueAt ? new Date(dueAt).getTime() : NaN;
+  if (!Number.isFinite(due)) return '-';
+  const mins = Math.max(0, Math.round((Date.now() - due) / 60000));
+  const d = Math.floor(mins / 1440);
+  const h = Math.floor((mins % 1440) / 60);
+  const m = mins % 60;
+  return [d ? `${d}d` : '', h ? `${h}h` : '', (!d && !h) || m ? `${m}m` : ''].filter(Boolean).join(' ');
+}
+
 function escalateBreach(tk) {
   (async () => {
+    const svc = require('./notificationService');
     let to = null;
+    let assigneeName = null;
     if (tk.assigneeUserId) {
-      const r = await query('SELECT email FROM users WHERE id = $1', [tk.assigneeUserId]);
+      const r = await query('SELECT email, username FROM users WHERE id = $1', [tk.assigneeUserId]);
       to = (r.rows[0] && r.rows[0].email) || null;
+      assigneeName = (r.rows[0] && r.rows[0].username) || null;
     }
     if (!to) {
-      const cfg = await require('./notificationService').getMailConfig();
+      const cfg = await svc.getMailConfig();
       to = (cfg.notify && cfg.notify.to && cfg.notify.to.length) ? cfg.notify.to : null;
     }
-    if (!to) return;
-    const recipients = Array.isArray(to) ? to.join(', ') : to;
-    await query("INSERT INTO ticket_activity (ticket_id, actor_name, action, detail) VALUES ($1,'system','escalated',$2)", [tk.id, 'Notified ' + recipients]);
-    mail({ to, ticketNumber: tk.number, subject: tk.subject, event: 'SLA breached — needs attention', actorName: 'System' });
+    if (!to) {
+      await note(tk.id, 'SLA breach not escalated: nobody is assigned and no fallback recipient is set');
+      return;
+    }
+    const res = await svc.sendSlaBreachNotification({
+      to,
+      ticketNumber: tk.number,
+      subject: tk.subject,
+      slaType: (tk.legs || ['SLA']).join(' + '),
+      dueAt: tk.dueAt ? new Date(tk.dueAt).toISOString().replace('T', ' ').slice(0, 16) : '-',
+      overdueBy: overdueSince(tk.dueAt),
+      priority: tk.priority,
+      assigneeName,
+    });
+    // Recorded AFTER the attempt and from its result. Writing "Notified <x>"
+    // before sending logged a delivery that never happened whenever SMTP was
+    // unset — the trail claimed the desk had been told when it had not.
+    const who = Array.isArray(to) ? to.join(', ') : to;
+    await note(tk.id, res && res.skipped
+      ? `SLA breach mail not sent (${res.reason}) — would have gone to ${who}`
+      : `SLA breach mail sent to ${who}`);
   })().catch(() => {});
+}
+
+function note(ticketId, detail) {
+  return query(
+    "INSERT INTO ticket_activity (ticket_id, actor_name, action, detail) VALUES ($1,'system','escalated',$2)",
+    [ticketId, detail]
+  ).catch(() => {});
 }
 
 /* --------------------------- email notifications --------------------------- */

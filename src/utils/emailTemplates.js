@@ -6,7 +6,7 @@
 const TEMPLATE_KEYS = [
   'onboarding_welcome', 'portal_access', 'hr_onboard_request', 'hr_offboard_request',
   'handover_completed', 'alert_digest', 'owner_transfer',
-  'ticket_update', 'approval_request', 'approval_decision',
+  'ticket_update', 'sla_breach', 'approval_request', 'approval_decision',
 ];
 
 /** Shown in the template picker so the list reads as flows, not as keys. */
@@ -19,6 +19,7 @@ const TEMPLATE_LABELS = {
   alert_digest: 'Daily alert digest — licenses, stock, EOL, onboarding',
   owner_transfer: 'Ownership transfer — notice to the new owner',
   ticket_update: 'Service desk — ticket update (assigned / status / reply)',
+  sla_breach: 'Service desk — SLA breached (escalation to the assignee)',
   approval_request: 'Approval — a request awaits your decision',
   approval_decision: 'Approval — your request was approved / rejected',
 };
@@ -38,6 +39,7 @@ const TEMPLATE_PLACEHOLDERS = {
   alert_digest: ['companyName', 'alertCount', 'alertSummary', 'appUrl'],
   owner_transfer: ['companyName', 'employeeName', 'employeeEmail', 'credentials', 'appUrl'],
   ticket_update: ['companyName', 'ticketNumber', 'subject', 'event', 'actorName', 'snippet', 'appUrl'],
+  sla_breach: ['companyName', 'ticketNumber', 'subject', 'slaType', 'dueAt', 'overdueBy', 'priority', 'assigneeName', 'appUrl'],
   approval_request: ['companyName', 'summary', 'requesterName', 'resourceRef', 'appUrl'],
   approval_decision: ['companyName', 'summary', 'decision', 'deciderName', 'appUrl'],
 };
@@ -184,6 +186,23 @@ const DEFAULT_EMAIL_TEMPLATES = {
       + '{{snippet}}\n\n'
       + 'Open: {{appUrl}}\n',
   },
+  sla_breach: {
+    subject: '[{{ticketNumber}}] {{slaType}} SLA breached — {{subject}}',
+    bodyHtml:
+      '<p style="margin:0 0 6px;color:#64748b;font-size:13px">{{companyName}} · Service Desk</p>'
+      + '<h2 style="margin:0 0 10px;font-size:18px">{{ticketNumber}} — {{subject}}</h2>'
+      + '<p style="margin:0 0 12px;color:#b91c1c"><strong>{{slaType}} SLA breached.</strong> '
+      + 'Due {{dueAt}} · overdue by {{overdueBy}}.</p>'
+      + '<p style="margin:0 0 12px;color:#334155">Priority {{priority}} · assigned to {{assigneeName}}</p>'
+      + '<p style="margin:0"><a href="{{appUrl}}" style="color:#4f46e5">Open the ticket</a></p>',
+    bodyText:
+      '{{companyName}} · Service Desk\n\n'
+      + '{{ticketNumber}} — {{subject}}\n'
+      + '{{slaType}} SLA breached. Due {{dueAt}}, overdue by {{overdueBy}}.\n'
+      + 'Priority {{priority}} · assigned to {{assigneeName}}\n\n'
+      + 'Open: {{appUrl}}\n',
+  },
+
   approval_request: {
     subject: '[Approval] {{summary}}',
     bodyHtml:

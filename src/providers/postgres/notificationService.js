@@ -628,6 +628,35 @@ function templateHtml(bodyHtml, opts = {}) {
 </body></html>`;
 }
 
+/**
+ * SLA escalation. Its own template rather than a ticket_update with a different
+ * {{event}} string: a breach carries facts an update does not — which leg, when
+ * it was due, how late it is — and a desk wants to word that mail differently
+ * from "someone replied". Returns the same {skipped, reason} shape as the other
+ * senders so the caller can record WHY nothing went out.
+ */
+async function sendSlaBreachNotification({ to, ticketNumber, subject, slaType, dueAt, overdueBy, priority, assigneeName }) {
+  try {
+    if (!to) return { skipped: true, reason: 'no recipient' };
+    const { notify, smtp, companyName, companyLogo, companyAddress } = await getMailConfig();
+    if (!notify.enabled || !notify.ticketUpdates) return { skipped: true, reason: 'ticket notifications off' };
+    if (!smtp.host) return { skipped: true, reason: 'no smtp host' };
+    const base = appBaseUrl(notify) || process.env.APP_URL || 'http://localhost:8000';
+    const templates = await getEmailTemplates();
+    const rendered = renderTemplate(templates.sla_breach, {
+      companyName, ticketNumber, subject,
+      slaType: slaType || 'SLA', dueAt: dueAt || '-', overdueBy: overdueBy || '-',
+      priority: priority || '-', assigneeName: assigneeName || 'nobody', appUrl: base,
+    });
+    const logo = logoAttachment(companyLogo);
+    return await sendMail({ to, subject: rendered.subject, text: rendered.bodyText,
+      html: templateHtml(rendered.bodyHtml, { companyName, hasLogo: !!logo, address: companyAddress }),
+      attachments: logo ? [logo] : undefined });
+  } catch (err) {
+    return { skipped: true, reason: err.message };
+  }
+}
+
 async function sendTicketNotification({ to, ticketNumber, subject, event, actorName, snippet }) {
   try {
     if (!to) return { skipped: true, reason: 'no recipient' };
@@ -803,7 +832,7 @@ async function sendHrRequestNotice(request) {
 module.exports = {
   getMailConfig, saveMailConfig, clearMailConfig, sendTestEmail, runAlertDigest, runScheduledDigest, notifyHandoverCompleted, sendMail,
   getEmailTemplates, saveEmailTemplates, sendOnboardingWelcomeEmail, sendPortalAccessEmail, sendHrRequestNotice,
-  sendTicketNotification, sendApprovalNotice, sendApprovalDecisionEmail,
+  sendTicketNotification, sendSlaBreachNotification, sendApprovalNotice, sendApprovalDecisionEmail,
   sendOwnerTransferEmail,
   DEFAULT_NOTIFY, TEMPLATE_KEYS, PLACEHOLDERS,
 };
