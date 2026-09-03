@@ -1028,7 +1028,18 @@ async function sendToApproval(ticketId, { level = 'manager' } = {}, user) {
   const tk = await getTicket(ticketId, user);
   if (tk.approvalStatus === 'pending') throw HttpError.badRequest('This ticket already has a pending approval');
   if (!tk.requesterEmployeeId) throw HttpError.badRequest('This ticket has no requester to route the approval from');
-  const lvl = ['manager', 'manager2', 'department'].includes(level) ? level : 'manager';
+  // 'emp:<uuid>' names one person directly, for the case the org chart cannot
+  // express — a stand-in while a manager is away, a budget owner outside the
+  // reporting line. resolveLevel() still refuses an inactive employee, and the
+  // requester approving their own ticket, so this widens who may be asked
+  // without widening what is allowed.
+  let lvl;
+  if (typeof level === 'string' && level.startsWith('emp:')) {
+    if (!isUuid(level.slice(4))) throw HttpError.badRequest('Invalid approver');
+    lvl = level;
+  } else {
+    lvl = ['manager', 'manager2', 'department'].includes(level) ? level : 'manager';
+  }
   const approval = await require('./approvalService').createRequest({
     type: 'ticket_request',
     requesterEmployeeId: tk.requesterEmployeeId,
@@ -1042,7 +1053,10 @@ async function sendToApproval(ticketId, { level = 'manager' } = {}, user) {
     throw HttpError.badRequest('Could not start approval — the workflow may be off, or no approver is set for the requester');
   }
   await query('UPDATE tickets SET approval_request_id = $1, updated_at = now() WHERE id = $2', [approval.request.id, ticketId]);
-  await logActivity(ticketId, actor(user), 'approval_requested', `Sent to ${lvl}`).catch(() => {});
+  // Log who was actually asked, not the token — 'emp:<uuid>' says nothing to
+  // whoever reads the history later.
+  const askedName = approval.request.approverName || lvl;
+  await logActivity(ticketId, actor(user), 'approval_requested', `Sent to ${askedName}`).catch(() => {});
   return getTicket(ticketId, user);
 }
 

@@ -1521,15 +1521,38 @@ Views.tickets = async function (el, params = {}) {
           formModal({
             title: t('tk.sendToApproval'),
             stack: true,
-            fields: [{ name: 'level', label: t('tk.approvalLevel'), type: 'select', full: true, value: 'manager', options: [
-              { value: 'manager', label: t('rt.manager') },
-              { value: 'manager2', label: t('rt.manager2') },
-              { value: 'department', label: t('rt.department') },
-            ] }],
+            fields: [
+              { name: 'level', label: t('tk.approvalLevel'), type: 'select', full: true, value: 'manager', options: [
+                { value: 'manager', label: t('rt.manager') },
+                { value: 'manager2', label: t('rt.manager2') },
+                { value: 'department', label: t('rt.department') },
+                { value: 'emp', label: t('tk.approvalSpecific') },
+              ] },
+              // Only meaningful for the 'emp' choice; onMount hides it otherwise.
+              { name: 'approverEmployeeId', label: t('tk.approvalPerson'), type: 'employeeSearch', full: true },
+            ],
+            onMount(ov) {
+              const sel = ov.querySelector('[name="level"]');
+              const host = ov.querySelector('[data-emp-search="approverEmployeeId"]');
+              const row = host && host.closest('.form-field');
+              if (!sel || !row) return;
+              const sync = () => { row.style.display = sel.value === 'emp' ? '' : 'none'; };
+              sel.addEventListener('change', sync);
+              sync();
+            },
             submitLabel: t('tk.sendToApproval'),
             async onSubmit(d) {
+              // The org levels go through as-is; a named person becomes the
+              // 'emp:<uuid>' step the approval engine already understands.
+              let level = d.level;
+              if (level === 'emp') {
+                // Throwing, not returning: formModal closes as soon as onSubmit
+                // resolves, so a bare return would dismiss the dialog silently.
+                if (!d.approverEmployeeId) throw new Error(t('tk.approvalPersonRequired'));
+                level = 'emp:' + d.approverEmployeeId;
+              }
               // Let a failure propagate so formModal surfaces it and stays open.
-              await api('/tickets/' + encodeURIComponent(id) + '/send-approval', { method: 'POST', body: { level: d.level } });
+              await api('/tickets/' + encodeURIComponent(id) + '/send-approval', { method: 'POST', body: { level } });
               toast(t('tk.sentToApproval'), 'success');
               // Re-open the detail (fresh approval status) after formModal auto-closes.
               setTimeout(() => openTicket(id), 0);
