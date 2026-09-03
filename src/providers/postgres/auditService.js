@@ -3,6 +3,7 @@
  * Reader merges system_audit_log with legacy domain history tables.
  */
 const { query } = require('./pool');
+const { rateLimitIp } = require('../../utils/setupAccess');
 
 const SENSITIVE_KEYS = new Set([
   'password', 'adminpassword', 'token', 'setuptoken', 'authorization',
@@ -241,7 +242,11 @@ async function logFromRequest(req, res) {
     entityId: described.entityId || null,
     entityLabel: described.entityLabel || null,
     meta: { method: req.method, path, status: res.statusCode, body: scrub(req.body) },
-    ip: req.ip || null,
+    // rateLimitIp, not req.ip: `trust proxy` is set to one hop, so behind
+    // Cloudflare -> cloudflared -> Traefik req.ip resolves to Traefik and every
+    // row recorded the proxy instead of the person. This prefers
+    // CF-Connecting-IP and falls back to the unspoofable TCP peer.
+    ip: rateLimitIp(req) || null,
     userAgent: typeof req.get === 'function' ? req.get('user-agent') : null,
   });
 }

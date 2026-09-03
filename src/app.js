@@ -138,6 +138,12 @@ function createApp() {
     },
   }));
 
+  // One line per API request on stdout, for "what did this person do at 14:30".
+  // Separate from the audit log below, which records what CHANGED and keeps it
+  // permanently; this is traffic, and it answers a question the audit log cannot
+  // because reads never reach it.
+  app.use('/api', require('./utils/accessLog').accessLog);
+
   // Capture successful mutating API calls into system_audit_log (fire-and-forget).
   // Must be registered BEFORE routes so res.on('finish') is attached in time.
   app.use('/api', (req, res, next) => {
