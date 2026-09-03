@@ -53,8 +53,16 @@ async function discover(cfg) {
   };
 }
 
-/** Start a login: returns the IdP redirect URL + PKCE verifier / state / nonce. */
-async function beginAuth(cfg) {
+/**
+ * Start a login: returns the IdP redirect URL + PKCE verifier / state / nonce.
+ *
+ * `prompt` is passed through to the provider. Left unset on a normal sign-in,
+ * which is the point of SSO: an existing session should not be re-challenged.
+ * The login screen sends 'select_account' after a refusal, where the opposite is
+ * true — the provider would otherwise replay the identity that was just turned
+ * away and the person could never reach the account picker.
+ */
+async function beginAuth(cfg, { prompt } = {}) {
   const config = await getConfig(cfg);
   const codeVerifier = oidcClient.randomPKCECodeVerifier();
   const codeChallenge = await oidcClient.calculatePKCECodeChallenge(codeVerifier);
@@ -67,6 +75,7 @@ async function beginAuth(cfg) {
     code_challenge_method: 'S256',
     state,
     nonce,
+    ...(prompt ? { prompt } : {}),
   }).href;
   return { url, codeVerifier, state, nonce };
 }

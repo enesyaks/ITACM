@@ -104,7 +104,12 @@ router.post('/mfa/verify', loginLimiter, asyncHandler(async (req, res) => {
 // GET /api/auth/sso/start — send the browser to the identity provider.
 router.get('/sso/start', asyncHandler(async (req, res) => {
   const cfg = await ssoService.getSsoConfig();
-  const { url, codeVerifier, state, nonce } = await oidc.beginAuth(cfg);
+  // Only 'select_account' is accepted, and only because the login screen offers
+  // it after a refusal. Forwarding the query value as-is would let anyone craft
+  // a link carrying 'none' — a silent sign-in with whatever session the browser
+  // already holds — or 'consent', neither of which this app has a use for.
+  const prompt = req.query.prompt === 'select_account' ? 'select_account' : undefined;
+  const { url, codeVerifier, state, nonce } = await oidc.beginAuth(cfg, { prompt });
   const stash = jwt.sign({ codeVerifier, state, nonce }, config.jwtSecret, { expiresIn: '10m' });
   res.cookie(SSO_COOKIE, stash, {
     httpOnly: true, secure: isSecureReq(req), sameSite: 'lax',

@@ -3658,6 +3658,7 @@ async function init() {
 
   // SSO handoff: the callback redirected back with a one-time ticket (or an
   // error code) in the URL hash. Handle it before the session/onboarding checks.
+  let ssoRefused = false;
   const ssoHash = (() => {
     const h = location.hash || '';
     const pick = (k) => { const m = new RegExp('(?:^|[#&])' + k + '=([^&]+)').exec(h); return m ? decodeURIComponent(m[1]) : null; };
@@ -3678,8 +3679,20 @@ async function init() {
     }
   } else if (ssoHash.error) {
     hideBootSplash();
-    const key = ssoHash.error === 'sso_no_account' ? 'login.ssoNoAccount' : 'login.ssoDenied';
-    toast(t(key) || 'SSO sign-in was denied', 'error');
+    // Every reason the server can refuse gets its own line. Collapsing them into
+    // one "denied" message is what sends people down the wrong path: a rejection
+    // by the allowed-domains list reads exactly like "no account exists".
+    const SSO_ERRORS = {
+      sso_no_account: 'login.ssoNoAccount',
+      sso_domain: 'login.ssoDomain',
+      sso_email_unverified: 'login.ssoEmailUnverified',
+      sso_conflict: 'login.ssoConflict',
+      sso_required: 'login.ssoRequired',
+    };
+    toast(t(SSO_ERRORS[ssoHash.error] || 'login.ssoDenied'), 'error');
+    // The provider kept the session behind the identity it just refused, so the
+    // normal button would hand back the same one without showing a picker.
+    ssoRefused = true;
   }
 
   const rememberPref = (() => {
@@ -3690,6 +3703,21 @@ async function init() {
 
   const ssoBtn = $('#login-sso-btn');
   if (ssoBtn) ssoBtn.addEventListener('click', () => { window.location.href = '/api/auth/sso/start'; });
+
+  // Offered only after a refusal. prompt=select_account makes the provider show
+  // its account chooser instead of replaying the session it already has —
+  // without it there is no way back to the picker short of clearing cookies.
+  if (ssoRefused) {
+    const retry = $('#login-sso-retry');
+    if (retry) retry.classList.remove('hidden');
+    const other = $('#login-sso-other');
+    if (other) {
+      other.addEventListener('click', (e) => {
+        e.preventDefault();
+        window.location.href = '/api/auth/sso/start?prompt=select_account';
+      });
+    }
+  }
 
   const revealBtn = $('#login-reveal');
   if (revealBtn) {
