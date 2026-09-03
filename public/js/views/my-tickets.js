@@ -159,8 +159,8 @@ Views.myTickets = async function (el) {
       })),
       // No template fits: these two open a ticket with a free-text subject and no
       // chain. Grouped apart so they read as the fallback, not as one more form.
-      { value: 'incident', group: t('mtk.groupOther'), icon: 'report', name: tkTypeLabel('incident'), category: '', description: t('mtk.incidentDesc'), approval: [], amountThreshold: null },
-      { value: 'request', group: t('mtk.groupOther'), icon: 'inbox', name: tkTypeLabel('request'), category: '', description: t('mtk.requestDesc'), approval: [], amountThreshold: null },
+      { value: 'incident', group: t('mtk.groupGeneral'), icon: 'report', name: tkTypeLabel('incident'), category: '', description: t('mtk.incidentDesc'), approval: [], amountThreshold: null },
+      { value: 'request', group: t('mtk.groupGeneral'), icon: 'inbox', name: tkTypeLabel('request'), category: '', description: t('mtk.requestDesc'), approval: [], amountThreshold: null },
     ];
 
     openModal({
@@ -188,11 +188,12 @@ Views.myTickets = async function (el) {
             if (!g) { g = { name: key, items: [] }; byName.set(key, g); groups.push(g); }
             g.items.push(o);
           }
-          // Categories keep the order the templates were sorted in. The two
-          // catch-alls go last whatever sort_order says: a template nobody
-          // categorised should not be the first thing the list offers.
-          const tail = new Set([OTHER, t('mtk.groupOther')]);
-          groups.sort((a, b) => (tail.has(a.name) ? 1 : 0) - (tail.has(b.name) ? 1 : 0));
+          // The two open-ended kinds lead: someone who does not already know which
+          // template fits reaches for "something is broken" or "I need a thing",
+          // and making them scroll past fourteen forms to find that is backwards.
+          // Uncategorised templates still sort last whatever sort_order says.
+          const rank = (name) => (name === t('mtk.groupGeneral') ? -1 : name === OTHER ? 1 : 0);
+          groups.sort((a, b) => rank(a.name) - rank(b.name));
           const cardHtml = (o) => `
             <button type="button" class="mtk-pick-card" data-v="${esc(o.value)}"
                     data-q="${esc((o.name + ' ' + (o.category || '') + ' ' + (o.description || '')).toLowerCase())}">
