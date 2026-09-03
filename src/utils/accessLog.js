@@ -34,11 +34,19 @@ function isNoise(path) {
 /**
  * Control characters let a crafted path or user-agent forge a second log line.
  * Strip them, and cap length so one request cannot push a wall of text.
+ *
+ * The bidi overrides go too, and for a different reason: they forge nothing but
+ * they reverse how everything after them is DRAWN. A path carrying U+202E can
+ * make the rendered line read differently from the line that was written — the
+ * ip and user at the end can be made to appear as something else in a terminal
+ * or in Grafana. A trail nobody can read literally is not a trail.
  */
 function clean(value, max = 200) {
   return String(value == null ? '' : value)
     // eslint-disable-next-line no-control-regex
     .replace(/[\u0000-\u001f\u007f]/g, '')
+    // LRM/RLM, the embedding + override block, and the isolate block.
+    .replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, '')
     .slice(0, max);
 }
 
