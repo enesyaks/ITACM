@@ -2961,8 +2961,7 @@ async function showAccountSecurity() {
         <section class="settings-panel">
           <header class="settings-panel-head"><h3>Password</h3></header>
           ${directory ? `
-          <p class="cell-sub" style="margin:0">${esc(t('account.pwdDirectory')
-            || 'This account signs in through the company directory, so no password is stored here. Change it where you change your domain password.')}</p>
+          <p class="cell-sub" style="margin:0">${esc(t('account.pwdDirectory'))}</p>
           ` : `
           <div class="form-grid" style="grid-template-columns:1fr">
             <div class="form-field"><label>Current password</label>
