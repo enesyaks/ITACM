@@ -97,6 +97,25 @@ Views.zimmetImport = async function (el) {
   }
 
   /* ---------- Step 2: review & attach ---------- */
+  /**
+   * The OCR badge carries the reading score. "Scanned" alone does not separate a
+   * name lifted cleanly off a 300dpi page from one guessed out of a smudged fax,
+   * and those need different amounts of attention. Below the trust line it turns
+   * amber: that is the form worth opening.
+   */
+  const OCR_TRUST_MIN = 75;
+  function ocrBadge(it) {
+    if (!it.viaOcr) return '';
+    const c = it.ocrConfidence;
+    if (!Number.isFinite(c)) {
+      return ` <span class="pill pill-slate" title="${esc(t('zim.ocrBadgeHint'))}">${esc(t('zim.ocrBadge'))}</span>`;
+    }
+    const weak = c < OCR_TRUST_MIN;
+    const tip = String(weak ? t('zim.ocrWeakHint') : t('zim.ocrBadgeHint')).replace('{n}', c);
+    return ` <span class="pill ${weak ? 'pill-amber' : 'pill-slate'}" title="${esc(tip)}">`
+      + `${esc(t('zim.ocrBadge'))} ${c}%</span>`;
+  }
+
   function confBadge(c) {
     if (c === 'high') return `<span class="pill pill-emerald">${esc(t('zim.confHigh'))}</span>`;
     if (c === 'medium') return `<span class="pill pill-amber">${esc(t('zim.confMedium'))}</span>`;
@@ -202,7 +221,7 @@ Views.zimmetImport = async function (el) {
               <td><div class="cell-title mono" style="font-size:12px">${esc(it.filename)}</div>
                 <div class="cell-sub">${esc(t('zim.pages').replace('{from}', it.pageFrom + 1).replace('{to}', it.pageTo + 1))}</div></td>
               <td>${it.extractedName ? esc(it.extractedName) : '<span class="cell-sub">—</span>'}</td>
-              <td>${confBadge(it.confidence)}${it.viaOcr ? ` <span class="pill pill-slate" title="${esc(t('zim.ocrBadgeHint'))}">${esc(t('zim.ocrBadge'))}</span>` : ''}</td>
+              <td>${confBadge(it.confidence)}${ocrBadge(it)}</td>
               <td class="zim-assign" data-cell="${esc(it.id)}">${empCell(it)}</td>
               <td style="text-align:right"><button class="btn btn-outline btn-sm" data-prev="${esc(it.id)}" data-name="${esc(it.filename)}"><span class="ms">visibility</span> ${esc(t('zim.preview'))}</button></td>
             </tr>`).join('')}

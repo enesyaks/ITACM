@@ -269,10 +269,22 @@ async function ocrPages(buffer, opts = {}) {
       if (ocrCount >= maxPages) { pages.push({ page: i, text: '' }); continue; }
       const page = await doc.getPage(i);
       const chunks = [];
+      // Tesseract reports how sure it is, and that number decides whether the
+      // name below can be trusted. Weighted by how much text each image
+      // produced, so a confidently-read stamp cannot outvote a poorly-read form.
+      let confWeighted = 0;
+      let confChars = 0;
       try {
         for (const bmp of await pageImages(page, lib)) {
           const { data } = await worker.recognize(bmp);
-          if (data && data.text) chunks.push(data.text);
+          if (data && data.text) {
+            chunks.push(data.text);
+            const n = data.text.trim().length;
+            if (n && Number.isFinite(data.confidence)) {
+              confWeighted += data.confidence * n;
+              confChars += n;
+            }
+          }
         }
       } finally {
         page.cleanup();
@@ -281,6 +293,9 @@ async function ocrPages(buffer, opts = {}) {
       pages.push({
         page: i,
         text: chunks.join('\n').replace(/[^\S\n]+/g, ' ').replace(/\n{2,}/g, '\n').trim(),
+        // null, not 0: "we never read this page" and "we read it and understood
+        // nothing" lead to different decisions upstream.
+        conf: confChars ? Math.round(confWeighted / confChars) : null,
       });
     }
   } finally {

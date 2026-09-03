@@ -73,6 +73,26 @@ async function assertInScope(employeeId, departments) {
 }
 
 /** Pick the assignee name for a form: authoritative reverse-match first. */
+/**
+ * A name is only as trustworthy as the reading it came from.
+ *
+ * `high` means "this is the person" and the reviewer is invited to click through
+ * without looking. That claim rests on an exact name match — but an exact match
+ * on badly-read text is still badly-read text, and OCR happily returns a clean
+ * string it is not sure about. Below the threshold the item drops to `medium`,
+ * which in the review screen means "check this one".
+ *
+ * Nothing is promoted: a weak match stays weak however well the page scanned.
+ */
+const OCR_TRUST_MIN = 75;
+
+function capByOcr(match, ocrConfidence) {
+  if (!Number.isFinite(ocrConfidence)) return match;            // digital PDF
+  if (ocrConfidence >= OCR_TRUST_MIN) return match;
+  if (match.confidence !== 'high') return match;
+  return { ...match, confidence: 'medium' };
+}
+
 function pickName(formText, emps) {
   const hits = nameMatch.findNamesInText(formText, emps);
   if (hits.length === 1) {
@@ -135,6 +155,8 @@ async function analyze(files, user) {
     try { info = await extractPages(f.buffer); }
     catch { failures.push({ filename: f.filename, reason: 'Could not read PDF' }); continue; }
     let texts = info.pages.map((p) => p.text);
+    // Per-page OCR confidence, parallel to `texts`. Empty for a digital PDF.
+    let pageConf = [];
     let readable = info.hasText;
     let viaOcr = false;
 
@@ -145,6 +167,7 @@ async function analyze(files, user) {
       try {
         const r = await pdfOcr.ocrPages(f.buffer, { maxPages: ocrBudget, langs: ocrStatus.langs });
         texts = r.pages.map((p) => p.text);
+        pageConf = r.pages.map((p) => p.conf);
         ocrBudget -= r.ocrPages;
         ocrUsedPages += r.ocrPages;
         if (r.truncated) ocrTruncated = true;
@@ -168,9 +191,16 @@ async function analyze(files, user) {
       const formText = texts.slice(form.from, form.to + 1).join('\n');
       const picked = readable ? pickName(formText, emps)
         : { extracted: '', match: { candidates: [], confidence: 'none', best: null } };
+      // The worst page the form spans, because one unreadable page is enough to
+      // put the name in doubt — averaging would hide it behind the clean ones.
+      const spanConf = pageConf.slice(form.from, form.to + 1).filter((c) => Number.isFinite(c));
+      const ocrConfidence = spanConf.length ? Math.min(...spanConf) : null;
       staged.push({
         ...form, filename: f.filename, buffer: buffers[i],
-        extracted: picked.extracted, match: picked.match, viaOcr,
+        extracted: picked.extracted,
+        match: capByOcr(picked.match, ocrConfidence),
+        viaOcr,
+        ocrConfidence,
       });
     });
   }
@@ -193,12 +223,12 @@ async function analyze(files, user) {
         `INSERT INTO zimmet_import_items
           (batch_id, source_filename, page_from, page_to, page_count, extracted_name,
            matched_employee_id, matched_employee_name, confidence, candidates, filename, byte_size,
-           content, via_ocr)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+           content, via_ocr, ocr_confidence)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
         [batch.id, s.filename, s.from, s.to, (s.to - s.from + 1), s.extracted || null,
           best ? best.id : null, best ? best.fullName : null, s.match.confidence,
           JSON.stringify(s.match.candidates || []), filename, s.buffer.length, s.buffer,
-          !!s.viaOcr]
+          !!s.viaOcr, Number.isFinite(s.ocrConfidence) ? s.ocrConfidence : null]
       );
     }
     return batch.id;
@@ -232,7 +262,7 @@ async function getBatch(batchId, user) {
   const { rows } = await query(
     `SELECT id, source_filename, page_from, page_to, page_count, extracted_name,
             matched_employee_id, matched_employee_name, confidence, candidates, filename, byte_size,
-            status, error, via_ocr
+            status, error, via_ocr, ocr_confidence
      FROM zimmet_import_items WHERE batch_id = $1 ORDER BY source_filename, page_from`,
     [batchId]
   );
@@ -242,7 +272,7 @@ async function getBatch(batchId, user) {
       id: r.id, sourceFilename: r.source_filename, pageFrom: r.page_from, pageTo: r.page_to, pageCount: r.page_count,
       extractedName: r.extracted_name, matchedEmployeeId: r.matched_employee_id, matchedEmployeeName: r.matched_employee_name,
       confidence: r.confidence, candidates: r.candidates, filename: r.filename, byteSize: r.byte_size,
-      status: r.status, error: r.error, viaOcr: r.via_ocr,
+      status: r.status, error: r.error, viaOcr: r.via_ocr, ocrConfidence: r.ocr_confidence,
     })),
   };
 }
