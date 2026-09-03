@@ -1035,7 +1035,18 @@ async function sendToApproval(ticketId, { level = 'manager' } = {}, user) {
   // without widening what is allowed.
   let lvl;
   if (typeof level === 'string' && level.startsWith('emp:')) {
-    if (!isUuid(level.slice(4))) throw HttpError.badRequest('Invalid approver');
+    const approverId = level.slice(4);
+    if (!isUuid(approverId)) throw HttpError.badRequest('Invalid approver');
+    // The org levels are derived from the reporting line, so whoever routes a
+    // ticket cannot land it on themselves. Naming an approver by hand can, and
+    // decide() only checks that the decider IS the approver — not that they are
+    // someone else. Without this an agent holding ticket:update could route a
+    // ticket to their own employee row and approve it, clearing a gate that
+    // exists to put a second person in the loop.
+    const self = await employeeForUser(user);
+    if (self && self.id === approverId) {
+      throw HttpError.badRequest('Pick someone else — you cannot approve a ticket you routed yourself');
+    }
     lvl = level;
   } else {
     lvl = ['manager', 'manager2', 'department'].includes(level) ? level : 'manager';
