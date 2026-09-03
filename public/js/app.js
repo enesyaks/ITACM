@@ -2949,6 +2949,10 @@ async function showAccountSecurity() {
   let status = { enabled: false, backupCodesRemaining: 0, mandatory: false };
   try { status = await api('/auth/mfa'); } catch { /* ignore */ }
   const mandatory = !!(status.mandatory || (Auth.profile && Auth.profile.role === 'Owner'));
+  // Directory accounts keep their password in AD/LDAP — there is nothing local
+  // to change, and the server refuses the call anyway. Show why instead of a
+  // form that can only fail.
+  const directory = !!(Auth.profile && Auth.profile.directoryManaged);
 
   openModal({
     title: t('account.security') || 'Account security',
@@ -2956,6 +2960,10 @@ async function showAccountSecurity() {
       <div class="settings-shell">
         <section class="settings-panel">
           <header class="settings-panel-head"><h3>Password</h3></header>
+          ${directory ? `
+          <p class="cell-sub" style="margin:0">${esc(t('account.pwdDirectory')
+            || 'This account signs in through the company directory, so no password is stored here. Change it where you change your domain password.')}</p>
+          ` : `
           <div class="form-grid" style="grid-template-columns:1fr">
             <div class="form-field"><label>Current password</label>
               <input type="password" id="sec-cur" autocomplete="current-password"></div>
@@ -2965,6 +2973,7 @@ async function showAccountSecurity() {
               <input type="password" id="sec-new2" autocomplete="new-password"></div>
           </div>
           <button class="btn btn-primary btn-sm" id="sec-pwd" style="margin-top:8px">Change password</button>
+          `}
         </section>
         <section class="settings-panel" style="margin-top:16px">
           <header class="settings-panel-head">

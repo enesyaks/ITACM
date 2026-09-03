@@ -79,6 +79,9 @@ async function issueSession(user, meta = {}, { rememberMe = false, sso = false, 
       role: user.role,
       mfaEnabled: !!user.mfa_enabled,
       mustChangePassword: !!user.must_change_password,
+      // Directory accounts have no local password to change; the profile screen
+      // hides the form. The server refuses regardless (assertPasswordIsOurs).
+      directoryManaged: !!user.ldap_guid,
     },
     ...(roleRequiresMfa(user.role) && !user.mfa_enabled
       ? { mfaEnrollmentRequired: true }
@@ -515,6 +518,34 @@ async function logout(user) {
 
 async function recordLogin() { /* no-op */ }
 
+/**
+ * Refuse to set a local password when this app does not own the credential.
+ *
+ * Directory accounts hold a random, unguessable local hash and get in through
+ * verifyAgainstDirectory() instead. Letting one set a local password would mint
+ * a SECOND way in that the directory cannot revoke — disabling the account in
+ * AD would no longer lock the person out, because login() checks the local hash
+ * first and would now match. Same reasoning for an SSO-only organisation: if
+ * login() refuses a password for this user, there is nothing to change.
+ */
+async function assertPasswordIsOurs(row) {
+  if (row.ldap_guid) {
+    throw HttpError.forbidden(
+      'Your password is managed by the directory — change it there, not here.',
+      { code: 'password_external' }
+    );
+  }
+  if (row.role !== 'Owner') {
+    const ssoCfg = await require('./ssoService').getSsoConfig();
+    if (ssoCfg.ready && ssoCfg.requireSso) {
+      throw HttpError.forbidden(
+        'Your organization signs in with SSO — this account has no password to change.',
+        { code: 'password_external' }
+      );
+    }
+  }
+}
+
 async function changePassword(user, { currentPassword, newPassword }, meta = {}) {
   if (!currentPassword || !newPassword) {
     throw HttpError.badRequest('currentPassword and newPassword are required');
@@ -522,6 +553,7 @@ async function changePassword(user, { currentPassword, newPassword }, meta = {})
   assertPasswordPolicy(newPassword);
   const { rows } = await query('SELECT * FROM users WHERE id = $1', [user.uid]);
   if (!rows[0]) throw HttpError.unauthorized();
+  await assertPasswordIsOurs(rows[0]);
   const ok = await bcrypt.compare(currentPassword, rows[0].password_hash);
   if (!ok) throw HttpError.unauthorized('Current password is incorrect');
   // Temp/one-time passwords must be replaced with a different value.
