@@ -58,6 +58,46 @@ function referencedResources(rawSql) {
   return [...resources];
 }
 
+// Cost / financial columns of the ai.* views that the REST layer hides behind
+// `<resource>:view_confidential` (see utils/financialAccess). advanced_query runs
+// under the ai_ro role, which CAN read these columns — so without this the tool
+// would hand a user with only `<resource>:read` the very figures redactCosts()
+// masks for them elsewhere. Column names are the snake_case ai.* view columns.
+const CONFIDENTIAL_COLUMNS_BY_RESOURCE = {
+  asset: ['cost', 'salvage_value'],
+  contract: ['cost_amount'],
+  license: ['purchase_amount'],
+  line: ['monthly_cost'],
+  maintenance: ['cost'],
+};
+
+// A `*` that expands view columns (`SELECT *`, `t.*`, `, *`) — NOT `count(*)` or a
+// `col * 2` multiplication, both of which name no confidential column on their own.
+function hasWildcardSelect(bareLower) {
+  if (/\bselect\s+\*/.test(bareLower)) return true;      // SELECT *
+  if (/[a-z_][a-z0-9_]*\s*\.\s*\*/.test(bareLower)) return true; // t.*
+  if (/,\s*\*(?:\s|,|$)/.test(bareLower)) return true;   // , *
+  return false;
+}
+
+// Resources whose CONFIDENTIAL columns this query could surface — because it
+// names one of those columns anywhere (SELECT, WHERE, HAVING…) or uses a column
+// wildcard that would expand them. Naming the column in the SQL text is the only
+// way to reference its value, so a `cost AS revenue` alias is still caught (the
+// word `cost` is present); `SELECT *` is caught by the wildcard rule. Fail-safe:
+// it can only ADD a required view_confidential check, never remove one.
+function confidentialResourcesTouched(rawSql) {
+  const bare = stripComments(rawSql).toLowerCase();
+  const wild = hasWildcardSelect(bare);
+  const out = new Set();
+  for (const resource of referencedResources(rawSql)) {
+    const cols = CONFIDENTIAL_COLUMNS_BY_RESOURCE[resource];
+    if (!cols) continue;
+    if (wild || cols.some((c) => new RegExp(`\\b${c}\\b`).test(bare))) out.add(resource);
+  }
+  return [...out];
+}
+
 function validateSql(raw) {
   let sql = String(raw || '').trim();
   if (!sql) throw HttpError.badRequest('SQL is empty');
@@ -152,6 +192,8 @@ module.exports = {
   runReadOnlyQuery,
   isAvailable,
   referencedResources,
+  confidentialResourcesTouched,
+  CONFIDENTIAL_COLUMNS_BY_RESOURCE,
   VIEW_PERMISSIONS,
   AI_ROLE,
   MAX_ROWS,

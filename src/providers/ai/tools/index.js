@@ -1196,6 +1196,15 @@ async function assertPerm(user, resource, action) {
   if (!ok) throw HttpError.forbidden(`Access denied: ${resource}:${action}`);
 }
 
+// Gate the confidential/financial columns of an ai.* view. Checked exactly, with
+// no read→manage/assign broadening: view_confidential is a distinct, explicitly
+// granted permission (never implied by manage) — see utils/iamSchema.
+async function assertConfidential(user, resource) {
+  const { permissionService } = services();
+  const ok = await permissionService.checkPermission(user, resource, 'view_confidential');
+  if (!ok) throw HttpError.forbidden(`Access denied: ${resource}:view_confidential`);
+}
+
 function assetRow(a, life, lang) {
   const holder = a.currentEmployee?.fullName || a._holderName || null;
   const dept = a._department || null;
@@ -3114,7 +3123,7 @@ async function toolGelismisSorgu(args, ctx) {
   const sql = String(args?.sql || args?.query || '').trim();
   if (!sql) return { summary: s.missing, rows: [], error: true, meta: { tools: ['advanced_query'] } };
 
-  const { runReadOnlyQuery, referencedResources } = require('../sqlGuard');
+  const { runReadOnlyQuery, referencedResources, confidentialResourcesTouched } = require('../sqlGuard');
 
   // Enforce the same per-resource RBAC the dedicated tools use: the caller must
   // hold read on every ai.* view the query touches. Without this, advanced_query
@@ -3123,6 +3132,14 @@ async function toolGelismisSorgu(args, ctx) {
   try {
     for (const resource of referencedResources(sql)) {
       await assertPerm(ctx?.user, resource, 'read');
+    }
+    // Financial columns (cost, purchase_amount, monthly_cost…) are hidden behind
+    // `<resource>:view_confidential` on the REST routes (redactCosts). The ai_ro
+    // role can read them, so any query that references those columns must hold
+    // the same confidential permission here — otherwise advanced_query is a hole
+    // straight through the cost redaction the rest of the app enforces.
+    for (const resource of confidentialResourcesTouched(sql)) {
+      await assertConfidential(ctx?.user, resource);
     }
   } catch (err) {
     return { summary: err.message || s.denied, rows: [], error: true, meta: { tools: ['advanced_query'] } };
