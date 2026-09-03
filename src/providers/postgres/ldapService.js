@@ -618,7 +618,16 @@ async function runSync({ dryRun = false, trigger = 'manual', actorName = null, u
               WHERE role = 'Portal' AND status <> 'Disabled' AND lower(email) = ANY($1::text[])`,
             [emails]
           );
-          if (rowCount) result.users.portalDisabled = rowCount;
+          if (rowCount) {
+            result.users.portalDisabled = rowCount;
+            // Who lost access matters more than how many: name them, capped so
+            // one bad filter cannot flood the trail.
+            const named = emails.slice(0, 20).join(', ');
+            auditUser('ldap.portal_disabled',
+              `Directory sync disabled ${rowCount} portal login(s) for people no longer in the directory`
+              + (named ? ` — ${named}${emails.length > 20 ? ', …' : ''}` : ''),
+              actorName);
+          }
         }
       }
       for (const g of goneRows.slice(0, 5)) {
@@ -650,11 +659,17 @@ async function runSync({ dryRun = false, trigger = 'manual', actorName = null, u
         // No usable local password: LDAP users sign in against the directory.
         // A random hash keeps the NOT NULL column honest and unguessable.
         const hash = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 10);
-        await query(
+        const ins = await query(
           `INSERT INTO users (username, email, password_hash, role, status, ldap_guid, ldap_dn)
            VALUES ($1,$2,$3,$4,'Active',$5,$6) ON CONFLICT (email) DO NOTHING`,
           [p.fullName || p.username || p.email, p.email, hash, role, p.guid, p.dn]
         );
+        // ON CONFLICT DO NOTHING: only log a row we actually inserted.
+        if (ins.rowCount) {
+          auditUser('ldap.user_created',
+            `Directory sync created the ${role} account ${p.email}`,
+            actorName, { email: p.email });
+        }
         continue;
       }
       // Never touch an Owner: the directory must not be able to demote the one
@@ -662,7 +677,12 @@ async function runSync({ dryRun = false, trigger = 'manual', actorName = null, u
       if (existing.role === 'Owner') continue;
       if (existing.role !== role) {
         result.users.roleChanged += 1;
-        if (!dryRun) await query('UPDATE users SET role = $2, ldap_guid = $3, ldap_dn = $4 WHERE id = $1', [existing.id, role, p.guid, p.dn]);
+        if (!dryRun) {
+          await query('UPDATE users SET role = $2, ldap_guid = $3, ldap_dn = $4 WHERE id = $1', [existing.id, role, p.guid, p.dn]);
+          auditUser('ldap.user_role_changed',
+            `Directory sync changed ${p.email} from ${existing.role} to ${role}`,
+            actorName, { id: existing.id, email: p.email });
+        }
       } else if (!dryRun && !existing.ldap_guid) {
         await query('UPDATE users SET ldap_guid = $2, ldap_dn = $3 WHERE id = $1', [existing.id, p.guid, p.dn]);
       }
@@ -705,14 +725,20 @@ async function runSync({ dryRun = false, trigger = 'manual', actorName = null, u
       result.users.portalCreated += 1;
       if (dryRun) continue;
       const hash = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 10);
-      await query(
+      const portalIns = await query(
         `INSERT INTO users (username, email, password_hash, role, status, must_change_password, ldap_guid, ldap_dn)
          VALUES ($1,$2,$3,'Portal','Active',false,$4,$5) ON CONFLICT (email) DO NOTHING`,
         [p.fullName || p.email, p.email, hash, p.guid, p.dn]
       ).catch((err) => {
         console.error('[ldap] portal login could not be created for', p.email, '-', err && err.message);
         result.users.portalCreated -= 1;
+        return null;
       });
+      if (portalIns && portalIns.rowCount) {
+        auditUser('ldap.portal_created',
+          `Directory sync created the Portal login ${p.email}`,
+          actorName, { email: p.email });
+      }
     }
   }
   await recordRun(started, result, actorName);
@@ -750,6 +776,22 @@ async function listRuns(limit = 10) {
     [Math.max(1, Math.min(50, Number(limit) || 10))]
   ).catch(() => ({ rows: [] }));
   return rows;
+}
+
+/**
+ * A user-scoped audit row. The run summary counts how many accounts a sync
+ * touched; these say WHICH, for the changes that decide who can sign in and
+ * with what rights. Routine field updates stay in the run counters so a large
+ * directory does not bury the trail.
+ */
+function auditUser(action, summary, actorName, { id = null, email = null } = {}) {
+  try {
+    require('./auditService').logEvent({
+      action, source: 'integration', summary,
+      actorName: actorName || 'system',
+      entityType: 'user', entityId: id, entityLabel: email,
+    }).catch(() => {});
+  } catch { /* never block on audit */ }
 }
 
 function audit(action, summary, actorName) {
