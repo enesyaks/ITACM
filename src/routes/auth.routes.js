@@ -102,7 +102,12 @@ router.post('/mfa/verify', loginLimiter, asyncHandler(async (req, res) => {
  */
 
 // GET /api/auth/sso/start — send the browser to the identity provider.
-router.get('/sso/start', asyncHandler(async (req, res) => {
+// loginLimiter here too: /sso/start hands out a signed stash cookie and
+// /sso/callback spends it, and both were open. Without a bound, two requests
+// buy one outbound token request to the identity provider and — since refusals
+// are now persisted — one row in login_failures, repeatable without limit.
+// A real sign-in touches each once, so the 20-per-15-minutes budget is ample.
+router.get('/sso/start', loginLimiter, asyncHandler(async (req, res) => {
   const cfg = await ssoService.getSsoConfig();
   // Only 'select_account' is accepted, and only because the login screen offers
   // it after a refusal. Forwarding the query value as-is would let anyone craft
@@ -119,7 +124,7 @@ router.get('/sso/start', asyncHandler(async (req, res) => {
 }));
 
 // GET /api/auth/sso/callback — the IdP redirects here with ?code&state.
-router.get('/sso/callback', asyncHandler(async (req, res) => {
+router.get('/sso/callback', loginLimiter, asyncHandler(async (req, res) => {
   const stashRaw = readCookie(req, SSO_COOKIE);
   res.clearCookie(SSO_COOKIE, { path: '/api/auth/sso' });
   let stash;
@@ -133,6 +138,11 @@ router.get('/sso/callback', asyncHandler(async (req, res) => {
     claims = await oidc.completeAuth(cfg, callbackUrl, stash);
   } catch (err) {
     console.warn('[sso] callback token exchange/validation failed:', err.message);
+    await authProvider.logLoginFailure({
+      email: null, reason: 'verify', method: 'sso',
+      ip: rateLimitIp(req), userAgent: req.headers['user-agent'] || null,
+    });
+    bumpLoginFail(req);
     return res.redirect('/#sso_error=verify');
   }
   try {
@@ -144,10 +154,24 @@ router.get('/sso/callback', asyncHandler(async (req, res) => {
       config.jwtSecret,
       { expiresIn: '60s' }
     );
+    // Mirrors the password path: a sign-in that worked releases the IP budget,
+    // so a person who fumbled once is not held to the remainder of the window.
+    clearLoginFail(req);
     return res.redirect('/#sso_ticket=' + encodeURIComponent(ticket));
   } catch (err) {
     const code = (err && err.details && err.details.code) || 'denied';
     console.warn(`[sso] sign-in denied (${code}) for <${String((claims && claims.email) || '').slice(0, 120)}>:`, err.message);
+    // Until now a refused SSO sign-in existed only in this console line, so
+    // nobody without shell access could tell a domain rejection from a missing
+    // account — or notice a run of attempts at all.
+    await authProvider.logLoginFailure({
+      email: (claims && claims.email) || null,
+      reason: code,
+      method: 'sso',
+      ip: rateLimitIp(req),
+      userAgent: req.headers['user-agent'] || null,
+    });
+    bumpLoginFail(req);
     return res.redirect('/#sso_error=' + encodeURIComponent(code));
   }
 }));

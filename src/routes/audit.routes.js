@@ -4,6 +4,27 @@ const { auditService } = require('../providers');
 
 const router = express.Router();
 
+/**
+ * Refused sign-ins, newest first. Kept 7 days, then dropped by the scheduler.
+ *
+ * Separate from the audit trail above because that one is permanent and records
+ * only what succeeded — the middleware feeding it skips any request that
+ * answered 4xx, which is every refusal. İzin: audit:read
+ */
+router.get('/login-failures', authenticate, requirePermission('audit', 'read'), async (req, res, next) => {
+  try {
+    const { authProvider } = require('../providers');
+    res.json({
+      success: true,
+      data: await authProvider.listLoginFailures({
+        limit: req.query.limit,
+        email: req.query.email || null,
+      }),
+      retentionDays: authProvider.LOGIN_FAILURE_RETENTION_DAYS,
+    });
+  } catch (err) { next(err); }
+});
+
 /** Audit trail. İzin: audit:read */
 router.get('/', authenticate, requirePermission('audit', 'read'), async (req, res, next) => {
   try {

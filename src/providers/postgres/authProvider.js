@@ -195,6 +195,55 @@ function assertNotLocked(user) {
 }
 
 /** Record a failed attempt; lock the account once the fail count hits the limit. */
+/** Days a refused sign-in stays queryable before the scheduler drops it. */
+const LOGIN_FAILURE_RETENTION_DAYS = 7;
+
+/**
+ * Persist a refused sign-in.
+ *
+ * Called for attempts on accounts that do not exist too — those are the ones
+ * worth seeing, since a run of them against invented addresses is what account
+ * enumeration looks like. recordLoginFailure() below can only bump counters on
+ * a row it found, so it cannot serve this on its own.
+ *
+ * Never throws: a sign-in must fail with its real reason, not with a logging
+ * error on top.
+ */
+async function logLoginFailure({ email, reason, method = 'password', ip = null, userAgent = null }) {
+  try {
+    await query(
+      `INSERT INTO login_failures (email, reason, method, ip, user_agent)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [email ? String(email).toLowerCase().slice(0, 320) : null,
+        String(reason || 'unknown').slice(0, 60), String(method || 'password').slice(0, 20),
+        ip || null, userAgent ? String(userAgent).slice(0, 500) : null]
+    );
+  } catch { /* never let bookkeeping change the outcome */ }
+}
+
+/** Drop refusals past the retention window. Returns how many rows went. */
+async function purgeLoginFailures(days = LOGIN_FAILURE_RETENTION_DAYS) {
+  const { rowCount } = await query(
+    "DELETE FROM login_failures WHERE created_at < now() - make_interval(days => $1)",
+    [Math.max(1, Number(days) || LOGIN_FAILURE_RETENTION_DAYS)]
+  );
+  return rowCount || 0;
+}
+
+/** Newest-first, for the admin screen. */
+async function listLoginFailures({ limit = 200, email = null } = {}) {
+  const lim = Math.min(500, Math.max(1, Number(limit) || 200));
+  const args = [lim];
+  let where = '';
+  if (email) { where = 'WHERE lower(email) = $2'; args.push(String(email).toLowerCase()); }
+  const { rows } = await query(
+    `SELECT id, email, reason, method, ip, user_agent AS "userAgent", created_at AS "createdAt"
+       FROM login_failures ${where} ORDER BY created_at DESC LIMIT $1`,
+    args
+  );
+  return rows;
+}
+
 async function recordLoginFailure(user, meta = {}) {
   if (!user) return; // unknown email → nothing to persist; per-IP backstop covers it
   const limit = config.security.loginFailLimit;
@@ -284,7 +333,16 @@ async function login({ email, password, rememberMe }, meta = {}) {
 
   const { rows } = await query('SELECT * FROM users WHERE email = $1', [email.toLowerCase()]);
   const user = rows[0];
-  assertNotLocked(user);
+  try {
+    assertNotLocked(user);
+  } catch (err) {
+    // A locked account being hit repeatedly is the clearest signal this table
+    // exists to show, so it is recorded before the refusal propagates.
+    await logLoginFailure({
+      email, reason: 'locked', method: 'password', ip: meta.ip, userAgent: meta.userAgent,
+    });
+    throw err;
+  }
   const match = await bcrypt.compare(password, user ? user.password_hash : DUMMY_HASH);
   let valid = user && match;
   let viaDirectory = false;
@@ -299,6 +357,12 @@ async function login({ email, password, rememberMe }, meta = {}) {
   }
   if (!valid) {
     await recordLoginFailure(user, meta);
+    // Logged separately from the counter above, which needs a row to bump and
+    // so stays silent for an address that does not exist here.
+    await logLoginFailure({
+      email, reason: user ? 'bad_password' : 'unknown_email',
+      method: 'password', ip: meta.ip, userAgent: meta.userAgent,
+    });
     throw HttpError.unauthorized('Invalid email or password');
   }
   if (user.status === 'Disabled') throw HttpError.forbidden('This account has been disabled — contact your Owner');
@@ -1320,6 +1384,7 @@ async function getAdminLogs(email, limit = 25) {
 module.exports = {
   login, loginWithOidc, unlinkOidc, consumeSsoTicket, verifyMfaLogin, verifyToken, logout, recordLogin, getLoginLogs,
   changePassword, mfaSetupStart, mfaSetupConfirm, mfaDisable, mfaStatus,
+  logLoginFailure, purgeLoginFailures, listLoginFailures, LOGIN_FAILURE_RETENTION_DAYS,
   createItUser, listEmployeeCandidates,
   upsertAdmin, upsertAdminTx, setUserRole, getVerifiedProfile, listUsers,
   setUserStatus, deleteUser, getAdminLogs,

@@ -42,6 +42,11 @@ function start() {
       .catch((err) => { console.warn('[scheduler] SLA sweep failed:', err.message); });
     ticks += 1;
     if (ticks % PURGE_EVERY_TICKS === 0) {
+      // Refused sign-ins are useful while investigating and noise afterwards;
+      // 7 days is the window authProvider keeps them for.
+      require('../providers/postgres/authProvider').purgeLoginFailures()
+        .then((n) => { if (n) console.log(`[scheduler] purged ${n} expired login failure(s)`); })
+        .catch((err) => { console.warn('[scheduler] login failure purge failed:', err.message); });
       zimmetImportService.purgeStale().then((r) => {
         const n = r ? (r.purgedItems || 0) + (r.clearedOrphans || 0) : 0;
         if (n) console.log(`[scheduler] cleared ${n} stale zimmet-import staging row(s)`);
