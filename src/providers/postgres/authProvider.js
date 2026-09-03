@@ -858,7 +858,7 @@ async function setUserRole(uid, role, actor) {
 
 async function getVerifiedProfile(user) {
   const { rows } = await query(
-    `SELECT username, mfa_enabled, must_change_password,
+    `SELECT username, mfa_enabled, must_change_password, ldap_guid,
             permission_group_id AS "permissionGroupId",
             custom_constraints AS "customConstraints"
      FROM users WHERE id = $1`,
@@ -888,6 +888,11 @@ async function getVerifiedProfile(user) {
     // and MFA-enrolment prompts don't apply (the DB flags stay for password login).
     mfaEnrollmentRequired: !enriched.sso && roleRequiresMfa(enriched.role) && !row?.mfa_enabled,
     mustChangePassword: !enriched.sso && !!row?.must_change_password,
+    // The profile screen hides the password form for directory accounts. This
+    // is where the UI reads it from: /auth/verify-token rebuilds Auth.profile on
+    // every session restore, so the flag has to live here and not only on the
+    // object issueSession() hands back at login.
+    directoryManaged: !!row?.ldap_guid,
     permissionGroupId: enriched.permissionGroupId,
     customConstraints: enriched.customConstraints,
     permissions: uiPermissionsFromIam(iamPermissions, enriched.role),
