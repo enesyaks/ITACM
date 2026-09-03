@@ -157,8 +157,10 @@ Views.myTickets = async function (el) {
         approval: tp.approval || [],
         amountThreshold: tp.amountThreshold,
       })),
-      { value: 'incident', icon: 'report', name: tkTypeLabel('incident'), category: '', description: t('mtk.incidentDesc'), approval: [], amountThreshold: null },
-      { value: 'request', icon: 'inbox', name: tkTypeLabel('request'), category: '', description: t('mtk.requestDesc'), approval: [], amountThreshold: null },
+      // No template fits: these two open a ticket with a free-text subject and no
+      // chain. Grouped apart so they read as the fallback, not as one more form.
+      { value: 'incident', group: t('mtk.groupOther'), icon: 'report', name: tkTypeLabel('incident'), category: '', description: t('mtk.incidentDesc'), approval: [], amountThreshold: null },
+      { value: 'request', group: t('mtk.groupOther'), icon: 'inbox', name: tkTypeLabel('request'), category: '', description: t('mtk.requestDesc'), approval: [], amountThreshold: null },
     ];
 
     openModal({
@@ -172,26 +174,78 @@ Views.myTickets = async function (el) {
 
         /* ---------------- step 1: what kind of request ---------------- */
         function renderPick() {
+          // Grouped by the category the template already carries. A flat list of
+          // fourteen made people scroll past what they wanted, and every card
+          // repeated its category one line under the name — the heading says it
+          // once instead. The filter is there because scanning beats scrolling
+          // as soon as the catalogue outgrows a screen.
+          const OTHER = t('mtk.other');
+          const groups = [];
+          const byName = new Map();
+          for (const o of options) {
+            const key = o.group || o.category || OTHER;
+            let g = byName.get(key);
+            if (!g) { g = { name: key, items: [] }; byName.set(key, g); groups.push(g); }
+            g.items.push(o);
+          }
+          // Categories keep the order the templates were sorted in. The two
+          // catch-alls go last whatever sort_order says: a template nobody
+          // categorised should not be the first thing the list offers.
+          const tail = new Set([OTHER, t('mtk.groupOther')]);
+          groups.sort((a, b) => (tail.has(a.name) ? 1 : 0) - (tail.has(b.name) ? 1 : 0));
+          const cardHtml = (o) => `
+            <button type="button" class="mtk-pick-card" data-v="${esc(o.value)}"
+                    data-q="${esc((o.name + ' ' + (o.category || '') + ' ' + (o.description || '')).toLowerCase())}">
+              <span class="mtk-pick-ic ms">${esc(o.icon)}</span>
+              <span class="mtk-pick-main">
+                <span class="mtk-pick-name">${esc(o.name)}</span>
+                ${o.description ? `<span class="mtk-pick-desc">${esc(o.description)}</span>` : ''}
+                ${o.approval.length ? `<span class="mtk-chain mtk-chain-sm">
+                    <span class="ms ms-sm">how_to_reg</span> ${chainHtml(o.approval)}</span>` : ''}
+              </span>
+              <span class="mtk-pick-go ms">chevron_right</span>
+            </button>`;
           wiz.innerHTML = `<p class="mtk-lead">${esc(t('mtk.pickLead'))}</p>
-            <div class="mtk-pick">
-              ${options.map((o) => `
-                <button type="button" class="mtk-pick-card" data-v="${esc(o.value)}">
-                  <span class="mtk-pick-ic ms">${esc(o.icon)}</span>
-                  <span class="mtk-pick-main">
-                    <span class="mtk-pick-name">${esc(o.name)}</span>
-                    ${o.category ? `<span class="mtk-pick-cat">${esc(o.category)}</span>` : ''}
-                    ${o.description ? `<span class="mtk-pick-desc">${esc(o.description)}</span>` : ''}
-                    ${o.approval.length ? `<span class="mtk-chain mtk-chain-sm">
-                        <span class="ms ms-sm">how_to_reg</span> ${chainHtml(o.approval)}</span>` : ''}
-                  </span>
-                  <span class="mtk-pick-go ms">chevron_right</span>
-                </button>`).join('')}
+            <div class="mtk-pick-search">
+              <span class="ms ms-sm">search</span>
+              <input id="mtk-pick-q" type="search" autocomplete="off"
+                     placeholder="${esc(t('mtk.pickSearch'))}">
+            </div>
+            <div class="mtk-pick-groups" id="mtk-pick-groups">
+              ${groups.map((g) => `
+                <section class="mtk-pick-group" data-g="${esc(g.name)}">
+                  <h4 class="mtk-pick-gh">${esc(g.name)}</h4>
+                  <div class="mtk-pick-grid">${g.items.map(cardHtml).join('')}</div>
+                </section>`).join('')}
+              <p class="mtk-pick-empty hidden" id="mtk-pick-empty">${esc(t('mtk.pickNone'))}</p>
             </div>`;
           foot.innerHTML = `<button class="btn btn-outline" data-close>${esc(t('common.cancel'))}</button>`;
+
           wiz.querySelectorAll('.mtk-pick-card').forEach((c) => c.addEventListener('click', () => {
             choice = options.find((o) => o.value === c.dataset.v) || null;
             if (choice) renderForm();
           }));
+
+          // Filter in place: hide cards that miss, then hide a heading whose
+          // cards have all gone, so the groups do not leave empty titles behind.
+          const q = $('#mtk-pick-q', ov);
+          const empty = $('#mtk-pick-empty', ov);
+          q.addEventListener('input', () => {
+            const term = q.value.trim().toLowerCase();
+            let shown = 0;
+            wiz.querySelectorAll('.mtk-pick-group').forEach((sec) => {
+              let any = 0;
+              sec.querySelectorAll('.mtk-pick-card').forEach((c) => {
+                const hit = !term || c.dataset.q.includes(term);
+                c.classList.toggle('hidden', !hit);
+                if (hit) any += 1;
+              });
+              sec.classList.toggle('hidden', !any);
+              shown += any;
+            });
+            empty.classList.toggle('hidden', shown > 0);
+          });
+          q.focus();
         }
 
         /* ---------------- step 2: describe it ---------------- */
