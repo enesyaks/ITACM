@@ -6422,16 +6422,23 @@ th.tk-sortable.active { color: var(--primary); }
 @media (max-width: 640px) { .int-ldap-grow { grid-template-columns: 1fr auto; } }
 
 /* Only rendered after an SSO refusal — see index.html. */
-.login-sso-retry { margin-top: 10px; text-align: center; font-size: 13px; }
-.login-sso-retry a { color: var(--brand, #4f46e5); text-decoration: none; }
-.login-sso-retry a:hover { text-decoration: underline; }
+/* Yalnizca bir ret sonrasi gorunur — index.html'deki nota bak. Bicimini
+   .btn .btn-outline'dan aliyor ki ustundeki SSO dugmesiyle ayni dilde dursun;
+   burada sadece araligi ve altindaki aciklamayi tanimliyoruz. Onceki hali
+   cikplak bir baglantiydi ve rengi sabit yazilmisti (--brand diye bir token
+   yok), yani koyu temada tema ile birlikte degismiyordu. */
+.login-sso-retry { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.login-sso-retry-hint {
+  margin: 0; text-align: center; font-size: 12px; line-height: 1.45;
+  color: var(--on-surface-variant);
+}
 
 /* ---- Portal: new-request wizard (step 1 picker, step 2 chosen strip) ---- */
 /* Search sits above the groups; the sheet body scrolls under it. */
 .mtk-pick-search {
   display: flex; align-items: center; gap: 8px; margin: 4px 0 14px;
   padding: 8px 12px; border-radius: 9px;
-  background: var(--tint, #f8fafc); border: 1px solid var(--line, #e2e8f0);
+  background: var(--surface-low); border: 1px solid var(--line, #e2e8f0);
 }
 .mtk-pick-search .ms { color: var(--muted, #94a3b8); }
 .mtk-pick-search input {
@@ -6454,9 +6461,9 @@ th.tk-sortable.active { color: var(--primary); }
   border-radius: 10px; transition: border-color .12s, background .12s;
 }
 .mtk-pick-card:hover, .mtk-pick-card:focus-visible {
-  border-color: var(--brand, #4f46e5); background: var(--tint, #f8fafc);
+  border-color: var(--primary-container); background: var(--surface-low);
 }
-.mtk-pick-ic { color: var(--brand, #4f46e5); flex: 0 0 auto; margin-top: 1px; }
+.mtk-pick-ic { color: var(--primary-container); flex: 0 0 auto; margin-top: 1px; }
 .mtk-pick-main { display: flex; flex-direction: column; gap: 3px; flex: 1 1 auto; min-width: 0; }
 .mtk-pick-name { font-weight: 600; }
 .mtk-pick-desc { font-size: 13px; color: var(--muted, #64748b); }
@@ -6465,9 +6472,9 @@ th.tk-sortable.active { color: var(--primary); }
 .mtk-chosen {
   display: flex; align-items: center; gap: 12px; margin-bottom: 14px;
   padding: 10px 12px; border-radius: 10px;
-  background: var(--tint, #f8fafc); border: 1px solid var(--line, #e2e8f0);
+  background: var(--surface-low); border: 1px solid var(--line, #e2e8f0);
 }
-.mtk-chosen-ic { color: var(--brand, #4f46e5); flex: 0 0 auto; }
+.mtk-chosen-ic { color: var(--primary-container); flex: 0 0 auto; }
 .mtk-chosen-main { display: flex; flex-direction: column; gap: 3px; flex: 1 1 auto; min-width: 0; }
 .mtk-chosen-name { font-weight: 600; }
 /* The chain is secondary once a kind is chosen — it only confirms the choice. */
