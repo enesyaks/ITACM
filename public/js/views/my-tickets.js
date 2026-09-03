@@ -403,6 +403,78 @@ Views.myTickets = async function (el) {
     });
   }
 
+  /**
+   * The request's journey, replacing the property sidebar.
+   *
+   * The sidebar restated status, priority, type and approval — all of which the
+   * strip above already shows — in a five-row label/value list. What it never
+   * answered is the question a requester actually opens the ticket with: where
+   * has this got to, and what happens next. That is a sequence, so it is drawn
+   * as one.
+   *
+   * The approval step only appears when the ticket has a chain; a template with
+   * no approvers should not leave a permanently grey circle on the page.
+   */
+  function journeyHtml(tk) {
+    const at = (v) => esc(String(v || '').replace('T', ' ').slice(0, 16));
+    const finished = ['resolved', 'closed'].includes(tk.status);
+    const cancelled = tk.status === 'cancelled';
+    const rejected = tk.approvalStatus === 'rejected';
+    const awaiting = tk.approvalStatus === 'pending';
+    const steps = [];
+
+    steps.push({
+      state: 'done',
+      title: t('mtk.jOpened'),
+      meta: `<time>${at(tk.createdAt)}</time>`,
+    });
+
+    if (tk.approvalStatus) {
+      // Each decision on the chain gets its own line, so a multi-step approval
+      // reads as the sequence it is rather than one collapsed verdict.
+      const events = (Array.isArray(tk.approvalHistory) ? tk.approvalHistory : []).map((h) => {
+        const label = h.decision === 'approved' ? t('mtk.apApproved')
+          : h.decision === 'escalated' ? t('mtk.apEscalated') : t('mtk.apRejected');
+        const who = h.deciderName || h.approverName || '—';
+        return `<div class="mtkd-ev"><strong>${esc(who)}</strong> · ${esc(label)}
+          <time>${at(h.at)}</time>${h.note ? `<div class="mtkd-ev-note">“${esc(h.note)}”</div>` : ''}</div>`;
+      }).join('');
+      steps.push({
+        state: rejected ? 'no' : awaiting ? 'now' : 'done',
+        title: rejected ? t('mtk.apRejected') : awaiting ? t('mtk.jApprovalWait') : t('mtk.apApproved'),
+        meta: awaiting && tk.approvalApprover
+          ? `${esc(t('mtk.apWaiting'))} <strong>${esc(tk.approvalApprover)}</strong>`
+          : '',
+        extra: events,
+      });
+    }
+
+    if (!rejected && !cancelled) {
+      steps.push({
+        state: finished ? 'done' : awaiting ? 'todo' : 'now',
+        title: t('mtk.jWorking'),
+        meta: finished ? '' : awaiting ? esc(t('mtk.jAfterApproval')) : esc(t('mtk.jWorkingNote')),
+      });
+      steps.push({
+        state: finished ? 'done' : 'todo',
+        title: t('mtk.jDone'),
+        meta: finished ? `<time>${at(tk.resolvedAt || tk.updatedAt)}</time>` : esc(t('mtk.jNotYet')),
+      });
+    } else if (cancelled) {
+      steps.push({ state: 'no', title: t('mtk.jCancelled'), meta: '' });
+    }
+
+    return `<div class="mtkd-track">${steps.map((st, i) => `
+      <div class="mtkd-step is-${st.state}${i === steps.length - 1 ? ' is-last' : ''}">
+        <div class="mtkd-rail"><span class="mtkd-dot"></span><span class="mtkd-line"></span></div>
+        <div class="mtkd-sbody">
+          <span class="mtkd-stitle">${esc(st.title)}</span>
+          ${st.meta ? `<span class="mtkd-smeta">${st.meta}</span>` : ''}
+          ${st.extra || ''}
+        </div>
+      </div>`).join('')}</div>`;
+  }
+
   async function openMine(id) {
     const tk = await api('/me/tickets/' + encodeURIComponent(id)).catch((e) => { toast(e.message, 'error'); return null; });
     if (!tk) return;
@@ -422,69 +494,69 @@ Views.myTickets = async function (el) {
       xwide: true,
       body: `
         <div class="tkd tkd-portal">
-          <div class="tkd-topbar">
-            <span class="tkd-typeicon tkd-type-${tk.type === 'incident' ? 'incident' : 'request'}"><span class="ms">${tk.type === 'incident' ? 'error' : 'assignment'}</span></span>
-            <div class="tkd-topbar-info">
-              <div class="tkd-badges">
-                ${pill(TK_STATUS_PILL[tk.status], tkStatusLabel(tk.status))}
-                ${pill(TK_PRIORITY_PILL[tk.priority], tkPriorityLabel(tk.priority))}
-                ${tk.approvalStatus ? apPill(tk.approvalStatus) : ''}
-              </div>
-              <div class="tkd-submeta">${esc(tkTypeLabel(tk.type))} · <span class="ms ms-sm">schedule</span> ${esc(String(tk.createdAt || '').replace('T', ' ').slice(0, 16))}</div>
-            </div>
+          <!-- Durum / oncelik / tur / tarih TEK satirda, TEK kez. Eskiden ayni
+               uc bilgi hem burada hem sag kolonda yaziliydi. -->
+          <div class="mtkd-facts">
+            <span class="mtkd-typeicon mtkd-type-${tk.type === 'incident' ? 'incident' : 'request'}">
+              <span class="ms">${tk.type === 'incident' ? 'error' : 'assignment'}</span></span>
+            ${pill(TK_STATUS_PILL[tk.status], tkStatusLabel(tk.status))}
+            ${pill(TK_PRIORITY_PILL[tk.priority], tkPriorityLabel(tk.priority))}
+            <span class="mtkd-sep">·</span>
+            <span>${esc(tkTypeLabel(tk.type))}</span>
+            <span class="mtkd-sep">·</span>
+            <span class="mtkd-when">${esc(t('tk.createdCol'))} <time>${esc(String(tk.createdAt || '').replace('T', ' ').slice(0, 16))}</time></span>
           </div>
-          <div class="tkd-grid">
-            <div class="tkd-main">
-              <section class="tkd-sec">
-                <h4 class="tkd-h">${esc(t('tk.description'))}</h4>
-                <div class="tk-desc">${esc(tk.description || '—').replace(/\n/g, '<br>')}</div>
-              </section>
-              ${tk.resolutionNote ? `<section class="tkd-sec">
-                <h4 class="tkd-h">${esc(t('mtk.resolution'))}</h4>
-                <div class="tk-desc">${esc(tk.resolutionNote).replace(/\n/g, '<br>')}</div></section>` : ''}
-              ${['resolved', 'closed'].includes(tk.status) ? `<section class="tkd-sec mtk-csat">
-                <h4 class="tkd-h">${esc(t('mtk.rateTitle'))}</h4>
-                ${tk.csatRating ? `<div>${'★'.repeat(tk.csatRating)}<span class="tk-stars-off">${'★'.repeat(5 - tk.csatRating)}</span> <span class="cell-sub">${esc(t('mtk.rateThanks'))}</span></div>`
-                  : `<div class="mtk-stars">${[1, 2, 3, 4, 5].map((n) => `<button type="button" class="mtk-star" data-star="${n}" aria-label="${n}">★</button>`).join('')}</div>
-                     <textarea id="mtk-csat-comment" rows="2" placeholder="${esc(t('mtk.rateComment'))}" style="margin-top:6px"></textarea>
-                     <div><button class="btn btn-outline btn-sm" id="mtk-csat-send" style="margin-top:6px" disabled>${esc(t('mtk.rateSubmit'))}</button></div>`}
-              </section>` : ''}
-              <section class="tkd-sec">
-                <h4 class="tkd-h">${esc(t('mtk.updates'))}</h4>
-                <div class="tk-comments">${comments}</div>
-                ${open ? `<div class="tkd-reply">
-                  <textarea id="mtk-d-comment" rows="3" placeholder="${esc(t('mtk.addComment'))}"></textarea>
-                  <div class="mtk-files" id="mtk-d-reply-files"></div>
-                  <div class="tkd-reply-foot">
-                    <label class="btn btn-ghost btn-sm" style="margin:0"><span class="ms ms-sm">attach_file</span> ${esc(t('tk.attach'))}
-                      <input type="file" id="mtk-d-reply-file" accept=".pdf,.png,.jpg,.jpeg,.webp,application/pdf,image/png,image/jpeg,image/webp" multiple hidden></label>
-                    <button class="btn btn-primary btn-sm" id="mtk-d-post">${esc(t('tk.post'))}</button>
-                  </div>
-                </div>` : `<p class="cell-sub">${esc(t('mtk.closedNote'))}</p>`}
-              </section>
-              <section class="tkd-sec">
-                <h4 class="tkd-h">${esc(t('tk.attachments'))}</h4>
-                <div id="mtk-docs" class="tk-docs"><p class="cell-sub">${esc(t('common.loading') || '…')}</p></div>
-                ${open ? `<div class="tkd-upload-row"><label class="btn btn-outline btn-sm" style="margin:0">
-                  <span class="ms ms-sm">upload_file</span> ${esc(t('tk.attach'))}
-                  <input type="file" id="mtk-doc-file" style="display:none"></label>
-                  <span class="cell-sub">${esc(t('tk.attachHint'))}</span></div>` : ''}
-              </section>
-            </div>
-            <aside class="tkd-side">
-              <div class="tkd-prop"><span class="tkd-plabel">${esc(t('tk.statusCol'))}</span>
-                <div class="tkd-val">${pill(TK_STATUS_PILL[tk.status], tkStatusLabel(tk.status))}</div></div>
-              <div class="tkd-prop"><span class="tkd-plabel">${esc(t('tk.priorityCol'))}</span>
-                <div class="tkd-val">${pill(TK_PRIORITY_PILL[tk.priority], tkPriorityLabel(tk.priority))}</div></div>
-              <div class="tkd-prop"><span class="tkd-plabel">${esc(t('tk.type'))}</span>
-                <div class="tkd-val">${esc(tkTypeLabel(tk.type))}</div></div>
-              <div class="tkd-prop"><span class="tkd-plabel">${esc(t('tk.createdCol'))}</span>
-                <div class="tkd-val">${esc(String(tk.createdAt || '').replace('T', ' ').slice(0, 16))}</div></div>
-              ${tk.approvalStatus ? `<div class="tkd-prop"><span class="tkd-plabel">${esc(t('rt.approval'))}</span>
-                <div class="tkd-val">${apPill(tk.approvalStatus)}</div>
-                ${tk.approvalStatus === 'pending' && tk.approvalApprover ? `<div class="cell-sub" style="margin-top:4px">${esc(t('mtk.apWaiting'))} <strong>${esc(tk.approvalApprover)}</strong></div>` : ''}</div>
-              ${renderApprovalTimeline(tk.approvalHistory)}` : ''}
-            </aside>
+
+          <div class="mtkd-body">
+            <section class="tkd-sec">
+              <h4 class="tkd-h">${esc(t('tk.description'))}</h4>
+              <div class="tk-desc">${esc(tk.description || '—').replace(/\n/g, '<br>')}</div>
+            </section>
+
+            <!-- Sag kolonun yerine gecen kisim: talebin nerede oldugu ve sirada
+                 ne oldugu. Onay olaylari da artik kosede degil, akisin icinde. -->
+            <section class="tkd-sec">
+              <h4 class="tkd-h">${esc(t('mtk.journey'))}</h4>
+              ${journeyHtml(tk)}
+            </section>
+
+            ${tk.resolutionNote ? `<section class="tkd-sec">
+              <h4 class="tkd-h">${esc(t('mtk.resolution'))}</h4>
+              <div class="tk-desc">${esc(tk.resolutionNote).replace(/\n/g, '<br>')}</div></section>` : ''}
+
+            ${['resolved', 'closed'].includes(tk.status) ? `<section class="tkd-sec mtk-csat">
+              <h4 class="tkd-h">${esc(t('mtk.rateTitle'))}</h4>
+              ${tk.csatRating ? `<div>${'★'.repeat(tk.csatRating)}<span class="tk-stars-off">${'★'.repeat(5 - tk.csatRating)}</span> <span class="cell-sub">${esc(t('mtk.rateThanks'))}</span></div>`
+                : `<div class="mtk-stars">${[1, 2, 3, 4, 5].map((n) => `<button type="button" class="mtk-star" data-star="${n}" aria-label="${n}">★</button>`).join('')}</div>
+                   <textarea id="mtk-csat-comment" rows="2" placeholder="${esc(t('mtk.rateComment'))}" style="margin-top:6px"></textarea>
+                   <div><button class="btn btn-outline btn-sm" id="mtk-csat-send" style="margin-top:6px" disabled>${esc(t('mtk.rateSubmit'))}</button></div>`}
+            </section>` : ''}
+
+            <section class="tkd-sec">
+              <h4 class="tkd-h">${esc(t('mtk.updates'))}</h4>
+              <div class="tk-comments">${comments}</div>
+              ${open ? `<div class="tkd-reply">
+                <textarea id="mtk-d-comment" rows="3" placeholder="${esc(t('mtk.addComment'))}"></textarea>
+                <div class="mtk-files" id="mtk-d-reply-files"></div>
+                <div class="tkd-reply-foot">
+                  <label class="btn btn-ghost btn-sm" style="margin:0"><span class="ms ms-sm">attach_file</span> ${esc(t('tk.attach'))}
+                    <input type="file" id="mtk-d-reply-file" accept=".pdf,.png,.jpg,.jpeg,.webp,application/pdf,image/png,image/jpeg,image/webp" multiple hidden></label>
+                  <button class="btn btn-primary btn-sm" id="mtk-d-post">${esc(t('tk.post'))}</button>
+                </div>
+              </div>` : `<p class="cell-sub">${esc(t('mtk.closedNote'))}</p>`}
+            </section>
+
+            <!-- Tek "dosya ekle": yanit kutusunda. Burasi yalnizca listeler.
+                 Eskiden iki ayri ekleme dugmesi vardi ve hangisinin ne yaptigi
+                 belirsizdi. -->
+            <section class="tkd-sec">
+              <h4 class="tkd-h">${esc(t('tk.attachments'))}</h4>
+              <div id="mtk-docs" class="tk-docs"><p class="cell-sub">${esc(t('common.loading') || '…')}</p></div>
+              ${open ? `<div class="tkd-upload-row"><label class="btn btn-outline btn-sm" style="margin:0">
+                <span class="ms ms-sm">upload_file</span> ${esc(t('tk.attach'))}
+                <input type="file" id="mtk-doc-file" style="display:none"></label>
+                <span class="cell-sub">${esc(t('tk.attachHint'))}</span></div>` : ''}
+            </section>
           </div>
         </div>`,
       foot: `<button class="btn btn-outline" data-close>${esc(t('common.close'))}</button>`,

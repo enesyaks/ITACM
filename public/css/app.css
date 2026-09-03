@@ -6472,3 +6472,52 @@ th.tk-sortable.active { color: var(--primary); }
 .mtk-chosen-name { font-weight: 600; }
 /* The chain is secondary once a kind is chosen — it only confirms the choice. */
 .mtk-chain-sm { font-size: 12px; }
+
+/* ---- Portal: talep detayi (mtkd-) ---- */
+/* Durum seridi. Sag kolon kaldirildi; bu satir tek gercek kaynak. */
+.mtkd-facts {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px;
+  padding: 11px 14px; margin-bottom: 18px;
+  background: var(--surface-low); border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-lg);
+  font-size: 13px; color: var(--on-surface-variant);
+}
+.mtkd-facts .mtkd-sep { color: var(--outline-variant); }
+.mtkd-when time { font-family: var(--mono); font-size: 12px; font-variant-numeric: tabular-nums; }
+.mtkd-typeicon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border-radius: var(--radius-md);
+  background: var(--primary-fixed); color: var(--on-primary-fixed);
+}
+.mtkd-type-incident { background: var(--rose-100); color: var(--rose-700); }
+
+.mtkd-body { display: flex; flex-direction: column; gap: 22px; }
+
+/* Yolculuk cizgisi. */
+.mtkd-track { display: flex; flex-direction: column; }
+.mtkd-step { display: grid; grid-template-columns: 24px 1fr; gap: 12px; }
+.mtkd-rail { display: flex; flex-direction: column; align-items: center; }
+.mtkd-dot {
+  width: 14px; height: 14px; border-radius: 50%; margin-top: 3px; flex: 0 0 auto;
+  border: 2px solid var(--outline-variant); background: var(--surface);
+}
+.mtkd-line { flex: 1 1 auto; width: 2px; background: var(--outline-variant); margin-top: 3px; min-height: 18px; }
+.mtkd-step.is-last .mtkd-line { display: none; }
+.mtkd-step.is-done .mtkd-dot { border-color: var(--emerald-600); background: var(--emerald-600); }
+.mtkd-step.is-done .mtkd-line { background: var(--emerald-600); }
+.mtkd-step.is-now .mtkd-dot { border-color: var(--amber-600); box-shadow: 0 0 0 3px var(--amber-100); }
+.mtkd-step.is-no .mtkd-dot { border-color: var(--rose-700); background: var(--rose-700); }
+.mtkd-sbody { display: flex; flex-direction: column; gap: 3px; padding-bottom: 16px; }
+.mtkd-step.is-last .mtkd-sbody { padding-bottom: 0; }
+.mtkd-stitle { font-weight: 600; font-size: 14px; }
+.mtkd-step.is-todo .mtkd-stitle { font-weight: 500; color: var(--on-surface-variant); }
+.mtkd-smeta { font-size: 12.5px; color: var(--on-surface-variant); }
+.mtkd-smeta time, .mtkd-ev time { font-family: var(--mono); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+/* Onay kararlari adimin icinde; eskiden sag alt kosede ayri bir kutuydu. */
+.mtkd-ev {
+  margin-top: 6px; padding: 8px 11px; border-radius: var(--radius-md);
+  background: var(--surface-container); border: 1px solid var(--outline-variant);
+  font-size: 13px;
+}
+.mtkd-ev + .mtkd-ev { margin-top: 5px; }
+.mtkd-ev-note { margin-top: 3px; color: var(--on-surface-variant); font-style: italic; }
