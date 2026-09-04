@@ -243,12 +243,14 @@ async function ocrPages(buffer, opts = {}) {
   const langPath = config.ocr.langPath;
 
   const lib = await pdfjs();
-  const doc = await lib.getDocument({
+  // Keep the loading task: destroy() moved off the document proxy in pdfjs 6.3.
+  const task = lib.getDocument({
     data: toPdfjsData(buffer),
     isEvalSupported: false,
     // Force plain typed arrays out of page.objs instead of an ImageBitmap.
     isOffscreenCanvasSupported: false,
-  }).promise;
+  });
+  const doc = await task.promise;
   const numPages = doc.numPages; // read before destroy() below invalidates it
 
   // One worker for the whole document — starting one per page costs more than
@@ -308,7 +310,7 @@ async function ocrPages(buffer, opts = {}) {
   } finally {
     await worker.terminate().catch(() => {});
     await doc.cleanup().catch(() => {});
-    await doc.destroy().catch(() => {});
+    await task.destroy().catch(() => {});
   }
 
   return { pages, ocrPages: ocrCount, numPages, truncated: ocrCount < numPages, langs };

@@ -22,9 +22,14 @@ function toPdfjsData(buffer) {
  */
 async function extractPages(buffer) {
   const lib = await pdfjs();
-  const doc = await lib.getDocument({
+  // Hold the loading task: pdfjs 6.3 dropped destroy() from the document proxy
+  // and it lives here instead. Calling the old one threw from the finally block
+  // BELOW, after the text had been read — so every upload came back
+  // "Could not read PDF" for a file that had just been parsed fine.
+  const task = lib.getDocument({
     data: toPdfjsData(buffer), useSystemFonts: true, isEvalSupported: false,
-  }).promise;
+  });
+  const doc = await task.promise;
   const pages = [];
   try {
     for (let i = 1; i <= doc.numPages; i++) {
@@ -45,7 +50,7 @@ async function extractPages(buffer) {
     }
   } finally {
     await doc.cleanup();
-    await doc.destroy();
+    await task.destroy();
   }
   const hasText = pages.some((p) => p.text.length > 8);
   return { numPages: pages.length, pages, hasText };
