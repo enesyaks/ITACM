@@ -9,7 +9,7 @@ Donanım ve ağ envanteri · yazdırılabilir PDF tutanaklı personel zimmetleri
 <br />
 
 [![Lisans: MIT](https://img.shields.io/badge/Lisans-MIT-22c55e.svg?style=flat-square)](LICENSE)
-[![Node](https://img.shields.io/badge/Node-%E2%89%A520-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)
+[![Node](https://img.shields.io/badge/Node-%E2%89%A522-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?style=flat-square&logo=postgresql&logoColor=white)](https://www.postgresql.org)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=flat-square&logo=docker&logoColor=white)](https://docs.docker.com/compose/)
 [![Self-hosted](https://img.shields.io/badge/Kendi--sunucunuzda-100%25-0ea5e9?style=flat-square)](#-hızlı-başlangıç--docker-compose)
@@ -213,7 +213,7 @@ Uygulamanın tamamı duyarlıdır — ayrı bir mobil build yok:
 
 | Katman | Teknoloji |
 |---|---|
-| **Çalışma zamanı** | Node.js ≥ 20, Express 5 |
+| **Çalışma zamanı** | Node.js ≥ 22, Express 5 |
 | **Veritabanı** | PostgreSQL 16 — idempotent `schema.sql` + izlenen sürümlü migration'lar, açılışta uygulanır |
 | **Kimlik doğrulama** | JWT (HS256, algoritma sabitlenmiş) + bcrypt (maliyet 12), her istekte yeniden denetlenen rol middleware'i |
 | **Arayüz** | Backend'in sunduğu vanilla JS SPA — **build adımı yok**, ekran başına modüllere bölünmüş |

@@ -4,7 +4,7 @@
   "description": "IT Asset Control Pro — self-hosted IT asset management (PostgreSQL + Docker Compose) with a built-in web UI",
   "main": "server.js",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "scripts": {
     "start": "node server.js",

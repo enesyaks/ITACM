@@ -9,7 +9,7 @@ Hardware & network inventory · employee handovers with printable PDF receipts �
 <br />
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-22c55e.svg?style=flat-square)](LICENSE)
-[![Node](https://img.shields.io/badge/Node-%E2%89%A520-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)
+[![Node](https://img.shields.io/badge/Node-%E2%89%A522-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?style=flat-square&logo=postgresql&logoColor=white)](https://www.postgresql.org)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=flat-square&logo=docker&logoColor=white)](https://docs.docker.com/compose/)
 [![Self-hosted](https://img.shields.io/badge/Self--hosted-100%25-0ea5e9?style=flat-square)](#-quick-start--docker-compose)
@@ -215,7 +215,7 @@ The entire app is responsive — no separate mobile build:
 
 | Layer | Technology |
 |---|---|
-| **Runtime** | Node.js ≥ 20, Express 5 |
+| **Runtime** | Node.js ≥ 22, Express 5 |
 | **Database** | PostgreSQL 16 — idempotent `schema.sql` + tracked versioned migrations, applied on startup |
 | **Auth** | JWT (HS256, pinned alg) + bcrypt (cost 12), role-based middleware re-checked per request |
 | **Frontend** | Vanilla JS SPA served by the backend — **no build step**, split into per-view modules |
