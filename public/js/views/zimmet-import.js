@@ -92,7 +92,15 @@ Views.zimmetImport = async function (el) {
         assign = new Map(batch.items.map((it) => [it.id, empById.has(it.matchedEmployeeId) ? it.matchedEmployeeId : null]));
         openPicker = null;
         renderReview();
-      } catch (err) { toast(err.message, 'error'); resetAnalyze(); }
+      } catch (err) {
+        // The server already said which file failed and why; showing only
+        // "No readable forms found" sent people to the OCR settings for a
+        // password-protected PDF. Name the files.
+        const why = (err.details && Array.isArray(err.details.failures)) ? err.details.failures : [];
+        toast(err.message, 'error');
+        for (const f of why.slice(0, 5)) toast(`${f.filename}: ${f.reason}`, 'error');
+        resetAnalyze();
+      }
     });
   }
 

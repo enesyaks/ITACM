@@ -86,6 +86,26 @@ async function assertInScope(employeeId, departments) {
  */
 const OCR_TRUST_MIN = 75;
 
+/**
+ * Turn a pdfjs failure into something the person holding the file can act on.
+ *
+ * The library distinguishes these; the importer used to flatten them all into
+ * "Could not read PDF", which names no fix. A protected file needs the password
+ * removed, a damaged one needs re-exporting, and no amount of OCR configuration
+ * helps either.
+ */
+function readFailReason(err) {
+  const name = (err && err.name) || '';
+  if (name === 'PasswordException') {
+    return 'This PDF is password-protected — remove the protection and upload it again';
+  }
+  if (name === 'InvalidPDFException') {
+    return 'This file is not a readable PDF — it may be damaged; try re-exporting it';
+  }
+  const msg = String((err && err.message) || '').replace(/\s+/g, ' ').trim();
+  return msg ? `Could not read PDF: ${msg.slice(0, 160)}` : 'Could not read PDF';
+}
+
 function capByOcr(match, ocrConfidence) {
   if (!Number.isFinite(ocrConfidence)) return match;            // digital PDF
   if (ocrConfidence >= OCR_TRUST_MIN) return match;
@@ -153,7 +173,13 @@ async function analyze(files, user) {
 
     let info;
     try { info = await extractPages(f.buffer); }
-    catch { failures.push({ filename: f.filename, reason: 'Could not read PDF' }); continue; }
+    catch (e) {
+      // Name the reason. "Could not read PDF" sent people looking at OCR
+      // settings for a file that was simply password-protected — the two need
+      // opposite fixes, and only the reader knows which it was.
+      failures.push({ filename: f.filename, reason: readFailReason(e) });
+      continue;
+    }
     let texts = info.pages.map((p) => p.text);
     // Per-page OCR confidence, parallel to `texts`. Empty for a digital PDF.
     let pageConf = [];
@@ -205,6 +231,9 @@ async function analyze(files, user) {
     });
   }
   if (!staged.length) {
+    // Also to the log: the reviewer sees this once, but "why did the import
+    // refuse my file" is asked later, by someone reading logs.
+    for (const f of failures) console.warn('[zimmet] rejected', f.filename, '-', f.reason);
     throw HttpError.badRequest('No readable forms found in the upload', { failures });
   }
 
