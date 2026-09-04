@@ -96,13 +96,16 @@ const OCR_TRUST_MIN = 75;
  */
 function readFailReason(err) {
   const name = (err && err.name) || '';
-  if (name === 'PasswordException') {
+  const msg = String((err && err.message) || '').replace(/\s+/g, ' ').trim();
+  // pdf-lib refuses an encrypted document outright; pdfjs raises its own
+  // exception for one that also carries a user password. Both mean the same
+  // thing to whoever is holding the file.
+  if (name === 'PasswordException' || /is encrypted/i.test(msg)) {
     return 'This PDF is password-protected — remove the protection and upload it again';
   }
   if (name === 'InvalidPDFException') {
     return 'This file is not a readable PDF — it may be damaged; try re-exporting it';
   }
-  const msg = String((err && err.message) || '').replace(/\s+/g, ' ').trim();
   return msg ? `Could not read PDF: ${msg.slice(0, 160)}` : 'Could not read PDF';
 }
 
@@ -165,7 +168,12 @@ async function analyze(files, user) {
     // paying for text extraction on a 5000-page file.
     let pages;
     try { pages = await pageCount(f.buffer); }
-    catch { failures.push({ filename: f.filename, reason: 'Could not read PDF' }); continue; }
+    catch (e) {
+      // This is the FIRST reader to touch the file and the one most uploads
+      // fail at, so it needs the same named reasons as the text pass below.
+      failures.push({ filename: f.filename, reason: readFailReason(e) });
+      continue;
+    }
     if (pages > MAX_PAGES_PER_FILE) {
       failures.push({ filename: f.filename, reason: `Too many pages (${pages}, max ${MAX_PAGES_PER_FILE})` });
       continue;
