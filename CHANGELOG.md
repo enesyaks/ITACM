@@ -6,6 +6,17 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Email-to-ticket is now a two-way thread.** A staff reply to a ticket that came
+  in by email is sent to the requester with a dedicated, editable **Service desk —
+  reply** template (Integrations → Email templates), the subject carrying
+  `[REQ-1234]` so the answer threads back. When the requester replies to that
+  email, their message is appended to the ticket as a public comment and any
+  attachments (PDF/PNG/JPEG/WebP, ≤8MB, checked by magic bytes) are carried across
+  — inline signature images are ignored. A reply is appended only when the sender
+  is the ticket's own requester (or DMARC-authenticated), so no one can post into a
+  ticket by guessing its number.
+
 ### Fixed
 - **Email-to-ticket no longer opens the same ticket over and over.** The poller's
   only guard against re-reading a message was the IMAP `\Seen` flag, which iCloud

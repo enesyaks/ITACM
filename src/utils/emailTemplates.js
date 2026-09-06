@@ -18,7 +18,8 @@ const TEMPLATE_LABELS = {
   handover_completed: 'Handover completed — notice to IT recipients',
   alert_digest: 'Daily alert digest — licenses, stock, EOL, onboarding',
   owner_transfer: 'Ownership transfer — notice to the new owner',
-  ticket_update: 'Service desk — ticket update (assigned / status / reply)',
+  ticket_update: 'Service desk — ticket update (assigned / status)',
+  ticket_reply: 'Service desk — reply to the requester (threaded email)',
   sla_breach: 'Service desk — SLA breached (escalation to the assignee)',
   approval_request: 'Approval — a request awaits your decision',
   approval_decision: 'Approval — your request was approved / rejected',
@@ -39,6 +40,7 @@ const TEMPLATE_PLACEHOLDERS = {
   alert_digest: ['companyName', 'alertCount', 'alertSummary', 'appUrl'],
   owner_transfer: ['companyName', 'employeeName', 'employeeEmail', 'credentials', 'appUrl'],
   ticket_update: ['companyName', 'ticketNumber', 'subject', 'event', 'actorName', 'snippet', 'appUrl'],
+  ticket_reply: ['companyName', 'ticketNumber', 'subject', 'actorName', 'replyText', 'appUrl'],
   sla_breach: ['companyName', 'ticketNumber', 'subject', 'slaType', 'dueAt', 'overdueBy', 'priority', 'assigneeName', 'appUrl'],
   approval_request: ['companyName', 'summary', 'requesterName', 'resourceRef', 'appUrl'],
   approval_decision: ['companyName', 'summary', 'decision', 'deciderName', 'appUrl'],
@@ -184,6 +186,27 @@ const DEFAULT_EMAIL_TEMPLATES = {
       + '{{ticketNumber}} — {{subject}}\n'
       + '{{actorName}} — {{event}}.\n\n'
       + '{{snippet}}\n\n'
+      + 'Open: {{appUrl}}\n',
+  },
+  ticket_reply: {
+    subject: '[{{ticketNumber}}] {{subject}}',
+    bodyHtml:
+      '<p style="margin:0 0 6px;color:#64748b;font-size:13px">{{companyName}} · Service Desk</p>'
+      + '<h2 style="margin:0 0 4px;font-size:18px">{{subject}}</h2>'
+      + '<p style="margin:0 0 16px;color:#64748b;font-size:13px">Ticket {{ticketNumber}}</p>'
+      + '<p style="margin:0 0 8px;color:#334155">{{actorName}} replied:</p>'
+      + '<div style="margin:0 0 16px;padding:12px 14px;border-left:3px solid #4f46e5;background:#f5f3ff;'
+      + 'border-radius:0 6px 6px 0;color:#1e293b;white-space:pre-wrap">{{replyText}}</div>'
+      + '<p style="margin:0 0 12px;color:#475569;font-size:14px">You can reply directly to this email to respond — '
+      + 'keep <strong>[{{ticketNumber}}]</strong> in the subject and your message, and any attachments, are added to the ticket.</p>'
+      + '<p style="margin:0"><a href="{{appUrl}}" style="color:#4f46e5">Open the service desk</a></p>',
+    bodyText:
+      '{{companyName}} · Service Desk\n\n'
+      + '{{subject}} (ticket {{ticketNumber}})\n\n'
+      + '{{actorName}} replied:\n\n'
+      + '{{replyText}}\n\n'
+      + 'You can reply directly to this email to respond — keep [{{ticketNumber}}] in the\n'
+      + 'subject and your message, and any attachments, are added to the ticket.\n\n'
       + 'Open: {{appUrl}}\n',
   },
   sla_breach: {

@@ -13,6 +13,7 @@ const { encryptSecret, decryptSecret } = require('../../utils/secretCrypto');
 const { HttpError } = require('../../utils/httpError');
 const { resolveAndAssertPublicHost, smtpAllowsPrivate } = require('../../utils/safeOutbound');
 const { parseBlocklist, isBlockedSender, bulkReason } = require('../../utils/mailFilter');
+const { sniffType, safeFilename, MAX_BYTES } = require('../../utils/uploadGuard');
 
 const REF_RE = /\[((?:REQ|INC)-\d+)\]/i;
 const SKIP_LOG_MAX = 25;
@@ -331,17 +332,32 @@ async function createFromEmail(parsed, cfg, opts = {}) {
   if (!sys) return { action: 'skipped', reason: 'no system user' };
   const sysUser = { uid: sys.id, username: 'E-posta', email: sys.email };
 
-  // A referenced ticket in the subject ([REQ-1234]/[INC-1234]) → still open a NEW
-  // ticket, but cross-reference the two so the link is visible from both sides.
-  // Cross-linking is identity-sensitive (writes a staff-only note into ticket N),
-  // so it is gated on an authenticated sender to prevent injection into arbitrary
-  // enumerable ticket numbers.
-  const m = authenticated ? subjectRaw.match(REF_RE) : null;
+  // A referenced ticket in the subject ([REQ-1234]/[INC-1234]) — a reply to an
+  // existing ticket. Looked up regardless of authentication so we can check who
+  // sent it; what we DO with it depends on that check.
+  const m = subjectRaw.match(REF_RE);
   let related = null;
   if (m) {
     const number = m[1].toUpperCase();
-    const tk = (await query('SELECT id, number FROM tickets WHERE upper(number) = $1 LIMIT 1', [number])).rows[0];
-    if (tk) related = tk;
+    related = (await query(
+      `SELECT t.id, t.number, e.email AS requester_email, t.assignee_user_id AS assignee_user_id
+         FROM tickets t LEFT JOIN employees e ON e.id = t.requester_employee_id
+        WHERE upper(t.number) = $1 LIMIT 1`,
+      [number]
+    )).rows[0] || null;
+  }
+
+  // If the message replies to a ticket, append it there instead of opening a new
+  // one — but only when the sender can be trusted to be that ticket's requester:
+  // the message is DMARC-authenticated, or its From matches the requester's own
+  // address. Without that gate anyone could post into any ticket by guessing its
+  // number, so an unmatched sender falls through to a new ticket below.
+  if (related) {
+    const senderIsRequester = !!fromAddr && !!related.requester_email
+      && fromAddr.toLowerCase() === String(related.requester_email).toLowerCase();
+    if (authenticated || senderIsRequester) {
+      return appendEmailReply(related, parsed, { fromName, fromAddr, bodyText, authenticated });
+    }
   }
 
   // Match the sender to a real employee by From: address so ticket notifications
@@ -351,9 +367,7 @@ async function createFromEmail(parsed, cfg, opts = {}) {
   // Matching does NOT imply the identity was proven. When the sender is not
   // DMARC-authenticated the From: could be spoofed, so the ticket keeps a visible
   // flag: the desk sees the address was matched, not verified. The attribution
-  // only routes notifications; it grants no trust. The identity-sensitive path —
-  // cross-linking a note into another ticket — stays gated on `authenticated`
-  // above, because that one writes into an enumerable ticket number.
+  // only routes notifications; it grants no trust.
   const asEmployee = await employeeByEmail(fromAddr);
   const unverifiedNote = authenticated ? '' : `\n\n— ⚠ Gönderen kimliği doğrulanamadı (${fromAddr}); talep eden e-posta adresiyle eşlendi, doğrulanmadı.`;
   const description = `${related ? `${bodyText}\n\n— İlgili ticket: ${related.number}`.trim() : bodyText}${unverifiedNote}`.trim();
@@ -362,9 +376,10 @@ async function createFromEmail(parsed, cfg, opts = {}) {
     sysUser,
     { asEmployee, source: 'email', senderEmail: fromAddr }
   );
-  if (related) {
-    // Note on the referenced ticket pointing at the new one (staff-only), so IT
-    // sees they're connected without exposing it to the requester as a comment.
+  // Cross-link the referenced ticket only for an authenticated sender: this writes
+  // a staff-only note into an enumerable ticket number, so an unauthenticated
+  // sender must not be able to drive it.
+  if (related && authenticated) {
     await query(
       'INSERT INTO ticket_comments (ticket_id, author_user_id, author_name, body, internal, staff_only) VALUES ($1, NULL, $2, $3, true, true)',
       [related.id, 'E-posta girişi', `${fromName} tarafından ilgili yeni ticket açıldı: ${created.number}`]
@@ -372,6 +387,62 @@ async function createFromEmail(parsed, cfg, opts = {}) {
     await query('UPDATE tickets SET updated_at = now() WHERE id = $1', [related.id]);
   }
   return { action: 'created', ticketId: created.id, number: created.number, senderAuthenticated: authenticated, requesterMatched: !!asEmployee, relatedTo: related ? related.number : null };
+}
+
+/**
+ * Append an inbound email as a public reply on an existing ticket, carrying any
+ * attachments across. The comment is attributed to the sender (no app user), and
+ * only the file types the app accepts anywhere else (PDF/PNG/JPEG/WebP, ≤8MB,
+ * verified by magic bytes) are attached — anything else is dropped, never stored.
+ */
+async function appendEmailReply(ticket, parsed, { fromName, fromAddr, bodyText, authenticated }) {
+  const documentService = require('./documentService');
+  const note = authenticated ? '' : `\n\n— ⚠ Gönderen doğrulanmadı (${fromAddr}).`;
+  const body = `${String(bodyText || '').trim()}${note}`.trim() || '(boş yanıt)';
+  const ins = await query(
+    'INSERT INTO ticket_comments (ticket_id, author_user_id, author_name, body, internal, staff_only) VALUES ($1, NULL, $2, $3, false, false) RETURNING id',
+    [ticket.id, String(fromName || fromAddr || 'E-posta').slice(0, 200), body]
+  );
+  const commentId = ins.rows[0].id;
+
+  let attached = 0;
+  const atts = Array.isArray(parsed && parsed.attachments) ? parsed.attachments : [];
+  for (const a of atts) {
+    try {
+      // Skip inline/related parts — these are signature logos and embedded
+      // images, not files the sender meant to attach.
+      if (a && (a.related || a.contentDisposition === 'inline')) continue;
+      const buf = a && a.content;
+      if (!Buffer.isBuffer(buf) || !buf.length || buf.length > MAX_BYTES) continue;
+      const mime = sniffType(buf);
+      if (!mime) continue; // not an allowed type — drop it, keep the reply
+      await documentService.saveTicketDoc({
+        ticketId: ticket.id, filename: safeFilename(a.filename, mime.split('/')[1] || 'bin'),
+        mime, buffer: buf, uploadedByName: String(fromName || fromAddr || 'E-posta').slice(0, 200),
+        internal: false, staffOnly: false, commentId,
+      });
+      attached++;
+    } catch { /* a bad attachment must not lose the reply */ }
+  }
+
+  // A requester reply does not satisfy the response SLA, so first_response_at is
+  // deliberately left alone — only the ticket's activity time moves.
+  await query('UPDATE tickets SET updated_at = now() WHERE id = $1', [ticket.id]);
+
+  // Tell the assignee their requester replied (best-effort, never throws).
+  if (ticket.assignee_user_id) {
+    try {
+      const { rows } = await query('SELECT email FROM users WHERE id = $1', [ticket.assignee_user_id]);
+      const to = rows[0] && rows[0].email;
+      if (to) {
+        require('./notificationService').sendTicketNotification({
+          to, ticketNumber: ticket.number, subject: '', event: 'the requester replied',
+          actorName: fromName || fromAddr || 'The requester', snippet: body.slice(0, 200),
+        }).catch(() => {});
+      }
+    } catch { /* ignore */ }
+  }
+  return { action: 'appended', ticketId: ticket.id, number: ticket.number, attached };
 }
 
 /** Connect, process every unseen message, mark them seen. Returns a summary. */

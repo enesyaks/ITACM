@@ -679,6 +679,32 @@ async function sendTicketNotification({ to, ticketNumber, subject, event, actorN
 }
 
 /**
+ * Email a staff reply to the requester using the dedicated, editable ticket_reply
+ * template. The subject carries [{{ticketNumber}}] so the requester's reply threads
+ * straight back onto the ticket (the inbound poller reads that reference).
+ */
+async function sendTicketReply({ to, ticketNumber, subject, replyText, actorName }) {
+  try {
+    if (!to) return { skipped: true, reason: 'no recipient' };
+    const { notify, smtp, companyName, companyLogo, companyAddress } = await getMailConfig();
+    if (!notify.enabled || !notify.ticketUpdates) return { skipped: true, reason: 'ticket notifications off' };
+    if (!smtp.host) return { skipped: true, reason: 'no smtp host' };
+    const base = appBaseUrl(notify) || process.env.APP_URL || 'http://localhost:8000';
+    const templates = await getEmailTemplates();
+    const rendered = renderTemplate(templates.ticket_reply, {
+      companyName, ticketNumber, subject,
+      actorName: actorName || 'Support', replyText: String(replyText || '').trim(), appUrl: base,
+    });
+    const logo = logoAttachment(companyLogo);
+    return await sendMail({ to, subject: rendered.subject, text: rendered.bodyText,
+      html: templateHtml(rendered.bodyHtml, { companyName, hasLogo: !!logo, address: companyAddress }),
+      attachments: logo ? [logo] : undefined });
+  } catch (err) {
+    return { skipped: true, reason: err.message };
+  }
+}
+
+/**
  * Notify the pending approver(s) that a request awaits their decision. Handles
  * both single-approver and parallel steps, and a `reminder` variant used by the
  * scheduler for requests left pending too long. Best-effort: never throws.
@@ -832,7 +858,7 @@ async function sendHrRequestNotice(request) {
 module.exports = {
   getMailConfig, saveMailConfig, clearMailConfig, sendTestEmail, runAlertDigest, runScheduledDigest, notifyHandoverCompleted, sendMail,
   getEmailTemplates, saveEmailTemplates, sendOnboardingWelcomeEmail, sendPortalAccessEmail, sendHrRequestNotice,
-  sendTicketNotification, sendSlaBreachNotification, sendApprovalNotice, sendApprovalDecisionEmail,
+  sendTicketNotification, sendTicketReply, sendSlaBreachNotification, sendApprovalNotice, sendApprovalDecisionEmail,
   sendOwnerTransferEmail,
   DEFAULT_NOTIFY, TEMPLATE_KEYS, PLACEHOLDERS,
 };

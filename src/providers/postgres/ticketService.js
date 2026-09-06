@@ -996,7 +996,7 @@ async function addComment(id, body, user, { ownEmployeeId = null } = {}) {
   if (!ownEmployeeId && !internal) {
     await query('UPDATE tickets SET first_response_at = COALESCE(first_response_at, now()), updated_at = now() WHERE id = $1', [id]);
   }
-  notifyComment({ id, ownEmployeeId, internal, snippet: text.slice(0, 200), actorName: a.name });
+  notifyComment({ id, ownEmployeeId, internal, snippet: text.slice(0, 200), body: text, actorName: a.name });
   const ticket = await getTicket(id, user, { ownEmployeeId });
   ticket.newCommentId = commentId; // lets the client link freshly-uploaded files
   return ticket;
@@ -1290,7 +1290,7 @@ function notifyUpdate(plan) {
 }
 
 // Notify after a comment (staff public reply → requester; employee reply → assignee).
-function notifyComment({ id, ownEmployeeId, internal, snippet, actorName }) {
+function notifyComment({ id, ownEmployeeId, internal, snippet, body, actorName }) {
   if (internal) return; // internal notes never leave the building
   (async () => {
     const meta = (await query(
@@ -1300,8 +1300,16 @@ function notifyComment({ id, ownEmployeeId, internal, snippet, actorName }) {
     const p = await partyEmails(meta);
     const inapp = require('./inappService');
     if (!ownEmployeeId) {
-      // Staff public reply → notify the requester (email + in-app bell).
-      if (p.requesterEmail) mail({ to: p.requesterEmail, ticketNumber: meta.number, subject: meta.subject, event: 'a new reply was posted', actorName, snippet });
+      // Staff public reply → email the requester the reply itself (threaded so
+      // their answer comes back onto the ticket) + an in-app bell.
+      if (p.requesterEmail) {
+        try {
+          require('./notificationService').sendTicketReply({
+            to: p.requesterEmail, ticketNumber: meta.number, subject: meta.subject,
+            replyText: body || snippet || '', actorName,
+          }).catch(() => {});
+        } catch { /* ignore */ }
+      }
       if (meta.requesterEmployeeId) {
         inapp.createForEmployee(meta.requesterEmployeeId, {
           type: 'ticket_reply',
