@@ -89,14 +89,22 @@ async function startConnect(provider) {
     provider, tenant: app.tenant, clientId: app.clientId,
     redirectUri: await redirectUri(), state,
   });
-  return { url };
+  // State is returned so the route can also stash it in an HttpOnly cookie and
+  // bind the callback to the same browser (CSRF protection), matching SSO.
+  return { url, state };
 }
 
 /** Finish the connect flow: verify state, exchange the code, store the connection. */
-async function handleCallback({ code, state }) {
+async function handleCallback({ code, state, cookieState }) {
   if (!code || !state) throw HttpError.badRequest('Missing code or state');
+  // The state must match the one stashed in this browser's cookie at /start — a
+  // callback that did not originate here is refused (CSRF).
+  if (!cookieState || cookieState !== state) {
+    throw HttpError.badRequest('This sign-in did not start here — open Connect mailbox again from ITACM');
+  }
   let claims;
-  try { claims = jwt.verify(state, config.jwtSecret, { issuer: 'itacm' }); }
+  // Pin the algorithm, like every other verify in the codebase.
+  try { claims = jwt.verify(state, config.jwtSecret, { issuer: 'itacm', algorithms: ['HS256'] }); }
   catch { throw HttpError.badRequest('The sign-in link expired or was tampered with — try connecting again'); }
   if (!claims || claims.purpose !== 'mail-oauth' || !SUPPORTED.includes(claims.p)) {
     throw HttpError.badRequest('Invalid sign-in state');

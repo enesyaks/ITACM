@@ -142,9 +142,28 @@ router.put('/mail-oauth/apps', authenticate, requirePermission('integration', 'm
 router.get('/mail-oauth/status', authenticate, requirePermission('integration', 'read'), asyncHandler(async (req, res) => {
   res.json({ success: true, data: await mailOAuthService.getStatus() });
 }));
-// Returns the provider consent URL for the SPA to send the browser to.
+// Returns the provider consent URL for the SPA to send the browser to. The signed
+// state is also stashed in an HttpOnly cookie so the callback can prove it began
+// in this browser (CSRF protection), mirroring the SSO flow.
+const MAILOAUTH_COOKIE = 'itacm_mailoauth';
+function moIsSecure(req) {
+  return req.secure || String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https';
+}
+function moReadCookie(req, name) {
+  const raw = req.headers.cookie || '';
+  for (const part of raw.split(';')) {
+    const i = part.indexOf('=');
+    if (i > -1 && part.slice(0, i).trim() === name) return decodeURIComponent(part.slice(i + 1).trim());
+  }
+  return null;
+}
 router.get('/mail-oauth/start', authenticate, requirePermission('integration', 'manage'), asyncHandler(async (req, res) => {
-  res.json({ success: true, data: await mailOAuthService.startConnect(String(req.query.provider || '')) });
+  const data = await mailOAuthService.startConnect(String(req.query.provider || ''));
+  res.cookie(MAILOAUTH_COOKIE, data.state, {
+    httpOnly: true, secure: moIsSecure(req), sameSite: 'lax',
+    maxAge: 10 * 60 * 1000, path: '/api/integrations/mail-oauth',
+  });
+  res.json({ success: true, data: { url: data.url } });
 }));
 router.post('/mail-oauth/disconnect', authenticate, requirePermission('integration', 'manage'), asyncHandler(async (req, res) => {
   res.json({ success: true, data: await mailOAuthService.disconnect() });
@@ -153,9 +172,11 @@ router.post('/mail-oauth/disconnect', authenticate, requirePermission('integrati
 // Safety rests on the signed state (verified in handleCallback), not on a session.
 router.get('/mail-oauth/callback', asyncHandler(async (req, res) => {
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const cookieState = moReadCookie(req, MAILOAUTH_COOKIE);
+  res.clearCookie(MAILOAUTH_COOKIE, { path: '/api/integrations/mail-oauth' });
   let ok = false; let msg = '';
   try {
-    const r = await mailOAuthService.handleCallback({ code: req.query.code, state: req.query.state });
+    const r = await mailOAuthService.handleCallback({ code: req.query.code, state: req.query.state, cookieState });
     ok = true; msg = r.email ? `Connected ${r.email}.` : 'Mailbox connected.';
   } catch (err) { msg = err.message || 'Connection failed'; }
   res.status(ok ? 200 : 400).type('html').send(
