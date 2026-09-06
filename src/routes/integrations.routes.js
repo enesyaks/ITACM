@@ -38,6 +38,11 @@ function publicMailConfig(cfg) {
       pass: (s.passConfigured || s.pass) ? '••••••••' : '',
       passConfigured: !!(s.passConfigured || s.pass),
       passCorrupt: !!s.passCorrupt,
+      authMethod: s.authMethod === 'oauth2_ms' ? 'oauth2_ms' : 'password',
+      oauthTenant: s.oauthTenant || '',
+      oauthClientId: s.oauthClientId || '',
+      oauthClientSecret: s.oauthSecretConfigured ? '••••••••' : '',
+      oauthSecretConfigured: !!s.oauthSecretConfigured,
     },
   };
 }

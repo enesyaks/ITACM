@@ -7,6 +7,16 @@ project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Microsoft 365 mailboxes (OAuth2) for email-to-ticket and outbound mail.**
+  Microsoft turned basic auth (username + password) off for Exchange Online and,
+  since 2024, for Outlook.com — a password no longer connects there. Both the IMAP
+  poller and the SMTP sender can now authenticate with **Microsoft app-only OAuth2**
+  (client-credentials): set the tenant, client ID and client secret from an Entra
+  ID app registration (granted `IMAP.AccessAsApp` / `SMTP.SendAsApp`, scoped to the
+  one mailbox), and ITACM mints and refreshes its own tokens — no interactive
+  sign-in, suited to an unattended service-desk mailbox. Password auth stays the
+  default and is unchanged for Gmail, iCloud, Zoho and other IMAP hosts. The token
+  layer is provider-agnostic, so Google OAuth2 slots in next.
 - **Email-to-ticket is now a two-way thread.** A staff reply to a ticket that came
   in by email is sent to the requester with a dedicated, editable **Service desk —
   reply** template (Integrations → Email templates), the subject carrying

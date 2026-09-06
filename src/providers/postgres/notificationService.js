@@ -83,11 +83,19 @@ function materializeSmtp(smtp) {
   // Without this flag, sendMail only sees an empty password and the UI may look fine.
   const passCorrupt = typeof raw === 'string' && raw.startsWith('enc:v1:') && !pass;
   const passConfigured = !!(raw && String(raw).length > 0);
+  const rawOauth = smtp.oauthClientSecret || '';
+  let oauthClientSecret = '';
+  try { oauthClientSecret = rawOauth ? decryptSecret(rawOauth) : ''; } catch { oauthClientSecret = ''; }
   return {
     ...smtp,
     pass,
     passCorrupt,
     passConfigured,
+    authMethod: smtp.authMethod === 'oauth2_ms' ? 'oauth2_ms' : 'password',
+    oauthTenant: smtp.oauthTenant || '',
+    oauthClientId: smtp.oauthClientId || '',
+    oauthClientSecret,
+    oauthSecretConfigured: !!(rawOauth && String(rawOauth).length > 0),
   };
 }
 
@@ -181,7 +189,19 @@ async function saveMailConfig({ smtp, notify }) {
       user: String(smtp.user || '').slice(0, 200),
       from: String(smtp.from || '').slice(0, 200),
     });
-    await assertSmtpHostSafe(normalized.host);
+    if (normalized.host) await assertSmtpHostSafe(normalized.host);
+    const authMethod = smtp.authMethod === 'oauth2_ms' ? 'oauth2_ms' : 'password';
+    // Keep the stored client secret when the field is blank/masked.
+    const nextOauthSecret = isBlankOrMaskedPass(smtp.oauthClientSecret)
+      ? (cur.smtp?.oauthClientSecret || '')
+      : String(smtp.oauthClientSecret).slice(0, 400);
+    if (authMethod === 'oauth2_ms') {
+      const tenant = String(smtp.oauthTenant || '').trim();
+      const clientId = String(smtp.oauthClientId || '').trim();
+      if (!tenant || !clientId || !nextOauthSecret) {
+        throw HttpError.badRequest('Microsoft OAuth2 needs tenant, client ID and client secret');
+      }
+    }
     params.push(JSON.stringify({
       host: normalized.host,
       port: normalized.port,
@@ -189,6 +209,10 @@ async function saveMailConfig({ smtp, notify }) {
       user: normalized.user,
       pass: encryptSecret(nextPassPlain),
       from: normalized.from,
+      authMethod,
+      oauthTenant: String(smtp.oauthTenant || '').trim().slice(0, 200),
+      oauthClientId: String(smtp.oauthClientId || '').trim().slice(0, 200),
+      oauthClientSecret: nextOauthSecret ? encryptSecret(nextOauthSecret) : null,
     }));
     sets.push(`smtp_json = $${params.length}::jsonb`);
   }
@@ -234,12 +258,18 @@ async function clearMailConfig({ smtp = true, notify = true } = {}) {
   return getMailConfig();
 }
 
-function buildTransport(smtp) {
+function buildTransport(smtp, accessToken) {
   const n = normalizeSmtpTransport(smtp);
+  const oauth = smtp.authMethod === 'oauth2_ms';
+  // OAuth2 defaults host/port to Microsoft's submission endpoint when unset.
+  if (oauth && !n.host) { n.host = 'smtp.office365.com'; n.port = 587; n.secure = false; }
   if (!n.host) throw HttpError.badRequest('SMTP host is required');
   const port = Number(n.port) || 587;
   const secure = n.secure != null ? !!n.secure : port === 465;
-  const auth = n.user ? { user: n.user, pass: n.pass || '' } : undefined;
+  // XOAUTH2 for Microsoft (basic auth is off there); otherwise user+password.
+  const auth = oauth
+    ? { type: 'OAuth2', user: n.user, accessToken }
+    : (n.user ? { user: n.user, pass: n.pass || '' } : undefined);
   return nodemailer.createTransport({
     host: n.host,
     port,
@@ -289,17 +319,30 @@ function mapSmtpError(err, smtp = {}) {
 
 async function sendMail({ to, subject, text, html, attachments }) {
   const { smtp, companyName } = await getMailConfig();
-  if (!smtp.host) throw HttpError.badRequest('SMTP host is required — save SMTP settings first');
-  await assertSmtpHostSafe(smtp.host);
-  if (smtp.passCorrupt) {
-    throw HttpError.badRequest(
-      'SMTP password could not be decrypted (server secret may have changed) — re-enter the mail password in Integrations → Email and Save'
-    );
+  const oauth = smtp.authMethod === 'oauth2_ms';
+  if (!oauth && !smtp.host) throw HttpError.badRequest('SMTP host is required — save SMTP settings first');
+  if (smtp.host) await assertSmtpHostSafe(smtp.host);
+  let accessToken;
+  if (oauth) {
+    if (!smtp.oauthTenant || !smtp.oauthClientId || !smtp.oauthClientSecret) {
+      throw HttpError.badRequest('Microsoft OAuth2 needs tenant, client ID and client secret — set them in Integrations → Email and Save');
+    }
+    const { getMailToken } = require('../../utils/mailOAuth');
+    accessToken = await getMailToken({
+      provider: 'microsoft', tenant: smtp.oauthTenant,
+      clientId: smtp.oauthClientId, clientSecret: smtp.oauthClientSecret,
+    });
+  } else {
+    if (smtp.passCorrupt) {
+      throw HttpError.badRequest(
+        'SMTP password could not be decrypted (server secret may have changed) — re-enter the mail password in Integrations → Email and Save'
+      );
+    }
+    if (smtp.user && !smtp.pass) {
+      throw HttpError.badRequest('SMTP password is empty — enter your mail password (app-specific for iCloud/Gmail) and Save');
+    }
   }
-  if (smtp.user && !smtp.pass) {
-    throw HttpError.badRequest('SMTP password is empty — enter your mail password (app-specific for iCloud/Gmail) and Save');
-  }
-  const transport = buildTransport(smtp);
+  const transport = buildTransport(smtp, accessToken);
   const from = smtp.from || smtp.user || `noreply@${companyName.replace(/\s+/g, '').toLowerCase()}.local`;
   const recipients = Array.isArray(to) ? to : [to];
   try {

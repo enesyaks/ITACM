@@ -117,6 +117,12 @@ Views.integrations = async function (el) {
         <p class="cell-sub" style="margin:0 0 12px">${t('int.smtp.hint')}</p>
         ${smtp.passCorrupt ? `<p class="banner banner-rose" style="margin-bottom:12px">${esc(t('int.smtp.passCorrupt'))}</p>` : ''}
         <div class="form-grid">
+          <div class="form-field full"><label>${esc(t('int.mail.authMethod'))}</label>
+            <select id="int-smtp-authmethod" ${inputDis}>
+              <option value="password" ${smtp.authMethod !== 'oauth2_ms' ? 'selected' : ''}>${esc(t('int.mail.authPassword'))}</option>
+              <option value="oauth2_ms" ${smtp.authMethod === 'oauth2_ms' ? 'selected' : ''}>${esc(t('int.mail.authMs'))}</option>
+            </select>
+            <span class="ob-hint">${esc(t('int.mail.authHint'))}</span></div>
           <div class="form-field"><label>Host</label><input id="int-smtp-host" value="${esc(smtp.host || '')}" placeholder="smtp.mail.me.com"${inputDis}></div>
           <div class="form-field"><label>Port</label><input id="int-smtp-port" type="number" value="${esc(smtp.port || 587)}"${inputDis}></div>
           <div class="form-field"><label>User</label><input id="int-smtp-user" value="${esc(smtp.user || '')}" autocomplete="off"${inputDis}></div>
@@ -126,6 +132,13 @@ Views.integrations = async function (el) {
               : `<input id="int-smtp-pass" type="password" value="" placeholder="${smtp.passConfigured || smtp.pass ? '••••••••  leave blank to keep' : 'app-specific password'}" autocomplete="new-password"${inputDis}>`}
           </div>
           <div class="form-field"><label>From</label><input id="int-smtp-from" value="${esc(smtp.from || '')}" placeholder="itacm@company.com"${inputDis}></div>
+          <div class="form-field full" style="border-top:1px dashed var(--outline-variant,#ccc);padding-top:10px"><label>${esc(t('int.mail.oauthTenant'))}</label>
+            <input id="int-smtp-oauth-tenant" value="${esc(smtp.oauthTenant || '')}" placeholder="contoso.onmicrosoft.com" autocomplete="off"${inputDis}>
+            <span class="ob-hint">${esc(t('int.mail.oauthHint'))}</span></div>
+          <div class="form-field"><label>${esc(t('int.mail.oauthClient'))}</label>
+            <input id="int-smtp-oauth-client" value="${esc(smtp.oauthClientId || '')}" placeholder="00000000-0000-0000-0000-000000000000" autocomplete="off"${inputDis}></div>
+          <div class="form-field"><label>${esc(t('int.mail.oauthSecret'))} ${smtp.oauthSecretConfigured ? '<span class="ob-hint">(saved — leave blank to keep)</span>' : ''}</label>
+            <input id="int-smtp-oauth-secret" type="password" value="" placeholder="${smtp.oauthSecretConfigured ? '••••••••' : ''}" autocomplete="new-password"${inputDis}></div>
           <div class="form-field"><label>Recipients (comma-separated)</label>
             <input id="int-notify-to" value="${esc((notify.to || []).join(', '))}" placeholder="ops@company.com"${inputDis}></div>
           <div class="form-field full"><label>${esc(t('int.appUrl.label'))} <span class="ob-hint">${esc(t('int.appUrl.hint'))}</span></label>
@@ -289,6 +302,12 @@ Views.integrations = async function (el) {
         <h3 style="margin:0 0 8px"><span class="ms ms-sm" style="vertical-align:-3px">forward_to_inbox</span> ${esc(t('int.inbound.title'))}</h3>
         <p class="cell-sub" style="margin:0 0 12px">${esc(t('int.inbound.hint'))}</p>
         <div class="form-grid">
+          <div class="form-field full"><label>${esc(t('int.mail.authMethod'))}</label>
+            <select id="int-imap-authmethod" ${inputDis}>
+              <option value="password" ${inbound.authMethod !== 'oauth2_ms' ? 'selected' : ''}>${esc(t('int.mail.authPassword'))}</option>
+              <option value="oauth2_ms" ${inbound.authMethod === 'oauth2_ms' ? 'selected' : ''}>${esc(t('int.mail.authMs'))}</option>
+            </select>
+            <span class="ob-hint">${esc(t('int.mail.authHint'))}</span></div>
           <div class="form-field"><label>${esc(t('int.inbound.host'))}</label>
             <input id="int-imap-host" value="${esc(inbound.host || '')}" placeholder="imap.gmail.com"${inputDis}></div>
           <div class="form-field"><label>${esc(t('int.inbound.port'))}</label>
@@ -297,6 +316,13 @@ Views.integrations = async function (el) {
             <input id="int-imap-user" value="${esc(inbound.user || '')}" placeholder="destek@sirket.com" autocomplete="off"${inputDis}></div>
           <div class="form-field"><label>${esc(t('int.inbound.pass'))} ${inbound.hasPass ? `<span class="ob-hint">${esc(t('int.inbound.keep'))}</span>` : ''}</label>
             <input id="int-imap-pass" type="password" value="" placeholder="${inbound.hasPass ? '••••••••' : ''}" autocomplete="new-password"${inputDis}></div>
+          <div class="form-field full" style="border-top:1px dashed var(--outline-variant,#ccc);padding-top:10px"><label>${esc(t('int.mail.oauthTenant'))}</label>
+            <input id="int-imap-oauth-tenant" value="${esc(inbound.oauthTenant || '')}" placeholder="contoso.onmicrosoft.com" autocomplete="off"${inputDis}>
+            <span class="ob-hint">${esc(t('int.mail.oauthHint'))}</span></div>
+          <div class="form-field"><label>${esc(t('int.mail.oauthClient'))}</label>
+            <input id="int-imap-oauth-client" value="${esc(inbound.oauthClientId || '')}" placeholder="00000000-0000-0000-0000-000000000000" autocomplete="off"${inputDis}></div>
+          <div class="form-field"><label>${esc(t('int.mail.oauthSecret'))} ${inbound.hasOauthSecret ? `<span class="ob-hint">${esc(t('int.inbound.keep'))}</span>` : ''}</label>
+            <input id="int-imap-oauth-secret" type="password" value="" placeholder="${inbound.hasOauthSecret ? '••••••••' : ''}" autocomplete="new-password"${inputDis}></div>
           <div class="form-field"><label>${esc(t('int.inbound.folder'))}</label>
             <input id="int-imap-folder" value="${esc(inbound.folder || 'INBOX')}" placeholder="INBOX"${inputDis}></div>
           <div class="form-field"><label>${esc(t('int.inbound.type'))}</label>
@@ -719,6 +745,10 @@ GET /api/integrations/licenses/:id/sam
     defaultType: $('#int-imap-type', el)?.value || 'incident',
     defaultCategory: $('#int-imap-cat', el)?.value.trim() || '',
     authServId: $('#int-imap-authserv', el)?.value.trim() || '',
+    authMethod: $('#int-imap-authmethod', el)?.value || 'password',
+    oauthTenant: $('#int-imap-oauth-tenant', el)?.value.trim() || '',
+    oauthClientId: $('#int-imap-oauth-client', el)?.value.trim() || '',
+    oauthClientSecret: $('#int-imap-oauth-secret', el)?.value || '',
   });
   $('#int-imap-save', el)?.addEventListener('click', async () => {
     const btn = $('#int-imap-save', el); btn.disabled = true;
@@ -892,6 +922,10 @@ GET /api/integrations/licenses/:id/sam
             pass: $('#int-smtp-pass', el).value,
             from: $('#int-smtp-from', el).value.trim(),
             secure,
+            authMethod: $('#int-smtp-authmethod', el)?.value || 'password',
+            oauthTenant: $('#int-smtp-oauth-tenant', el)?.value.trim() || '',
+            oauthClientId: $('#int-smtp-oauth-client', el)?.value.trim() || '',
+            oauthClientSecret: $('#int-smtp-oauth-secret', el)?.value || '',
           },
           notify: {
             enabled: $('#int-notify-on', el).checked,
@@ -935,6 +969,10 @@ GET /api/integrations/licenses/:id/sam
             pass: $('#int-smtp-pass', el).value,
             from: $('#int-smtp-from', el).value.trim(),
             secure,
+            authMethod: $('#int-smtp-authmethod', el)?.value || 'password',
+            oauthTenant: $('#int-smtp-oauth-tenant', el)?.value.trim() || '',
+            oauthClientId: $('#int-smtp-oauth-client', el)?.value.trim() || '',
+            oauthClientSecret: $('#int-smtp-oauth-secret', el)?.value || '',
           },
           notify: {
             enabled: $('#int-notify-on', el).checked,

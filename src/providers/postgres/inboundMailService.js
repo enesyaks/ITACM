@@ -97,6 +97,8 @@ async function getConfigRaw() {
   const j = (rows[0] && rows[0].imap_json) || {};
   let pass = '';
   try { pass = j.pass ? decryptSecret(j.pass) : ''; } catch { pass = ''; }
+  let oauthSecret = '';
+  try { oauthSecret = j.oauthClientSecret ? decryptSecret(j.oauthClientSecret) : ''; } catch { oauthSecret = ''; }
   return {
     enabled: !!j.enabled,
     host: j.host || '',
@@ -104,6 +106,13 @@ async function getConfigRaw() {
     secure: j.secure != null ? !!j.secure : true,
     user: j.user || '',
     pass,
+    // How the mailbox authenticates: 'password' (basic auth, the default) or
+    // 'oauth2_ms' (Microsoft 365 app-only — required now that Microsoft has
+    // turned basic auth off for Exchange Online and Outlook.com).
+    authMethod: j.authMethod === 'oauth2_ms' ? 'oauth2_ms' : 'password',
+    oauthTenant: j.oauthTenant || '',
+    oauthClientId: j.oauthClientId || '',
+    oauthClientSecret: oauthSecret,
     folder: j.folder || 'INBOX',
     defaultType: j.defaultType === 'request' ? 'request' : 'incident',
     defaultCategory: j.defaultCategory || null,
@@ -122,7 +131,12 @@ async function getConfigRaw() {
 /** Masked view for the UI — password replaced with a marker, never the value. */
 async function getConfig() {
   const c = await getConfigRaw();
-  return { ...c, pass: c.pass ? '********' : '', hasPass: !!c.pass, authServId: c.authServId || '' };
+  return {
+    ...c,
+    pass: c.pass ? '********' : '', hasPass: !!c.pass,
+    oauthClientSecret: c.oauthClientSecret ? '********' : '', hasOauthSecret: !!c.oauthClientSecret,
+    authServId: c.authServId || '',
+  };
 }
 
 function isBlankOrMasked(p) { return !p || /^\*+$/.test(String(p)); }
@@ -130,16 +144,34 @@ function isBlankOrMasked(p) { return !p || /^\*+$/.test(String(p)); }
 async function saveConfig(input = {}) {
   const cur = await getConfigRaw();
   const host = String(input.host || '').trim().slice(0, 200);
-  if (input.enabled && !host) throw HttpError.badRequest('IMAP host is required to enable email-to-ticket');
+  const authMethod = input.authMethod === 'oauth2_ms' ? 'oauth2_ms' : 'password';
+  // Password auth needs a host; OAuth2 defaults the host to the provider's, so a
+  // host is optional there and validated fields are the tenant/client instead.
+  if (input.enabled && authMethod === 'password' && !host) {
+    throw HttpError.badRequest('IMAP host is required to enable email-to-ticket');
+  }
   if (host) await assertImapHostSafe(host);
-  // Keep the existing password when the field is left blank/masked.
+  // Keep the existing secrets when their field is left blank/masked.
   const nextPass = isBlankOrMasked(input.pass) ? (cur.pass || '') : String(input.pass);
+  const nextOauthSecret = isBlankOrMasked(input.oauthClientSecret)
+    ? (cur.oauthClientSecret || '') : String(input.oauthClientSecret);
+  if (input.enabled && authMethod === 'oauth2_ms') {
+    const tenant = String(input.oauthTenant || '').trim();
+    const clientId = String(input.oauthClientId || '').trim();
+    if (!tenant || !clientId || !nextOauthSecret) {
+      throw HttpError.badRequest('Microsoft OAuth2 needs tenant, client ID and client secret');
+    }
+  }
   const stored = {
     enabled: !!input.enabled,
     host,
     port: clampPort(input.port),
     secure: input.secure != null ? !!input.secure : true,
     user: String(input.user || '').trim().slice(0, 200),
+    authMethod,
+    oauthTenant: String(input.oauthTenant || '').trim().slice(0, 200),
+    oauthClientId: String(input.oauthClientId || '').trim().slice(0, 200),
+    oauthClientSecret: nextOauthSecret ? encryptSecret(nextOauthSecret) : null,
     folder: String(input.folder || 'INBOX').trim().slice(0, 120) || 'INBOX',
     defaultType: input.defaultType === 'request' ? 'request' : 'incident',
     defaultCategory: input.defaultCategory ? String(input.defaultCategory).trim().slice(0, 120) : null,
@@ -176,13 +208,31 @@ async function clearConfig() {
 }
 
 // Lazily required so the IMAP libs never load unless the feature is used.
-function imapClient(cfg) {
+async function buildImapClient(cfg) {
   const { ImapFlow } = require('imapflow');
-  return new ImapFlow({
-    host: cfg.host, port: cfg.port, secure: cfg.secure,
-    auth: { user: cfg.user, pass: cfg.pass }, logger: false,
+  const base = {
+    logger: false,
     // A short timeout so a bad host fails fast instead of hanging the scheduler.
     socketTimeout: 20000, greetingTimeout: 12000, connectionTimeout: 12000,
+  };
+  if (cfg.authMethod === 'oauth2_ms') {
+    const { getMailToken, PROVIDERS } = require('../../utils/mailOAuth');
+    const accessToken = await getMailToken({
+      provider: 'microsoft', tenant: cfg.oauthTenant,
+      clientId: cfg.oauthClientId, clientSecret: cfg.oauthClientSecret,
+    });
+    return new ImapFlow({
+      ...base,
+      host: cfg.host || PROVIDERS.microsoft.imapHost,
+      port: cfg.port || PROVIDERS.microsoft.imapPort,
+      secure: cfg.secure != null ? cfg.secure : true,
+      auth: { user: cfg.user, accessToken },
+    });
+  }
+  return new ImapFlow({
+    ...base,
+    host: cfg.host, port: cfg.port, secure: cfg.secure,
+    auth: { user: cfg.user, pass: cfg.pass },
   });
 }
 
@@ -192,28 +242,50 @@ async function testConnection(overrides = {}) {
   // Whitelist the fields a caller may override — never spread the raw body, and
   // never let a caller-specified destination inherit the stored password.
   const o = overrides || {};
-  const host = o.host != null ? String(o.host).trim() : stored.host;
+  const authMethod = (o.authMethod != null ? o.authMethod : stored.authMethod) === 'oauth2_ms'
+    ? 'oauth2_ms' : 'password';
   const user = o.user != null ? String(o.user).trim() : stored.user;
-  if (!host) throw HttpError.badRequest('Enter IMAP host first');
-  await assertImapHostSafe(host);
-  // The stored (decrypted) password is reused ONLY when the destination is
-  // unchanged. Point the test at a different host or account and you must supply
-  // the password in plaintext — otherwise the secret can't be exfiltrated to a
-  // server the caller chose.
-  const sameTarget = host === stored.host && user === stored.user;
-  let pass;
-  if (!isBlankOrMasked(o.pass)) pass = String(o.pass);
-  else if (sameTarget) pass = stored.pass;
-  else throw HttpError.badRequest('Enter the IMAP password to test a different host or account');
-  const cfg = {
-    host,
-    port: clampPort(o.port != null ? o.port : stored.port),
-    secure: o.secure != null ? !!o.secure : stored.secure,
-    user,
-    pass,
-    folder: o.folder != null ? String(o.folder).trim().slice(0, 120) || 'INBOX' : stored.folder,
-  };
-  const client = imapClient(cfg);
+  const folder = o.folder != null ? String(o.folder).trim().slice(0, 120) || 'INBOX' : stored.folder;
+
+  let cfg;
+  if (authMethod === 'oauth2_ms') {
+    // OAuth2 secrets are never taken from the caller for a test — they always come
+    // from what is stored, so a client secret can't be probed against an
+    // attacker-chosen tenant. The token is minted by Microsoft, not sent to any
+    // caller-specified host, so there's no host-exfiltration concern here.
+    cfg = {
+      authMethod, user, folder,
+      host: o.host != null ? String(o.host).trim() : stored.host,
+      port: clampPort(o.port != null ? o.port : stored.port),
+      secure: o.secure != null ? !!o.secure : stored.secure,
+      oauthTenant: stored.oauthTenant,
+      oauthClientId: stored.oauthClientId,
+      oauthClientSecret: stored.oauthClientSecret,
+    };
+    if (cfg.host) await assertImapHostSafe(cfg.host);
+    if (!cfg.oauthTenant || !cfg.oauthClientId || !cfg.oauthClientSecret) {
+      throw HttpError.badRequest('Save the Microsoft OAuth2 tenant, client ID and secret before testing');
+    }
+  } else {
+    const host = o.host != null ? String(o.host).trim() : stored.host;
+    if (!host) throw HttpError.badRequest('Enter IMAP host first');
+    await assertImapHostSafe(host);
+    // The stored (decrypted) password is reused ONLY when the destination is
+    // unchanged. Point the test at a different host or account and you must supply
+    // the password in plaintext — otherwise the secret can't be exfiltrated to a
+    // server the caller chose.
+    const sameTarget = host === stored.host && user === stored.user;
+    let pass;
+    if (!isBlankOrMasked(o.pass)) pass = String(o.pass);
+    else if (sameTarget) pass = stored.pass;
+    else throw HttpError.badRequest('Enter the IMAP password to test a different host or account');
+    cfg = {
+      authMethod, host, user, folder, pass,
+      port: clampPort(o.port != null ? o.port : stored.port),
+      secure: o.secure != null ? !!o.secure : stored.secure,
+    };
+  }
+  const client = await buildImapClient(cfg);
   // ImapFlow emits 'error' asynchronously; without a listener an unhandled
   // 'error' event crashes the whole process. Swallow it — connect() rejects too.
   client.on('error', () => {});
@@ -448,11 +520,15 @@ async function appendEmailReply(ticket, parsed, { fromName, fromAddr, bodyText, 
 /** Connect, process every unseen message, mark them seen. Returns a summary. */
 async function poll() {
   const cfg = await getConfigRaw();
-  if (!cfg.enabled || !cfg.host || !cfg.user) return { skipped: true, reason: 'disabled' };
+  // OAuth2 defaults its host to the provider's, so a host is only required for
+  // password auth; the account (user) is always required.
+  if (!cfg.enabled || !cfg.user || (cfg.authMethod !== 'oauth2_ms' && !cfg.host)) {
+    return { skipped: true, reason: 'disabled' };
+  }
   try { await assertImapHostSafe(cfg.host); }
   catch (err) { return { skipped: true, reason: 'unsafe host: ' + (err.message || 'blocked') }; }
   const { simpleParser } = require('mailparser');
-  const client = imapClient(cfg);
+  const client = await buildImapClient(cfg);
   client.on('error', () => {}); // never let an async 'error' event crash the scheduler tick
   let created = 0; let appended = 0; let failed = 0; let filtered = 0; let duplicate = 0;
   try {
@@ -511,10 +587,12 @@ async function release(messageId) {
   if (row.imap_uid == null) throw HttpError.badRequest('This message has no stored mailbox id and cannot be re-fetched');
 
   const cfg = await getConfigRaw();
-  if (!cfg.enabled || !cfg.host || !cfg.user) throw HttpError.badRequest('Email-to-ticket is not configured');
+  if (!cfg.enabled || !cfg.user || (cfg.authMethod !== 'oauth2_ms' && !cfg.host)) {
+    throw HttpError.badRequest('Email-to-ticket is not configured');
+  }
   await assertImapHostSafe(cfg.host);
   const { simpleParser } = require('mailparser');
-  const client = imapClient(cfg);
+  const client = await buildImapClient(cfg);
   client.on('error', () => {});
   let parsed = null;
   try {
