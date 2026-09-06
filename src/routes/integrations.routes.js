@@ -38,7 +38,7 @@ function publicMailConfig(cfg) {
       pass: (s.passConfigured || s.pass) ? '••••••••' : '',
       passConfigured: !!(s.passConfigured || s.pass),
       passCorrupt: !!s.passCorrupt,
-      authMethod: s.authMethod === 'oauth2_ms' ? 'oauth2_ms' : 'password',
+      authMethod: ['oauth2_ms', 'oauth2_delegated'].includes(s.authMethod) ? s.authMethod : 'password',
       oauthTenant: s.oauthTenant || '',
       oauthClientId: s.oauthClientId || '',
       oauthClientSecret: s.oauthSecretConfigured ? '••••••••' : '',
@@ -128,6 +128,44 @@ router.put('/inbound-mail/blocklist', authenticate, requirePermission('integrati
 // and processes it with the filters bypassed.
 router.post('/inbound-mail/release', authenticate, requirePermission('integration', 'manage'), asyncHandler(async (req, res) => {
   res.json({ success: true, data: await inboundMailService.release((req.body || {}).messageId) });
+}));
+
+// ---- Delegated ("Connect mailbox") OAuth2: Microsoft / Google ----
+const mailOAuthService = require('../providers/postgres/mailOAuthService');
+// The one-time OAuth app registration (client id/secret/redirect), masked on read.
+router.get('/mail-oauth/apps', authenticate, requirePermission('integration', 'read'), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await mailOAuthService.getApps() });
+}));
+router.put('/mail-oauth/apps', authenticate, requirePermission('integration', 'manage'), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await mailOAuthService.saveApps(req.body || {}) });
+}));
+router.get('/mail-oauth/status', authenticate, requirePermission('integration', 'read'), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await mailOAuthService.getStatus() });
+}));
+// Returns the provider consent URL for the SPA to send the browser to.
+router.get('/mail-oauth/start', authenticate, requirePermission('integration', 'manage'), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await mailOAuthService.startConnect(String(req.query.provider || '')) });
+}));
+router.post('/mail-oauth/disconnect', authenticate, requirePermission('integration', 'manage'), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await mailOAuthService.disconnect() });
+}));
+// Public: the provider redirects the BROWSER here, so no Bearer token is possible.
+// Safety rests on the signed state (verified in handleCallback), not on a session.
+router.get('/mail-oauth/callback', asyncHandler(async (req, res) => {
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  let ok = false; let msg = '';
+  try {
+    const r = await mailOAuthService.handleCallback({ code: req.query.code, state: req.query.state });
+    ok = true; msg = r.email ? `Connected ${r.email}.` : 'Mailbox connected.';
+  } catch (err) { msg = err.message || 'Connection failed'; }
+  res.status(ok ? 200 : 400).type('html').send(
+    `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">`
+    + `<body style="font-family:system-ui,-apple-system,sans-serif;max-width:32rem;margin:12vh auto;padding:0 24px;text-align:center;color:#1b1b24">`
+    + `<h2 style="margin:0 0 8px">${ok ? '✓ Mailbox connected' : '⚠ Connection failed'}</h2>`
+    + `<p style="color:#464555">${esc(msg)}</p>`
+    + `<p><a href="/#/integrations" style="color:#3525cd">Return to ITACM</a></p>`
+    + `<script>setTimeout(function(){location.href="/#/integrations"},2500)</script></body>`
+  );
 }));
 
 router.post('/notifications/digest', authenticate, requirePermission('integration', 'read'), asyncHandler(async (req, res) => {

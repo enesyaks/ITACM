@@ -91,7 +91,7 @@ function materializeSmtp(smtp) {
     pass,
     passCorrupt,
     passConfigured,
-    authMethod: smtp.authMethod === 'oauth2_ms' ? 'oauth2_ms' : 'password',
+    authMethod: ['oauth2_ms', 'oauth2_delegated'].includes(smtp.authMethod) ? smtp.authMethod : 'password',
     oauthTenant: smtp.oauthTenant || '',
     oauthClientId: smtp.oauthClientId || '',
     oauthClientSecret,
@@ -190,7 +190,7 @@ async function saveMailConfig({ smtp, notify }) {
       from: String(smtp.from || '').slice(0, 200),
     });
     if (normalized.host) await assertSmtpHostSafe(normalized.host);
-    const authMethod = smtp.authMethod === 'oauth2_ms' ? 'oauth2_ms' : 'password';
+    const authMethod = ['oauth2_ms', 'oauth2_delegated'].includes(smtp.authMethod) ? smtp.authMethod : 'password';
     // Keep the stored client secret when the field is blank/masked.
     const nextOauthSecret = isBlankOrMaskedPass(smtp.oauthClientSecret)
       ? (cur.smtp?.oauthClientSecret || '')
@@ -260,7 +260,7 @@ async function clearMailConfig({ smtp = true, notify = true } = {}) {
 
 function buildTransport(smtp, accessToken) {
   const n = normalizeSmtpTransport(smtp);
-  const oauth = smtp.authMethod === 'oauth2_ms';
+  const oauth = smtp.authMethod === 'oauth2_ms' || smtp.authMethod === 'oauth2_delegated';
   // OAuth2 defaults host/port to Microsoft's submission endpoint when unset.
   if (oauth && !n.host) { n.host = 'smtp.office365.com'; n.port = 587; n.secure = false; }
   if (!n.host) throw HttpError.badRequest('SMTP host is required');
@@ -319,11 +319,19 @@ function mapSmtpError(err, smtp = {}) {
 
 async function sendMail({ to, subject, text, html, attachments }) {
   const { smtp, companyName } = await getMailConfig();
+  const delegated = smtp.authMethod === 'oauth2_delegated';
   const oauth = smtp.authMethod === 'oauth2_ms';
-  if (!oauth && !smtp.host) throw HttpError.badRequest('SMTP host is required — save SMTP settings first');
+  if (!oauth && !delegated && !smtp.host) throw HttpError.badRequest('SMTP host is required — save SMTP settings first');
   if (smtp.host) await assertSmtpHostSafe(smtp.host);
   let accessToken;
-  if (oauth) {
+  let txSmtp = smtp;
+  if (delegated) {
+    // The "Connect mailbox" flow — token, host and address come from the shared
+    // mail-OAuth connection.
+    const tok = await require('./mailOAuthService').getDelegatedToken();
+    accessToken = tok.accessToken;
+    txSmtp = { ...smtp, authMethod: 'oauth2_delegated', host: tok.smtpHost, port: tok.smtpPort, secure: false, user: tok.user };
+  } else if (oauth) {
     if (!smtp.oauthTenant || !smtp.oauthClientId || !smtp.oauthClientSecret) {
       throw HttpError.badRequest('Microsoft OAuth2 needs tenant, client ID and client secret — set them in Integrations → Email and Save');
     }
@@ -342,8 +350,8 @@ async function sendMail({ to, subject, text, html, attachments }) {
       throw HttpError.badRequest('SMTP password is empty — enter your mail password (app-specific for iCloud/Gmail) and Save');
     }
   }
-  const transport = buildTransport(smtp, accessToken);
-  const from = smtp.from || smtp.user || `noreply@${companyName.replace(/\s+/g, '').toLowerCase()}.local`;
+  const transport = buildTransport(txSmtp, accessToken);
+  const from = txSmtp.from || txSmtp.user || `noreply@${companyName.replace(/\s+/g, '').toLowerCase()}.local`;
   const recipients = Array.isArray(to) ? to : [to];
   try {
     await transport.sendMail({

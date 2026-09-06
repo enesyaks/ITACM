@@ -7,6 +7,15 @@ project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Connect a mailbox by signing in (delegated OAuth2), the Jira-style flow.**
+  Instead of typing a client secret per mailbox, an operator registers ITACM once
+  as an OAuth app (Microsoft and/or Google, with the shown redirect URI), then
+  clicks **Connect Microsoft** / **Connect Google**, signs in at the provider, and
+  ITACM keeps a refresh token. One connection serves both email-to-ticket (IMAP)
+  and outgoing mail (SMTP) — pick **Connected mailbox (OAuth)** as the auth method
+  on either. The refresh token is stored encrypted and rotated automatically; the
+  connection can be disconnected from the same screen. Works for Gmail/Workspace
+  (`https://mail.google.com/`) and Microsoft 365 / Outlook.
 - **Microsoft 365 mailboxes (OAuth2) for email-to-ticket and outbound mail.**
   Microsoft turned basic auth (username + password) off for Exchange Online and,
   since 2024, for Outlook.com — a password no longer connects there. Both the IMAP

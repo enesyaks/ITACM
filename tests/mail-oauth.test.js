@@ -3,7 +3,9 @@
 const test = require('node:test');
 const assert = require('node:assert');
 
-const { getMailToken, forgetMailToken, PROVIDERS } = require('../src/utils/mailOAuth');
+const {
+  getMailToken, forgetMailToken, PROVIDERS, buildAuthorizeUrl, emailFromIdToken,
+} = require('../src/utils/mailOAuth');
 
 function withFetch(impl, fn) {
   const original = global.fetch;
@@ -53,4 +55,29 @@ test('the Microsoft provider points at the right hosts', () => {
   assert.strictEqual(PROVIDERS.microsoft.imapHost, 'outlook.office365.com');
   assert.strictEqual(PROVIDERS.microsoft.smtpHost, 'smtp.office365.com');
   assert.match(PROVIDERS.microsoft.tokenUrl('contoso'), /login\.microsoftonline\.com\/contoso\//);
+});
+
+test('the Google provider points at Gmail hosts', () => {
+  assert.strictEqual(PROVIDERS.google.imapHost, 'imap.gmail.com');
+  assert.strictEqual(PROVIDERS.google.smtpHost, 'smtp.gmail.com');
+});
+
+test('a Google consent URL forces offline + re-consent so a refresh token comes back', () => {
+  const url = buildAuthorizeUrl({ provider: 'google', clientId: 'cid', redirectUri: 'https://app/cb', state: 'st' });
+  assert.match(url, /accounts\.google\.com/);
+  assert.match(url, /access_type=offline/);
+  assert.match(url, /prompt=consent/);
+  assert.match(url, /scope=[^&]*mail\.google\.com/);
+});
+
+test('a Microsoft consent URL carries the tenant and offline_access', () => {
+  const url = buildAuthorizeUrl({ provider: 'microsoft', tenant: 'common', clientId: 'cid', redirectUri: 'https://app/cb', state: 'st' });
+  assert.match(url, /login\.microsoftonline\.com\/common\/oauth2\/v2\.0\/authorize/);
+  assert.match(url, /scope=[^&]*offline_access/);
+});
+
+test('the connected address is read from the id_token', () => {
+  const claims = Buffer.from(JSON.stringify({ email: 'Desk@Contoso.com' })).toString('base64');
+  assert.strictEqual(emailFromIdToken(`h.${claims}.s`), 'desk@contoso.com');
+  assert.strictEqual(emailFromIdToken('not-a-jwt'), '');
 });

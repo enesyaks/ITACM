@@ -23,6 +23,8 @@ Views.integrations = async function (el) {
   const sso = await api('/integrations/sso').catch(() => ({}));
   const inbound = await api('/integrations/inbound-mail').catch(() => ({}));
   const ldapCfg = await api('/integrations/ldap').catch(() => ({}));
+  const moApps = await api('/integrations/mail-oauth/apps').catch(() => ({}));
+  const moStatus = await api('/integrations/mail-oauth/status').catch(() => ({ connected: false }));
   // The server ships every template it knows about, with its label and
   // placeholders — no local copy of the list to drift out of sync.
   const tpls = emailTemplates || {};
@@ -121,6 +123,7 @@ Views.integrations = async function (el) {
             <select id="int-smtp-authmethod" ${inputDis}>
               <option value="password" ${smtp.authMethod !== 'oauth2_ms' ? 'selected' : ''}>${esc(t('int.mail.authPassword'))}</option>
               <option value="oauth2_ms" ${smtp.authMethod === 'oauth2_ms' ? 'selected' : ''}>${esc(t('int.mail.authMs'))}</option>
+              <option value="oauth2_delegated" ${smtp.authMethod === 'oauth2_delegated' ? 'selected' : ''}>${esc(t('int.mail.authConnected'))}</option>
             </select>
             <span class="ob-hint">${esc(t('int.mail.authHint'))}</span></div>
           <div class="form-field"><label>Host</label><input id="int-smtp-host" value="${esc(smtp.host || '')}" placeholder="smtp.mail.me.com"${inputDis}></div>
@@ -299,6 +302,37 @@ Views.integrations = async function (el) {
       </section>
 
       <section class="card card-pad" style="margin-bottom:16px">
+        <h3 style="margin:0 0 8px"><span class="ms ms-sm" style="vertical-align:-3px">link</span> ${esc(t('int.mo.title'))}</h3>
+        <p class="cell-sub" style="margin:0 0 12px">${esc(t('int.mo.hint'))}</p>
+        ${moStatus.connected
+    ? `<p class="banner banner-emerald" style="margin:0 0 12px">${esc(t('int.mo.connectedAs'))} <strong>${esc(moStatus.email || '')}</strong> · ${esc(moStatus.provider || '')}</p>
+           ${canManage ? `<button class="btn btn-outline" id="int-mo-disconnect">${esc(t('int.mo.disconnect'))}</button>` : ''}`
+    : `<p class="cell-sub" style="margin:0 0 8px">${esc(t('int.mo.notConnected'))}</p>
+           ${canManage ? `<div style="display:flex;gap:8px;flex-wrap:wrap">
+             <button class="btn btn-primary" id="int-mo-connect-microsoft">${esc(t('int.mo.connectMs'))}</button>
+             <button class="btn btn-primary" id="int-mo-connect-google">${esc(t('int.mo.connectGoogle'))}</button>
+           </div>` : ''}`}
+        <details style="margin-top:14px">
+          <summary style="cursor:pointer;font-size:13px;color:var(--on-surface-variant,#555)">${esc(t('int.mo.appSettings'))}</summary>
+          <div class="form-grid" style="margin-top:10px">
+            <div class="form-field full"><label>${esc(t('int.mo.redirectUri'))}</label>
+              <input value="${esc(moApps.redirectUri || '')}" readonly onclick="this.select()" style="font-family:ui-monospace,monospace;font-size:12px">
+              <span class="ob-hint">${esc(t('int.mo.redirectHint'))}</span></div>
+            <div class="form-field full"><strong>Microsoft</strong></div>
+            <div class="form-field"><label>Client ID</label><input id="int-mo-ms-client" value="${esc((moApps.microsoft || {}).clientId || '')}" autocomplete="off"${inputDis}></div>
+            <div class="form-field"><label>${esc(t('int.mo.tenant'))}</label><input id="int-mo-ms-tenant" value="${esc((moApps.microsoft || {}).tenant || '')}" placeholder="common" autocomplete="off"${inputDis}></div>
+            <div class="form-field full"><label>Client secret ${(moApps.microsoft || {}).hasSecret ? `<span class="ob-hint">${esc(t('int.inbound.keep'))}</span>` : ''}</label>
+              <input id="int-mo-ms-secret" type="password" value="" placeholder="${(moApps.microsoft || {}).hasSecret ? '••••••••' : ''}" autocomplete="new-password"${inputDis}></div>
+            <div class="form-field full"><strong>Google</strong></div>
+            <div class="form-field"><label>Client ID</label><input id="int-mo-g-client" value="${esc((moApps.google || {}).clientId || '')}" autocomplete="off"${inputDis}></div>
+            <div class="form-field"><label>Client secret ${(moApps.google || {}).hasSecret ? `<span class="ob-hint">${esc(t('int.inbound.keep'))}</span>` : ''}</label>
+              <input id="int-mo-g-secret" type="password" value="" placeholder="${(moApps.google || {}).hasSecret ? '••••••••' : ''}" autocomplete="new-password"${inputDis}></div>
+          </div>
+          ${canManage ? `<button class="btn btn-outline" id="int-mo-apps-save" style="margin-top:10px">${esc(t('common.save'))}</button>` : ''}
+        </details>
+      </section>
+
+      <section class="card card-pad" style="margin-bottom:16px">
         <h3 style="margin:0 0 8px"><span class="ms ms-sm" style="vertical-align:-3px">forward_to_inbox</span> ${esc(t('int.inbound.title'))}</h3>
         <p class="cell-sub" style="margin:0 0 12px">${esc(t('int.inbound.hint'))}</p>
         <div class="form-grid">
@@ -306,6 +340,7 @@ Views.integrations = async function (el) {
             <select id="int-imap-authmethod" ${inputDis}>
               <option value="password" ${inbound.authMethod !== 'oauth2_ms' ? 'selected' : ''}>${esc(t('int.mail.authPassword'))}</option>
               <option value="oauth2_ms" ${inbound.authMethod === 'oauth2_ms' ? 'selected' : ''}>${esc(t('int.mail.authMs'))}</option>
+              <option value="oauth2_delegated" ${inbound.authMethod === 'oauth2_delegated' ? 'selected' : ''}>${esc(t('int.mail.authConnected'))}</option>
             </select>
             <span class="ob-hint">${esc(t('int.mail.authHint'))}</span></div>
           <div class="form-field"><label>${esc(t('int.inbound.host'))}</label>
@@ -773,6 +808,37 @@ GET /api/integrations/licenses/:id/sam
       toast(r.skipped ? (t('int.inbound.pollSkipped') + (r.reason ? ' (' + r.reason + ')' : '')) : done, r.skipped ? 'error' : 'success'); }
     catch (err) { toast(err.message, 'error'); }
     finally { btn.disabled = false; btn.textContent = label; }
+  });
+
+  // Delegated mail OAuth ("Connect mailbox")
+  const moConnect = async (provider) => {
+    try {
+      const r = await api('/integrations/mail-oauth/start?provider=' + encodeURIComponent(provider));
+      if (r && r.url) window.location.href = r.url; // full-page redirect to the provider's consent screen
+    } catch (err) { toast(err.message, 'error'); }
+  };
+  $('#int-mo-connect-microsoft', el)?.addEventListener('click', () => moConnect('microsoft'));
+  $('#int-mo-connect-google', el)?.addEventListener('click', () => moConnect('google'));
+  $('#int-mo-disconnect', el)?.addEventListener('click', async () => {
+    try { await api('/integrations/mail-oauth/disconnect', { method: 'POST' }); toast(t('int.mo.disconnected'), 'success'); Views.integrations(el); }
+    catch (err) { toast(err.message, 'error'); }
+  });
+  $('#int-mo-apps-save', el)?.addEventListener('click', async () => {
+    const btn = $('#int-mo-apps-save', el); btn.disabled = true;
+    try {
+      await api('/integrations/mail-oauth/apps', { method: 'PUT', body: {
+        microsoft: {
+          clientId: $('#int-mo-ms-client', el)?.value.trim() || '',
+          tenant: $('#int-mo-ms-tenant', el)?.value.trim() || '',
+          clientSecret: $('#int-mo-ms-secret', el)?.value || '',
+        },
+        google: {
+          clientId: $('#int-mo-g-client', el)?.value.trim() || '',
+          clientSecret: $('#int-mo-g-secret', el)?.value || '',
+        },
+      } });
+      toast(t('common.saved') || 'Saved', 'success'); Views.integrations(el);
+    } catch (err) { toast(err.message, 'error'); btn.disabled = false; }
   });
 
   // Blocked senders + the bulk-mail switch. Its own sheet and its own endpoint,

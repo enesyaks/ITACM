@@ -106,10 +106,12 @@ async function getConfigRaw() {
     secure: j.secure != null ? !!j.secure : true,
     user: j.user || '',
     pass,
-    // How the mailbox authenticates: 'password' (basic auth, the default) or
-    // 'oauth2_ms' (Microsoft 365 app-only — required now that Microsoft has
-    // turned basic auth off for Exchange Online and Outlook.com).
-    authMethod: j.authMethod === 'oauth2_ms' ? 'oauth2_ms' : 'password',
+    // How the mailbox authenticates:
+    //   'password'        basic auth (the default),
+    //   'oauth2_ms'       Microsoft 365 app-only (tenant/client here),
+    //   'oauth2_delegated' the "Connect mailbox" flow — credentials live in the
+    //                      shared mail-OAuth connection, not in this config.
+    authMethod: ['oauth2_ms', 'oauth2_delegated'].includes(j.authMethod) ? j.authMethod : 'password',
     oauthTenant: j.oauthTenant || '',
     oauthClientId: j.oauthClientId || '',
     oauthClientSecret: oauthSecret,
@@ -144,7 +146,7 @@ function isBlankOrMasked(p) { return !p || /^\*+$/.test(String(p)); }
 async function saveConfig(input = {}) {
   const cur = await getConfigRaw();
   const host = String(input.host || '').trim().slice(0, 200);
-  const authMethod = input.authMethod === 'oauth2_ms' ? 'oauth2_ms' : 'password';
+  const authMethod = ['oauth2_ms', 'oauth2_delegated'].includes(input.authMethod) ? input.authMethod : 'password';
   // Password auth needs a host; OAuth2 defaults the host to the provider's, so a
   // host is optional there and validated fields are the tenant/client instead.
   if (input.enabled && authMethod === 'password' && !host) {
@@ -215,6 +217,15 @@ async function buildImapClient(cfg) {
     // A short timeout so a bad host fails fast instead of hanging the scheduler.
     socketTimeout: 20000, greetingTimeout: 12000, connectionTimeout: 12000,
   };
+  if (cfg.authMethod === 'oauth2_delegated') {
+    // The "Connect mailbox" flow — token, host and address come from the shared
+    // mail-OAuth connection, not from this config.
+    const tok = await require('./mailOAuthService').getDelegatedToken();
+    return new ImapFlow({
+      ...base, host: tok.imapHost, port: tok.imapPort, secure: true,
+      auth: { user: tok.user, accessToken: tok.accessToken },
+    });
+  }
   if (cfg.authMethod === 'oauth2_ms') {
     const { getMailToken, PROVIDERS } = require('../../utils/mailOAuth');
     const accessToken = await getMailToken({
@@ -242,13 +253,16 @@ async function testConnection(overrides = {}) {
   // Whitelist the fields a caller may override — never spread the raw body, and
   // never let a caller-specified destination inherit the stored password.
   const o = overrides || {};
-  const authMethod = (o.authMethod != null ? o.authMethod : stored.authMethod) === 'oauth2_ms'
-    ? 'oauth2_ms' : 'password';
+  const reqMethod = o.authMethod != null ? o.authMethod : stored.authMethod;
+  const authMethod = ['oauth2_ms', 'oauth2_delegated'].includes(reqMethod) ? reqMethod : 'password';
   const user = o.user != null ? String(o.user).trim() : stored.user;
   const folder = o.folder != null ? String(o.folder).trim().slice(0, 120) || 'INBOX' : stored.folder;
 
   let cfg;
-  if (authMethod === 'oauth2_ms') {
+  if (authMethod === 'oauth2_delegated') {
+    // Nothing to gather — the connection supplies the token, host and address.
+    cfg = { authMethod, folder };
+  } else if (authMethod === 'oauth2_ms') {
     // OAuth2 secrets are never taken from the caller for a test — they always come
     // from what is stored, so a client secret can't be probed against an
     // attacker-chosen tenant. The token is minted by Microsoft, not sent to any
@@ -520,11 +534,12 @@ async function appendEmailReply(ticket, parsed, { fromName, fromAddr, bodyText, 
 /** Connect, process every unseen message, mark them seen. Returns a summary. */
 async function poll() {
   const cfg = await getConfigRaw();
-  // OAuth2 defaults its host to the provider's, so a host is only required for
-  // password auth; the account (user) is always required.
-  if (!cfg.enabled || !cfg.user || (cfg.authMethod !== 'oauth2_ms' && !cfg.host)) {
-    return { skipped: true, reason: 'disabled' };
-  }
+  // Delegated auth carries host + account in the shared connection, not here.
+  // App-only defaults its host to the provider's. Only password auth needs both
+  // host and user set locally.
+  if (!cfg.enabled) return { skipped: true, reason: 'disabled' };
+  if (cfg.authMethod === 'password' && (!cfg.host || !cfg.user)) return { skipped: true, reason: 'disabled' };
+  if (cfg.authMethod === 'oauth2_ms' && !cfg.user) return { skipped: true, reason: 'disabled' };
   try { await assertImapHostSafe(cfg.host); }
   catch (err) { return { skipped: true, reason: 'unsafe host: ' + (err.message || 'blocked') }; }
   const { simpleParser } = require('mailparser');
@@ -587,9 +602,12 @@ async function release(messageId) {
   if (row.imap_uid == null) throw HttpError.badRequest('This message has no stored mailbox id and cannot be re-fetched');
 
   const cfg = await getConfigRaw();
-  if (!cfg.enabled || !cfg.user || (cfg.authMethod !== 'oauth2_ms' && !cfg.host)) {
-    throw HttpError.badRequest('Email-to-ticket is not configured');
-  }
+  const configured = cfg.enabled && (
+    cfg.authMethod === 'oauth2_delegated'
+    || (cfg.authMethod === 'oauth2_ms' && cfg.user)
+    || (cfg.authMethod === 'password' && cfg.host && cfg.user)
+  );
+  if (!configured) throw HttpError.badRequest('Email-to-ticket is not configured');
   await assertImapHostSafe(cfg.host);
   const { simpleParser } = require('mailparser');
   const client = await buildImapClient(cfg);
