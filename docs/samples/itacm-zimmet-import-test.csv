@@ -1,0 +1,45 @@
+﻿employeeName;employeeEmail;department;title;assetTag;category;brand;model;serialNumber;mac;cpu;ram;storage;os;location;purchaseDate
+Elif Demir;elif.demir@import-test.itacm.local;Bilgi Teknolojileri;Kıdemli Sistem Uzmanı;;Laptop;Dell;Latitude 5550;SN-IMPTEST-LT-0001;AA:BB:CC:10:01:01;Intel Core Ultra 7 155H;32GB;1TB SSD;Windows 11 Pro;Main Office;2025-01-14
+Elif Demir;elif.demir@import-test.itacm.local;Bilgi Teknolojileri;Kıdemli Sistem Uzmanı;;Monitor;Dell;U2723QE;SN-IMPTEST-MN-0001;;;;;;Main Office;2025-01-14
+Elif Demir;elif.demir@import-test.itacm.local;Bilgi Teknolojileri;Kıdemli Sistem Uzmanı;;Docking Station;Dell;WD19TB;SN-IMPTEST-DK-0001;;;;;;Main Office;2025-01-14
+Elif Demir;elif.demir@import-test.itacm.local;Bilgi Teknolojileri;Kıdemli Sistem Uzmanı;;Headset;Jabra;Evolve2 65;SN-IMPTEST-HS-0001;;;;;;Main Office;2025-01-20
+Elif Demir;elif.demir@import-test.itacm.local;Bilgi Teknolojileri;Kıdemli Sistem Uzmanı;;Mouse;Logitech;MX Master 3S;SN-IMPTEST-MS-0001;;;;;;Main Office;2025-01-20
+Mert Öztürk;mert.ozturk@import-test.itacm.local;Finans;Mali İşler Uzmanı;IT-IMP-1001;Laptop;Lenovo;ThinkPad T14 Gen 5;SN-IMPTEST-LT-0002;AA:BB:CC:10:02:02;AMD Ryzen 7 PRO 8840U;16GB;512GB SSD;Windows 11 Pro;Istanbul Branch;2024-09-03
+Mert Öztürk;mert.ozturk@import-test.itacm.local;Finans;Mali İşler Uzmanı;;Monitor;LG;27UP850-W;SN-IMPTEST-MN-0002;;;;;;Istanbul Branch;2024-09-03
+Mert Öztürk;mert.ozturk@import-test.itacm.local;Finans;Mali İşler Uzmanı;;Phone;Apple;iPhone 15;SN-IMPTEST-PH-0001;;;6GB;128GB;iOS 18;Istanbul Branch;2024-10-11
+Selin Aksoy;selin.aksoy@import-test.itacm.local;Satış;Satış Temsilcisi;;Laptop;HP;EliteBook 840 G11;SN-IMPTEST-LT-0003;AA:BB:CC:10:03:03;Intel Core Ultra 5 125H;16GB;512GB SSD;Windows 11 Pro;Remote / Home Office;2024-06-18
+Selin Aksoy;selin.aksoy@import-test.itacm.local;Satış;Satış Temsilcisi;;Tablet;Apple;iPad Air 11;SN-IMPTEST-TB-0001;;;8GB;256GB;iPadOS 18;Remote / Home Office;2024-07-01
+Selin Aksoy;selin.aksoy@import-test.itacm.local;Satış;Satış Temsilcisi;;Headset;Apple;AirPods Pro 2;SN-IMPTEST-HS-0002;;;;;;Remote / Home Office;2024-07-01
+Caner Yıldız;caner.yildiz@import-test.itacm.local;İnsan Kaynakları;İK Uzmanı;;Laptop;Apple;MacBook Air 15 M3;SN-IMPTEST-LT-0004;AA:BB:CC:10:04:04;Apple M3;16GB;512GB SSD;macOS Sequoia;Main Office;2024-11-22
+Caner Yıldız;caner.yildiz@import-test.itacm.local;İnsan Kaynakları;İK Uzmanı;;Monitor;Samsung;ViewFinity S6;SN-IMPTEST-MN-0003;;;;;;Main Office;2024-11-22
+Caner Yıldız;caner.yildiz@import-test.itacm.local;İnsan Kaynakları;İK Uzmanı;;Keyboard;Apple;Magic Keyboard;SN-IMPTEST-KB-0001;;;;;;Main Office;2024-11-22
+Deniz Acar;deniz.acar@import-test.itacm.local;Operasyon;Operasyon Sorumlusu;IT-IMP-1002;Desktop;Dell;OptiPlex 7020;SN-IMPTEST-DT-0001;AA:BB:CC:10:05:05;Intel Core i7-14700;32GB;1TB SSD;Windows 11 Pro;Service Center;2023-12-05
+Deniz Acar;deniz.acar@import-test.itacm.local;Operasyon;Operasyon Sorumlusu;;Monitor;Dell;P2425H;SN-IMPTEST-MN-0004;;;;;;Service Center;2023-12-05
+Deniz Acar;deniz.acar@import-test.itacm.local;Operasyon;Operasyon Sorumlusu;;Monitor;Dell;P2425H;SN-IMPTEST-MN-0005;;;;;;Service Center;2023-12-05
+Deniz Acar;deniz.acar@import-test.itacm.local;Operasyon;Operasyon Sorumlusu;;Printer;HP;LaserJet Pro 4002dn;SN-IMPTEST-PR-0001;;;;;;Service Center;2024-02-14
+Deniz Acar;deniz.acar@import-test.itacm.local;Operasyon;Operasyon Sorumlusu;;Webcam;Logitech;Brio 4K;SN-IMPTEST-WC-0001;;;;;;Service Center;2024-02-14
+Ayşe Kurt;ayse.kurt@import-test.itacm.local;Pazarlama;Pazarlama Uzmanı;;Laptop;Microsoft;Surface Laptop 6;SN-IMPTEST-LT-0005;AA:BB:CC:10:06:06;Intel Core Ultra 7 165H;16GB;512GB SSD;Windows 11 Pro;Istanbul Branch;2025-02-10
+Ayşe Kurt;ayse.kurt@import-test.itacm.local;Pazarlama;Pazarlama Uzmanı;;Tablet;Microsoft;Surface Pro 11;SN-IMPTEST-TB-0002;;Snapdragon X Elite;16GB;256GB;Windows 11 Pro;Istanbul Branch;2025-02-10
+Ayşe Kurt;ayse.kurt@import-test.itacm.local;Pazarlama;Pazarlama Uzmanı;;Phone;Samsung;Galaxy S24;SN-IMPTEST-PH-0002;;;8GB;256GB;Android 15;Istanbul Branch;2025-02-18
+Burak Şen;burak.sen@import-test.itacm.local;Yazılım;Yazılım Geliştirici;;Laptop;Apple;MacBook Pro 14 M4;SN-IMPTEST-LT-0006;AA:BB:CC:10:07:07;Apple M4 Pro;24GB;1TB SSD;macOS Sequoia;Main Office;2025-03-01
+Burak Şen;burak.sen@import-test.itacm.local;Yazılım;Yazılım Geliştirici;;Monitor;LG;UltraFine 27UN850;SN-IMPTEST-MN-0006;;;;;;Main Office;2025-03-01
+Burak Şen;burak.sen@import-test.itacm.local;Yazılım;Yazılım Geliştirici;;Docking Station;CalDigit;TS4;SN-IMPTEST-DK-0002;;;;;;Main Office;2025-03-01
+Burak Şen;burak.sen@import-test.itacm.local;Yazılım;Yazılım Geliştirici;;Keyboard;Keychron;Q1 Pro;SN-IMPTEST-KB-0002;;;;;;Main Office;2025-03-05
+Burak Şen;burak.sen@import-test.itacm.local;Yazılım;Yazılım Geliştirici;;Mouse;Logitech;MX Anywhere 3S;SN-IMPTEST-MS-0002;;;;;;Main Office;2025-03-05
+Gülce Arslan;gulce.arslan@import-test.itacm.local;Destek;Helpdesk Uzmanı;IT-IMP-1003;Laptop;Lenovo;ThinkPad E14 Gen 6;SN-IMPTEST-LT-0007;AA:BB:CC:10:08:08;Intel Core Ultra 5 125U;16GB;512GB SSD;Windows 11 Pro;Main Office;2024-08-19
+Gülce Arslan;gulce.arslan@import-test.itacm.local;Destek;Helpdesk Uzmanı;;Phone;Apple;iPhone 14;SN-IMPTEST-PH-0003;;;6GB;128GB;iOS 18;Main Office;2024-08-19
+Gülce Arslan;gulce.arslan@import-test.itacm.local;Destek;Helpdesk Uzmanı;;Headset;Poly;Voyager 4320;SN-IMPTEST-HS-0003;;;;;;Main Office;2024-08-25
+;;;;;Laptop;Dell;Latitude 5440;SN-IMPTEST-STK-LT-01;AA:BB:CC:20:01:01;Intel i5-1335U;16GB;512GB SSD;Windows 11 Pro;Warehouse;2024-04-12
+;;;;;Laptop;HP;ProBook 450 G10;SN-IMPTEST-STK-LT-02;AA:BB:CC:20:01:02;Intel i7-1355U;16GB;512GB SSD;Windows 11 Pro;Warehouse;2024-05-08
+;;;;;Monitor;Dell;P2722H;SN-IMPTEST-STK-MN-01;;;;;;Warehouse;2023-10-01
+;;;;;Monitor;Dell;P2722H;SN-IMPTEST-STK-MN-02;;;;;;Warehouse;2023-10-01
+;;;;;Phone;Samsung;Galaxy A55;SN-IMPTEST-STK-PH-01;;;8GB;128GB;Android 14;Warehouse;2024-12-01
+;;;;;Headset;Jabra;Evolve2 40;SN-IMPTEST-STK-HS-01;;;;;;Warehouse;2024-01-15
+;;;;;Headset;Jabra;Evolve2 40;SN-IMPTEST-STK-HS-02;;;;;;Warehouse;2024-01-15
+;;;;;Docking Station;Dell;WD22TB4;SN-IMPTEST-STK-DK-01;;;;;;Warehouse;2024-03-20
+;;;;;Keyboard;Logitech;MX Keys S;SN-IMPTEST-STK-KB-01;;;;;;Warehouse;2024-06-01
+;;;;;Mouse;Logitech;M650;SN-IMPTEST-STK-MS-01;;;;;;Warehouse;2024-06-01
+;;;;;Accessory;Anker;USB-C Hub 7-in-1;SN-IMPTEST-STK-AC-01;;;;;;Warehouse;2024-07-11
+;;;;;Peripheral;Epson;DS-870 Scanner;SN-IMPTEST-STK-PE-01;;;;;;Warehouse;2023-09-22
+;;;;;Television;Samsung;QE55Q60D;SN-IMPTEST-STK-TV-01;;;;;;Main Office;2024-11-01
+;;;;;Other;APC;Back-UPS 1500VA;SN-IMPTEST-STK-OT-01;;;;;;Warehouse;2022-05-30

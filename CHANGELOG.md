@@ -6,6 +6,20 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- **Email-to-ticket no longer opens the same ticket over and over.** The poller's
+  only guard against re-reading a message was the IMAP `\Seen` flag, which iCloud
+  (and any second mail client on the mailbox) resets — so every couple of minutes
+  the same email opened the same ticket again. Messages are now de-duplicated by
+  Message-ID (a content hash when the header is missing), recorded durably, so a
+  message becomes a ticket at most once whatever the mailbox does with the flag.
+
+### Added
+- **Open a skipped mail anyway.** A message a filter refused is kept with its
+  mailbox id, and the Blocked-senders sheet gains an **Open anyway** action that
+  re-fetches it and turns it into a ticket despite the filter. The skip list is
+  now durable rather than in-memory, so it survives a restart.
+
 ## [1.10.0] — 2026-09-06
 
 ### Added

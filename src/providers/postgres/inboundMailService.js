@@ -7,6 +7,7 @@
  * Config (app_settings.imap_json) mirrors the SMTP pattern: the password is stored
  * encrypted and never returned to the client. Off unless `enabled` + host are set.
  */
+const crypto = require('crypto');
 const { query } = require('./pool');
 const { encryptSecret, decryptSecret } = require('../../utils/secretCrypto');
 const { HttpError } = require('../../utils/httpError');
@@ -14,18 +15,71 @@ const { resolveAndAssertPublicHost, smtpAllowsPrivate } = require('../../utils/s
 const { parseBlocklist, isBlockedSender, bulkReason } = require('../../utils/mailFilter');
 
 const REF_RE = /\[((?:REQ|INC)-\d+)\]/i;
-
-// The last few messages the filter refused, so an operator can see *why* a mail
-// never became a ticket instead of guessing. Memory only — a skipped message is
-// a non-event, not worth a table, and the mail itself is still in the mailbox.
 const SKIP_LOG_MAX = 25;
-const skipLog = [];
-function recordSkip(entry) {
-  skipLog.unshift({ at: new Date().toISOString(), ...entry });
-  if (skipLog.length > SKIP_LOG_MAX) skipLog.length = SKIP_LOG_MAX;
+
+/**
+ * A stable identity for a message, so it is turned into a ticket at most once
+ * however the mailbox treats the \Seen flag. The RFC Message-ID is used when
+ * present; a message without one (rare, but some scripts omit it) falls back to
+ * a hash of the fields that make it unique in practice, so two genuinely
+ * different mails never collide and a re-read of the same one always matches.
+ */
+function mailKey(parsed, uid) {
+  const mid = String((parsed && parsed.messageId) || '').trim();
+  if (mid) return mid.slice(0, 512);
+  const from = (parsed && parsed.from && parsed.from.text) || '';
+  const subj = (parsed && parsed.subject) || '';
+  const date = (parsed && parsed.date && parsed.date.toISOString && parsed.date.toISOString()) || '';
+  const body = String((parsed && parsed.text) || '').slice(0, 400);
+  const h = crypto.createHash('sha256').update(`${from}\n${subj}\n${date}\n${body}`).digest('hex');
+  return `sha256:${h}:${uid == null ? '' : uid}`;
 }
-/** Most recent first. Cleared on restart. */
-function recentSkips() { return skipLog.slice(); }
+
+/**
+ * Claim a message before processing it. The INSERT ... ON CONFLICT DO NOTHING is
+ * atomic, so if two poll ticks ever race the same message only one gets the row
+ * back and only that one opens a ticket. A returned row means "you are the first
+ * to handle this"; no row means it was already handled and must be left alone.
+ */
+async function claimMail(key, uid, fromAddr, subject) {
+  const { rows } = await query(
+    `INSERT INTO inbound_mail_log (message_id, imap_uid, from_addr, subject, status)
+     VALUES ($1, $2, $3, $4, 'processing')
+     ON CONFLICT (message_id) DO NOTHING
+     RETURNING message_id`,
+    [key, Number.isFinite(uid) ? uid : null, String(fromAddr || '').slice(0, 320), String(subject || '').slice(0, 500)]
+  );
+  return rows.length > 0;
+}
+
+/** Record how a claimed message turned out (created / appended / skipped / failed). */
+async function finalizeMail(key, result) {
+  const status = (result && result.action) || 'failed';
+  await query(
+    `UPDATE inbound_mail_log
+        SET status = $2, reason = $3, ticket_id = $4, ticket_number = $5, processed_at = now()
+      WHERE message_id = $1`,
+    [key, status, (result && (result.reason || result.detail)) || null,
+      (result && result.ticketId) || null, (result && result.number) || null]
+  );
+}
+
+/** Most recent refusals, newest first — for the operator to see why mail was skipped. */
+async function recentSkips() {
+  const { rows } = await query(
+    `SELECT message_id, imap_uid, from_addr, subject, reason, processed_at
+       FROM inbound_mail_log
+      WHERE status = 'skipped'
+      ORDER BY processed_at DESC
+      LIMIT $1`,
+    [SKIP_LOG_MAX]
+  );
+  return rows.map((r) => ({
+    messageId: r.message_id, uid: r.imap_uid == null ? null : Number(r.imap_uid),
+    from: r.from_addr || '', subject: r.subject || '', reason: r.reason || 'skipped',
+    at: r.processed_at instanceof Date ? r.processed_at.toISOString() : r.processed_at,
+  }));
+}
 
 function clampPort(p) { return Math.min(65535, Math.max(1, Number(p) || 993)); }
 
@@ -102,7 +156,7 @@ async function saveConfig(input = {}) {
 /** Just the filtering rules — read/written on their own, connection untouched. */
 async function getBlocklist() {
   const c = await getConfigRaw();
-  return { blocklist: c.blocklist, blockBulk: c.blockBulk, recentSkips: recentSkips() };
+  return { blocklist: c.blocklist, blockBulk: c.blockBulk, recentSkips: await recentSkips() };
 }
 
 async function saveBlocklist(input = {}) {
@@ -240,8 +294,11 @@ function senderIsAuthenticated(parsed, cfg) {
 /**
  * Turn one parsed email into a ticket action. Pure of IMAP — fully unit-testable.
  * `parsed`: { from, subject, text, headerLines }. Returns { action, ticketId, number }.
+ *
+ * `opts.force` skips the blocklist and bulk filters — used by release(), where an
+ * operator has decided a refused message should become a ticket after all.
  */
-async function createFromEmail(parsed, cfg) {
+async function createFromEmail(parsed, cfg, opts = {}) {
   const ticketService = require('./ticketService');
   const conf = cfg || (await getConfigRaw());
   const fromAddr = (parsed && parsed.from && ((parsed.from.value && parsed.from.value[0] && parsed.from.value[0].address) || parsed.from.address || parsed.from.text)) || '';
@@ -253,16 +310,14 @@ async function createFromEmail(parsed, cfg) {
 
   // Filtering, before anything is written. The explicit list wins first — it is
   // a person's stated intent — and the bulk test only runs when switched on.
-  // Both merely decline to open a ticket: the message stays in the mailbox and
-  // the reason is kept for the operator, so nothing disappears silently.
-  if (isBlockedSender(fromAddr, conf.blocklist)) {
-    recordSkip({ from: fromAddr, subject: subjectRaw.slice(0, 200), reason: 'blocked' });
+  // Both merely decline to open a ticket; the reason is returned so the poller
+  // can record why. `force` bypasses both, for a deliberate release.
+  if (!opts.force && isBlockedSender(fromAddr, conf.blocklist)) {
     return { action: 'skipped', reason: 'blocked', from: fromAddr };
   }
-  if (conf.blockBulk) {
+  if (!opts.force && conf.blockBulk) {
     const bulk = bulkReason(parsed);
     if (bulk) {
-      recordSkip({ from: fromAddr, subject: subjectRaw.slice(0, 200), reason: 'bulk', detail: bulk });
       return { action: 'skipped', reason: 'bulk', detail: bulk, from: fromAddr };
     }
   }
@@ -328,19 +383,34 @@ async function poll() {
   const { simpleParser } = require('mailparser');
   const client = imapClient(cfg);
   client.on('error', () => {}); // never let an async 'error' event crash the scheduler tick
-  let created = 0; let appended = 0; let failed = 0; let filtered = 0;
+  let created = 0; let appended = 0; let failed = 0; let filtered = 0; let duplicate = 0;
   try {
     await client.connect();
     const lock = await client.getMailboxLock(cfg.folder || 'INBOX');
     try {
       for await (const msg of client.fetch({ seen: false }, { uid: true, source: true })) {
+        let key = null;
         try {
           const parsed = await simpleParser(msg.source);
-          const r = await createFromEmail(parsed, cfg);
-          if (r.action === 'created') created++;
-          else if (r.action === 'appended') appended++;
-          else if (r.action === 'skipped' && (r.reason === 'blocked' || r.reason === 'bulk')) filtered++;
-        } catch { failed++; }
+          const fromAddr = (parsed.from && parsed.from.value && parsed.from.value[0] && parsed.from.value[0].address) || (parsed.from && parsed.from.text) || '';
+          key = mailKey(parsed, msg.uid);
+          // Durable de-dup: claim the message first. If we do not win the claim it
+          // was already handled on an earlier tick — the \Seen flag failing to
+          // stick can no longer make it re-open the same ticket.
+          const first = await claimMail(key, msg.uid, fromAddr, parsed.subject || '');
+          if (!first) {
+            duplicate++;
+          } else {
+            const r = await createFromEmail(parsed, cfg);
+            await finalizeMail(key, r);
+            if (r.action === 'created') created++;
+            else if (r.action === 'appended') appended++;
+            else if (r.action === 'skipped' && (r.reason === 'blocked' || r.reason === 'bulk')) filtered++;
+          }
+        } catch {
+          failed++;
+          if (key) { try { await finalizeMail(key, { action: 'failed', reason: 'parse or create failed' }); } catch { /* ignore */ } }
+        }
         try { await client.messageFlagsAdd(msg.uid, ['\\Seen'], { uid: true }); } catch { /* best-effort */ }
       }
     } finally { lock.release(); }
@@ -349,10 +419,54 @@ async function poll() {
     try { await client.close(); } catch { /* ignore */ }
     return { skipped: true, reason: err.message };
   }
-  return { created, appended, failed, filtered };
+  return { created, appended, failed, filtered, duplicate };
+}
+
+/**
+ * Turn a previously-skipped message into a ticket after all. Re-fetches it from
+ * the mailbox by the UID recorded when it was skipped, then processes it with the
+ * filters bypassed. Fails cleanly if the message is gone (UID reused after a
+ * UIDVALIDITY change, or the mail deleted) rather than opening a wrong ticket.
+ */
+async function release(messageId) {
+  const id = String(messageId || '').trim();
+  if (!id) throw HttpError.badRequest('messageId is required');
+  const { rows } = await query(
+    "SELECT imap_uid, status FROM inbound_mail_log WHERE message_id = $1", [id]
+  );
+  const row = rows[0];
+  if (!row) throw HttpError.notFound('No such message');
+  if (row.status !== 'skipped') throw HttpError.badRequest('This message was not skipped, so there is nothing to release');
+  if (row.imap_uid == null) throw HttpError.badRequest('This message has no stored mailbox id and cannot be re-fetched');
+
+  const cfg = await getConfigRaw();
+  if (!cfg.enabled || !cfg.host || !cfg.user) throw HttpError.badRequest('Email-to-ticket is not configured');
+  await assertImapHostSafe(cfg.host);
+  const { simpleParser } = require('mailparser');
+  const client = imapClient(cfg);
+  client.on('error', () => {});
+  let parsed = null;
+  try {
+    await client.connect();
+    const lock = await client.getMailboxLock(cfg.folder || 'INBOX');
+    try {
+      for await (const msg of client.fetch({ uid: String(row.imap_uid) }, { uid: true, source: true })) {
+        parsed = await simpleParser(msg.source);
+      }
+    } finally { lock.release(); }
+    await client.logout();
+  } catch (err) {
+    try { await client.close(); } catch { /* ignore */ }
+    throw HttpError.badGateway('Could not reach the mailbox: ' + (err.message || 'error'));
+  }
+  if (!parsed) throw HttpError.notFound('The message is no longer in the mailbox');
+
+  const r = await createFromEmail(parsed, cfg, { force: true });
+  await finalizeMail(id, r);
+  return r;
 }
 
 module.exports = {
   getConfig, getConfigRaw, saveConfig, clearConfig, testConnection, createFromEmail, poll,
-  getBlocklist, saveBlocklist, recentSkips,
+  getBlocklist, saveBlocklist, recentSkips, release, mailKey,
 };

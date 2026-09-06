@@ -810,6 +810,7 @@ GET /api/integrations/licenses/:id/sam
                   <div class="cell-sub">${esc(s.subject || '')}</div>
                   <div class="cell-sub">${esc(reasonLabel(s))} · ${esc(new Date(s.at).toLocaleString())}</div>
                 </div>
+                ${s.messageId ? `<button type="button" class="btn btn-sm btn-outline" data-release="${esc(s.messageId)}">${esc(t('int.inbound.release'))}</button>` : ''}
                 ${blocked || !norm(s.from) ? '' : `<button type="button" class="btn btn-sm btn-outline" data-block="${esc(norm(s.from))}">${esc(t('int.inbound.blockThis'))}</button>`}
               </div>`;
             }).join('')
@@ -834,9 +835,23 @@ GET /api/integrations/licenses/:id/sam
           list.splice(Number(btn.dataset.rm), 1);
           renderList(); renderSkips();
         });
-        skipBox.addEventListener('click', (ev) => {
-          const btn = ev.target.closest('[data-block]');
-          if (btn) add(btn.dataset.block);
+        skipBox.addEventListener('click', async (ev) => {
+          const block = ev.target.closest('[data-block]');
+          if (block) { add(block.dataset.block); return; }
+          const rel = ev.target.closest('[data-release]');
+          if (!rel) return;
+          rel.disabled = true;
+          try {
+            const r = await api('/integrations/inbound-mail/release', {
+              method: 'POST', body: { messageId: rel.dataset.release },
+            });
+            const num = r && (r.number || (r.data && r.data.number));
+            toast(num ? t('int.inbound.releaseDone') + ' ' + num : t('int.inbound.releaseDone'), 'success');
+            // Drop the released entry from the list.
+            const i = skips.findIndex((s) => s.messageId === rel.dataset.release);
+            if (i >= 0) skips.splice(i, 1);
+            renderSkips();
+          } catch (err) { toast(err.message, 'error'); rel.disabled = false; }
         });
         $('#imapblk-save', overlay).addEventListener('click', async () => {
           const btn = $('#imapblk-save', overlay);

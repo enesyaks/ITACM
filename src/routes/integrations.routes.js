@@ -119,6 +119,11 @@ router.get('/inbound-mail/blocklist', authenticate, requirePermission('integrati
 router.put('/inbound-mail/blocklist', authenticate, requirePermission('integration', 'manage'), asyncHandler(async (req, res) => {
   res.json({ success: true, data: await inboundMailService.saveBlocklist(req.body || {}) });
 }));
+// Open a ticket from a message a filter had skipped — re-fetches it by mailbox id
+// and processes it with the filters bypassed.
+router.post('/inbound-mail/release', authenticate, requirePermission('integration', 'manage'), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await inboundMailService.release((req.body || {}).messageId) });
+}));
 
 router.post('/notifications/digest', authenticate, requirePermission('integration', 'read'), asyncHandler(async (req, res) => {
   res.json({ success: true, data: await notificationService.runAlertDigest() });
