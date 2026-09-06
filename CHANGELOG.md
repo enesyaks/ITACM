@@ -6,6 +6,8 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.10.0] — 2026-09-06
+
 ### Added
 - **Email-to-ticket can now refuse a sender.** A mailbox pointed at a real inbox
   turns everything it finds into a ticket — a newsletter digest arrives and
@@ -28,6 +30,70 @@ project adheres to [Semantic Versioning](https://semver.org/).
   refusals are listed in the sheet with sender, subject and reason (in memory,
   cleared on restart), and each carries a one-click **Block** for its sender. A
   manual fetch reports what the filters skipped alongside what it created.
+- **Inbound tickets now reach the person who wrote in.** Notifications key off the
+  requester's employee row, so a ticket with no match notified nobody — which was
+  every inbound ticket. The sender is now matched to an employee by From: address.
+  Matching does not imply the identity was proven: an unauthenticated sender keeps
+  a visible "matched, not verified" flag, and the identity-sensitive path
+  (cross-linking a note into another ticket by number) stays gated on a
+  DMARC-authenticated sender.
+- **Directory sign-ins are named in the audit log.** An LDAP/AD sync records which
+  accounts it creates and which it re-roles, so a role change that arrives through
+  the directory is no longer invisible in the log.
+- **Access log.** One line per API request on stdout — who, when, what, from where
+  — for answering "what did this person do at 14:30" without standing up a new
+  table. Credentials in the path are redacted, query values are dropped (keys
+  kept), and the real client IP is recorded from behind the tunnel.
+- **Refused sign-ins are recorded** and kept for seven days, so a burst of failed
+  logins is visible after the fact.
+- **SSO tells you why a sign-in was refused** and offers an account picker instead
+  of a dead end when the wrong account was used.
+- **SLA breaches get their own editable email template**, shown alongside the
+  others on the mail-templates screen.
+- **Send a ticket to a named approver**, not only up the org chart — with a guard
+  that stops an agent routing a ticket to their own employee row and approving it.
+- **Portal request creation, redesigned.** Choose the request kind first, then
+  describe it; request types are grouped by category and searchable; and a
+  request's detail view shows its journey rather than restating its properties.
+- **Bulk zimmet trusts a scan as far as it was read.** OCR read-quality now caps
+  how much an exact name match is trusted, so a poorly-read scan cannot claim
+  certainty.
+- **Seed data**: a year of service-desk history sized from headcount, and a script
+  that backfills the employee rows the role:it approval route depends on.
+
+### Changed
+- **Node floor raised to 22.** pdfjs 6.3 calls `Promise.withResolvers` (Node 22),
+  so the app no longer claims support for a runtime its PDF pipeline cannot start
+  on. Node 20 has reached end of life.
+- **OIDC client ported to openid-client v6** (the v5 `Issuer`/`generators` API was
+  removed upstream; SSO could not have worked against it).
+
+### Fixed
+- **Bulk zimmet import: "No readable forms found in the upload."** pdfjs 6.3 moved
+  `destroy()` off the document proxy, and the old call threw from cleanup after the
+  pages had already been read — so a file that parsed fine came back unreadable.
+- **Zimmet import now names the reason it refused a file** (password-protected,
+  damaged, not a PDF) and says which file — at both readers, pdf-lib and pdfjs.
+- **An out-of-range OCR score can no longer fail a whole batch** — it is clamped
+  before it reaches the column check.
+- **Access log strips bidi override characters**, which could otherwise reverse how
+  the ip and user at the end of a line render in a terminal or in Grafana.
+- **Local password changes are refused on directory-managed accounts**, and the
+  account screen renders the note explaining why; `directoryManaged` is now sent on
+  the profile the UI actually reads.
+- **The migration restore survives psql closing the pipe mid-restore** (EPIPE),
+  which had been crashing the import.
+- **`--reset` is refused on a database that holds real data.**
+- Smaller fixes: the SSO retry control looks like a control and follows the theme;
+  the portal request picker leads with its two open-ended kinds.
+
+### Security
+- **Confidential cost columns are gated in the AI `advanced_query`**, so a prompt
+  cannot read a salary band or cost ceiling it has no permission for.
+
+### Dependencies
+- pdfjs-dist 6.2 → 6.3, pdfkit 0.20.1, qs 6.16.0, and the production-minor-patch
+  group.
 
 ## [1.9.5] — 2026-09-01
 
