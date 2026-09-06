@@ -111,6 +111,14 @@ router.post('/inbound-mail/test', authenticate, requirePermission('integration',
 router.post('/inbound-mail/poll', authenticate, requirePermission('integration', 'manage'), asyncHandler(async (req, res) => {
   res.json({ success: true, data: await inboundMailService.poll() });
 }));
+// Sender blocklist + the bulk-mail switch. Kept off the connection form so
+// editing one can never overwrite the other.
+router.get('/inbound-mail/blocklist', authenticate, requirePermission('integration', 'read'), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await inboundMailService.getBlocklist() });
+}));
+router.put('/inbound-mail/blocklist', authenticate, requirePermission('integration', 'manage'), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await inboundMailService.saveBlocklist(req.body || {}) });
+}));
 
 router.post('/notifications/digest', authenticate, requirePermission('integration', 'read'), asyncHandler(async (req, res) => {
   res.json({ success: true, data: await notificationService.runAlertDigest() });

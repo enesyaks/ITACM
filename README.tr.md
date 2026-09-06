@@ -386,7 +386,7 @@ Tüm yanıtlar `{ success, data }` veya `{ success: false, error, details? }` bi
 | GET/POST | `/api/approvals` · `/:id/decide` · `/request-templates` | `approval:*` / ticket:manage | Çok adımlı onay zincirleri, karar verme, talep şablonu editörü |
 | GET/POST | `/api/problems` · `/api/changes` | `problem:*` / `change:*` | Problem kayıtları (kök neden/geçici çözüm) · değişiklik talepleri (risk, CAB onayı, plan) |
 | GET/POST | `/api/kb` · `/:id/documents` | ticket:read / ticket:manage | Bilgi bankası makaleleri + ekleri (yayımla/taslak) |
-| GET/PUT | `/api/integrations/inbound-mail` · `/test` · `/poll` | integration:read / manage | E-postadan kayıt açma (IMAP) — yapılandırma (parola şifreli, maskeli), bağlantı testi, elle çekme |
+| GET/PUT | `/api/integrations/inbound-mail` · `/test` · `/poll` · `/blocklist` | integration:read / manage | E-postadan kayıt açma (IMAP) — yapılandırma (parola şifreli, maskeli), bağlantı testi, elle çekme, engellenen göndericiler + toplu posta filtresi |
 | GET/POST | `/api/me/tickets` · `/approvals/:id/context` · `/kb` | Portal (self-service) | Kendi kayıtları + yanıtları, bekleyen onaylar için onaycı iş kaydı, yayımlanmış bilgi bankası — yalnızca çağıranın kapsamında |
 
 <details>

@@ -317,6 +317,7 @@ Views.integrations = async function (el) {
           <button class="btn btn-primary" id="int-imap-save">${esc(t('common.save'))}</button>
           <button class="btn btn-outline" id="int-imap-test">${esc(t('int.inbound.test'))}</button>
           <button class="btn btn-outline" id="int-imap-poll">${esc(t('int.inbound.pollNow'))}</button>
+          <button class="btn btn-outline" id="int-imap-block"><span class="ms ms-sm" style="vertical-align:-3px">block</span> ${esc(t('int.inbound.block'))}</button>
         </div>` : ''}
       </section>
 
@@ -735,9 +736,122 @@ GET /api/integrations/licenses/:id/sam
     const btn = $('#int-imap-poll', el); const label = btn.textContent;
     btn.disabled = true; btn.textContent = t('common.loading') || '…';
     try { const r = await api('/integrations/inbound-mail/poll', { method: 'POST' });
-      toast(r.skipped ? (t('int.inbound.pollSkipped') + (r.reason ? ' (' + r.reason + ')' : '')) : t('int.inbound.pollDone').replace('{n}', (r.created || 0) + (r.appended || 0)), r.skipped ? 'error' : 'success'); }
+      // `skipped` is the "didn't run" flag; `filtered` counts messages the
+      // blocklist/bulk rules declined — a successful run, not a failure.
+      const done = t('int.inbound.pollDone').replace('{n}', (r.created || 0) + (r.appended || 0))
+        + (r.filtered ? t('int.inbound.pollFiltered').replace('{n}', r.filtered) : '');
+      toast(r.skipped ? (t('int.inbound.pollSkipped') + (r.reason ? ' (' + r.reason + ')' : '')) : done, r.skipped ? 'error' : 'success'); }
     catch (err) { toast(err.message, 'error'); }
     finally { btn.disabled = false; btn.textContent = label; }
+  });
+
+  // Blocked senders + the bulk-mail switch. Its own sheet and its own endpoint,
+  // so editing the list never persists a half-typed connection form.
+  $('#int-imap-block', el)?.addEventListener('click', async () => {
+    let cfg;
+    try { cfg = await api('/integrations/inbound-mail/blocklist'); }
+    catch (err) { toast(err.message, 'error'); return; }
+    let list = Array.isArray(cfg.blocklist) ? cfg.blocklist.slice() : [];
+    const skips = Array.isArray(cfg.recentSkips) ? cfg.recentSkips : [];
+    // Mirrors the server's accepted shapes for instant feedback; the server
+    // normalises again and stays authoritative.
+    const norm = (raw) => {
+      const s = String(raw || '').trim().toLowerCase().replace(/^\*@/, '@').replace(/^@/, '');
+      if (!s || s.length > 200) return '';
+      if (s.includes('@')) return /^[^\s@]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(s) ? s : '';
+      return /^[a-z0-9.-]+\.[a-z]{2,}$/.test(s) ? s : '';
+    };
+    const reasonLabel = (s) => (s.reason === 'bulk'
+      ? t('int.inbound.reasonBulk') + (s.detail ? ' · ' + s.detail : '')
+      : t('int.inbound.reasonBlocked'));
+    openModal({
+      title: t('int.inbound.blockTitle'),
+      icon: 'block',
+      wide: true,
+      body: `
+        <label style="display:flex;gap:8px;align-items:flex-start;margin:0 0 14px">
+          <input type="checkbox" id="imapblk-bulk" ${cfg.blockBulk ? 'checked' : ''}>
+          <span>${esc(t('int.inbound.blockBulk'))}<br><span class="ob-hint">${esc(t('int.inbound.blockBulkHint'))}</span></span>
+        </label>
+        <div class="form-field full" style="margin:0">
+          <label>${esc(t('int.inbound.block'))}</label>
+          <div style="display:flex;gap:8px">
+            <input id="imapblk-input" style="flex:1" autocomplete="off" placeholder="${esc(t('int.inbound.blockPh'))}">
+            <button type="button" class="btn btn-outline" id="imapblk-add">${esc(t('int.inbound.blockAdd'))}</button>
+          </div>
+          <span class="ob-hint">${esc(t('int.inbound.blockHint'))}</span>
+        </div>
+        <div id="imapblk-list" style="margin-top:10px"></div>
+        <h4 style="margin:20px 0 4px">${esc(t('int.inbound.skipped'))}</h4>
+        <p class="cell-sub" style="margin:0 0 8px">${esc(t('int.inbound.skippedNote'))}</p>
+        <div id="imapblk-skips"></div>`,
+      foot: `<button type="button" class="btn btn-outline" data-close>${esc(t('common.cancel'))}</button>
+        <button type="button" class="btn btn-primary" id="imapblk-save">${esc(t('common.save'))}</button>`,
+      onMount(overlay) {
+        const listBox = $('#imapblk-list', overlay);
+        const skipBox = $('#imapblk-skips', overlay);
+        const input = $('#imapblk-input', overlay);
+        const renderList = () => {
+          listBox.innerHTML = list.length
+            ? list.map((e, i) => `<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-bottom:1px solid var(--border,#e8e6f0)">
+                <span class="ms ms-sm" style="opacity:.6">${e.includes('@') ? 'alternate_email' : 'language'}</span>
+                <span style="flex:1;word-break:break-all">${esc(e)}</span>
+                <button type="button" class="btn btn-sm btn-outline" data-rm="${i}" aria-label="${esc(t('common.delete'))}">×</button>
+              </div>`).join('')
+            : `<p class="cell-sub" style="margin:6px 0">${esc(t('int.inbound.blockEmpty'))}</p>`;
+        };
+        const renderSkips = () => {
+          skipBox.innerHTML = skips.length
+            ? skips.map((s) => {
+              const blocked = !!norm(s.from) && list.includes(norm(s.from));
+              return `<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-bottom:1px solid var(--border,#e8e6f0)">
+                <div style="flex:1;min-width:0">
+                  <div style="word-break:break-all">${esc(s.from || '—')}</div>
+                  <div class="cell-sub">${esc(s.subject || '')}</div>
+                  <div class="cell-sub">${esc(reasonLabel(s))} · ${esc(new Date(s.at).toLocaleString())}</div>
+                </div>
+                ${blocked || !norm(s.from) ? '' : `<button type="button" class="btn btn-sm btn-outline" data-block="${esc(norm(s.from))}">${esc(t('int.inbound.blockThis'))}</button>`}
+              </div>`;
+            }).join('')
+            : `<p class="cell-sub" style="margin:6px 0">${esc(t('int.inbound.skippedEmpty'))}</p>`;
+        };
+        const add = (raw) => {
+          const e = norm(raw);
+          if (!e) { toast(t('int.inbound.blockInvalid'), 'error'); return false; }
+          if (list.includes(e)) { toast(t('int.inbound.blockDup'), 'error'); return false; }
+          list.push(e); renderList(); renderSkips(); return true;
+        };
+        renderList(); renderSkips();
+        $('#imapblk-add', overlay).addEventListener('click', () => { if (add(input.value)) input.value = ''; });
+        input.addEventListener('keydown', (ev) => {
+          if (ev.key !== 'Enter') return;
+          ev.preventDefault();
+          if (add(input.value)) input.value = '';
+        });
+        listBox.addEventListener('click', (ev) => {
+          const btn = ev.target.closest('[data-rm]');
+          if (!btn) return;
+          list.splice(Number(btn.dataset.rm), 1);
+          renderList(); renderSkips();
+        });
+        skipBox.addEventListener('click', (ev) => {
+          const btn = ev.target.closest('[data-block]');
+          if (btn) add(btn.dataset.block);
+        });
+        $('#imapblk-save', overlay).addEventListener('click', async () => {
+          const btn = $('#imapblk-save', overlay);
+          btn.disabled = true;
+          try {
+            await api('/integrations/inbound-mail/blocklist', {
+              method: 'PUT',
+              body: { blocklist: list, blockBulk: !!$('#imapblk-bulk', overlay).checked },
+            });
+            toast(t('int.inbound.blockSaved'), 'success');
+            closeModal();
+          } catch (err) { toast(err.message, 'error'); btn.disabled = false; }
+        });
+      },
+    });
   });
 
   $('#int-smtp-save', el)?.addEventListener('click', async () => {

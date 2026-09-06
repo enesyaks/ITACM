@@ -4,6 +4,31 @@ All notable changes to **ITACM — IT Asset Control Pro** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Email-to-ticket can now refuse a sender.** A mailbox pointed at a real inbox
+  turns everything it finds into a ticket — a newsletter digest arrives and
+  becomes an incident like any request. Integrations → Email-to-ticket gains a
+  **Blocked senders** sheet: add a single address (`news@medium.com`) or a whole
+  domain (`medium.com`, subdomains included) and that mail never opens a ticket.
+  The list lives on its own endpoint, so editing it cannot save a half-typed
+  connection form, and vice versa.
+
+  An optional switch also skips newsletters and automated mail. It reads
+  **headers only** — `List-Unsubscribe`, `List-Id`, `Precedence: bulk`,
+  `Auto-Submitted`, `X-Auto-Response-Suppress`, `Feedback-ID` — the markers a
+  mass-sending platform sets and a person writing to the desk does not. Nothing
+  is judged by subject or body wording, which is how a real request from a
+  supplier would have been dropped. It is **off by default**, because a desk fed
+  by a mailing list would trip `List-Id` on every genuine message. Skipping an
+  auto-reply also breaks the acknowledgement ↔ out-of-office loop.
+
+  Neither rule deletes anything: the message stays in the mailbox, the last 25
+  refusals are listed in the sheet with sender, subject and reason (in memory,
+  cleared on restart), and each carries a one-click **Block** for its sender. A
+  manual fetch reports what the filters skipped alongside what it created.
+
 ## [1.9.5] — 2026-09-01
 
 ### Fixed

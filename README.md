@@ -503,7 +503,7 @@ All responses are `{ success, data }` or `{ success: false, error, details? }`. 
 | GET/POST | `/api/approvals` · `/:id/decide` | `approval:*` | Approval requests + approve/reject (delegation, escalation) |
 | GET/POST/PUT | `/api/problems` · `/api/changes` | `problem:*` / `change:*` | Problem & change management (linked incidents, risk, schedule) |
 | GET/POST | `/api/kb` · `/:id` | `kb:*` | Knowledge-base articles + attachments |
-| GET/PUT | `/api/integrations/inbound-mail` · `/test` · `/poll` | integration:read / manage | Email-to-ticket (IMAP) — config (password encrypted, masked), test connection, manual poll |
+| GET/PUT | `/api/integrations/inbound-mail` · `/test` · `/poll` · `/blocklist` | integration:read / manage | Email-to-ticket (IMAP) — config (password encrypted, masked), test connection, manual poll, blocked senders + bulk-mail filter |
 | GET/PUT/POST | `/api/integrations/ldap` · `/test` · `/preview` · `/sync` · `/runs` | integration:read / manage | **Directory (AD/LDAP)** — config (bind password encrypted, masked), bind test, dry-run preview, run a sync, run history |
 | GET/POST | `/api/me/tickets` · `/approvals/:id/context` · `/kb` | Portal (self-service) | Own tickets + replies, approver worklog for pending approvals, published KB — scoped to the caller |
 

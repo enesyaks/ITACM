@@ -11,8 +11,21 @@ const { query } = require('./pool');
 const { encryptSecret, decryptSecret } = require('../../utils/secretCrypto');
 const { HttpError } = require('../../utils/httpError');
 const { resolveAndAssertPublicHost, smtpAllowsPrivate } = require('../../utils/safeOutbound');
+const { parseBlocklist, isBlockedSender, bulkReason } = require('../../utils/mailFilter');
 
 const REF_RE = /\[((?:REQ|INC)-\d+)\]/i;
+
+// The last few messages the filter refused, so an operator can see *why* a mail
+// never became a ticket instead of guessing. Memory only — a skipped message is
+// a non-event, not worth a table, and the mail itself is still in the mailbox.
+const SKIP_LOG_MAX = 25;
+const skipLog = [];
+function recordSkip(entry) {
+  skipLog.unshift({ at: new Date().toISOString(), ...entry });
+  if (skipLog.length > SKIP_LOG_MAX) skipLog.length = SKIP_LOG_MAX;
+}
+/** Most recent first. Cleared on restart. */
+function recentSkips() { return skipLog.slice(); }
 
 function clampPort(p) { return Math.min(65535, Math.max(1, Number(p) || 993)); }
 
@@ -43,6 +56,11 @@ async function getConfigRaw() {
     // Authentication-Results header stamped by THIS id is believed; blank ⇒ no
     // inbound message is ever treated as authenticated (fail-closed).
     authServId: j.authServId || '',
+    // Senders whose mail never becomes a ticket: 'a@b.com' or a whole 'b.com'.
+    blocklist: parseBlocklist(j.blocklist),
+    // Opt-in: also skip newsletters/automated mail, judged by headers alone.
+    // Off by default — a support inbox fed by a mailing list would trip it.
+    blockBulk: !!j.blockBulk,
   };
 }
 
@@ -71,10 +89,30 @@ async function saveConfig(input = {}) {
     defaultType: input.defaultType === 'request' ? 'request' : 'incident',
     defaultCategory: input.defaultCategory ? String(input.defaultCategory).trim().slice(0, 120) : null,
     authServId: input.authServId != null ? String(input.authServId).trim().slice(0, 200) : (cur.authServId || ''),
+    // The blocklist has its own endpoint; a save of the connection form must not
+    // wipe it just because the form doesn't carry it.
+    blocklist: input.blocklist != null ? parseBlocklist(input.blocklist) : cur.blocklist,
+    blockBulk: input.blockBulk != null ? !!input.blockBulk : cur.blockBulk,
     pass: nextPass ? encryptSecret(nextPass) : null,
   };
   await query('UPDATE app_settings SET imap_json = $1::jsonb WHERE id = 1', [JSON.stringify(stored)]);
   return getConfig();
+}
+
+/** Just the filtering rules — read/written on their own, connection untouched. */
+async function getBlocklist() {
+  const c = await getConfigRaw();
+  return { blocklist: c.blocklist, blockBulk: c.blockBulk, recentSkips: recentSkips() };
+}
+
+async function saveBlocklist(input = {}) {
+  const cur = await getConfigRaw();
+  const { rows } = await query('SELECT imap_json FROM app_settings WHERE id = 1');
+  const stored = (rows[0] && rows[0].imap_json) || {};
+  stored.blocklist = input.blocklist != null ? parseBlocklist(input.blocklist) : cur.blocklist;
+  stored.blockBulk = input.blockBulk != null ? !!input.blockBulk : cur.blockBulk;
+  await query('UPDATE app_settings SET imap_json = $1::jsonb WHERE id = 1', [JSON.stringify(stored)]);
+  return getBlocklist();
 }
 
 async function clearConfig() {
@@ -213,6 +251,22 @@ async function createFromEmail(parsed, cfg) {
   const bodyText = String((parsed && parsed.text) || '').trim().slice(0, 8000)
     || (parsed && parsed.html ? '(HTML e-posta)' : '');
 
+  // Filtering, before anything is written. The explicit list wins first — it is
+  // a person's stated intent — and the bulk test only runs when switched on.
+  // Both merely decline to open a ticket: the message stays in the mailbox and
+  // the reason is kept for the operator, so nothing disappears silently.
+  if (isBlockedSender(fromAddr, conf.blocklist)) {
+    recordSkip({ from: fromAddr, subject: subjectRaw.slice(0, 200), reason: 'blocked' });
+    return { action: 'skipped', reason: 'blocked', from: fromAddr };
+  }
+  if (conf.blockBulk) {
+    const bulk = bulkReason(parsed);
+    if (bulk) {
+      recordSkip({ from: fromAddr, subject: subjectRaw.slice(0, 200), reason: 'bulk', detail: bulk });
+      return { action: 'skipped', reason: 'bulk', detail: bulk, from: fromAddr };
+    }
+  }
+
   // Anti-spoofing gate: only a DMARC-authenticated From (verified against the
   // Owner-pinned authserv-id) is trusted for identity.
   const authenticated = senderIsAuthenticated(parsed, conf);
@@ -235,11 +289,18 @@ async function createFromEmail(parsed, cfg) {
     if (tk) related = tk;
   }
 
-  // Attribute to a real employee only when the sender is authenticated; otherwise
-  // the ticket is opened unattributed and flagged, so it never masquerades as a
-  // trusted requester in the portal or to the desk.
-  const asEmployee = authenticated ? await employeeByEmail(fromAddr) : null;
-  const unverifiedNote = authenticated ? '' : `\n\n— ⚠ Gönderen kimliği doğrulanamadı (${fromAddr}); talep eden otomatik eşlenmedi.`;
+  // Match the sender to a real employee by From: address so ticket notifications
+  // reach the person who wrote in — an unmatched ticket notifies nobody, which is
+  // what left every inbound request silent.
+  //
+  // Matching does NOT imply the identity was proven. When the sender is not
+  // DMARC-authenticated the From: could be spoofed, so the ticket keeps a visible
+  // flag: the desk sees the address was matched, not verified. The attribution
+  // only routes notifications; it grants no trust. The identity-sensitive path —
+  // cross-linking a note into another ticket — stays gated on `authenticated`
+  // above, because that one writes into an enumerable ticket number.
+  const asEmployee = await employeeByEmail(fromAddr);
+  const unverifiedNote = authenticated ? '' : `\n\n— ⚠ Gönderen kimliği doğrulanamadı (${fromAddr}); talep eden e-posta adresiyle eşlendi, doğrulanmadı.`;
   const description = `${related ? `${bodyText}\n\n— İlgili ticket: ${related.number}`.trim() : bodyText}${unverifiedNote}`.trim();
   const created = await ticketService.createTicket(
     { type: conf.defaultType, subject, description, category: conf.defaultCategory || undefined },
@@ -267,7 +328,7 @@ async function poll() {
   const { simpleParser } = require('mailparser');
   const client = imapClient(cfg);
   client.on('error', () => {}); // never let an async 'error' event crash the scheduler tick
-  let created = 0; let appended = 0; let failed = 0;
+  let created = 0; let appended = 0; let failed = 0; let filtered = 0;
   try {
     await client.connect();
     const lock = await client.getMailboxLock(cfg.folder || 'INBOX');
@@ -276,7 +337,9 @@ async function poll() {
         try {
           const parsed = await simpleParser(msg.source);
           const r = await createFromEmail(parsed, cfg);
-          if (r.action === 'created') created++; else if (r.action === 'appended') appended++;
+          if (r.action === 'created') created++;
+          else if (r.action === 'appended') appended++;
+          else if (r.action === 'skipped' && (r.reason === 'blocked' || r.reason === 'bulk')) filtered++;
         } catch { failed++; }
         try { await client.messageFlagsAdd(msg.uid, ['\\Seen'], { uid: true }); } catch { /* best-effort */ }
       }
@@ -286,7 +349,10 @@ async function poll() {
     try { await client.close(); } catch { /* ignore */ }
     return { skipped: true, reason: err.message };
   }
-  return { created, appended, failed };
+  return { created, appended, failed, filtered };
 }
 
-module.exports = { getConfig, getConfigRaw, saveConfig, clearConfig, testConnection, createFromEmail, poll };
+module.exports = {
+  getConfig, getConfigRaw, saveConfig, clearConfig, testConnection, createFromEmail, poll,
+  getBlocklist, saveBlocklist, recentSkips,
+};
