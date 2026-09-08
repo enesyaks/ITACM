@@ -93,7 +93,9 @@ Views.employees = async function (el, params = {}) {
         render: (x) => `${esc(x.department || '—')}<div class="cell-sub">${esc(x.title || '')}</div>`, csv: (x) => x.department || '' },
       { key: 'assets', label: t('emp.assignedAssets') || 'Assigned Assets', sortKey: 'assets',
         render: (x) => `<span class="badge-count ${x.activeAssetCount === 0 ? 'zero' : ''}">${x.activeAssetCount}</span>`, csv: (x) => String(x.activeAssetCount) },
-      { key: 'status', label: t('common.status'), mandatory: true, sortKey: 'status', render: (x) => badge(x.status), csv: (x) => x.status },
+      { key: 'status', label: t('common.status'), mandatory: true, sortKey: 'status',
+        render: (x) => `${badge(x.status)}${x.vip ? ` <span class="pill pill-amber">${esc(t('emp.vip'))}</span>` : ''}`,
+        csv: (x) => x.status },
       // The employing entity — on a holding install this is what tells you which
       // letterhead this person's zimmet form will carry.
       ...(Companies.isMulti()
@@ -634,7 +636,8 @@ async function showEmployeeDetail(emp) {
       <div style="display:flex;align-items:center;gap:14px;margin-bottom:18px">
         <span class="avatar" style="width:44px;height:44px;font-size:15px">${esc(initials(emp.fullName))}</span>
         <div>
-          <div class="cell-title" style="font-size:16px">${esc(emp.fullName)}</div>
+          <div class="cell-title" style="font-size:16px">${esc(emp.fullName)}${
+            emp.vip ? ` <span class="pill pill-amber">${esc(t('emp.vip'))}</span>` : ''}</div>
           <div class="cell-sub">${esc(emp.title || '—')} • ${esc(emp.department || '—')} • ${esc(emp.email)}</div>
           ${Companies.isMulti() ? `<div class="cell-sub" style="display:flex;align-items:center;gap:5px">
             <span class="ms ms-sm">domain</span>${esc(emp.companyName || Companies.nameOf(emp.companyId) || '—')}</div>` : ''}
@@ -1468,6 +1471,9 @@ async function employeeForm(emp, done) {
       { name: 'managerEmployeeId', label: t('emp.manager') || 'Manager (reports to)', type: 'employeeSearch', full: true,
         selected: emp?.manager || null, selectedLabel: emp?.manager?.fullName || '' },
       { name: 'status', label: 'Status', type: 'select', value: emp?.status || 'Active', options: ['Active', 'Inactive'] },
+      // A standing fact about the person, not about one request: tickets opened
+      // for them start a step more urgent.
+      { name: 'vip', label: 'emp.vip', hint: 'emp.vipHint', type: 'checkbox', full: true, value: !!emp?.vip },
       ...customFieldsAsFormFields(cfDefs, cfValues),
       ...(offerGrant ? [{
         name: 'grantAccess', type: 'checkbox', full: true,

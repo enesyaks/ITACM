@@ -29,6 +29,13 @@ function derivePriority(impact, urgency) {
   return (PRIORITY_MATRIX[impact] && PRIORITY_MATRIX[impact][urgency]) || 'medium';
 }
 
+/** Next level up; 'high' is the ceiling. */
+function raiseLevel(level) {
+  if (level === 'low') return 'medium';
+  if (level === 'medium') return 'high';
+  return 'high';
+}
+
 // SLA targets (elapsed minutes from creation) by priority. First response and
 // resolution each get their own clock; times are wall-clock (no business-hours
 // calendar in the MVP). Editable defaults — a settings-driven override can layer
@@ -257,6 +264,7 @@ const SELECT_COLS = `
   t.id, t.number, t.type, t.subject, t.description, t.status, t.priority, t.category,
   t.impact, t.urgency,
   t.requester_employee_id AS "requesterEmployeeId", re.full_name AS "requesterName",
+  COALESCE(re.vip, false) AS "requesterVip",
   t.assignee_user_id AS "assigneeUserId", au.username AS "assigneeName",
   t.asset_id AS "assetId", a.asset_tag AS "assetTag",
   t.problem_id AS "problemId", pr.number AS "problemNumber", pr.title AS "problemTitle",
@@ -424,9 +432,6 @@ async function createTicket(body, user, { asEmployee = null, source = 'staff', s
   // explicit priority (or the medium default) is used.
   const impact = LEVELS.has(body && body.impact) ? body.impact : null;
   const urgency = LEVELS.has(body && body.urgency) ? body.urgency : null;
-  const priority = (impact && urgency)
-    ? derivePriority(impact, urgency)
-    : (PRIORITIES.has(body && body.priority) ? body.priority : 'medium');
   const category = template ? (template.category || null)
     : (body && body.category ? String(body.category).trim().slice(0, 120) : null);
   const a = actor(user);
@@ -442,6 +447,30 @@ async function createTicket(body, user, { asEmployee = null, source = 'staff', s
     assetId = body.assetId;
   }
 
+  // VIP requester: their downtime costs more, so urgency goes up a step and the
+  // Impact × Urgency matrix carries that into priority and the SLA clock — the
+  // ITIL chain stays intact instead of a priority being pinned from the side.
+  //
+  // Only when nobody chose an urgency. The staff form applies the same raise
+  // visibly while it is being filled in, so whatever it sends is a human's
+  // decision; overriding it here would silently undo an operator who
+  // deliberately dialled a VIP's request back down. This branch is for the
+  // paths where no one picked: the self-service portal, inbound email, the API.
+  let effImpact = impact;
+  let effUrgency = urgency;
+  if (!urgency && requesterEmployeeId) {
+    const { rows: vipRows } = await query(
+      'SELECT vip FROM employees WHERE id = $1', [requesterEmployeeId]
+    ).catch(() => ({ rows: [] }));
+    if (vipRows[0] && vipRows[0].vip) {
+      effUrgency = raiseLevel('medium');
+      effImpact = effImpact || 'medium';
+    }
+  }
+  const priority = (effImpact && effUrgency)
+    ? derivePriority(effImpact, effUrgency)
+    : (PRIORITIES.has(body && body.priority) ? body.priority : 'medium');
+
   const number = await nextNumber(type);
   const { responseDueAt, resolveDueAt } = slaDueDates(await getSlaConfig(), priority, new Date());
   const { rows } = await query(
@@ -452,7 +481,7 @@ async function createTicket(body, user, { asEmployee = null, source = 'staff', s
      RETURNING id`,
     [number, type, subject, description || null, priority, category,
       requesterEmployeeId, asEmployee ? null : a.id, assetId, a.id, a.name,
-      responseDueAt, resolveDueAt, impact, urgency]
+      responseDueAt, resolveDueAt, effImpact, effUrgency]
   );
   const id = rows[0].id;
   await logActivity(id, a, 'created', `${type} · ${priority}`);

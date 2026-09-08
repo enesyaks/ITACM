@@ -165,7 +165,7 @@ Views.tickets = async function (el, params = {}) {
       <td>${pill(TK_STATUS_PILL[tk.status], tkStatusLabel(tk.status))}</td>
       <td>${pill(TK_PRIORITY_PILL[tk.priority], tkPriorityLabel(tk.priority))}</td>
       <td>${tkSlaBadge(tk.sla && tk.sla.resolve)}</td>
-      <td class="cell-sub">${esc(tk.requesterName || '—')}</td>
+      <td class="cell-sub">${esc(tk.requesterName || '—')}${tk.requesterVip ? ` <span class="pill pill-amber">${esc(t('emp.vip'))}</span>` : ''}</td>
       <td>${tk.assigneeName ? avatar(tk.assigneeName) : `<span class="tk-unassigned">${esc(t('tk.unassigned'))}</span>`}</td>
       <td class="cell-sub tk-date">${esc(String(tk.createdAt || '').slice(0, 10))}</td>
     </tr>`;
@@ -1255,7 +1255,8 @@ Views.tickets = async function (el, params = {}) {
             <div class="form-field"><label>${esc(t('tk.impact'))}</label>
               <select id="tk-c-impact">${['low', 'medium', 'high'].map((l) => `<option value="${l}"${l === 'medium' ? ' selected' : ''}>${esc(tkPriorityLabel(l))}</option>`).join('')}</select></div>
             <div class="form-field"><label>${esc(t('tk.urgency'))}</label>
-              <select id="tk-c-urgency">${['low', 'medium', 'high'].map((l) => `<option value="${l}"${l === 'medium' ? ' selected' : ''}>${esc(tkPriorityLabel(l))}</option>`).join('')}</select></div>
+              <select id="tk-c-urgency">${['low', 'medium', 'high'].map((l) => `<option value="${l}"${l === 'medium' ? ' selected' : ''}>${esc(tkPriorityLabel(l))}</option>`).join('')}</select>
+              <div class="cell-sub" id="tk-c-vip-note" style="margin-top:4px"></div></div>
             <div class="form-field" id="tk-c-cat-wrap"><label>${esc(t('tk.category'))}</label>
               <select id="tk-c-cat"><option value="">${esc(t('tk.categoryNone'))}</option>${catOptions()}</select></div>
             <div class="form-field" id="tk-c-amount-wrap" style="display:none"><label>${esc(t('mtk.amount'))}</label>
@@ -1283,6 +1284,31 @@ Views.tickets = async function (el, params = {}) {
         const scopeEl = $('#tk-c-asset-scope', ov);
         const reqHint = $('#tk-c-requester-hint', ov);
         const heldBy = (empId) => assets.filter((x) => x.currentEmployee && x.currentEmployee.id === empId);
+
+        // Raise urgency once per VIP pick, and undo it if the requester is cleared
+        // or swapped for a non-VIP — as long as the operator has not since chosen
+        // an urgency themselves, in which case their choice stands.
+        const urgencySel = $('#tk-c-urgency', ov);
+        const vipNote = $('#tk-c-vip-note', ov);
+        let vipRaisedFrom = null;
+        const applyVipUrgency = (emp) => {
+          if (!urgencySel) return;
+          const RAISE = { low: 'medium', medium: 'high', high: 'high' };
+          if (emp && emp.vip) {
+            if (vipRaisedFrom === null) vipRaisedFrom = urgencySel.value;
+            urgencySel.value = RAISE[urgencySel.value] || urgencySel.value;
+            if (vipNote) vipNote.textContent = t('tk.vipUrgency');
+          } else {
+            // Only roll back the exact value we set; if the operator changed it in
+            // the meantime, leave their pick alone.
+            if (vipRaisedFrom !== null
+                && urgencySel.value === (RAISE[vipRaisedFrom] || vipRaisedFrom)) {
+              urgencySel.value = vipRaisedFrom;
+            }
+            vipRaisedFrom = null;
+            if (vipNote) vipNote.textContent = '';
+          }
+        };
 
         let assetCPicker = null;
         // Re-mounting is how the combobox takes a new list; keep the current pick
@@ -1327,11 +1353,19 @@ Views.tickets = async function (el, params = {}) {
           subOf: (e) => e.email || '',
           placeholder: t('tk.searchPh'),
           onSelect: (emp) => {
-            reqHint.textContent = emp
-              ? t('tk.requesterPicked')
-                .replace('{dept}', emp.department || emp.title || '—')
-                .replace('{n}', heldBy(emp.id).length)
-              : t('tk.requesterHint');
+            if (emp) {
+              reqHint.innerHTML = `${emp.vip ? `<span class="pill pill-amber">${esc(t('emp.vip'))}</span> ` : ''}${
+                esc(t('tk.requesterPicked')
+                  .replace('{dept}', emp.department || emp.title || '—')
+                  .replace('{n}', heldBy(emp.id).length))}`;
+            } else {
+              reqHint.textContent = t('tk.requesterHint');
+            }
+            // A VIP's downtime costs more, so urgency starts a step higher — done
+            // HERE, in the open, so the operator sees it happen and can dial it
+            // back before saving. (The server applies the same raise only on the
+            // paths where nobody picks an urgency: portal, email, API.)
+            applyVipUrgency(emp);
             scopeAssets(emp);
           },
         });
@@ -1510,7 +1544,7 @@ Views.tickets = async function (el, params = {}) {
               <div class="tkd-prop"><span class="tkd-plabel req">${esc(t('tk.category'))}</span>
                 <select id="tk-d-cat" ${canUpdate ? '' : 'disabled'}><option value="">${esc(t('tk.categoryNone'))}</option>${catOptions(tk.category)}</select></div>
               <div class="tkd-prop"><span class="tkd-plabel">${esc(t('tk.requester'))}</span>
-                <div class="tkd-val">${esc(tk.requesterName || '—')}</div></div>
+                <div class="tkd-val">${esc(tk.requesterName || '—')}${tk.requesterVip ? ` <span class="pill pill-amber">${esc(t('emp.vip'))}</span>` : ''}</div></div>
               ${tk.approvalStatus ? `<div class="tkd-prop"><span class="tkd-plabel">${esc(t('rt.approval'))}</span>
                 <div class="tkd-val">${pill({ pending: 'pill-amber', approved: 'pill-emerald', rejected: 'pill-rose' }[tk.approvalStatus] || 'pill-slate', t('mtk.ap' + tk.approvalStatus.charAt(0).toUpperCase() + tk.approvalStatus.slice(1)))}${tk.approvalStatus === 'pending' && tk.approvalApprover ? ` <span class="cell-sub">· ${esc(tk.approvalApprover)}</span>` : ''}</div>
                 ${myAppr ? `<div class="tkd-appr-actions">

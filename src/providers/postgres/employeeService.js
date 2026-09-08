@@ -147,7 +147,7 @@ async function getEmployee(id) {
   return emp;
 }
 
-async function createEmployee({ fullName, email, department, title, status = 'Active', startDate = null, managerEmployeeId = null, companyId = null }) {
+async function createEmployee({ fullName, email, department, title, status = 'Active', startDate = null, managerEmployeeId = null, companyId = null, vip = false }) {
   if (!fullName || !email) throw HttpError.badRequest('fullName and email are required');
   if (!STATUSES.includes(status)) throw HttpError.badRequest('status must be Active or Inactive');
   const normEmail = String(email).trim().toLowerCase();
@@ -175,9 +175,9 @@ async function createEmployee({ fullName, email, department, title, status = 'Ac
 
   try {
     const { rows } = await query(
-      `INSERT INTO employees (full_name, email, department, title, status, start_date, manager_employee_id, company_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
-      [fullName, normEmail, department || null, title || null, status, start, managerId, company]
+      `INSERT INTO employees (full_name, email, department, title, status, start_date, manager_employee_id, company_id, vip)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+      [fullName, normEmail, department || null, title || null, status, start, managerId, company, !!vip]
     );
     return mapRow(rows[0]);
   } catch (err) {
@@ -222,7 +222,7 @@ async function updateEmployee(id, body) {
     title: 'title', status: 'status', startDate: 'start_date',
     managerEmployeeId: 'manager_employee_id',
     approvalDelegateId: 'approval_delegate_id', approvalDelegateUntil: 'approval_delegate_until',
-    companyId: 'company_id',
+    companyId: 'company_id', vip: 'vip',
   };
   const data = {};
   for (const [key, col] of Object.entries(colMap)) {
@@ -245,6 +245,9 @@ async function updateEmployee(id, body) {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(data.approval_delegate_until)) throw HttpError.badRequest('approvalDelegateUntil must be YYYY-MM-DD');
     }
   }
+  // VIP: a standing fact about the person that raises the urgency of tickets
+  // opened for them (see createTicket).
+  if (data.vip !== undefined) data.vip = !!data.vip;
   // Employing company. Clearing it is allowed (the picker offers a blank) but an
   // employee without one falls back to the group letterhead on their zimmet form.
   if (data.company_id !== undefined) {
