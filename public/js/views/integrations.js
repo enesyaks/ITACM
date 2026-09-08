@@ -1,5 +1,5 @@
 /** Owner Integrations: SMTP, API keys, webhooks, custom fields, sync docs. */
-Views.integrations = async function (el) {
+Views.integrations = async function (el, params = {}) {
   if (!Auth.can('canAccessIntegrations') && !Auth.canIam('integration', 'read') && !Auth.canIam('integration', 'update') && !Auth.canIam('integration', 'manage')) {
     el.innerHTML = `<div class="card card-pad"><p class="cell-sub">Integrations requires <strong>integration:read</strong>.</p></div>`;
     return;
@@ -77,7 +77,7 @@ Views.integrations = async function (el) {
     </div>` : ''}
     <div class="settings-shell">
 
-      <section class="card card-pad" style="margin-bottom:16px">
+      <section class="card card-pad int-pane" data-int="ai" style="margin-bottom:16px">
         <h3 style="margin:0 0 8px"><span class="ms ms-sm" style="vertical-align:-3px">auto_awesome</span> AI Assistant</h3>
         <p class="cell-sub" style="margin:0 0 12px">
           Multi-provider ask-and-get assistant (Ollama local-first, then DeepSeek / OpenAI / Anthropic / Groq…).
@@ -114,7 +114,7 @@ Views.integrations = async function (el) {
         </div>` : ''}
       </section>
 
-      <section class="card card-pad" style="margin-bottom:16px">
+      <section class="card card-pad int-pane" data-int="smtp" style="margin-bottom:16px">
         <h3 style="margin:0 0 8px">SMTP &amp; alert digest</h3>
         <p class="cell-sub" style="margin:0 0 12px">${t('int.smtp.hint')}</p>
         ${smtp.passCorrupt ? `<p class="banner banner-rose" style="margin-bottom:12px">${esc(t('int.smtp.passCorrupt'))}</p>` : ''}
@@ -182,7 +182,7 @@ Views.integrations = async function (el) {
         </div>
       </section>
 
-      <section class="card card-pad" style="margin-bottom:16px">
+      <section class="card card-pad int-pane" data-int="sso" style="margin-bottom:16px">
         <h3 style="margin:0 0 8px">${esc(t('int.sso.title') || 'Single sign-on (SSO)')}</h3>
         <p class="cell-sub" style="margin:0 0 12px">${esc(t('int.sso.hint') || 'Invite-only OpenID Connect. Signs in users who already exist in ITACM (by verified email); it never creates accounts.')}</p>
         ${sso.source === 'env' && (sso.issuer || sso.ready) ? `<p class="banner banner-amber" style="margin-bottom:12px">${esc(t('int.sso.envNote') || 'Currently configured via SSO_* environment variables. Saving here moves configuration to the database.')}</p>` : ''}
@@ -212,7 +212,7 @@ Views.integrations = async function (el) {
         </div>` : ''}
       </section>
 
-      <section class="card card-pad" style="margin-bottom:16px">
+      <section class="card card-pad int-pane" data-int="ldap" style="margin-bottom:16px">
         <h3 style="margin:0 0 8px"><span class="ms ms-sm" style="vertical-align:-3px">domain</span> ${esc(t('int.ldap.title'))}</h3>
         <p class="cell-sub" style="margin:0 0 12px">${esc(t('int.ldap.hint'))}</p>
         <div class="form-grid">
@@ -301,7 +301,7 @@ Views.integrations = async function (el) {
         <div id="int-ldap-out" class="int-ldap-out"></div>
       </section>
 
-      <section class="card card-pad" style="margin-bottom:16px">
+      <section class="card card-pad int-pane" data-int="mailoauth" style="margin-bottom:16px">
         <h3 style="margin:0 0 8px"><span class="ms ms-sm" style="vertical-align:-3px">link</span> ${esc(t('int.mo.title'))}</h3>
         <p class="cell-sub" style="margin:0 0 12px">${esc(t('int.mo.hint'))}</p>
         ${moStatus.connected
@@ -332,7 +332,7 @@ Views.integrations = async function (el) {
         </details>
       </section>
 
-      <section class="card card-pad" style="margin-bottom:16px">
+      <section class="card card-pad int-pane" data-int="inbound" style="margin-bottom:16px">
         <h3 style="margin:0 0 8px"><span class="ms ms-sm" style="vertical-align:-3px">forward_to_inbox</span> ${esc(t('int.inbound.title'))}</h3>
         <p class="cell-sub" style="margin:0 0 12px">${esc(t('int.inbound.hint'))}</p>
         <div class="form-grid">
@@ -382,7 +382,7 @@ Views.integrations = async function (el) {
         </div>` : ''}
       </section>
 
-      <section class="card card-pad" style="margin-bottom:16px">
+      <section class="card card-pad int-pane" data-int="templates" style="margin-bottom:16px">
         <h3 style="margin:0 0 8px">${esc(t('integration.emailTemplates') || 'Email templates')}</h3>
         <p class="cell-sub" style="margin:0 0 12px">${esc(t('integration.emailTemplatesHint') || 'Edit the onboarding welcome and web-access emails. Placeholders are replaced when sending.')}</p>
         ${!smtp.host ? '<p class="banner banner-amber" style="margin-bottom:12px">SMTP host is not configured — save SMTP before sending.</p>' : ''}
@@ -411,7 +411,7 @@ Views.integrations = async function (el) {
         </div>
       </section>
 
-      <section class="card card-pad" style="margin-bottom:16px">
+      <section class="card card-pad int-pane" data-int="apikeys" style="margin-bottom:16px">
         <h3 style="margin:0 0 8px">API keys</h3>
         <p class="cell-sub" style="margin:0 0 12px">Use <code>Authorization: Bearer itacm_…</code> or <code>X-Api-Key</code> for HR / discovery sync.</p>
         ${canManage ? `<div class="form-grid" style="margin-bottom:12px">
@@ -437,7 +437,7 @@ Views.integrations = async function (el) {
         </table></div>
       </section>
 
-      <section class="card card-pad" style="margin-bottom:16px">
+      <section class="card card-pad int-pane" data-int="webhooks" style="margin-bottom:16px">
         <h3 style="margin:0 0 8px">Webhooks</h3>
         <p class="cell-sub" style="margin:0 0 12px">Events: <code>handover.completed</code>, <code>employee.offboarded</code>, <code>asset.updated</code>, <code>license.expiring_digest</code>. HMAC in <code>X-ITACM-Signature</code>.</p>
         <div id="int-hooks">
@@ -461,7 +461,7 @@ Views.integrations = async function (el) {
         </div>` : ''}
       </section>
 
-      <section class="card card-pad" style="margin-bottom:16px">
+      <section class="card card-pad int-pane" data-int="customfields" style="margin-bottom:16px">
         <h3 style="margin:0 0 8px">Custom fields</h3>
         <p class="cell-sub" style="margin:0 0 12px">
           Fields you add here appear on the matching create/edit forms:
@@ -490,7 +490,7 @@ Views.integrations = async function (el) {
         </div>
       </section>
 
-      ${canExport ? `<section class="card card-pad" style="margin-bottom:16px">
+      ${canExport ? `<section class="card card-pad int-pane" data-int="migration" style="margin-bottom:16px">
         <h3 style="margin:0 0 8px">${esc(t('integration.migrationTitle') || 'System migration')}</h3>
         <p class="cell-sub" style="margin:0 0 12px">${esc(t('integration.migrationHint') || '')}</p>
         <p class="banner banner-amber" style="margin:0 0 12px">${esc(t('integration.migrationSmtpWarn') || '')}</p>
@@ -499,7 +499,7 @@ Views.integrations = async function (el) {
         </button>
       </section>` : ''}
 
-      ${canExport ? `<section class="card card-pad" style="margin-bottom:16px">
+      ${canExport ? `<section class="card card-pad int-pane" data-int="updates" style="margin-bottom:16px">
         <h3 style="margin:0 0 8px">${esc(t('integration.updatesTitle') || 'Software updates')}</h3>
         <p class="cell-sub" style="margin:0 0 12px">${esc(t('integration.updatesHint') || 'Check GitHub once a day for a newer release and show the Owner an “update available” notice. Off keeps this instance fully offline — no outbound request.')}</p>
         <label class="ob-check" style="margin-bottom:12px">
@@ -517,7 +517,7 @@ Views.integrations = async function (el) {
         </div>
       </section>` : ''}
 
-      ${canExport ? `<section class="card card-pad" style="margin-bottom:16px">
+      ${canExport ? `<section class="card card-pad int-pane" data-int="ocr" style="margin-bottom:16px">
         <h3 style="margin:0 0 8px">${esc(t('integration.ocrTitle'))}</h3>
         <p class="cell-sub" style="margin:0 0 12px">${esc(t('integration.ocrHint'))}</p>
         <label class="ob-check" style="margin-bottom:12px">
@@ -531,7 +531,7 @@ Views.integrations = async function (el) {
         </div>
       </section>` : ''}
 
-      <section class="card card-pad" style="margin-bottom:16px">
+      <section class="card card-pad int-pane" data-int="ticketing" style="margin-bottom:16px">
         <h3 style="margin:0 0 8px">${esc(t('int.ticketing.title'))}</h3>
         <p class="cell-sub" style="margin:0 0 12px">${esc(t('int.ticketing.hint'))}</p>
         <label class="ob-check" style="margin-bottom:12px">
@@ -542,7 +542,7 @@ Views.integrations = async function (el) {
           <span class="ms">save</span> ${esc(t('common.save') || 'Save')}</button></div>` : ''}
       </section>
 
-      <section class="card card-pad">
+      <section class="card card-pad int-pane" data-int="sync">
         <h3 style="margin:0 0 8px">Sync connectors (API)</h3>
         <pre class="mono" style="white-space:pre-wrap;font-size:12px;background:#f6f5fa;padding:12px;border-radius:10px;overflow:auto">POST /api/integrations/sync/employees
 { "items": [{ "email":"a@x.com", "fullName":"Ada", "department":"IT" }] }
@@ -557,6 +557,185 @@ GET /api/integrations/licenses/:id/sam
   (SAM button on Licenses appears only after sync data exists for that software)</pre>
       </section>
     </div>`;
+
+  // Wall of forms -> status board + side nav. Sections keep their markup and
+  // ids, so every listener below still finds its element.
+  buildIntegrationShell();
+
+  /** Per-integration status, derived from the config we already fetched. */
+  function integrationStatus() {
+    const smtpReady = !!(smtp.host && (smtp.passConfigured || smtp.pass || smtp.authMethod !== 'password'));
+    const ldapReady = !!(ldapCfg.url && ldapCfg.baseDn);
+    const inboundReady = !!(inbound.host && inbound.user);
+    const cfCount = cfAsset.length + cfEmp.length + cfContract.length;
+    const activeHooks = webhookList.filter((h) => h.active !== false).length;
+    const liveKeys = (Array.isArray(keys) ? keys : []).filter((k) => !k.revokedAt).length;
+    const customTpls = tplKeys.filter((k) => tpls[k] && tpls[k].isCustom).length;
+    const lastLdap = ldapCfg.lastRun && ldapCfg.lastRun.at ? fmtDate(ldapCfg.lastRun.at) : '';
+
+    return {
+      ai: aiCfg.apiKeyCorrupt
+        ? { state: 'err', label: t('int.st.error') || 'Error', detail: t('int.ai.keyUnreadable') || 'API key unreadable' }
+        : aiCfg.enabled
+          ? { state: 'on', label: t('int.st.on') || 'On', detail: [aiCfg.provider, aiCfg.model].filter(Boolean).join(' · ') }
+          : { state: 'off', label: t('int.st.off') || 'Off', detail: aiCfg.provider || '' },
+      smtp: smtp.passCorrupt
+        ? { state: 'err', label: t('int.st.error') || 'Error', detail: t('int.smtp.passCorrupt') || '' }
+        : smtpReady
+          ? { state: notify.enabled ? 'on' : 'warn', label: notify.enabled ? (t('int.st.on') || 'On') : (t('int.st.configured') || 'Configured'), detail: smtp.host }
+          : { state: 'none', label: t('int.st.none') || 'Not set up', detail: '' },
+      sso: sso.ready || sso.issuer
+        ? { state: sso.enabled === false ? 'warn' : 'on', label: sso.enabled === false ? (t('int.st.configured') || 'Configured') : (t('int.st.on') || 'On'), detail: hostOf(sso.issuer) }
+        : { state: 'none', label: t('int.st.none') || 'Not set up', detail: '' },
+      ldap: ldapReady
+        ? { state: ldapCfg.enabled ? 'on' : 'warn', label: ldapCfg.enabled ? (t('int.st.on') || 'On') : (t('int.st.configured') || 'Configured'), detail: [hostOf(ldapCfg.url), lastLdap].filter(Boolean).join(' · ') }
+        : { state: 'none', label: t('int.st.none') || 'Not set up', detail: '' },
+      mailoauth: moStatus.connected
+        ? { state: 'on', label: t('int.st.connected') || 'Connected', detail: moStatus.email || moStatus.provider || '' }
+        : { state: 'none', label: t('int.st.none') || 'Not set up', detail: '' },
+      inbound: inboundReady
+        ? { state: inbound.enabled ? 'on' : 'warn', label: inbound.enabled ? (t('int.st.on') || 'On') : (t('int.st.configured') || 'Configured'), detail: inbound.user || hostOf(inbound.host) }
+        : { state: 'none', label: t('int.st.none') || 'Not set up', detail: '' },
+      templates: { state: customTpls ? 'on' : 'off', label: String(tplKeys.length), detail: customTpls ? `${customTpls} ${t('int.st.customized') || 'customized'}` : (t('int.st.defaults') || 'all default') },
+      apikeys: { state: liveKeys ? 'on' : 'off', label: String(liveKeys), detail: liveKeys ? (t('int.st.active') || 'active') : (t('int.st.none') || 'Not set up') },
+      webhooks: { state: activeHooks ? 'on' : 'off', label: String(webhookList.length), detail: activeHooks ? `${activeHooks} ${t('int.st.active') || 'active'}` : (t('int.st.none') || 'Not set up') },
+      customfields: { state: cfCount ? 'on' : 'off', label: String(cfCount), detail: `${cfAsset.length} asset · ${cfEmp.length} employee · ${cfContract.length} contract` },
+      migration: { state: 'idle', label: t('int.st.tool') || 'Tool', detail: t('int.st.exportImport') || 'export / import' },
+      updates: { state: 'idle', label: t('int.st.tool') || 'Tool', detail: t('int.st.checkVersion') || 'version check' },
+      ocr: { state: 'idle', label: t('int.st.tool') || 'Tool', detail: 'OCR' },
+      ticketing: { state: 'idle', label: t('int.st.tool') || 'Tool', detail: t('int.st.moduleSettings') || 'module settings' },
+      sync: { state: 'idle', label: t('int.st.docs') || 'Docs', detail: t('int.st.apiEndpoints') || 'API endpoints' },
+    };
+  }
+
+  function hostOf(url) {
+    if (!url) return '';
+    try { return new URL(url).host; } catch { return String(url).replace(/^\w+:\/\//, '').split('/')[0]; }
+  }
+
+  /** Icon per section — falls back to a generic plug. */
+  function intIcon(key) {
+    return ({
+      ai: 'auto_awesome', smtp: 'mail', sso: 'passkey', ldap: 'domain', mailoauth: 'link',
+      inbound: 'forward_to_inbox', templates: 'markunread_mailbox', apikeys: 'key',
+      webhooks: 'webhook', customfields: 'tune', migration: 'swap_horiz', updates: 'system_update_alt',
+      ocr: 'document_scanner', ticketing: 'confirmation_number', sync: 'api',
+    })[key] || 'power';
+  }
+
+  /** Moves the rendered sections into a nav + panel shell with a status board. */
+  function buildIntegrationShell() {
+    const shell = $('.settings-shell', el);
+    if (!shell) return;
+    const panes = Array.from(shell.querySelectorAll(':scope > section[data-int]'));
+    if (!panes.length) return;
+
+    const st = integrationStatus();
+    const items = panes.map((sec) => {
+      const key = sec.dataset.int;
+      const h3 = sec.querySelector('h3');
+      // The heading starts with a material-symbols span; drop it so the nav
+      // label is plain text (icons come from intIcon instead).
+      let title = key;
+      if (h3) {
+        const clone = h3.cloneNode(true);
+        clone.querySelectorAll('.ms').forEach((n) => n.remove());
+        title = clone.textContent.trim() || h3.textContent.trim();
+      }
+      return { key, title, sec, ...(st[key] || { state: 'idle', label: '', detail: '' }) };
+    });
+
+    const layout = document.createElement('div');
+    layout.className = 'int-layout';
+    layout.innerHTML = `
+      <aside class="int-nav">
+        <div class="int-search">
+          <span class="ms ms-sm">search</span>
+          <input type="search" id="int-nav-search" placeholder="${esc(t('int.searchPh') || 'Search integrations…')}" autocomplete="off">
+        </div>
+        <button type="button" class="int-nav-item is-active" data-go="overview">
+          <span class="ms ms-sm">grid_view</span>
+          <span class="int-nav-label">${esc(t('int.overview') || 'Overview')}</span>
+        </button>
+        <div class="int-nav-sep"></div>
+        ${items.map((it) => `
+          <button type="button" class="int-nav-item" data-go="${esc(it.key)}">
+            <span class="ms ms-sm">${esc(intIcon(it.key))}</span>
+            <span class="int-nav-label">${esc(it.title)}</span>
+            <span class="int-dot int-dot-${esc(it.state)}" title="${esc(it.label)}"></span>
+          </button>`).join('')}
+      </aside>
+      <div class="int-body">
+        <section class="int-overview" data-int-overview>
+          <div class="int-summary">
+            ${[
+              ['on', items.filter((i) => i.state === 'on').length, t('int.st.on') || 'On'],
+              ['warn', items.filter((i) => i.state === 'warn').length, t('int.st.configured') || 'Configured'],
+              ['err', items.filter((i) => i.state === 'err').length, t('int.st.error') || 'Error'],
+              ['off', items.filter((i) => i.state === 'off' || i.state === 'none').length, t('int.st.none') || 'Not set up'],
+            ].filter(([, n]) => n > 0).map(([state, n, label]) => `
+              <span class="int-sum-chip int-chip-${esc(state)}"><b>${n}</b> ${esc(label)}</span>`).join('')}
+            <span class="int-sum-hint">${esc(t('int.overviewHint') || 'Pick an integration to configure it.')}</span>
+          </div>
+          <div class="int-tiles">
+            ${items.map((it) => `
+              <button type="button" class="int-tile" data-go="${esc(it.key)}">
+                <span class="int-tile-icon ms">${esc(intIcon(it.key))}</span>
+                <span class="int-tile-main">
+                  <span class="int-tile-title">${esc(it.title)}</span>
+                  <span class="int-tile-detail">${esc(it.detail || '—')}</span>
+                </span>
+                <span class="int-chip int-chip-${esc(it.state)}">${esc(it.label)}</span>
+              </button>`).join('')}
+          </div>
+        </section>
+      </div>`;
+
+    const body = layout.querySelector('.int-body');
+    panes.forEach((sec) => { sec.hidden = true; sec.style.marginBottom = '0'; body.appendChild(sec); });
+    shell.appendChild(layout);
+
+    const overview = body.querySelector('[data-int-overview]');
+    const navBtns = Array.from(layout.querySelectorAll('.int-nav-item'));
+
+    function show(key, { push = true } = {}) {
+      const target = key === 'overview' ? null : panes.find((p) => p.dataset.int === key);
+      if (key !== 'overview' && !target) key = 'overview';
+      overview.hidden = key !== 'overview';
+      panes.forEach((p) => { p.hidden = p !== target; });
+      navBtns.forEach((b) => b.classList.toggle('is-active', b.dataset.go === key));
+      if (push) {
+        const base = (location.hash.split('?')[0]) || '#/integrations';
+        const next = key === 'overview' ? base : `${base}?s=${encodeURIComponent(key)}`;
+        // replaceState keeps the router quiet — same route, only the sub-tab moves.
+        try { history.replaceState(null, '', next); } catch { /* file:// preview */ }
+      }
+      el.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    }
+
+    layout.addEventListener('click', (ev) => {
+      const btn = ev.target.closest('[data-go]');
+      if (!btn) return;
+      show(btn.dataset.go);
+    });
+
+    const search = layout.querySelector('#int-nav-search');
+    search?.addEventListener('input', () => {
+      const q = search.value.trim().toLowerCase();
+      navBtns.forEach((b) => {
+        if (b.dataset.go === 'overview') return;
+        const hit = !q || b.textContent.toLowerCase().includes(q);
+        b.hidden = !hit;
+      });
+      layout.querySelectorAll('.int-tile').forEach((tile) => {
+        const hit = !q || tile.textContent.toLowerCase().includes(q);
+        tile.hidden = !hit;
+      });
+      if (q) show('overview', { push: false });
+    });
+
+    show(params.s || 'overview', { push: false });
+  }
 
   // Weekday picker is only meaningful for the weekly cadence.
   const syncWeekdayVisibility = () => {
