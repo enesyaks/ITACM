@@ -39,6 +39,9 @@ const VIEW_PERMISSIONS = {
   maintenance: 'maintenance',
   stock_counts: 'stock_count',
   handovers: 'handover',
+  tickets: 'ticket',
+  problems: 'problem',
+  changes: 'change',
   audit_log: 'audit',
 };
 

@@ -565,7 +565,17 @@ const TOOL_DEFS = [
       + 'stock_counts(name, location, status, created_at, closed_at); '
       + 'handovers(employee_name, transaction_date, document_type); '
       + 'catalog_models(category, brand, model, lifecycle_months); '
-      + 'audit_log(action, source, summary, actor_name, entity_type, entity_label, created_at).',
+      + 'tickets(number, type[incident|request], subject, status[new|open|in_progress|pending|resolved|closed|cancelled], '
+      + 'priority[low|medium|high|urgent], impact, urgency, category, resolution_code, requester_name, requester_department, '
+      + 'assignee_name, asset_tag, first_response_at, resolved_at, closed_at, response_due_at, response_breached_at, '
+      + 'resolve_due_at, resolve_breached_at, csat_rating, created_at); '
+      + 'problems(number, title, status, priority, assignee_name, resolved_at, closed_at, created_at); '
+      + 'changes(number, title, type, status, risk, assignee_name, approver_name, approved_at, scheduled_start, scheduled_end, completed_at, created_at); '
+      + 'audit_log(action, source, summary, actor_name, entity_type, entity_label, created_at). '
+      + 'IMPORTANT: a question about "kayıt", "talep", "çağrı", "arıza", "ticket", "request" or "case" — how many were '
+      + 'opened/closed, by whom, in what category, SLA breaches, resolution time — is about the tickets view. '
+      + 'audit_log is the change trail of the application itself (who logged in, who edited a record); never use it to '
+      + 'count business records that have their own view.',
     parameters: {
       type: 'object',
       properties: {
