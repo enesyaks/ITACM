@@ -837,6 +837,7 @@ async function openContractForm(contract, providers, done) {
   }
   const cats = catalogContractCategories();
   const { defs: cfDefs, values: cfValues } = await fetchCustomFields('contract', contract?.id);
+  await Companies.load().catch(() => {});
   formModal({
     title: isEdit ? (t('providers.editContract') || 'Edit contract') : (t('providers.addContract') || 'Add contract'),
     wide: true,
@@ -852,6 +853,13 @@ async function openContractForm(contract, providers, done) {
         full: true,
       },
       { name: 'contractNumber', label: t('ctr.f.contractNo'), value: contract?.contractNumber || '' },
+      // Which group entity is the counterparty on this contract.
+      ...(Companies.isMulti() ? [{
+        name: 'companyId', label: t('co.field'), type: 'select',
+        value: contract?.companyId || Companies.defaultId() || '',
+        options: [{ value: '', label: t('co.noCompany') },
+          ...Companies.active().map((c) => ({ value: c.id, label: c.name }))],
+      }] : []),
       {
         name: 'category', label: t('asset.f.category'), type: 'selectOther', required: true,
         value: contract?.category || cats[0] || '',

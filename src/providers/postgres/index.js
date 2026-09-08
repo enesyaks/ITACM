@@ -23,6 +23,7 @@ module.exports = {
   settingsService: require('./settingsService'),
   documentService: require('./documentService'),
   catalogService: require('./catalogService'),
+  companyService: require('./companyService'),
   countService: require('./countService'),
   lineService: require('./lineService'),
   importService: require('./importService'),

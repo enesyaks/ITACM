@@ -17,6 +17,11 @@ Views.employees = async function (el, params = {}) {
   const selectedStatus = csvList(params.status).filter((s) => EMP_STATUSES.includes(s));
   const deptCatalog = AppConfig.departments || [];
   const selectedDepts = csvList(params.department).filter((d) => deptCatalog.includes(d));
+  // Needed before the columns are composed — it decides whether the Company
+  // column and filter exist at all.
+  await Companies.load().catch(() => {});
+  const selectedCompanies = csvList(params.companyId)
+    .filter((c) => Companies.list().some((x) => x.id === c));
 
   // View state is mutable so a search can repaint results IN PLACE, without a
   // hash-driven full re-render. A full re-render rebuilds the search <input>,
@@ -26,6 +31,7 @@ Views.employees = async function (el, params = {}) {
     search: params.search || '',
     status: selectedStatus.join(','),
     department: selectedDepts.join(','),
+    companyId: selectedCompanies.join(','),
     sort: sortKey,
     order: sortOrder,
     page,
@@ -36,6 +42,7 @@ Views.employees = async function (el, params = {}) {
     if (state.search) q.set('search', state.search);
     if (state.status) q.set('status', state.status);
     if (state.department) q.set('department', state.department);
+    if (state.companyId) q.set('companyId', state.companyId);
     q.set('sort', state.sort);
     q.set('order', state.order);
     q.set('limit', String(PAGE));
@@ -67,6 +74,7 @@ Views.employees = async function (el, params = {}) {
     search: state.search,
     status: state.status,
     department: state.department,
+    companyId: state.companyId,
     sort: state.sort,
     order: state.order,
     page: String(state.page),
@@ -86,6 +94,12 @@ Views.employees = async function (el, params = {}) {
       { key: 'assets', label: t('emp.assignedAssets') || 'Assigned Assets', sortKey: 'assets',
         render: (x) => `<span class="badge-count ${x.activeAssetCount === 0 ? 'zero' : ''}">${x.activeAssetCount}</span>`, csv: (x) => String(x.activeAssetCount) },
       { key: 'status', label: t('common.status'), mandatory: true, sortKey: 'status', render: (x) => badge(x.status), csv: (x) => x.status },
+      // The employing entity — on a holding install this is what tells you which
+      // letterhead this person's zimmet form will carry.
+      ...(Companies.isMulti()
+        ? [{ key: 'company', label: t('co.field'),
+          render: (x) => esc(x.companyName || '—'), csv: (x) => x.companyName || '' }]
+        : []),
       { key: 'email', label: t('cols.email'), default: false, render: (x) => esc(x.email || '—'), csv: (x) => x.email || '' },
       { key: 'title', label: t('cols.title'), default: false, render: (x) => esc(x.title || '—'), csv: (x) => x.title || '' },
       { key: 'startDate', label: t('cols.startDate'), default: false, render: (x) => esc(x.startDate ? fmtDate(x.startDate) : '—'), csv: (x) => (x.startDate ? fmtDate(x.startDate) : '') },
@@ -115,6 +129,12 @@ Views.employees = async function (el, params = {}) {
         selected: selectedDepts,
         options: deptCatalog.map((d) => ({ value: d, label: d })),
       })}
+      ${Companies.isMulti() ? multiSelectHtml({
+        id: 'companyId',
+        allLabel: t('co.allCompanies'),
+        selected: selectedCompanies,
+        options: Companies.active().map((c) => ({ value: c.id, label: c.name })),
+      }) : ''}
       <div style="margin-left:auto">${empCols.gearHtml()}</div>
     </div>
     <div id="emp-chips"></div>
@@ -228,6 +248,7 @@ Views.employees = async function (el, params = {}) {
     const chips = [];
     csvList(state.status).forEach((s) => chips.push({ key: 'status', value: s, label: `${t('common.status')}: ${s}` }));
     csvList(state.department).forEach((d) => chips.push({ key: 'department', value: d, label: `${t('emp.colDepartment')}: ${d}` }));
+    csvList(state.companyId).forEach((c) => chips.push({ key: 'companyId', value: c, label: `${t('co.field')}: ${Companies.nameOf(c)}` }));
     if (state.search) chips.push({ key: 'search', label: `${t('common.search')}: ${state.search}` });
     host.innerHTML = chips.length ? `<div class="filter-chips"><strong>${esc(t('emp.activeFilters'))}</strong>
       ${chips.map((c) => `<span class="chip">${esc(c.label)}
@@ -237,7 +258,7 @@ Views.employees = async function (el, params = {}) {
       const next = cur();
       const key = b.dataset.clear;
       const val = b.dataset.clearVal;
-      if (val != null && ['status', 'department'].includes(key)) {
+      if (val != null && ['status', 'department', 'companyId'].includes(key)) {
         next[key] = csvList(next[key]).filter((x) => x !== val).join(',');
       } else {
         next[key] = '';
@@ -284,6 +305,7 @@ Views.employees = async function (el, params = {}) {
   mountMultiSelects($('#emp-filters', el), {
     status: (vals) => setHash({ ...cur(), status: vals.join(','), page: 1 }),
     department: (vals) => setHash({ ...cur(), department: vals.join(','), page: 1 }),
+    companyId: (vals) => setHash({ ...cur(), companyId: vals.join(','), page: 1 }),
   });
   empCols.mountGear($('#emp-filters', el));
   if (canCreate) {
@@ -614,6 +636,8 @@ async function showEmployeeDetail(emp) {
         <div>
           <div class="cell-title" style="font-size:16px">${esc(emp.fullName)}</div>
           <div class="cell-sub">${esc(emp.title || '—')} • ${esc(emp.department || '—')} • ${esc(emp.email)}</div>
+          ${Companies.isMulti() ? `<div class="cell-sub" style="display:flex;align-items:center;gap:5px">
+            <span class="ms ms-sm">domain</span>${esc(emp.companyName || Companies.nameOf(emp.companyId) || '—')}</div>` : ''}
         </div>
         <span style="margin-left:auto">${badge(emp.status)}</span>
       </div>
@@ -1417,6 +1441,7 @@ async function employeeForm(emp, done) {
     emp = await api('/employees/' + encodeURIComponent(emp.id)).catch(() => emp);
   }
   const { defs: cfDefs, values: cfValues } = await fetchCustomFields('employee', emp?.id);
+  await Companies.load().catch(() => {});
   // Offer a Portal login only on create (existing employees get the button in
   // their detail view) and only to users allowed to create accounts.
   const offerGrant = !emp && Auth.can('canManageUsers');
@@ -1432,6 +1457,14 @@ async function employeeForm(emp, done) {
           ...(emp?.department && !(AppConfig.departments || []).includes(emp.department) ? [emp.department] : []),
           ...(AppConfig.departments || [])] },
       { name: 'title', label: 'Title', value: emp?.title },
+      // Which entity employs this person — it picks the letterhead on their
+      // zimmet form. Offered only once a second company exists.
+      ...(Companies.isMulti() ? [{
+        name: 'companyId', label: t('co.field'), type: 'select',
+        value: emp?.companyId || Companies.defaultId() || '',
+        options: [{ value: '', label: t('co.noCompany') },
+          ...Companies.active().map((c) => ({ value: c.id, label: c.name }))],
+      }] : []),
       { name: 'managerEmployeeId', label: t('emp.manager') || 'Manager (reports to)', type: 'employeeSearch', full: true,
         selected: emp?.manager || null, selectedLabel: emp?.manager?.fullName || '' },
       { name: 'status', label: 'Status', type: 'select', value: emp?.status || 'Active', options: ['Active', 'Inactive'] },

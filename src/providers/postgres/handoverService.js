@@ -17,8 +17,8 @@ const MAX_BASKET_SIZE = 100;
 async function executeHandover({ employeeId, documentType = 'single', items = [], lines = [], templateId = null }, itUser, opts = {}) {
   const allowReservedForEmployeeId = opts.allowReservedForEmployeeId || null;
   if (!employeeId || !isUuid(employeeId)) throw HttpError.badRequest('A valid employeeId is required');
-  if (!['single', 'separate'].includes(documentType)) {
-    throw HttpError.badRequest('documentType must be "single" or "separate"');
+  if (!['single', 'separate', 'per_company'].includes(documentType)) {
+    throw HttpError.badRequest('documentType must be "single", "separate" or "per_company"');
   }
 
   const assetItems = (Array.isArray(items) ? items : []).filter((i) => i && i.assetId);
@@ -50,6 +50,11 @@ async function executeHandover({ employeeId, documentType = 'single', items = []
   if (lineIds.length && !lineIds.every(isUuid)) {
     throw HttpError.badRequest('Basket contains an invalid lineId');
   }
+
+  // Loaded before the transaction opens: resolving the letterhead inside it
+  // would take a second pool connection while one is already held, which is how
+  // a busy pool deadlocks against itself.
+  const groupSettings = await require('./settingsService').getSettings().catch(() => null);
 
   return withTransaction(async (t) => {
     const empRes = await t.query('SELECT * FROM employees WHERE id = $1 FOR UPDATE', [employeeId]);
@@ -145,6 +150,28 @@ async function executeHandover({ employeeId, documentType = 'single', items = []
       throw HttpError.conflict('Handover rejected: one or more basket items are unavailable', conflicts);
     }
 
+    // Whose letterhead this form carries, and who owns each line on it. The
+    // employee's company heads the document; a device belonging to a sister
+    // company keeps its own owner on its row, because the receipt has to say
+    // whose property the person is signing for.
+    const companyNames = new Map();
+    const companyIds = new Set([
+      employee.company_id,
+      ...assetItems.map((i) => byAsset.get(i.assetId)?.company_id),
+      ...lineItems.map((i) => byLine.get(i.lineId)?.company_id),
+    ].filter(Boolean));
+    if (companyIds.size) {
+      const { rows: coRows } = await t.query(
+        'SELECT id, name FROM companies WHERE id = ANY($1::uuid[])',
+        [[...companyIds]]
+      );
+      coRows.forEach((c) => companyNames.set(c.id, c.name));
+    }
+    const ownerOf = (companyId) => ({
+      ownerCompanyId: companyId || null,
+      ownerCompanyName: companyId ? (companyNames.get(companyId) || null) : null,
+    });
+
     const receiptAssets = assetItems.map((item) => {
       const a = byAsset.get(item.assetId);
       return {
@@ -157,6 +184,7 @@ async function executeHandover({ employeeId, documentType = 'single', items = []
         serialNumber: a.serial_number,
         macAddress: a.mac_ethernet || a.mac_wifi || null,
         conditionNote: item.conditionNote || '',
+        ...ownerOf(a.company_id),
       };
     });
 
@@ -177,6 +205,7 @@ async function executeHandover({ employeeId, documentType = 'single', items = []
         serialNumber: l.sim_serial || l.phone_number,
         macAddress: null,
         assetTag: l.phone_number,
+        ...ownerOf(l.company_id),
       };
     });
 
@@ -227,13 +256,23 @@ async function executeHandover({ employeeId, documentType = 'single', items = []
       }
     }
 
+    // Freeze the letterhead onto the row. A signed receipt must reprint years
+    // later exactly as it was issued, even after the person transfers to another
+    // group company or the company is renamed.
+    const headerCompanyId = employee.company_id || null;
+    const branding = await require('./companyService')
+      .resolveBranding(headerCompanyId, groupSettings, { client: t })
+      .catch(() => null);
+
     const ackToken = require('crypto').randomBytes(24).toString('hex');
     const handoverRes = await t.query(
-      `INSERT INTO handovers (employee_id, employee_name, it_user_id, it_user_name, document_type, items, template_id, ack_token)
-       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8) RETURNING id, ack_token`,
+      `INSERT INTO handovers (employee_id, employee_name, it_user_id, it_user_name, document_type, items,
+                              template_id, ack_token, company_id, company_snapshot)
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10::jsonb) RETURNING id, ack_token`,
       [employee.id, employee.full_name, itUser.uid, itUser.username || itUser.email || null,
        documentType, JSON.stringify(receiptItems),
-       templateId ? String(templateId).slice(0, 64) : null, ackToken]
+       templateId ? String(templateId).slice(0, 64) : null, ackToken,
+       headerCompanyId, branding ? JSON.stringify(branding) : null]
     );
 
     return {
@@ -245,6 +284,10 @@ async function executeHandover({ employeeId, documentType = 'single', items = []
       itemCount: receiptItems.length,
       assetCount: receiptAssets.length,
       lineCount: receiptLines.length,
+      companyId: headerCompanyId,
+      companyName: branding ? branding.companyName : null,
+      // Which sister companies' property is on this form — the UI badges these.
+      ownerCompanyIds: [...new Set(receiptItems.map((i) => i.ownerCompanyId).filter(Boolean))],
       items: receiptItems,
     };
   });
@@ -265,17 +308,27 @@ async function getHandover(handoverId) {
   return redactHandoverSecrets(mapRow(rows[0]));
 }
 
-async function listHandovers({ employeeId, limit = 50 } = {}) {
+async function listHandovers({ employeeId, companyId, limit = 50 } = {}) {
   const params = [];
-  let where = '';
+  const conds = [];
   if (employeeId) {
     if (!isUuid(employeeId)) return [];
     params.push(employeeId);
-    where = 'WHERE employee_id = $1';
+    conds.push(`employee_id = $${params.length}`);
   }
+  // The company whose letterhead the form carried, not the device owner — the
+  // scope a report means when it asks for "Acme's handovers".
+  if (companyId) {
+    if (companyId === 'none') conds.push('company_id IS NULL');
+    else if (!isUuid(companyId)) return [];
+    else { params.push(companyId); conds.push(`company_id = $${params.length}`); }
+  }
+  const where = conds.length ? 'WHERE ' + conds.join(' AND ') : '';
   params.push(Math.min(Number(limit) || 50, 200));
   const { rows } = await query(
-    `SELECT * FROM handovers ${where} ORDER BY transaction_date DESC LIMIT $${params.length}`,
+    `SELECT handovers.*,
+            (SELECT c.name FROM companies c WHERE c.id = handovers.company_id) AS company_name
+       FROM handovers ${where} ORDER BY transaction_date DESC LIMIT $${params.length}`,
     params
   );
   return mapRows(rows).map(redactHandoverSecrets);

@@ -7,7 +7,7 @@ router.use(authenticate);
 
 /** GET /api/consumables — stock list with lowStock flags. İzin: consumable:read */
 router.get('/', requirePermission('consumable', 'read'), asyncHandler(async (req, res) => {
-  res.json({ success: true, data: await consumableService.listConsumables() });
+  res.json({ success: true, data: await consumableService.listConsumables(req.query) });
 }));
 
 /** POST /api/consumables — register a consumable item. İzin: consumable:create */

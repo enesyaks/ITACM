@@ -58,6 +58,8 @@ const Auth = {
       sessionStorage.removeItem(TOKEN_KEY);
       sessionStorage.removeItem(PROFILE_KEY);
     } catch { /* ignore */ }
+    // The next account may belong to a different set of companies.
+    try { Companies.invalidate(); } catch { /* defined below in this file */ }
   },
   /** Legacy UI flags (now derived from IAM on the server). */
   can(perm) { return !!(this.profile && this.profile.permissions && this.profile.permissions[perm]); },
@@ -97,6 +99,64 @@ async function loadAppConfig() {
   } catch { /* offline default */ }
   return AppConfig;
 }
+
+/**
+ * Companies (holding + subsidiaries) — loaded once per session and shared by
+ * every form that shows a company picker. Not part of /api/config: that endpoint
+ * is public, and the entity list is only for signed-in users.
+ */
+const Companies = {
+  _promise: null,
+  _list: [],
+
+  /** Resolves to the option list; safe to await repeatedly. */
+  load() {
+    if (!this._promise) {
+      this._promise = api('/companies/options')
+        .then((rows) => { this._list = Array.isArray(rows) ? rows : []; return this._list; })
+        .catch(() => { this._promise = null; return this._list; });
+    }
+    return this._promise;
+  },
+
+  /** Cached list — call load() first if you need it populated. */
+  list() { return this._list; },
+
+  /** Only the ones a new record may be filed under. */
+  active() { return this._list.filter((c) => c.active !== false); },
+
+  byId(id) { return this._list.find((c) => c.id === id) || null; },
+
+  nameOf(id) { const c = this.byId(id); return c ? c.name : ''; },
+
+  defaultId() {
+    const d = this._list.find((c) => c.isDefault) || this._list[0];
+    return d ? d.id : null;
+  },
+
+  /** True once a second entity exists — the UI stays single-company until then. */
+  isMulti() { return this._list.filter((c) => c.active !== false).length > 1; },
+
+  /**
+   * Logos are excluded from the picker list (they are base64 blobs, one per
+   * entity), so anything that prints a company letterhead fetches the one it
+   * needs and keeps it. Prefetch before you need it — `logo()` is synchronous.
+   */
+  _logos: {},
+
+  async loadLogo(id) {
+    if (!id) return null;
+    if (this._logos[id] !== undefined) return this._logos[id];
+    const c = await api('/companies/' + encodeURIComponent(id)).catch(() => null);
+    this._logos[id] = (c && c.logo) || null;
+    return this._logos[id];
+  },
+
+  logo(id) { return (id && this._logos[id]) || null; },
+
+  /** Drop the cache after a create/edit/delete in the Firmalar screen. */
+  invalidate() { this._promise = null; this._list = []; this._logos = {}; },
+};
 
 class ApiError extends Error {
   constructor(status, message, details) {

@@ -24,6 +24,9 @@ const VIEW_PERMISSIONS = {
   assets: 'asset',
   asset_history: 'asset',
   catalog_models: 'catalog',
+  // Company names are configuration, not inventory — but a query only ever joins
+  // them to something else, and that something already carries its own gate.
+  companies: 'catalog',
   employees: 'employee',
   departments: 'employee',
   teams: 'employee',

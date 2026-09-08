@@ -242,6 +242,8 @@ function mapAssetRow(row, lifecycles) {
 }
 
 const ASSET_SELECT = `SELECT a.*,
+  co.name AS company_name,
+  co.code AS company_code,
   p.asset_tag AS parent_asset_tag,
   p.brand AS parent_brand,
   p.model AS parent_model,
@@ -251,6 +253,7 @@ const ASSET_SELECT = `SELECT a.*,
   COALESCE(lic.related_licenses, '[]'::json) AS related_licenses_json,
   COALESCE(par.parents_json, '[]'::json) AS parents_json
  FROM assets a
+ LEFT JOIN companies co ON co.id = a.company_id
  LEFT JOIN assets p ON p.id = a.parent_asset_id
  LEFT JOIN catalog_models cm ON cm.category = a.category AND cm.brand = a.brand AND cm.model = a.model
  LEFT JOIN LATERAL (
@@ -351,6 +354,13 @@ function sanitize(body, { partial = false } = {}) {
     });
   }
   if (location !== undefined) data.location = location ? String(location).trim() : null;
+  // Owning company. Cross-company handovers are allowed, so this is the device's
+  // legal owner, not "who is using it" — the two can differ on purpose.
+  if (body.companyId !== undefined) {
+    if (body.companyId == null || body.companyId === '') data.company_id = null;
+    else if (!isUuid(body.companyId)) throw HttpError.badRequest('companyId must be a company id');
+    else data.company_id = body.companyId;
+  }
   if (body.notes !== undefined) {
     data.notes = body.notes == null ? '' : String(body.notes).trim().slice(0, 2000);
   }
@@ -484,6 +494,14 @@ async function createAsset(body, itUser) {
   await assertLicensesExist(null, licenseIds);
   data.license_id = licenseIds[0] || null;
 
+  // Every device belongs to an entity. When the form omits one (older clients,
+  // imports, API callers) it files under the default company rather than NULL —
+  // a company-less asset would print a blank letterhead on its zimmet form.
+  if (data.company_id == null) {
+    const fallback = await require('./companyService').getDefaultCompany().catch(() => null);
+    data.company_id = fallback ? fallback.id : null;
+  }
+
   await assertSerialAvailable(data.serial_number);
   assertImeiPairDistinct(data.imei, data.imei2);
   if (data.imei) await assertImeiAvailable(data.imei);
@@ -500,9 +518,9 @@ async function createAsset(body, itUser) {
                                responsible_employee_id, responsible_employee_name,
                                infra_role, rack, rack_unit, rack_u_start, rack_u_size,
                                firmware_version, firmware_updated_at, mgmt_ip, parent_asset_id,
-                               cost, salvage_value)
+                               cost, salvage_value, company_id)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,COALESCE($10,'{}'::jsonb),COALESCE($11,'In Stock'),$12,$13,$14,$15,$16,COALESCE($17,''),$18,$19,$20,
-                   $21,$22,$23,$24,$25,$26,$27,$28,$29,COALESCE($30::numeric,0),$31)
+                   $21,$22,$23,$24,$25,$26,$27,$28,$29,COALESCE($30::numeric,0),$31,$32)
            RETURNING id, asset_tag`,
           [
             data.asset_tag, data.serial_number, data.brand, data.model, data.category,
@@ -515,7 +533,7 @@ async function createAsset(body, itUser) {
             data.rack_u_start ?? null, data.rack_u_size ?? null,
             data.firmware_version || null, data.firmware_updated_at || null,
             data.mgmt_ip || null, data.parent_asset_id || null,
-            data.cost ?? null, data.salvage_value ?? null,
+            data.cost ?? null, data.salvage_value ?? null, data.company_id ?? null,
           ]
         );
         const id = rows[0].id;
@@ -855,6 +873,7 @@ const ASSET_SORT_SQL = {
   mac: ["COALESCE(NULLIF(a.mac_ethernet, ''), NULLIF(a.mac_wifi, ''), '')", 'a.asset_tag'],
   location: ['a.location', 'a.asset_tag'],
   status: ['a.status', 'a.asset_tag'],
+  company: ['co.name', 'a.asset_tag'],
 };
 
 function assetOrderBySql(sort, order) {
@@ -865,7 +884,7 @@ function assetOrderBySql(sort, order) {
 
 async function listAssets({
   status, category, categories, employeeId, responsibleEmployeeId,
-  infraRole, search, location, sort, order, limit = 100, offset = 0,
+  infraRole, search, location, companyId, sort, order, limit = 100, offset = 0,
 } = {}) {
   const where = [];
   const params = [];
@@ -911,6 +930,18 @@ async function listAssets({
     const list = asList(location);
     if (list.length === 1) { params.push(list[0]); where.push(`a.location = $${params.length}`); }
     else if (list.length > 1) { params.push(list); where.push(`a.location = ANY($${params.length}::text[])`); }
+  }
+  if (companyId) {
+    // "none" surfaces rows left behind by a deleted company so they can be re-filed.
+    const ids = asList(companyId);
+    if (ids.length === 1 && ids[0] === 'none') {
+      where.push('a.company_id IS NULL');
+    } else {
+      const real = ids.filter((id) => isUuid(id));
+      if (!real.length) return { items: [], total: 0, nextCursor: null };
+      params.push(real);
+      where.push(`a.company_id = ANY($${params.length}::uuid[])`);
+    }
   }
   if (search) {
     params.push(`%${search}%`);

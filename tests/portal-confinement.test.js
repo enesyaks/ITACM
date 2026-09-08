@@ -58,6 +58,8 @@ test('portal allowlist refuses every staff surface', () => {
     '/api/approvals/pending',
     '/api/handovers',
     '/api/counts',
+    '/api/companies',
+    '/api/companies/options',
     '/api/import/inventory',
     '/api/setup',
     // Auth endpoints deliberately outside the portal set.
@@ -88,7 +90,7 @@ async function probe(urls) {
     req.portalAllowed = isPortalAllowedPath(req.originalUrl);
     next();
   });
-  for (const name of ['assets', 'employees', 'licenses', 'documents', 'audit', 'me']) {
+  for (const name of ['assets', 'employees', 'licenses', 'documents', 'audit', 'companies', 'me']) {
     app.use(`/api/${name}`, (req, res) => res.json({ router: name, allowed: req.portalAllowed }));
   }
   app.use((req, res) => res.json({ router: 'none', allowed: req.portalAllowed === true }));
@@ -123,6 +125,10 @@ test('no URL reaches a staff router while the gate reads it as self-service', as
     '/api/me/%2e%2e/assets',
     '/api/me/..%2fassets',
     '/api/me/zimmet/../../assets',
+    '/api/me/../companies',
+    '/api/me/%2e%2e/companies',
+    '/api/me/..%2fcompanies',
+    '/api/me/zimmet/../../companies',
     '/api/me/./../employees',
     '/api/me//../licenses',
     '/api/ME/../ASSETS',

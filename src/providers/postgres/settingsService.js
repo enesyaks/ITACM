@@ -57,7 +57,8 @@ function sanitizeLabelConfig(cfg) {
 }
 
 const BOOL_KEYS = ['showLogo', 'showEmployeeId', 'showDepartment', 'showTitle',
-  'colCategory', 'colSerial', 'colMac', 'colCondition', 'showTerms', 'showReturnSection'];
+  'colCategory', 'colSerial', 'colMac', 'colCondition', 'colOwnerCompany',
+  'showTerms', 'showReturnSection'];
 const TEXT_KEYS = {
   titleEn: 60, titleTr: 60, subtitle: 100,
   deliveredByLabel: 80, receivedByLabel: 80, footerNote: 200,
@@ -280,6 +281,16 @@ async function completeSetup(setupToken, fields, adminFn) {
         tagPrefixClean,
       ]
     );
+
+    // The default company was seeded from the placeholder branding at migration
+    // time; onboarding is where the workspace gets its real name, so carry it
+    // over — otherwise the first zimmet form prints "IT Asset Control Pro".
+    await client.query(
+      `UPDATE companies SET name = $1, updated_at = now()
+        WHERE is_default
+          AND NOT EXISTS (SELECT 1 FROM companies WHERE lower(name) = lower($1) AND NOT is_default)`,
+      [companyName]
+    ).catch(() => { /* a name clash just leaves the seeded name in place */ });
 
     const settings = await getSettings();
     return { settings, admin };
@@ -518,6 +529,14 @@ async function saveSettings({
      zimmetOcr === undefined ? null : !!zimmetOcr,
      ticketingEnabled === undefined ? null : !!ticketingEnabled]
   );
+
+  // Legacy behaviour, preserved: on a single-company install the Settings screen
+  // was the only place anyone ever renamed the company, and the zimmet header
+  // followed. Keep the default company's name in step so it still does. Only
+  // the default row, only the name — subsidiaries are renamed in Companies.
+  if (companyName !== undefined && companyName !== null) {
+    await require('./companyService').syncDefaultCompanyName(companyName).catch(() => {});
+  }
   return getSettings();
 }
 

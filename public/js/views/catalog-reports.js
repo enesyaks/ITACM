@@ -143,6 +143,71 @@ Views.catalog = async function (el) {
     });
   });
 
+  /* ---- Companies (legal entities) ----
+     A holding runs several entities under one install: each has its own staff,
+     its own devices and its own letterhead on the zimmet form. Writes are gated
+     on settings:manage, the same permission that guards company branding. */
+  // The full records carry tax numbers, addresses and letterhead logos, so the
+  // server only serves them to settings:manage. Don't render an empty card at
+  // everyone else — the panel simply isn't theirs.
+  const canCompanies = Auth.canIam('settings', 'manage');
+  const companies = canCompanies ? await api('/companies?counts=1').catch(() => []) : [];
+  const companyName = (id) => {
+    const c = companies.find((x) => x.id === id);
+    return c ? c.name : '';
+  };
+  if (canCompanies) el.insertAdjacentHTML('beforeend', `
+    <div class="card" style="margin-top:16px" id="co-card">
+      <div class="card-head">
+        <h3>${esc(t('co.title'))} (${companies.length})</h3>
+        ${canCompanies ? `<button class="btn btn-primary btn-sm" id="co-add"><span class="ms">domain_add</span> ${esc(t('co.add'))}</button>` : ''}
+      </div>
+      <div class="table-wrap"><table class="data">
+        <thead><tr>
+          <th>${esc(t('co.colName'))}</th>
+          <th>${esc(t('co.colParent'))}</th>
+          <th>${esc(t('co.colBranding'))}</th>
+          <th>${esc(t('co.colUsage'))}</th>
+          <th style="text-align:right"></th>
+        </tr></thead>
+        <tbody>
+          ${companies.length === 0
+            ? `<tr><td colspan="5" class="table-empty">${esc(t('co.empty'))}</td></tr>`
+            : companies.map((c) => `
+          <tr>
+            <td>
+              <div style="display:flex;align-items:center;gap:10px">
+                ${c.logo
+                  ? `<img src="${esc(c.logo)}" alt="" style="width:24px;height:24px;object-fit:contain;border-radius:4px">`
+                  : `<span class="ms" style="color:var(--on-surface-variant)">domain</span>`}
+                <span class="cell-title">${esc(c.name)}</span>
+                ${c.isDefault ? `<span class="pill pill-indigo">${esc(t('cat.defaultPill'))}</span>` : ''}
+                ${c.active === false ? `<span class="pill">${esc(t('co.inactive'))}</span>` : ''}
+              </div>
+              ${c.code ? `<div class="cell-sub mono">${esc(c.code)}</div>` : ''}
+            </td>
+            <td class="cell-sub">${esc(companyName(c.parentId) || '—')}</td>
+            <td class="cell-sub">${esc(c.logo ? t('co.ownLogo') : t('co.inheritsLogo'))}</td>
+            <td class="cell-sub">${esc(
+              t('co.usage')
+                .replace('{a}', c.assetCount)
+                .replace('{e}', c.employeeCount)
+            )}</td>
+            <td class="actions">
+              ${canCompanies ? `
+                ${c.isDefault ? '' : `<button class="btn btn-outline btn-sm" data-co-default="${esc(c.id)}">${esc(t('cat.setDefault'))}</button>`}
+                <button class="btn btn-outline btn-sm" data-co-edit="${esc(c.id)}">${esc(t('common.edit'))}</button>
+                ${c.isDefault ? '' : `<button class="btn btn-outline btn-sm" data-co-del="${esc(c.id)}">${esc(t('cat.delete'))}</button>`}
+              ` : ''}
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table></div>
+      <div class="table-foot">${esc(t('co.foot'))}</div>
+    </div>`);
+
+  if (canCompanies) bindCompanyCard(el, companies);
+
   /* ---- Office Locations (stored in settings, drives asset form dropdown) ---- */
   const locData = await api('/catalog/locations').catch(() => ({ locations: [], defaultLocation: null }));
   el.insertAdjacentHTML('beforeend', `
@@ -566,6 +631,151 @@ function csvDownload(filename, cols, rows) {
   a.click();
 }
 
+/* ---- Companies: add / edit / default / delete ---- */
+
+/**
+ * The company form. Every branding field is optional: left blank, the entity
+ * inherits the workspace values from Settings, which is what keeps a
+ * single-company install working exactly as it did before companies existed.
+ */
+function companyFormModal(el, existing, companies) {
+  const isEdit = !!existing;
+  // Held outside the form because formModal has no file control — the picker
+  // writes the data URL here and onSubmit reads it.
+  let pendingLogo;
+
+  const parentOptions = [{ value: '', label: t('co.noParent') }]
+    .concat(companies
+      .filter((c) => !existing || c.id !== existing.id)
+      .map((c) => ({ value: c.id, label: c.name })));
+
+  formModal({
+    title: isEdit ? 'co.editTitle' : 'co.addTitle',
+    wide: true,
+    submitLabel: 'common.save',
+    fields: [
+      { name: 'name', label: t('co.fName'), required: true, value: existing?.name || '' },
+      { name: 'code', label: t('co.fCode'), value: existing?.code || '', placeholder: 'ACME' },
+      { name: 'legalName', label: t('co.fLegalName'), full: true, value: existing?.legalName || '' },
+      { name: 'parentId', label: t('co.fParent'), type: 'select', options: parentOptions, value: existing?.parentId || '' },
+      { name: 'taxOffice', label: t('co.fTaxOffice'), value: existing?.taxOffice || '' },
+      { name: 'taxNo', label: t('co.fTaxNo'), value: existing?.taxNo || '' },
+      { name: 'email', label: t('co.fEmail'), value: existing?.email || '' },
+      { name: 'phone', label: t('co.fPhone'), value: existing?.phone || '' },
+      { name: 'address', label: t('co.fAddress'), type: 'textarea', full: true, value: existing?.address || '' },
+      {
+        type: 'html', full: true, label: t('co.fLogo'),
+        html: `
+          <div style="display:flex;align-items:center;gap:12px">
+            <div id="co-logo-preview" style="width:44px;height:44px;border-radius:8px;border:1px solid var(--outline-variant);
+                 display:flex;align-items:center;justify-content:center;overflow:hidden">
+              ${existing?.logo
+                ? `<img src="${esc(existing.logo)}" alt="" style="max-width:100%;max-height:100%">`
+                : `<span class="ms" style="color:var(--on-surface-variant)">domain</span>`}
+            </div>
+            <input type="file" id="co-logo-file" accept="image/png,image/jpeg,image/svg+xml" class="hidden">
+            <button type="button" class="btn btn-outline btn-sm" id="co-logo-pick">${esc(t('co.pickLogo'))}</button>
+            <button type="button" class="btn btn-outline btn-sm" id="co-logo-clear">${esc(t('co.clearLogo'))}</button>
+          </div>
+          <div class="ob-hint">${esc(t('co.logoHint'))}</div>`,
+      },
+      {
+        name: 'handoverTerms', label: t('co.fTerms'), type: 'textarea', full: true,
+        value: existing?.handoverTerms || '', placeholder: t('co.termsPh'),
+      },
+      ...(isEdit && !existing.isDefault
+        ? [{ name: 'active', label: t('co.fActive'), type: 'checkbox', full: true, value: existing.active !== false }]
+        : []),
+    ],
+    onMount(overlay) {
+      const fileEl = $('#co-logo-file', overlay);
+      $('#co-logo-pick', overlay).addEventListener('click', () => fileEl.click());
+      $('#co-logo-clear', overlay).addEventListener('click', () => {
+        pendingLogo = null;
+        $('#co-logo-preview', overlay).innerHTML = `<span class="ms" style="color:var(--on-surface-variant)">domain</span>`;
+      });
+      fileEl.addEventListener('change', () => {
+        const file = fileEl.files && fileEl.files[0];
+        if (!file) return;
+        // The logo is stored inline as a data URL and embedded in every PDF, so
+        // an oversized file bloats each generated document, not just this row.
+        if (file.size > 300 * 1024) {
+          toast(t('co.logoTooBig'), 'error');
+          fileEl.value = '';
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = () => {
+          pendingLogo = String(reader.result);
+          $('#co-logo-preview', overlay).innerHTML = `<img src="${esc(pendingLogo)}" alt="" style="max-width:100%;max-height:100%">`;
+        };
+        reader.readAsDataURL(file);
+      });
+    },
+    async onSubmit(d) {
+      const body = {
+        name: d.name,
+        code: d.code || null,
+        legalName: d.legalName || null,
+        parentId: d.parentId || null,
+        taxOffice: d.taxOffice || null,
+        taxNo: d.taxNo || null,
+        email: d.email || null,
+        phone: d.phone || null,
+        address: d.address || null,
+        handoverTerms: d.handoverTerms || null,
+      };
+      if (pendingLogo !== undefined) body.logo = pendingLogo;
+      if ('active' in d) body.active = !!d.active;
+
+      if (isEdit) await api('/companies/' + encodeURIComponent(existing.id), { method: 'PATCH', body });
+      else await api('/companies', { method: 'POST', body });
+      Companies.invalidate();
+      toast(t(isEdit ? 'co.saved' : 'co.created').replace('{name}', d.name), 'success');
+      Views.catalog(el);
+    },
+  });
+}
+
+function bindCompanyCard(el, companies) {
+  const byId = (id) => companies.find((c) => c.id === id);
+
+  $('#co-add', el)?.addEventListener('click', () => companyFormModal(el, null, companies));
+
+  $('#co-card', el).addEventListener('click', async (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    try {
+      if (b.dataset.coEdit) {
+        companyFormModal(el, byId(b.dataset.coEdit), companies);
+      } else if (b.dataset.coDefault) {
+        await api('/companies/' + encodeURIComponent(b.dataset.coDefault) + '/default', { method: 'PUT' });
+        Companies.invalidate();
+        toast(t('co.defaultSet').replace('{name}', byId(b.dataset.coDefault)?.name || ''), 'success');
+        Views.catalog(el);
+      } else if (b.dataset.coDel) {
+        const c = byId(b.dataset.coDel);
+        formModal({
+          title: 'co.delTitle',
+          submitLabel: 'common.delete',
+          fields: [{
+            type: 'html', full: true,
+            html: `<p class="cell-sub">${esc(t('co.delConfirm').replace('{name}', c?.name || ''))}</p>`,
+          }],
+          async onSubmit() {
+            // The server refuses while the company still owns anything — that
+            // message is the useful one, so let it through unchanged.
+            await api('/companies/' + encodeURIComponent(c.id), { method: 'DELETE' });
+            Companies.invalidate();
+            toast(t('co.deleted').replace('{name}', c.name), 'success');
+            Views.catalog(el);
+          },
+        });
+      }
+    } catch (err) { toast(err.message, 'error'); }
+  });
+}
+
 /** Which IAM resource must allow list/read for each preset report. */
 const REPORT_IAM = {
   inventory: 'asset',
@@ -581,6 +791,8 @@ const REPORT_IAM = {
   employees: 'employee',
   'no-assets': 'employee',
   handovers: 'handover',
+  'by-company': 'asset',
+  'cross-company': 'asset',
   licenses: 'license',
   'expiring-licenses': 'license',
   software: 'license',
@@ -609,8 +821,13 @@ function canRunReport(id) {
   return res ? iamCanList(res) : true;
 }
 
+const COMPANY_ONLY_REPORTS = new Set(['by-company', 'cross-company']);
+
 function visibleReportDefs() {
-  return REPORT_DEFS.filter((r) => canRunReport(r.id));
+  // A single-company install has nothing to compare, so those two reports would
+  // only ever print one row and an empty list.
+  const multi = repMultiCompany();
+  return REPORT_DEFS.filter((r) => canRunReport(r.id) && (multi || !COMPANY_ONLY_REPORTS.has(r.id)));
 }
 
 function visibleCustomSourceKeys() {
@@ -661,6 +878,11 @@ const REPORT_DEFS = [
     desc: 'All repair logs with service company, duration and total cost.' },
   { id: 'open-repairs', group: 'Operations', icon: 'pending_actions', tone: 'rose', title: 'Open Repairs',
     desc: 'Devices currently in repair and how long they have been out.' },
+  // ---- Companies (holding installs only) ----
+  { id: 'by-company', group: 'Companies', icon: 'domain', tone: 'indigo', title: 'Inventory by Company',
+    desc: 'What each group company owns — people, devices and their status split.' },
+  { id: 'cross-company', group: 'Companies', icon: 'swap_horiz', tone: 'amber', title: 'Cross-Company Assignments',
+    desc: 'Devices held by an employee of a different group company than the owner.' },
   // ---- Consumables ----
   { id: 'consumables', group: 'Consumables', icon: 'inventory_2', tone: 'blue', title: 'Consumables Stock',
     desc: 'Stock levels vs minimum alert levels with low-stock flags.' },
@@ -671,15 +893,48 @@ const REPORT_DEFS = [
 const REPORT_MONTH_MS = 30.44 * 86400000;
 const asgName = (x) => (x.currentEmployee ? x.currentEmployee.fullName : '');
 
+/* ---- Company scope (holding installs) ----
+   One selector on the Reports page scopes every preset report, so a group with
+   several entities can pull "Acme only" numbers without hand-filtering a CSV.
+   Empty means every company. On a single-company install none of this shows:
+   the extra column and the filter would be a column of one repeated name. */
+let reportCompanyId = '';
+
+function setReportCompany(id) { reportCompanyId = id || ''; }
+function getReportCompany() { return reportCompanyId; }
+
+/** True when the Company column and filter are worth showing at all. */
+function repMultiCompany() {
+  return typeof Companies !== 'undefined' && Companies.isMulti();
+}
+
+/** Append the active company scope to a report's API call. */
+function repQ(path) {
+  if (!reportCompanyId) return path;
+  return path + (path.includes('?') ? '&' : '?') + 'companyId=' + encodeURIComponent(reportCompanyId);
+}
+
+/** Column header list with the Company column appended when it earns its place. */
+const withCo = (cols) => (repMultiCompany() ? [...cols, 'Company'] : cols);
+/** Matching row tail. */
+const rowCo = (row, name) => (repMultiCompany() ? [...row, name || '—'] : row);
+
+/** The company scope, spelled out for a report summary line. */
+function repScopeNote() {
+  if (!reportCompanyId || typeof Companies === 'undefined') return '';
+  const name = Companies.nameOf(reportCompanyId);
+  return name ? ` · ${name}` : '';
+}
+
 /* Each builder returns { cols, rows, summary } — all from existing endpoints. */
 const REPORT_BUILDERS = {
   inventory: async () => {
-    const { items } = await api('/assets?limit=2000');
+    const { items } = await api(repQ('/assets?limit=2000'));
     return {
-      cols: ['Asset Tag', 'Category', 'Brand', 'Model', 'Serial No', 'MAC', 'Status', 'Assigned To', 'Location', 'Purchase Date'],
-      rows: items.map((x) => [x.assetTag, x.category, x.brand, x.model, x.serialNumber,
+      cols: withCo(['Asset Tag', 'Category', 'Brand', 'Model', 'Serial No', 'MAC', 'Status', 'Assigned To', 'Location', 'Purchase Date']),
+      rows: items.map((x) => rowCo([x.assetTag, x.category, x.brand, x.model, x.serialNumber,
         x.macEthernet || x.macWifi || '', x.status, asgName(x), x.location || '',
-        x.purchaseDate ? fmtDate(x.purchaseDate) : '']),
+        x.purchaseDate ? fmtDate(x.purchaseDate) : ''], x.companyName)),
       summary: t('rep.sum.inventory')
         .replace('{n}', items.length)
         .replace('{a}', items.filter((x) => x.status === 'Assigned').length)
@@ -690,7 +945,7 @@ const REPORT_BUILDERS = {
   },
 
   'by-category': async () => {
-    const { items } = await api('/assets?limit=2000');
+    const { items } = await api(repQ('/assets?limit=2000'));
     const map = {};
     items.forEach((x) => {
       const c = map[x.category] || (map[x.category] = { total: 0, 'In Stock': 0, Assigned: 0, 'In Repair': 0, Scrap: 0 });
@@ -703,7 +958,7 @@ const REPORT_BUILDERS = {
   },
 
   'by-location': async () => {
-    const { items } = await api('/assets?limit=2000');
+    const { items } = await api(repQ('/assets?limit=2000'));
     const map = {};
     items.forEach((x) => {
       const k = x.location || '— Unassigned —';
@@ -717,7 +972,7 @@ const REPORT_BUILDERS = {
   },
 
   'by-status': async () => {
-    const { items } = await api('/assets?limit=2000');
+    const { items } = await api(repQ('/assets?limit=2000'));
     const total = items.length || 1;
     const rows = ['In Stock', 'Assigned', 'In Repair', 'Scrap'].map((s) => {
       const n = items.filter((x) => x.status === s).length;
@@ -727,38 +982,38 @@ const REPORT_BUILDERS = {
   },
 
   'in-stock': async () => {
-    const { items } = await api('/assets?status=In Stock&limit=2000');
-    return { cols: ['Asset Tag', 'Category', 'Brand', 'Model', 'Serial No', 'Location', 'Purchase Date'],
-      rows: items.map((x) => [x.assetTag, x.category, x.brand, x.model, x.serialNumber, x.location || '',
-        x.purchaseDate ? fmtDate(x.purchaseDate) : '']),
+    const { items } = await api(repQ('/assets?status=In Stock&limit=2000'));
+    return { cols: withCo(['Asset Tag', 'Category', 'Brand', 'Model', 'Serial No', 'Location', 'Purchase Date']),
+      rows: items.map((x) => rowCo([x.assetTag, x.category, x.brand, x.model, x.serialNumber, x.location || '',
+        x.purchaseDate ? fmtDate(x.purchaseDate) : ''], x.companyName)),
       summary: t('rep.sum.inStock').replace('{n}', items.length) };
   },
 
   eol: async () => {
-    const { items } = await api('/assets?limit=2000');
+    const { items } = await api(repQ('/assets?limit=2000'));
     const rows = items
       .filter((x) => x.status !== 'Scrap' && x.purchaseDate)
       .map((x) => ({ x, l: lifecycleInfo(x) }))
       .filter((o) => o.l.eol && o.l.pct >= 90)
       .sort((a, b) => b.l.pct - a.l.pct)
-      .map(({ x, l }) => [x.assetTag, x.category, `${x.brand} ${x.model}`, asgName(x),
-        fmtDate(x.purchaseDate), fmtDate(l.eol), Math.min(l.pct, 100) + '%', l.overdue ? 'REPLACE NOW' : 'Due soon']);
+      .map(({ x, l }) => rowCo([x.assetTag, x.category, `${x.brand} ${x.model}`, asgName(x),
+        fmtDate(x.purchaseDate), fmtDate(l.eol), Math.min(l.pct, 100) + '%', l.overdue ? 'REPLACE NOW' : 'Due soon'], x.companyName));
     const overdue = rows.filter((r) => r[7] === 'REPLACE NOW').length;
-    return { cols: ['Asset Tag', 'Category', 'Brand / Model', 'Assigned To', 'Purchase Date', 'EOL Date', 'Elapsed', 'State'], rows,
+    return { cols: withCo(['Asset Tag', 'Category', 'Brand / Model', 'Assigned To', 'Purchase Date', 'EOL Date', 'Elapsed', 'State']), rows,
       summary: t('rep.sum.eol').replace('{n}', rows.length).replace('{o}', overdue) };
   },
 
   aging: async () => {
-    const { items } = await api('/assets?limit=2000');
+    const { items } = await api(repQ('/assets?limit=2000'));
     const rows = items.filter((x) => x.purchaseDate)
       .map((x) => ({ x, age: Math.floor((Date.now() - new Date(x.purchaseDate).getTime()) / REPORT_MONTH_MS) }))
       .sort((a, b) => b.age - a.age)
-      .map(({ x, age }) => [x.assetTag, x.category, `${x.brand} ${x.model}`, fmtDate(x.purchaseDate), age, x.status, asgName(x)]);
-    return { cols: ['Asset Tag', 'Category', 'Brand / Model', 'Purchase Date', 'Age (months)', 'Status', 'Assigned To'], rows,
+      .map(({ x, age }) => rowCo([x.assetTag, x.category, `${x.brand} ${x.model}`, fmtDate(x.purchaseDate), age, x.status, asgName(x)], x.companyName));
+    return { cols: withCo(['Asset Tag', 'Category', 'Brand / Model', 'Purchase Date', 'Age (months)', 'Status', 'Assigned To']), rows,
       summary: t('rep.sum.aging').replace('{n}', rows.length) };
   },
   depreciation: async () => {
-    const { items } = await api('/assets?limit=2000');
+    const { items } = await api(repQ('/assets?limit=2000'));
     // Only priced assets carry a book value; skip the rest so totals are meaningful.
     const priced = items.filter((x) => Number(x.cost) > 0);
     let totalCost = 0;
@@ -770,7 +1025,7 @@ const REPORT_BUILDERS = {
         const book = x.bookValue != null ? x.bookValue : cost;
         totalCost += cost;
         totalBook += book;
-        return [
+        return rowCo([
           x.assetTag, x.category, `${x.brand} ${x.model}`,
           x.purchaseDate ? fmtDate(x.purchaseDate) : '—',
           fmtMoney(cost),
@@ -779,11 +1034,11 @@ const REPORT_BUILDERS = {
           x.depreciated != null ? fmtMoney(x.depreciated) : '—',
           x.depreciationPct != null ? `${x.depreciationPct}%` : '—',
           x.status, asgName(x),
-        ];
+        ], x.companyName);
       });
     return {
-      cols: ['Asset Tag', 'Category', 'Brand / Model', 'Purchase Date', 'Purchase Cost',
-        'Salvage', 'Book Value', 'Depreciated', 'Depreciated %', 'Status', 'Assigned To'],
+      cols: withCo(['Asset Tag', 'Category', 'Brand / Model', 'Purchase Date', 'Purchase Cost',
+        'Salvage', 'Book Value', 'Depreciated', 'Depreciated %', 'Status', 'Assigned To']),
       rows,
       summary: t('rep.sum.depreciation')
         .replace('{n}', rows.length)
@@ -794,61 +1049,133 @@ const REPORT_BUILDERS = {
   },
 
   scrap: async () => {
-    const { items } = await api('/assets?status=Scrap&limit=2000');
-    return { cols: ['Asset Tag', 'Category', 'Brand / Model', 'Serial No', 'Location', 'Purchase Date'],
-      rows: items.map((x) => [x.assetTag, x.category, `${x.brand} ${x.model}`, x.serialNumber, x.location || '',
-        x.purchaseDate ? fmtDate(x.purchaseDate) : '']),
+    const { items } = await api(repQ('/assets?status=Scrap&limit=2000'));
+    return { cols: withCo(['Asset Tag', 'Category', 'Brand / Model', 'Serial No', 'Location', 'Purchase Date']),
+      rows: items.map((x) => rowCo([x.assetTag, x.category, `${x.brand} ${x.model}`, x.serialNumber, x.location || '',
+        x.purchaseDate ? fmtDate(x.purchaseDate) : ''], x.companyName)),
       summary: t('rep.sum.scrap').replace('{n}', items.length) };
   },
 
   assignments: async () => {
     const [{ items }, employeesRes] = await Promise.all([
-      api('/assets?status=Assigned&limit=2000'),
-      api('/employees?limit=10000'),
+      api(repQ('/assets?status=Assigned&limit=2000')),
+      api(repQ('/employees?limit=10000')),
     ]);
     const employees = employeeList(employeesRes).items;
     const dept = new Map(employees.map((p) => [p.id, p]));
+    const multi = repMultiCompany();
     const rows = items
       .map((x) => {
         const p = x.currentEmployee ? dept.get(x.currentEmployee.id) : null;
-        return [asgName(x), p ? p.department || '' : '', x.assetTag, `${x.brand} ${x.model}`, x.category, x.serialNumber];
+        const base = [asgName(x), p ? p.department || '' : '', x.assetTag, `${x.brand} ${x.model}`, x.category, x.serialNumber];
+        // Two companies, not one: who employs the holder, and who owns the
+        // device. They differ on a cross-company handover and that difference
+        // is exactly what this report exists to make visible.
+        return multi
+          ? [...base, p ? p.companyName || '—' : '—', x.companyName || '—']
+          : base;
       })
       .sort((a2, b2) => a2[0].localeCompare(b2[0]));
-    return { cols: ['Employee', 'Department', 'Asset Tag', 'Brand / Model', 'Category', 'Serial No'], rows,
+    return {
+      cols: repMultiCompany()
+        ? ['Employee', 'Department', 'Asset Tag', 'Brand / Model', 'Category', 'Serial No', 'Employee Company', 'Owner Company']
+        : ['Employee', 'Department', 'Asset Tag', 'Brand / Model', 'Category', 'Serial No'],
+      rows,
       summary: t('rep.sumAssignedAcross')
         .replace('{n}', items.length)
-        .replace('{m}', new Set(rows.map((r) => r[0])).size) };
+        .replace('{m}', new Set(rows.map((r) => r[0])).size) + repScopeNote() };
   },
 
   employees: async () => {
-    const emps = employeeList(await api('/employees?limit=10000')).items;
-    return { cols: ['Employee', 'Email', 'Department', 'Title', 'Status', 'Assets Held'],
-      rows: emps.map((p) => [p.fullName, p.email, p.department || '', p.title || '', p.status, p.activeAssetCount]),
+    const emps = employeeList(await api(repQ('/employees?limit=10000'))).items;
+    return { cols: withCo(['Employee', 'Email', 'Department', 'Title', 'Status', 'Assets Held']),
+      rows: emps.map((p) => rowCo([p.fullName, p.email, p.department || '', p.title || '', p.status, p.activeAssetCount], p.companyName)),
       summary: t('rep.sum.employees').replace('{n}', emps.length).replace('{a}', emps.filter((p) => p.status === 'Active').length) };
   },
 
   'no-assets': async () => {
-    const emps = employeeList(await api('/employees?limit=10000')).items;
+    const emps = employeeList(await api(repQ('/employees?limit=10000'))).items;
     const none = emps.filter((p) => p.status === 'Active' && !p.activeAssetCount);
-    return { cols: ['Employee', 'Email', 'Department', 'Title'],
-      rows: none.map((p) => [p.fullName, p.email, p.department || '', p.title || '']),
+    return { cols: withCo(['Employee', 'Email', 'Department', 'Title']),
+      rows: none.map((p) => rowCo([p.fullName, p.email, p.department || '', p.title || ''], p.companyName)),
       summary: t('rep.sum.noAssets').replace('{n}', none.length) };
   },
 
   handovers: async () => {
-    const hs = await api('/handovers?limit=200');
+    const hs = await api(repQ('/handovers?limit=200'));
     const rows = hs.slice().sort((a, b) => new Date(b.transactionDate) - new Date(a.transactionDate))
-      .map((h) => [fmtDateTime(h.transactionDate), h.employeeName, (h.items || []).length,
-        (h.items || []).map((i) => i.assetTag).join(', '), h.documentType]);
-    return { cols: ['Date', 'Employee', '# Items', 'Asset Tags', 'Type'], rows,
-      summary: t('rep.sum.handovers').replace('{n}', hs.length) };
+      .map((h) => rowCo([fmtDateTime(h.transactionDate), h.employeeName, (h.items || []).length,
+        (h.items || []).map((i) => i.assetTag).join(', '), h.documentType],
+      (h.companySnapshot && h.companySnapshot.companyName) || h.companyName));
+    return { cols: withCo(['Date', 'Employee', '# Items', 'Asset Tags', 'Type']), rows,
+      summary: t('rep.sum.handovers').replace('{n}', hs.length) + repScopeNote() };
+  },
+
+  /* One line per entity: what each company in the group actually owns. The
+     answer to "how much hardware sits on Acme's books" without exporting the
+     full inventory and pivoting it by hand. */
+  'by-company': async () => {
+    const [{ items }, employeesRes] = await Promise.all([
+      api(repQ('/assets?limit=2000')),
+      api(repQ('/employees?limit=10000')).catch(() => ({ items: [] })),
+    ]);
+    const emps = employeeList(employeesRes).items;
+    const map = new Map();
+    const bucket = (name) => {
+      const k = name || '— Unassigned —';
+      if (!map.has(k)) map.set(k, { total: 0, assigned: 0, stock: 0, repair: 0, scrap: 0, people: 0 });
+      return map.get(k);
+    };
+    items.forEach((x) => {
+      const c = bucket(x.companyName);
+      c.total += 1;
+      if (x.status === 'Assigned') c.assigned += 1;
+      if (x.status === 'In Stock') c.stock += 1;
+      if (x.status === 'In Repair') c.repair += 1;
+      if (x.status === 'Scrap') c.scrap += 1;
+    });
+    emps.forEach((p) => { bucket(p.companyName).people += 1; });
+    const rows = [...map.entries()]
+      .sort((a, b) => b[1].total - a[1].total)
+      .map(([name, c]) => [name, c.people, c.total, c.assigned, c.stock, c.repair, c.scrap]);
+    return {
+      cols: ['Company', 'Employees', 'Total Assets', 'Assigned', 'In Stock', 'In Repair', 'Scrap'],
+      rows,
+      summary: t('rep.sum.byCompany')
+        .replace('{n}', items.length)
+        .replace('{c}', rows.length),
+    };
+  },
+
+  /* Devices sitting with someone who works for a DIFFERENT group company. This
+     is the list that quietly grows and causes the year-end argument about whose
+     asset register a laptop belongs on. */
+  'cross-company': async () => {
+    const [{ items }, employeesRes] = await Promise.all([
+      api(repQ('/assets?status=Assigned&limit=2000')),
+      api('/employees?limit=10000'),
+    ]);
+    const byId = new Map(employeeList(employeesRes).items.map((p) => [p.id, p]));
+    const rows = items
+      .map((x) => ({ x, p: x.currentEmployee ? byId.get(x.currentEmployee.id) : null }))
+      .filter(({ x, p }) => p && p.companyId && x.companyId && p.companyId !== x.companyId)
+      .map(({ x, p }) => [asgName(x), p.companyName || '—', p.department || '',
+        x.assetTag, `${x.brand} ${x.model}`, x.category, x.companyName || '—'])
+      .sort((a, b) => String(a[6]).localeCompare(String(b[6])) || String(a[0]).localeCompare(String(b[0])));
+    return {
+      cols: ['Employee', 'Employee Company', 'Department', 'Asset Tag', 'Brand / Model', 'Category', 'Owner Company'],
+      rows,
+      summary: t('rep.sum.crossCompany')
+        .replace('{n}', rows.length)
+        .replace('{c}', new Set(rows.map((r) => r[6])).size),
+    };
   },
 
   licenses: async () => {
-    const lics = await api('/licenses');
-    return { cols: ['Software', 'Vendor', 'Used Seats', 'Total Seats', 'Utilization %', 'Expires'],
-      rows: lics.map((l) => [l.softwareName, l.vendor || '', l.usedSeats, l.totalSeats,
-        Math.round((l.usedSeats / l.totalSeats) * 100), fmtDate(l.expirationDate)]),
+    const lics = await api(repQ('/licenses'));
+    return { cols: withCo(['Software', 'Vendor', 'Used Seats', 'Total Seats', 'Utilization %', 'Expires']),
+      rows: lics.map((l) => rowCo([l.softwareName, l.vendor || '', l.usedSeats, l.totalSeats,
+        Math.round((l.usedSeats / l.totalSeats) * 100), fmtDate(l.expirationDate)], l.companyName)),
       summary: t('rep.sum.licenses')
         .replace('{n}', lics.length)
         .replace('{u}', lics.reduce((s2, l) => s2 + l.usedSeats, 0))
@@ -856,7 +1183,7 @@ const REPORT_BUILDERS = {
   },
 
   'expiring-licenses': async () => {
-    const lics = await api('/licenses');
+    const lics = await api(repQ('/licenses'));
     const now = Date.now();
     const rows = lics.map((l) => ({ l, days: Math.ceil((new Date(l.expirationDate).getTime() - now) / 86400000) }))
       .filter((o) => o.days >= 0 && o.days <= 90)
@@ -901,17 +1228,17 @@ const REPORT_BUILDERS = {
   },
 
   consumables: async () => {
-    const cons = await api('/consumables');
-    return { cols: ['Item', 'Stock', 'Min. Level', 'Status'],
-      rows: cons.map((c) => [c.itemName, c.totalStock, c.minimumStockAlertLevel, c.lowStock ? 'LOW STOCK' : 'OK']),
+    const cons = await api(repQ('/consumables'));
+    return { cols: withCo(['Item', 'Stock', 'Min. Level', 'Status']),
+      rows: cons.map((c) => rowCo([c.itemName, c.totalStock, c.minimumStockAlertLevel, c.lowStock ? 'LOW STOCK' : 'OK'], c.companyName)),
       summary: t('rep.sum.consumables').replace('{n}', cons.length).replace('{b}', cons.filter((c) => c.lowStock).length) };
   },
 
   'low-stock': async () => {
-    const cons = await api('/consumables');
+    const cons = await api(repQ('/consumables'));
     const low = cons.filter((c) => c.lowStock);
-    return { cols: ['Item', 'Stock', 'Min. Level', 'Shortfall'],
-      rows: low.map((c) => [c.itemName, c.totalStock, c.minimumStockAlertLevel, Math.max(0, c.minimumStockAlertLevel - c.totalStock)]),
+    return { cols: withCo(['Item', 'Stock', 'Min. Level', 'Shortfall']),
+      rows: low.map((c) => rowCo([c.itemName, c.totalStock, c.minimumStockAlertLevel, Math.max(0, c.minimumStockAlertLevel - c.totalStock)], c.companyName)),
       summary: t('rep.sum.lowStock').replace('{n}', low.length).replace('{t}', cons.length) };
   },
 };
@@ -931,7 +1258,7 @@ const CRB_CATS = ['Laptop', 'Desktop', 'Monitor', 'Television', 'Phone', 'Tablet
 const CUSTOM_SOURCES = {
   assets: {
     label: 'Hardware Assets',
-    fetch: async () => (await api('/assets?limit=2000')).items,
+    fetch: async () => (await api(repQ('/assets?limit=2000'))).items,
     columns: [
       ['assetTag', 'Asset Tag', (x) => x.assetTag],
       ['category', 'Category', (x) => x.category],
@@ -984,7 +1311,7 @@ const CUSTOM_SOURCES = {
   },
   employees: {
     label: 'Employees',
-    fetch: async () => employeeList(await api('/employees?limit=10000')).items,
+    fetch: async () => employeeList(await api(repQ('/employees?limit=10000'))).items,
     columns: [
       ['fullName', 'Employee', (x) => x.fullName],
       ['email', 'Email', (x) => x.email],
@@ -1197,14 +1524,25 @@ function showReportResult(slot, title, rep) {
     csvDownload(`${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${new Date().toISOString().slice(0, 10)}.csv`, rep.cols, rep.rows);
   });
   $('#rep-print', slot).addEventListener('click', () => {
+    // Scoped to one entity → print under that entity's name. Unscoped, or on a
+    // single-company install, the workspace branding still heads the page.
+    const scoped = getReportCompany() && typeof Companies !== 'undefined'
+      ? Companies.byId(getReportCompany())
+      : null;
+    const brandName = (scoped && scoped.name) || AppConfig.companyName || '';
+    // A scoped company with no logo of its own inherits the group logo, exactly
+    // like the zimmet form does.
+    const brandLogo = scoped
+      ? (Companies.logo(scoped.id) || AppConfig.companyLogo)
+      : AppConfig.companyLogo;
     $('#print-root').innerHTML = `
       <div class="receipt receipt-v2 receipt-report">
         <header class="r-banner">
           <div class="r-banner-left">
-            <div class="r-logo">${AppConfig.companyLogo
-              ? `<img src="${esc(AppConfig.companyLogo)}" alt="">`
-              : esc((AppConfig.companyName || 'A')[0].toUpperCase())}</div>
-            <div><h1>${esc((AppConfig.companyName || '').toUpperCase())}</h1>
+            <div class="r-logo">${brandLogo
+              ? `<img src="${esc(brandLogo)}" alt="">`
+              : esc((brandName || 'A')[0].toUpperCase())}</div>
+            <div><h1>${esc(brandName.toUpperCase())}</h1>
               <small>${esc(title)}</small></div>
           </div>
           <div class="r-banner-right">

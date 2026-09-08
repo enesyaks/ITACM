@@ -238,6 +238,7 @@ function createApp() {
   app.use('/api/kb', require('./routes/kb.routes'));
   app.use('/api/employees', require('./routes/employees.routes'));
   app.use('/api/org', require('./routes/org.routes'));
+  app.use('/api/companies', require('./routes/companies.routes'));
   app.use('/api/approvals', require('./routes/approvals.routes'));
   app.use('/api/onboardings', require('./routes/onboarding.routes'));
   app.use('/api/handovers', require('./routes/handovers.routes'));

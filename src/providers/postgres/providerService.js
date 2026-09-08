@@ -245,6 +245,8 @@ function mapContract(row) {
     providerId: row.provider_id,
     providerName: row.provider_name || null,
     providerCategory: row.provider_category || null,
+    companyId: row.company_id || null,
+    companyName: row.company_name || null,
     title: row.title,
     contractNumber: row.contract_number,
     category: row.category,
@@ -491,9 +493,11 @@ async function listContracts({ status, providerId, ownerEmployeeId, search, expi
   }
   const sql = `
     SELECT c.*, p.name AS provider_name, p.category AS provider_category,
+      co.name AS company_name,
       (SELECT COUNT(*)::int FROM contract_documents d WHERE d.contract_id = c.id) AS document_count
     FROM contracts c
     JOIN providers p ON p.id = c.provider_id
+    LEFT JOIN companies co ON co.id = c.company_id
     ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
     ORDER BY
       CASE WHEN c.end_date IS NULL THEN 1 ELSE 0 END,
@@ -507,14 +511,27 @@ async function getContract(id, { user } = {}) {
   if (!isUuid(id)) throw HttpError.notFound(`Contract ${id} not found`);
   const { rows } = await query(
     `SELECT c.*, p.name AS provider_name, p.category AS provider_category,
+      co.name AS company_name,
       (SELECT COUNT(*)::int FROM contract_documents d WHERE d.contract_id = c.id) AS document_count
      FROM contracts c
      JOIN providers p ON p.id = c.provider_id
+     LEFT JOIN companies co ON co.id = c.company_id
      WHERE c.id = $1`,
     [id]
   );
   if (!rows[0]) throw HttpError.notFound(`Contract ${id} not found`);
   return assertContractReadable(mapContract(rows[0]), user);
+}
+
+/** Which group entity signed the contract; unset files under the default company. */
+async function resolveContractCompanyId(companyId) {
+  if (companyId === null || companyId === '') return null;
+  if (companyId !== undefined) {
+    if (!isUuid(companyId)) throw HttpError.badRequest('companyId must be a company id');
+    return companyId;
+  }
+  const fallback = await require('./companyService').getDefaultCompany().catch(() => null);
+  return fallback ? fallback.id : null;
 }
 
 async function createContract(body = {}, { user } = {}) {
@@ -541,8 +558,8 @@ async function createContract(body = {}, { user } = {}) {
        provider_id, title, contract_number, category, status, visibility,
        start_date, end_date, renewal_date, notice_days, auto_renew,
        cost_amount, cost_currency, billing_cycle,
-       owner_employee_id, owner_employee_name, notes
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+       owner_employee_id, owner_employee_name, notes, company_id
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
      RETURNING *`,
     [
       body.providerId,
@@ -562,6 +579,7 @@ async function createContract(body = {}, { user } = {}) {
       owner.id,
       owner.name,
       trimOrNull(body.notes, 4000) || '',
+      await resolveContractCompanyId(body.companyId),
     ]
   );
   const { rows: p } = await query('SELECT name, category FROM providers WHERE id = $1', [body.providerId]);
@@ -607,7 +625,8 @@ async function updateContract(id, body = {}, { user } = {}) {
        provider_id = $2, title = $3, contract_number = $4, category = $5, status = $6, visibility = $7,
        start_date = $8, end_date = $9, renewal_date = $10, notice_days = $11, auto_renew = $12,
        cost_amount = $13, cost_currency = $14, billing_cycle = $15,
-       owner_employee_id = $16, owner_employee_name = $17, notes = $18, updated_at = now()
+       owner_employee_id = $16, owner_employee_name = $17, notes = $18,
+       company_id = $19, updated_at = now()
      WHERE id = $1 RETURNING *`,
     [
       id,
@@ -635,6 +654,7 @@ async function updateContract(id, body = {}, { user } = {}) {
       ownerId,
       ownerName,
       body.notes !== undefined ? (trimOrNull(body.notes, 4000) || '') : cur.notes,
+      body.companyId !== undefined ? await resolveContractCompanyId(body.companyId) : (cur.companyId || null),
     ]
   );
   const { rows: p } = await query('SELECT name, category FROM providers WHERE id = $1', [providerId]);

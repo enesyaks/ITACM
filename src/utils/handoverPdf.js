@@ -156,7 +156,7 @@ function findScale(available, opts) {
   return best;
 }
 
-function buildHandoverPdf(stream, { handover, employee, settings, deliveredBy, lang: langOverride, templateId }) {
+function buildHandoverPdf(stream, { handover, employee, settings, deliveredBy, branding, lang: langOverride, templateId }) {
   const doc = new PDFDocument({
     size: 'A4',
     margins: { top: 0, bottom: 0, left: 0, right: 0 },
@@ -180,17 +180,67 @@ function buildHandoverPdf(stream, { handover, employee, settings, deliveredBy, l
   const pageH = A4.h;
   const contentW = pageW - M * 2;
   const items = handover.items || [];
-  const groups = handover.documentType === 'separate' ? items.map((i) => [i]) : [items];
+
+  // The letterhead this form carries. `branding` is the employee's company with
+  // the group-level settings filling any gap; without it (single-company install
+  // or a pre-multi-company receipt) the group settings are the letterhead.
+  const brand = {
+    companyName: (branding && branding.companyName) || settings.companyName || null,
+    companyLogo: (branding && branding.companyLogo) || settings.companyLogo || null,
+    companyAddress: (branding && branding.companyAddress) || settings.companyAddress || null,
+    handoverTerms: (branding && branding.handoverTerms) || settings.handoverTerms || null,
+    companyId: (branding && branding.companyId) || null,
+  };
+
+  // Every row names its own owner. A blank cell under a column headed "Owner
+  // Company" reads as missing data, not as "same as the header" — so once the
+  // column is on the page it is filled in on every line.
+  const ownerNameOf = (it) => (it && it.ownerCompanyName) || '';
+
+  // Whether a row belongs to a company OTHER than the one heading the form. This
+  // is what the terms clause and the per-company split key off — not whether the
+  // column is drawn.
+  const isForeignOwner = (it) => {
+    const name = ownerNameOf(it);
+    if (!name) return false;
+    if (brand.companyId) return it.ownerCompanyId !== brand.companyId;
+    return !!brand.companyName && name !== brand.companyName;
+  };
+  const hasCrossCompany = items.some(isForeignOwner);
+
+  let groups;
+  if (handover.documentType === 'separate') {
+    groups = items.map((i) => [i]);
+  } else if (handover.documentType === 'per_company') {
+    // One page per owning company, so each entity gets a form covering only its
+    // own property — the option to pick when both sides want their own copy.
+    const byOwner = new Map();
+    items.forEach((it) => {
+      const key = it.ownerCompanyId || '';
+      if (!byOwner.has(key)) byOwner.set(key, []);
+      byOwner.get(key).push(it);
+    });
+    groups = [...byOwner.values()];
+  } else {
+    groups = [items];
+  }
   const formNo = 'HF-' + String(handover.id || '').slice(0, 8).toUpperCase();
   const tplList = (settings.handoverTemplates && settings.handoverTemplates.length)
     ? settings.handoverTemplates
     : [{ ...DEFAULT_HANDOVER_TEMPLATE, ...(settings.handoverTemplate || {}), id: 'default', name: 'Standard' }];
   const wantId = templateId || handover.templateId;
   const tpl = { ...DEFAULT_HANDOVER_TEMPLATE, ...(tplList.find((t) => t.id === wantId) || tplList[0]) };
+
+  // The column is a template toggle (Settings → zimmet form design), but it only
+  // earns its place when more than one company appears on the form — on a
+  // single-company install it would repeat one name down every row.
+  const companiesOnForm = new Set(items.map(ownerNameOf).filter(Boolean));
+  if (brand.companyName) companiesOnForm.add(brand.companyName);
+  const showOwnerCol = tpl.colOwnerCompany !== false && companiesOnForm.size > 1;
   const C = resolveHandoverDesign(tpl.design).pdf;
 
-  const useCustomTerms = settings.handoverTerms
-    && String(settings.handoverTerms).trim() !== String(DEFAULT_HANDOVER_TERMS).trim();
+  const useCustomTerms = brand.handoverTerms
+    && String(brand.handoverTerms).trim() !== String(DEFAULT_HANDOVER_TERMS).trim();
 
   // Always prefer localized labels over stored English template strings.
   const issuedLabel = L.issuedBy;
@@ -215,13 +265,14 @@ function buildHandoverPdf(stream, { handover, employee, settings, deliveredBy, l
       allowNewPage = false;
     }
     const ref = `${formNo}${groups.length > 1 ? `-${gi + 1}` : ''}`;
+    const groupHasCross = hasCrossCompany && group.some(isForeignOwner);
     const assetRows = group.filter((it) => it.kind !== 'line');
     const lineRows = group.filter((it) => it.kind === 'line');
     // Legacy receipts have no kind — treat as assets.
     const assets = assetRows.length || lineRows.length ? assetRows : group;
 
     /* ---------- HEADER (true two columns — no overlap) ---------- */
-    const address = String(settings.companyAddress || '').trim();
+    const address = String(brand.companyAddress || '').trim();
     const leftW = contentW * 0.52;
     const rightW = contentW * 0.44;
     const rightX = pageW - M - rightW;
@@ -235,25 +286,25 @@ function buildHandoverPdf(stream, { handover, employee, settings, deliveredBy, l
     let nameX = M;
     const nameW = leftW - (tpl.showLogo ? logoSize + 8 : 0);
     if (tpl.showLogo) {
-      const logo = settings.companyLogo;
+      const logo = brand.companyLogo;
       doc.roundedRect(M, 14, logoSize, logoSize, 5).fill(C.metaBg);
       if (logo && /^data:image\/(png|jpe?g);base64,/.test(logo)) {
         try {
           doc.image(Buffer.from(logo.split(',')[1], 'base64'), M + 2, 16, { fit: [24, 24] });
         } catch {
-          at(doc, 'b', 12, C.accent, (settings.companyName || 'A')[0].toUpperCase(), M, 20, {
+          at(doc, 'b', 12, C.accent, (brand.companyName || 'A')[0].toUpperCase(), M, 20, {
             width: logoSize, align: 'center',
           });
         }
       } else {
-        at(doc, 'b', 12, C.accent, (settings.companyName || 'A')[0].toUpperCase(), M, 20, {
+        at(doc, 'b', 12, C.accent, (brand.companyName || 'A')[0].toUpperCase(), M, 20, {
           width: logoSize, align: 'center',
         });
       }
       nameX = M + logoSize + 8;
     }
 
-    at(doc, 'b', 10, C.headerText, (settings.companyName || 'IT ASSET CONTROL PRO').toUpperCase(),
+    at(doc, 'b', 10, C.headerText, (brand.companyName || 'IT ASSET CONTROL PRO').toUpperCase(),
       nameX, 14, { width: nameW });
     if (address) {
       at(doc, 'r', 6.5, C.headerSoft, address, nameX, 28, { width: nameW });
@@ -369,6 +420,9 @@ function buildHandoverPdf(stream, { handover, employee, settings, deliveredBy, l
       if (tpl.colSerial) cols.push({ t: L.serial, weight: 0.20, get: (it) => it.serialNumber || '—' });
       if (tpl.colMac) cols.push({ t: L.mac, weight: 0.18, get: (it) => it.macAddress || 'N/A' });
       if (tpl.colCondition) cols.push({ t: L.condition, weight: 0.20, get: (it) => it.conditionNote || 'New' });
+      // Only appears when the basket actually crosses companies, so a
+      // single-company form keeps exactly the columns it had before.
+      if (showOwnerCol) cols.push({ t: L.ownerCompany, weight: 0.20, get: (it) => ownerNameOf(it) || '—' });
       drawItemTable(L.assets, assets, cols, Sz.rowHAssets);
     }
 
@@ -380,6 +434,9 @@ function buildHandoverPdf(stream, { handover, employee, settings, deliveredBy, l
         { t: L.colPlan, weight: 0.22, get: (it) => it.plan || '—' },
         { t: L.colSim, weight: 0.24, get: (it) => it.simSerial || it.serialNumber || '—' },
       ];
+      if (showOwnerCol) {
+        lineCols.push({ t: L.ownerCompany, weight: 0.20, get: (it) => ownerNameOf(it) || '—' });
+      }
       drawItemTable(L.lines, lineRows, lineCols, Sz.rowHLines);
     }
 
@@ -401,8 +458,13 @@ function buildHandoverPdf(stream, { handover, employee, settings, deliveredBy, l
 
       let termsText = L.termsBody;
       if (useCustomTerms) {
-        termsText = String(settings.handoverTerms).split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean).join(' ');
+        termsText = String(brand.handoverTerms).split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean).join(' ');
       }
+      // Say in words what the Owner Company column shows in the table: the person
+      // is signing for another entity's property, not taking ownership of it.
+      // It goes FIRST: the terms box is height-capped with ellipsis, and this
+      // clause is the one sentence on this particular form that is not boilerplate.
+      if (groupHasCross && L.crossCompanyNote) termsText = `${L.crossCompanyNote} ${termsText}`;
       doc.font('r').fontSize(7.5).fillColor(C.body)
         .text(termsText, M + 8, y + 20 * Sz.s, {
           width: contentW - 16,

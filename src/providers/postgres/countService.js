@@ -17,12 +17,20 @@ function normalizeTag(raw) {
   return (m ? m[1] : s).trim().toUpperCase();
 }
 
-async function createCount({ name, location }, itUser) {
+async function createCount({ name, location, companyId }, itUser) {
   const title = String(name || '').trim() || `Stock count ${new Date().toISOString().slice(0, 10)}`;
+  if (companyId != null && companyId !== '' && !isUuid(companyId)) {
+    throw HttpError.badRequest('companyId must be a company id');
+  }
+  let company = companyId || null;
+  if (!company) {
+    const fallback = await require('./companyService').getDefaultCompany().catch(() => null);
+    company = fallback ? fallback.id : null;
+  }
   const { rows } = await query(
-    `INSERT INTO stock_counts (name, location, created_by_name)
-     VALUES ($1, $2, $3) RETURNING *`,
-    [title.slice(0, 80), location || null, itUser.username || itUser.email]
+    `INSERT INTO stock_counts (name, location, created_by_name, company_id)
+     VALUES ($1, $2, $3, $4) RETURNING *`,
+    [title.slice(0, 80), location || null, itUser.username || itUser.email, company]
   );
   return mapRow(rows[0]);
 }

@@ -3,24 +3,48 @@ const { query, withTransaction } = require('./pool');
 const { isUuid } = require('./rowMapper');
 const { HttpError } = require('../../utils/httpError');
 
-async function listConsumables() {
-  const { rows } = await query('SELECT * FROM consumables ORDER BY item_name');
+async function listConsumables({ companyId } = {}) {
+  const where = [];
+  const params = [];
+  if (companyId) {
+    if (companyId === 'none') where.push('cs.company_id IS NULL');
+    else if (!isUuid(companyId)) return [];
+    else { params.push(companyId); where.push(`cs.company_id = $${params.length}`); }
+  }
+  const { rows } = await query(
+    `SELECT cs.*, co.name AS company_name
+       FROM consumables cs
+       LEFT JOIN companies co ON co.id = cs.company_id
+       ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+      ORDER BY cs.item_name`,
+    params
+  );
   return rows.map((c) => ({
     id: c.id,
     itemName: c.item_name,
     totalStock: c.total_stock,
     minimumStockAlertLevel: c.minimum_stock_alert_level,
+    companyId: c.company_id,
+    companyName: c.company_name,
     createdAt: c.created_at,
     lowStock: c.total_stock <= c.minimum_stock_alert_level,
   }));
 }
 
-async function createConsumable({ itemName, totalStock = 0, minimumStockAlertLevel = 0 }) {
+async function createConsumable({ itemName, totalStock = 0, minimumStockAlertLevel = 0, companyId }) {
   if (!itemName) throw HttpError.badRequest('itemName is required');
+  if (companyId != null && companyId !== '' && !isUuid(companyId)) {
+    throw HttpError.badRequest('companyId must be a company id');
+  }
+  let company = companyId || null;
+  if (!company) {
+    const fallback = await require('./companyService').getDefaultCompany().catch(() => null);
+    company = fallback ? fallback.id : null;
+  }
   const { rows } = await query(
-    `INSERT INTO consumables (item_name, total_stock, minimum_stock_alert_level)
-     VALUES ($1, $2, $3) RETURNING id, item_name AS "itemName"`,
-    [itemName, Number(totalStock) || 0, Number(minimumStockAlertLevel) || 0]
+    `INSERT INTO consumables (item_name, total_stock, minimum_stock_alert_level, company_id)
+     VALUES ($1, $2, $3, $4) RETURNING id, item_name AS "itemName"`,
+    [itemName, Number(totalStock) || 0, Number(minimumStockAlertLevel) || 0, company]
   );
   return rows[0];
 }

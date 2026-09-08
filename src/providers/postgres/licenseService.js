@@ -52,9 +52,19 @@ function assertActiveLicense(lic) {
  * Seats consumed = employee zimmet (licenses.used_seats) + devices linked via
  * asset_licenses. Support/appliance licenses are typically device-bound.
  */
-async function listLicenses({ limit = 200, privileged = false, includeCancelled = true } = {}) {
+async function listLicenses({ limit = 200, privileged = false, includeCancelled = true, companyId } = {}) {
   const showCancelled = includeCancelled === true || includeCancelled === 'true'
     || includeCancelled === undefined;
+  // Company scope for the reports page; ignored when unset.
+  const params = [];
+  const conds = [];
+  if (!showCancelled) conds.push("COALESCE(l.status, 'active') <> 'cancelled'");
+  if (companyId) {
+    if (companyId === 'none') conds.push('l.company_id IS NULL');
+    else if (!isUuid(companyId)) return [];
+    else { params.push(companyId); conds.push(`l.company_id = $${params.length}`); }
+  }
+  const whereSql = conds.length ? 'WHERE ' + conds.join(' AND ') : '';
   const { rows } = await query(
     `SELECT l.*,
        p.name AS provider_name,
@@ -64,8 +74,10 @@ async function listLicenses({ limit = 200, privileged = false, includeCancelled 
        COALESCE(ea.emp_count, 0)::int AS assigned_users,
        (l.used_seats + COALESCE(al.asset_count, 0))::int AS used_seats_total,
        COALESCE(dc.doc_count, 0)::int AS document_count,
-       COALESCE(si.install_count, 0)::int AS discovered_installs
+       COALESCE(si.install_count, 0)::int AS discovered_installs,
+       co.name AS company_name
      FROM licenses l
+     LEFT JOIN companies co ON co.id = l.company_id
      LEFT JOIN providers p ON p.id = l.provider_id
      LEFT JOIN contracts c ON c.id = l.contract_id
      LEFT JOIN (
@@ -86,12 +98,12 @@ async function listLicenses({ limit = 200, privileged = false, includeCancelled 
        FROM software_installs
        GROUP BY lower(software_name)
      ) si ON si.sw_key = lower(l.software_name)
-     ${showCancelled ? '' : "WHERE COALESCE(l.status, 'active') <> 'cancelled'"}
+     ${whereSql}
      ORDER BY
        CASE WHEN COALESCE(l.status, 'active') = 'cancelled' THEN 1 ELSE 0 END,
        l.expiration_date ASC
-     LIMIT $1`,
-    [Math.min(Number(limit) || 200, 1000)]
+     LIMIT $${params.length + 1}`,
+    [...params, Math.min(Number(limit) || 200, 1000)]
   );
   return rows.map((r) => enrichListRow(r, privileged));
 }
@@ -125,8 +137,10 @@ async function getLicense(licenseId, { privileged = false } = {}) {
        COALESCE(al.asset_count, 0)::int AS linked_assets,
        COALESCE(ea.emp_count, 0)::int AS assigned_users,
        (l.used_seats + COALESCE(al.asset_count, 0))::int AS used_seats_total,
-       COALESCE(dc.doc_count, 0)::int AS document_count
+       COALESCE(dc.doc_count, 0)::int AS document_count,
+       co.name AS company_name
      FROM licenses l
+     LEFT JOIN companies co ON co.id = l.company_id
      LEFT JOIN providers p ON p.id = l.provider_id
      LEFT JOIN contracts c ON c.id = l.contract_id
      LEFT JOIN (
@@ -234,6 +248,20 @@ async function resolvePurchaseFields(body = {}) {
   };
 }
 
+/**
+ * Owning entity for a licence pool. An unset value files under the default
+ * company so reports never show a company-less row on a multi-company install.
+ */
+async function resolveCompanyId(companyId) {
+  if (companyId === null || companyId === '') return null;
+  if (companyId !== undefined) {
+    if (!isUuid(companyId)) throw HttpError.badRequest('companyId must be a company id');
+    return companyId;
+  }
+  const fallback = await require('./companyService').getDefaultCompany().catch(() => null);
+  return fallback ? fallback.id : null;
+}
+
 async function createLicense(body) {
   const { softwareName, totalSeats, expirationDate } = body || {};
   if (!softwareName || !String(softwareName).trim()) {
@@ -252,8 +280,8 @@ async function createLicense(body) {
     `INSERT INTO licenses (
        software_name, vendor, license_key, total_seats, expiration_date,
        provider_id, contract_id, purchase_type, invoice_number,
-       purchase_date, purchase_amount, purchase_currency
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+       purchase_date, purchase_amount, purchase_currency, company_id
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
      RETURNING id`,
     [
       String(softwareName).trim(),
@@ -268,6 +296,7 @@ async function createLicense(body) {
       purchase.purchaseDate ?? null,
       purchase.purchaseAmount ?? null,
       purchase.purchaseCurrency ?? null,
+      await resolveCompanyId(body.companyId),
     ]
   );
   return getLicense(rows[0].id, { privileged: true });
@@ -330,7 +359,8 @@ async function updateLicense(licenseId, body = {}, { privileged = false } = {}) 
        invoice_number = $10,
        purchase_date = $11,
        purchase_amount = $12,
-       purchase_currency = $13
+       purchase_currency = $13,
+       company_id = $14
      WHERE id = $1`,
     [
       licenseId,
@@ -346,6 +376,7 @@ async function updateLicense(licenseId, body = {}, { privileged = false } = {}) 
       purchase.purchaseDate !== undefined ? purchase.purchaseDate : cur[0].purchase_date,
       purchase.purchaseAmount !== undefined ? purchase.purchaseAmount : cur[0].purchase_amount,
       purchase.purchaseCurrency !== undefined ? purchase.purchaseCurrency : cur[0].purchase_currency,
+      body.companyId !== undefined ? await resolveCompanyId(body.companyId) : cur[0].company_id,
     ]
   );
   return getLicense(licenseId, { privileged: true });

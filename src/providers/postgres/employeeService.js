@@ -22,7 +22,7 @@ function empOrderBySql(sort, order) {
   return cols.map((c) => `${c} ${dir}`).join(', ');
 }
 
-async function listEmployees({ status, department, search, sort, order, limit = 200, offset = 0 } = {}) {
+async function listEmployees({ status, department, search, companyId, sort, order, limit = 200, offset = 0 } = {}) {
   const where = [];
   const params = [];
   const asList = (v) => (Array.isArray(v) ? v : String(v || '').split(','))
@@ -49,6 +49,20 @@ async function listEmployees({ status, department, search, sort, order, limit = 
       where.push(`department = ANY($${params.length}::text[])`);
     }
   }
+  if (companyId) {
+    // "none" lists the people no entity claims — usually left by a company delete.
+    const ids = asList(companyId);
+    if (ids.length === 1 && ids[0] === 'none') {
+      where.push('company_id IS NULL');
+    } else {
+      const real = ids.filter((id) => isUuid(id));
+      if (!real.length) {
+        return { items: [], total: 0, summary: { withAssets: 0, inactive: 0, active: 0 } };
+      }
+      params.push(real);
+      where.push(`company_id = ANY($${params.length}::uuid[])`);
+    }
+  }
   if (search) {
     params.push(`%${search}%`);
     where.push(
@@ -64,8 +78,10 @@ async function listEmployees({ status, department, search, sort, order, limit = 
 
   const orderSql = empOrderBySql(sort, order);
   const { rows } = await query(
-    `SELECT * FROM employees ${whereSql}
-     ORDER BY ${orderSql} LIMIT $${params.length - 1} OFFSET $${params.length}`,
+    `SELECT employees.*,
+            (SELECT c.name FROM companies c WHERE c.id = employees.company_id) AS company_name
+       FROM employees ${whereSql}
+      ORDER BY ${orderSql} LIMIT $${params.length - 1} OFFSET $${params.length}`,
     params
   );
 
@@ -91,7 +107,12 @@ async function listEmployees({ status, department, search, sort, order, limit = 
 
 async function getEmployee(id) {
   if (!isUuid(id)) throw HttpError.notFound(`Employee ${id} not found`);
-  const { rows } = await query('SELECT * FROM employees WHERE id = $1', [id]);
+  const { rows } = await query(
+    `SELECT employees.*,
+            (SELECT c.name FROM companies c WHERE c.id = employees.company_id) AS company_name
+       FROM employees WHERE id = $1`,
+    [id]
+  );
   if (!rows[0]) throw HttpError.notFound(`Employee ${id} not found`);
   const emp = mapRow(rows[0]);
   const email = String(emp.email || '').trim().toLowerCase();
@@ -126,7 +147,7 @@ async function getEmployee(id) {
   return emp;
 }
 
-async function createEmployee({ fullName, email, department, title, status = 'Active', startDate = null, managerEmployeeId = null }) {
+async function createEmployee({ fullName, email, department, title, status = 'Active', startDate = null, managerEmployeeId = null, companyId = null }) {
   if (!fullName || !email) throw HttpError.badRequest('fullName and email are required');
   if (!STATUSES.includes(status)) throw HttpError.badRequest('status must be Active or Inactive');
   const normEmail = String(email).trim().toLowerCase();
@@ -141,12 +162,22 @@ async function createEmployee({ fullName, email, department, title, status = 'Ac
     if (!isUuid(managerEmployeeId)) throw HttpError.badRequest('Invalid managerEmployeeId');
     managerId = managerEmployeeId; // a brand-new employee can't create a cycle yet
   }
+  // Which entity employs this person. It decides whose logo heads their zimmet
+  // form, so it falls back to the default company rather than staying NULL.
+  let company = null;
+  if (companyId) {
+    if (!isUuid(companyId)) throw HttpError.badRequest('Invalid companyId');
+    company = companyId;
+  } else {
+    const fallback = await require('./companyService').getDefaultCompany().catch(() => null);
+    company = fallback ? fallback.id : null;
+  }
 
   try {
     const { rows } = await query(
-      `INSERT INTO employees (full_name, email, department, title, status, start_date, manager_employee_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-      [fullName, normEmail, department || null, title || null, status, start, managerId]
+      `INSERT INTO employees (full_name, email, department, title, status, start_date, manager_employee_id, company_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+      [fullName, normEmail, department || null, title || null, status, start, managerId, company]
     );
     return mapRow(rows[0]);
   } catch (err) {
@@ -191,6 +222,7 @@ async function updateEmployee(id, body) {
     title: 'title', status: 'status', startDate: 'start_date',
     managerEmployeeId: 'manager_employee_id',
     approvalDelegateId: 'approval_delegate_id', approvalDelegateUntil: 'approval_delegate_until',
+    companyId: 'company_id',
   };
   const data = {};
   for (const [key, col] of Object.entries(colMap)) {
@@ -212,6 +244,13 @@ async function updateEmployee(id, body) {
       data.approval_delegate_until = String(u).slice(0, 10);
       if (!/^\d{4}-\d{2}-\d{2}$/.test(data.approval_delegate_until)) throw HttpError.badRequest('approvalDelegateUntil must be YYYY-MM-DD');
     }
+  }
+  // Employing company. Clearing it is allowed (the picker offers a blank) but an
+  // employee without one falls back to the group letterhead on their zimmet form.
+  if (data.company_id !== undefined) {
+    const c = data.company_id || null;
+    if (c && !isUuid(c)) throw HttpError.badRequest('Invalid companyId');
+    data.company_id = c;
   }
   // Manager (reports-to): validate uuid, forbid self, and reject reporting cycles.
   if (data.manager_employee_id !== undefined) {

@@ -1160,3 +1160,62 @@ CREATE INDEX IF NOT EXISTS idx_ldap_sync_runs_started ON ldap_sync_runs (started
 ALTER TABLE employees ADD COLUMN IF NOT EXISTS ldap_source TEXT;
 ALTER TABLE users     ADD COLUMN IF NOT EXISTS ldap_source TEXT;
 CREATE INDEX IF NOT EXISTS idx_employees_ldap_source ON employees (ldap_source) WHERE ldap_source IS NOT NULL;
+
+-- Multi-company (holding) support — mirror of migrations/089_companies.sql.
+-- One row per legal entity; `parent_id` puts a subsidiary under its group.
+-- A NULL logo/address/terms means "inherit the group default from app_settings",
+-- so a single-company install never has to touch this table.
+CREATE TABLE IF NOT EXISTS companies (
+  id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  parent_id            UUID REFERENCES companies(id) ON DELETE SET NULL,
+  name                 TEXT NOT NULL,
+  legal_name           TEXT,
+  code                 TEXT,
+  logo                 TEXT,
+  address              TEXT,
+  tax_office           TEXT,
+  tax_no               TEXT,
+  email                TEXT,
+  phone                TEXT,
+  handover_terms       TEXT,
+  handover_template_id TEXT,
+  is_default           BOOLEAN NOT NULL DEFAULT FALSE,
+  active               BOOLEAN NOT NULL DEFAULT TRUE,
+  notes                TEXT NOT NULL DEFAULT '',
+  created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at           TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_companies_name ON companies (lower(name));
+CREATE UNIQUE INDEX IF NOT EXISTS idx_companies_code ON companies (lower(code)) WHERE code IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_companies_parent ON companies (parent_id) WHERE parent_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_companies_one_default ON companies ((is_default)) WHERE is_default;
+
+INSERT INTO companies (name, is_default)
+SELECT COALESCE(NULLIF(btrim(s.company_name), ''), 'IT Asset Control Pro'), TRUE
+  FROM app_settings s
+ WHERE s.id = 1
+   AND NOT EXISTS (SELECT 1 FROM companies);
+
+ALTER TABLE employees     ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id) ON DELETE SET NULL;
+ALTER TABLE assets        ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id) ON DELETE SET NULL;
+ALTER TABLE mobile_lines  ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id) ON DELETE SET NULL;
+ALTER TABLE licenses      ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id) ON DELETE SET NULL;
+ALTER TABLE contracts     ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id) ON DELETE SET NULL;
+ALTER TABLE consumables   ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id) ON DELETE SET NULL;
+ALTER TABLE stock_counts  ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id) ON DELETE SET NULL;
+ALTER TABLE handovers     ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id) ON DELETE SET NULL;
+ALTER TABLE handovers     ADD COLUMN IF NOT EXISTS company_snapshot JSONB;
+
+CREATE INDEX IF NOT EXISTS idx_employees_company    ON employees (company_id)    WHERE company_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_assets_company       ON assets (company_id)       WHERE company_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_lines_company        ON mobile_lines (company_id) WHERE company_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_licenses_company     ON licenses (company_id)     WHERE company_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_contracts_company    ON contracts (company_id)    WHERE company_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_consumables_company  ON consumables (company_id)  WHERE company_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_stock_counts_company ON stock_counts (company_id) WHERE company_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_handovers_company    ON handovers (company_id)    WHERE company_id IS NOT NULL;
+
+-- Cross-company baskets can print one document per owning company.
+ALTER TABLE handovers DROP CONSTRAINT IF EXISTS handovers_document_type_check;
+ALTER TABLE handovers ADD CONSTRAINT handovers_document_type_check
+  CHECK (document_type IN ('single', 'separate', 'per_company'));

@@ -7,12 +7,22 @@ Views.reports = async function (el) {
   const canExport = Auth.canIam('report', 'export');
   const canMaintList = iamCanList('maintenance');
   const canAssetList = iamCanList('asset');
+  // The company list decides whether the scope selector, the Company column and
+  // the two company reports appear at all — so it has to be loaded before the
+  // page is composed, not after.
+  if (typeof Companies !== 'undefined') await Companies.load().catch(() => {});
+  // Warm the scoped company's logo so a printed report can head the page with it
+  // without the print handler having to await anything.
+  if (typeof Companies !== 'undefined' && getReportCompany()) {
+    Companies.loadLogo(getReportCompany()).catch(() => {});
+  }
+  const companyScope = repMultiCompany();
   const presetReports = visibleReportDefs();
   const customSourceKeys = visibleCustomSourceKeys();
   const FEATURED = new Set(['inventory', 'eol', 'in-stock', 'assignments', 'open-repairs', 'expiring-licenses', 'low-stock']);
 
   const [assetsRes, maintenance] = await Promise.all([
-    canAssetList ? api('/assets?limit=2000').catch(() => ({ items: [] })) : Promise.resolve({ items: [] }),
+    canAssetList ? api(repQ('/assets?limit=2000')).catch(() => ({ items: [] })) : Promise.resolve({ items: [] }),
     canMaintList ? api('/maintenance?limit=2000').catch(() => []) : Promise.resolve([]),
   ]);
   const assets = assetsRes.items || [];
@@ -56,6 +66,13 @@ Views.reports = async function (el) {
 
   el.innerHTML = `
     ${pageHead('Reports', 'rep.sub', `
+      ${companyScope ? `
+      <select id="rep-company" class="rep-range" title="${esc(t('rep.companyScope'))}">
+        <option value="">${esc(t('rep.allCompanies'))}</option>
+        ${Companies.active().map((c) => `
+          <option value="${esc(c.id)}"${getReportCompany() === c.id ? ' selected' : ''}>${esc(c.name)}</option>
+        `).join('')}
+      </select>` : ''}
       <select id="rep-range" class="rep-range" title="KPI window">
         <option value="30">${esc(t('rep.last30'))}</option>
         <option value="90">${esc(t('rep.last90'))}</option>
@@ -252,6 +269,12 @@ Views.reports = async function (el) {
   $('#rep-range', el).addEventListener('change', (e) => {
     state.range = Number(e.target.value);
     renderKpis();
+  });
+  // Changing the scope re-runs the page so the KPI tiles and any open report
+  // both reflect the selected company rather than only the next report run.
+  $('#rep-company', el)?.addEventListener('change', (e) => {
+    setReportCompany(e.target.value);
+    Views.reports(el);
   });
   el.querySelectorAll('[data-rep-tab]').forEach((b) => b.addEventListener('click', () => setTab(b.dataset.repTab)));
   $('#rep-q', el)?.addEventListener('input', (e) => { state.q = e.target.value; renderPresets(); });

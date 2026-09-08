@@ -67,6 +67,9 @@ Views.assets = async function (el, params = {}) {
   // immediately so the load is visible rather than a blank gap. A re-render of
   // the already-mounted view keeps its search box and only ghosts the rows.
   if (!el.querySelector('#asset-search')) renderAssetsSkeletonShell(el);
+  // The company list decides whether the Company column and filter appear at
+  // all, so it has to resolve before the columns are composed.
+  await Companies.load().catch(() => {});
   const canCreate = Auth.canIam('asset', 'create');
   const canUpdate = Auth.canIam('asset', 'update') || Auth.canIam('asset', 'manage');
   const canUnassign = Auth.canIam('asset', 'unassign') || Auth.canIam('asset', 'manage');
@@ -115,12 +118,15 @@ Views.assets = async function (el, params = {}) {
     : csvList(params.status).filter((s) => STATUSES.includes(s));
   const selectedCats = csvList(params.category).filter((c) => HW_CATS.includes(c));
   const selectedLocs = csvList(params.location).filter((l) => (AppConfig.locations || []).includes(l));
+  const companyIds = Companies.list().map((c) => c.id);
+  const selectedCompanies = csvList(params.companyId).filter((c) => companyIds.includes(c));
 
   const q = new URLSearchParams();
   if (selectedStatus.length) q.set('status', selectedStatus.join(','));
   if (selectedCats.length) q.set('categories', selectedCats.join(','));
   else q.set('categories', HW_CATS.join(','));
   if (selectedLocs.length) q.set('location', selectedLocs.join(','));
+  if (selectedCompanies.length) q.set('companyId', selectedCompanies.join(','));
   if (params.search) q.set('search', params.search);
   q.set('sort', sortKey);
   q.set('order', sortOrder);
@@ -182,6 +188,7 @@ Views.assets = async function (el, params = {}) {
   selectedStatus.forEach((s) => chips.push({ key: 'status', value: s, label: `${t('common.status')}: ${statusLabel(s)}` }));
   selectedCats.forEach((c) => chips.push({ key: 'category', value: c, label: `Category: ${c}` }));
   selectedLocs.forEach((l) => chips.push({ key: 'location', value: l, label: `Location: ${l}` }));
+  selectedCompanies.forEach((c) => chips.push({ key: 'companyId', value: c, label: `${t('co.field')}: ${Companies.nameOf(c)}` }));
   if (params.lifecycle) chips.push({ key: 'lifecycle', label: `Lifecycle: ${params.lifecycle === 'overdue' ? 'Past EOL' : 'EOL soon'}` });
   if (params.search) chips.push({ key: 'search', label: `Search: ${params.search}` });
 
@@ -239,6 +246,13 @@ Views.assets = async function (el, params = {}) {
       { key: 'status', label: t('common.status'), mandatory: true, sortKey: 'status',
         render: (x) => `<div class="hw-status">${badge(x.status)}${lifePills(x)}</div>`, csv: (x) => x.status },
       { key: 'category', label: t('cols.category'), default: false, render: (x) => esc(x.category || '—'), csv: (x) => x.category || '' },
+      // Owning entity. Shown by default once a second company exists, because on
+      // a holding install "whose laptop is this" is a question the list is asked
+      // constantly; hidden entirely on a single-company install.
+      ...(Companies.isMulti()
+        ? [{ key: 'company', label: t('co.field'), sortKey: 'company',
+          render: (x) => esc(x.companyName || '—'), csv: (x) => x.companyName || '' }]
+        : []),
       { key: 'imei', label: t('asset.f.imei') || 'IMEI', default: false, tdClass: 'mono', render: (x) => esc(x.imei || '—'), csv: (x) => x.imei || '' },
       { key: 'imei2', label: t('asset.f.imei2') || 'IMEI 2', default: false, tdClass: 'mono', render: (x) => esc(x.imei2 || '—'), csv: (x) => x.imei2 || '' },
       { key: 'cpu', label: t('cols.cpu'), default: false, render: (x) => esc((x.specs && x.specs.cpu) || '—'), csv: (x) => (x.specs && x.specs.cpu) || '' },
@@ -399,6 +413,12 @@ Views.assets = async function (el, params = {}) {
         selected: selectedLocs,
         options: (AppConfig.locations || []).map((l) => ({ value: l, label: l })),
       })}
+      ${Companies.isMulti() ? multiSelectHtml({
+        id: 'companyId',
+        allLabel: t('co.allCompanies'),
+        selected: selectedCompanies,
+        options: Companies.active().map((c) => ({ value: c.id, label: c.name })),
+      }) : ''}
       <div style="margin-left:auto">${cols.gearHtml()}</div>
     </div>
     ${chips.length ? `<div class="filter-chips"><strong>Active Filters:</strong>
@@ -597,6 +617,7 @@ Views.assets = async function (el, params = {}) {
     status: scopedView ? undefined : (vals) => rerender({ status: vals.join(','), page: 1 }),
     category: (vals) => rerender({ category: vals.join(','), page: 1 }),
     location: (vals) => rerender({ location: vals.join(','), page: 1 }),
+    companyId: (vals) => rerender({ companyId: vals.join(','), page: 1 }),
   });
   cols.mountGear($('#asset-filters', el));
   if (canCreate) {
@@ -751,9 +772,11 @@ async function assetForm(asset, done) {
   const CATS = infraMode ? INFRA_CATS : HW_CATS;
   const [catalog, cfBundle] = await Promise.all([
     api('/catalog').catch(() => []),
+    // The company picker is composed inline below, so the list has to be here.
+    typeof Companies !== 'undefined' ? Companies.load().catch(() => []) : Promise.resolve([]),
     // A duplicate seed has no id yet — prefill custom-field values from the source asset.
     fetchCustomFields('asset', (asset && asset.id) || (asset && asset.duplicateOf && asset.duplicateOf.id)),
-  ]);
+  ]).then(([cat, , cf]) => [cat, cf]);
   const cfDefs = cfBundle.defs;
   const cfValues = cfBundle.values;
   // Hardware "Other" opens a free-text category; unknown stored values reopen as Other + text.
@@ -832,6 +855,15 @@ async function assetForm(asset, done) {
             <input type="number" name="salvageValue" min="0" step="0.01" placeholder="0.00"
               value="${asset && asset.salvageValue != null ? esc(asset.salvageValue) : ''}">
             <div class="cell-sub hidden" id="af-salvage-suggest" style="margin-top:6px"></div></div>
+          ${Companies.isMulti() ? `
+          <div class="form-field"><label>${esc(t('co.field'))}
+            <span class="ob-hint">${esc(t('co.ownerHint'))}</span></label>
+            <select name="companyId" id="af-company">
+              ${Companies.active().map((c) => {
+                const sel = asset && asset.companyId ? asset.companyId === c.id : c.isDefault;
+                return `<option value="${esc(c.id)}" ${sel ? 'selected' : ''}>${esc(c.name)}</option>`;
+              }).join('')}
+            </select></div>` : ''}
           <div class="form-field" id="af-location-wrap"><label id="af-location-label">${esc(t('asset.f.location'))}</label>
             <select name="location" id="af-location">
               <option value="">${esc(t('asset.f.noLocation'))}</option>
@@ -1525,6 +1557,9 @@ async function assetForm(asset, done) {
           cost: f.cost && f.cost.value !== '' ? Number(f.cost.value) : 0,
           salvageValue: f.salvageValue && f.salvageValue.value !== '' ? Number(f.salvageValue.value) : null,
           location: f.location.value || null,
+          // Only sent on a multi-company install; elsewhere the server files the
+          // asset under the default company on its own.
+          companyId: f.companyId ? (f.companyId.value || null) : undefined,
           macEthernet: take('macEthernet'),
           macWifi: take('macWifi'),
           imei: take('imei'),
@@ -1803,6 +1838,8 @@ async function showAssetDetail(id, onChange) {
       ? kv(t('hw.d.imei2'), `<span class="mono">${esc(String(x.imei2).trim())}</span>${serialCopyBtn(String(x.imei2).trim())}`)
       : '',
     kvText(t('asset.f.category'), x.category),
+    // Owning entity — only meaningful once there is more than one.
+    Companies.isMulti() ? kvText(t('co.field'), x.companyName) : '',
     kvText(t('asset.f.location'), x.location),
     kv(t('asset.f.purchaseDate'), x.purchaseDate ? esc(fmtDate(x.purchaseDate)) : ''),
     kv(t('asset.f.purchaseCost'), Number(x.cost) > 0 ? esc(fmtMoney(x.cost)) : ''),

@@ -1,4 +1,7 @@
 Views.licenses = async function (el) {
+  // The licence form is composed synchronously, so the company list has to be
+  // resolved before this view opens it.
+  await Companies.load().catch(() => {});
   const canEdit = Auth.canIamOp('license', 'create') || Auth.canIamOp('license', 'update');
   const canCreateLic = Auth.canIamOp('license', 'create');
   const canAssign = Auth.canIam('license', 'assign') || Auth.canIam('license', 'manage');
@@ -391,6 +394,15 @@ function openLicenseForm({ license = null, seed = null, providers = [], contract
             <input name="totalSeats" type="number" min="1" required value="${esc(src?.totalSeats ?? 1)}"></div>
           <div class="form-field"><label>${esc(t('lic.f.expiration'))} *</label>
             <input name="expirationDate" type="date" required value="${esc(toDate(src?.expirationDate))}"></div>
+          ${Companies.isMulti() ? `
+          <div class="form-field"><label>${esc(t('co.field'))}</label>
+            <select name="companyId">
+              <option value="">${esc(t('co.noCompany'))}</option>
+              ${Companies.active().map((c) => {
+                const sel = src && src.companyId ? src.companyId === c.id : c.isDefault;
+                return `<option value="${esc(c.id)}" ${sel ? 'selected' : ''}>${esc(c.name)}</option>`;
+              }).join('')}
+            </select></div>` : ''}
         </section>
 
         <section class="af-sec">
@@ -542,6 +554,9 @@ function openLicenseForm({ license = null, seed = null, providers = [], contract
           purchaseAmount: fd.get('purchaseAmount') === '' ? null : fd.get('purchaseAmount'),
           purchaseCurrency: fd.get('purchaseCurrency') || null,
         };
+        // Only present on a multi-company install; otherwise the server files
+        // the pool under the default company itself.
+        if (fd.has('companyId')) body.companyId = fd.get('companyId') || null;
         // Masked + untouched → leave the stored key alone. Otherwise send what
         // was typed (including '' to deliberately clear it).
         if (!(keyMasked && !typedKey)) body.licenseKey = typedKey;

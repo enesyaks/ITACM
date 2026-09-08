@@ -78,10 +78,23 @@ async function makeEmployee(overrides = {}) {
   const { query } = require('../../../src/providers/postgres/pool');
   const n = uniq();
   const { rows } = await query(
-    `INSERT INTO employees (full_name, email, department, status)
-     VALUES ($1, $2, $3, $4) RETURNING id, full_name`,
+    `INSERT INTO employees (full_name, email, department, status, company_id)
+     VALUES ($1, $2, $3, $4, $5) RETURNING id, full_name, company_id`,
     [overrides.fullName || `Test Person ${n}`, overrides.email || `p${n}@test.local`,
-      overrides.department || 'IT', overrides.status || 'Active']
+      overrides.department || 'IT', overrides.status || 'Active', overrides.companyId || null]
+  );
+  return rows[0];
+}
+
+/** A second (or third) legal entity, for the multi-company paths. */
+async function makeCompany(overrides = {}) {
+  const { query } = require('../../../src/providers/postgres/pool');
+  const n = uniq();
+  const { rows } = await query(
+    `INSERT INTO companies (name, code, logo, address, handover_terms)
+     VALUES ($1, $2, $3, $4, $5) RETURNING id, name, is_default`,
+    [overrides.name || `Company ${n}`, overrides.code || null, overrides.logo || null,
+      overrides.address || null, overrides.handoverTerms || null]
   );
   return rows[0];
 }
@@ -91,10 +104,11 @@ async function makeAsset(overrides = {}) {
   const n = uniq();
   const tag = overrides.assetTag || `TST-${n}`;
   const { rows } = await query(
-    `INSERT INTO assets (asset_tag, brand, model, category, status, qr_code_string)
-     VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, asset_tag, status`,
+    `INSERT INTO assets (asset_tag, brand, model, category, status, qr_code_string, company_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, asset_tag, status, company_id`,
     [tag, overrides.brand || 'Dell', overrides.model || 'Latitude 5400',
-      overrides.category || 'Laptop', overrides.status || 'In Stock', tag]
+      overrides.category || 'Laptop', overrides.status || 'In Stock', tag,
+      overrides.companyId || null]
   );
   return rows[0];
 }
@@ -135,5 +149,5 @@ async function race(fns) {
 
 module.exports = {
   skipReason, setup, teardown, SCRATCH,
-  makeEmployee, makeAsset, makeLicense, makeLine, IT_USER, race,
+  makeEmployee, makeAsset, makeLicense, makeLine, makeCompany, IT_USER, race,
 };

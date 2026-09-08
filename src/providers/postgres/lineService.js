@@ -6,7 +6,7 @@ const { HttpError } = require('../../utils/httpError');
 const STATUSES = ['Active', 'Suspended', 'Cancelled'];
 
 function sanitize(body, { partial = false } = {}) {
-  const { phoneNumber, operator, plan, simSerial, monthlyCost, status, notes } = body || {};
+  const { phoneNumber, operator, plan, simSerial, monthlyCost, status, notes, companyId } = body || {};
   if (!partial && (!phoneNumber || !String(phoneNumber).trim())) {
     throw HttpError.badRequest('phoneNumber is required');
   }
@@ -25,6 +25,13 @@ function sanitize(body, { partial = false } = {}) {
   }
   if (status !== undefined) data.status = status;
   if (notes !== undefined) data.notes = notes ? String(notes).trim() : null;
+  // Which entity holds the subscription — a line can be handed to an employee of
+  // another company in the group, same as a laptop.
+  if (companyId !== undefined) {
+    if (companyId == null || companyId === '') data.company_id = null;
+    else if (!isUuid(companyId)) throw HttpError.badRequest('companyId must be a company id');
+    else data.company_id = companyId;
+  }
   return data;
 }
 
@@ -43,10 +50,15 @@ async function assertSimSerialAvailable(simSerial, { excludeId } = {}) {
   }
 }
 
-async function listLines({ status, employeeId, search, limit = 500 } = {}) {
+async function listLines({ status, employeeId, search, companyId, limit = 500 } = {}) {
   const where = [];
   const params = [];
   if (status) { params.push(status); where.push(`status = $${params.length}`); }
+  if (companyId) {
+    if (companyId === 'none') where.push('company_id IS NULL');
+    else if (!isUuid(companyId)) return [];
+    else { params.push(companyId); where.push(`company_id = $${params.length}`); }
+  }
   if (employeeId) {
     if (!isUuid(employeeId)) return [];
     params.push(employeeId); where.push(`current_employee_id = $${params.length}`);
@@ -59,21 +71,27 @@ async function listLines({ status, employeeId, search, limit = 500 } = {}) {
   }
   params.push(Math.min(Number(limit) || 500, 5000));
   const { rows } = await query(
-    `SELECT * FROM mobile_lines ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
-     ORDER BY phone_number LIMIT $${params.length}`, params
+    `SELECT mobile_lines.*,
+            (SELECT c.name FROM companies c WHERE c.id = mobile_lines.company_id) AS company_name
+       FROM mobile_lines ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+      ORDER BY phone_number LIMIT $${params.length}`, params
   );
   return rows.map(mapRow);
 }
 
 async function createLine(body) {
   const d = sanitize(body);
+  if (d.company_id == null) {
+    const fallback = await require('./companyService').getDefaultCompany().catch(() => null);
+    d.company_id = fallback ? fallback.id : null;
+  }
   await assertSimSerialAvailable(d.sim_serial);
   try {
     const { rows } = await query(
-      `INSERT INTO mobile_lines (phone_number, operator, plan, sim_serial, monthly_cost, status, notes)
-       VALUES ($1,$2,$3,$4,$5,COALESCE($6,'Active'),$7) RETURNING *`,
+      `INSERT INTO mobile_lines (phone_number, operator, plan, sim_serial, monthly_cost, status, notes, company_id)
+       VALUES ($1,$2,$3,$4,$5,COALESCE($6,'Active'),$7,$8) RETURNING *`,
       [d.phone_number, d.operator || null, d.plan || null, d.sim_serial || null,
-       d.monthly_cost ?? null, d.status || null, d.notes || null]
+       d.monthly_cost ?? null, d.status || null, d.notes || null, d.company_id ?? null]
     );
     return mapRow(rows[0]);
   } catch (err) {

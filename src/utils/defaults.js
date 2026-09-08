@@ -168,6 +168,9 @@ const DEFAULT_HANDOVER_TEMPLATE = {
   colSerial: true,
   colMac: false,
   colCondition: true,
+  // Owner Company: only ever rendered when a form actually spans more than one
+  // company, so this stays on by default without touching a single-company form.
+  colOwnerCompany: true,
   showTerms: true,
   showReturnSection: false,
   deliveredByLabel: '',

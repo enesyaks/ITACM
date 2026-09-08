@@ -670,6 +670,9 @@ function showApp() {
     initMobileShell();
   }
   renderNav();
+  // Warm the company list so asset/employee forms and filters can render their
+  // picker without a round trip. Failure is non-fatal — the forms await it too.
+  if (typeof Companies !== 'undefined') Companies.load().catch(() => {});
   navigate().then(() => {
     if (typeof syncAssistantChrome === 'function') syncAssistantChrome().catch(() => {});
     if (localStorage.getItem('itacm_tips_pending') === '1') {
@@ -831,7 +834,7 @@ function renderObTplCards() {
 const OB_TPL_TOGGLES = [
   ['Header', [['showLogo', 'Company logo']]],
   ['Employee fields', [['showEmployeeId', 'Employee ID / Sicil No'], ['showDepartment', 'Department'], ['showTitle', 'Position / Title']]],
-  ['Equipment columns', [['colCategory', 'Category'], ['colSerial', 'Serial number'], ['colMac', 'MAC address'], ['colCondition', 'Condition']]],
+  ['Equipment columns', [['colCategory', 'Category'], ['colSerial', 'Serial number'], ['colMac', 'MAC address'], ['colCondition', 'Condition'], ['colOwnerCompany', 'Owner company (multi-company only)']]],
   ['Sections', [['showTerms', 'Terms & Conditions'], ['showReturnSection', 'Equipment return section']]],
 ];
 let obTplOptions = null;
@@ -841,6 +844,7 @@ function getObTplOptions() {
     obTplOptions = {
       showLogo: d.showLogo, showEmployeeId: d.showEmployeeId, showDepartment: d.showDepartment, showTitle: d.showTitle,
       colCategory: d.colCategory, colSerial: d.colSerial, colMac: d.colMac, colCondition: d.colCondition,
+      colOwnerCompany: d.colOwnerCompany,
       showTerms: d.showTerms, showReturnSection: d.showReturnSection,
     };
   }
@@ -3392,6 +3396,7 @@ function defaultTemplateFields() {
     subtitle: 'Corporate Resource Management',
     showLogo: true, showEmployeeId: true, showDepartment: true, showTitle: true,
     colCategory: true, colSerial: true, colMac: false, colCondition: true,
+    colOwnerCompany: true,
     showTerms: true, showReturnSection: false,
     deliveredByLabel: '', receivedByLabel: '', footerNote: '',
   };
@@ -3413,7 +3418,7 @@ function showTemplateCustomizer() {
   const TOGGLES = [
     ['Header', [['showLogo', 'Company logo']]],
     ['Employee fields', [['showEmployeeId', 'Employee ID / Sicil No'], ['showDepartment', 'Department'], ['showTitle', 'Position / Title']]],
-    ['Equipment columns', [['colCategory', 'Category'], ['colSerial', 'Serial number'], ['colMac', 'MAC address'], ['colCondition', 'Condition']]],
+    ['Equipment columns', [['colCategory', 'Category'], ['colSerial', 'Serial number'], ['colMac', 'MAC address'], ['colCondition', 'Condition'], ['colOwnerCompany', 'Owner company (multi-company only)']]],
     ['Sections', [['showTerms', 'Terms & Conditions'], ['showReturnSection', 'Equipment return section']]],
   ];
   const TEXTS = [

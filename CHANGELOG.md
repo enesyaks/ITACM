@@ -7,6 +7,33 @@ project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Several companies under one roof (holding support).** A group that runs more
+  than one legal entity can now register each of them in **Product Catalog →
+  Companies**, optionally nested under a parent, each with its own logo, address,
+  tax details and handover terms. Devices, employees, mobile lines, licences,
+  contracts, consumables and stock counts all carry an owning company, and the
+  Hardware and Employees lists gain a Company column and filter.
+
+  The **zimmet form is issued under the employee's own company** — its logo,
+  address and terms head the page. A device belonging to a sister company can
+  still be handed to that employee: the form then adds an **Owner Company** column
+  naming the actual owner on those rows, and a clause stating that the equipment
+  is that company's property and is handed over for business use only. A third
+  document option, **one document per owner company**, splits the basket so each
+  entity gets a form covering just its own property. The letterhead and each
+  line's owner are snapshotted onto the receipt when it is created, so a reprint
+  years later matches the signed original even after a rename or a transfer.
+
+  Reports gain a **company scope selector** that applies to every preset report
+  and the KPI tiles, a Company column on the row-level reports, and two new ones:
+  **Inventory by Company** and **Cross-Company Assignments** — the list of devices
+  sitting with someone who works for a different group company. The AI assistant
+  can query the company dimension too.
+
+  Every branding field is optional and falls back to the workspace values from
+  Settings, so a single-company install is untouched: no extra column, no extra
+  filter, no company picker, and the existing Settings screen still renames the
+  company on the zimmet header exactly as before.
 - **Connect a mailbox by signing in (delegated OAuth2), the Jira-style flow.**
   Instead of typing a client secret per mailbox, an operator registers ITACM once
   as an OAuth app (Microsoft and/or Google, with the shown redirect URI), then

@@ -2,10 +2,13 @@
 Views.handover = async function (el) {
   const canDo = Auth.canIam('handover', 'create');
   const canCreateEmp = Auth.canIam('employee', 'create');
+  // The company list gates the letterhead line, the cross-company badges and the
+  // per-company document option, so it has to be here before the first paint.
   const [initialEmpsRes, past] = await Promise.all([
     api('/employees?status=Active&limit=50'),
     api('/handovers?limit=8'),
-  ]);
+    Companies.load().catch(() => []),
+  ]).then(([emps, hist]) => [emps, hist]);
   let empList = employeeList(initialEmpsRes).items; // current employee search results (fetched server-side)
   let stock = [];
   let stockTotal = 0;
@@ -126,6 +129,12 @@ Views.handover = async function (el) {
             <span><strong>${esc(t('handover.docSeparate'))}</strong>
               <span class="cell-sub">${esc(t('handover.docSeparateDesc'))}</span></span>
           </label>
+          ${Companies.isMulti() ? `
+          <label class="doc-option">
+            <input type="radio" name="doctype" value="per_company">
+            <span><strong>${esc(t('handover.docPerCompany'))}</strong>
+              <span class="cell-sub">${esc(t('handover.docPerCompanyDesc'))}</span></span>
+          </label>` : ''}
         </div>
         <div class="basket-foot">
           <button class="btn btn-primary btn-lg btn-block" id="ho-submit" disabled>
@@ -309,6 +318,11 @@ Views.handover = async function (el) {
           <span class="cell-sub">${esc(t('handover.currentlyHolds')).replace('{n}', `<strong>${p.activeAssetCount}</strong>`)}</span>
           <span style="margin-left:auto">${badge(p.status)}</span>
         </div>
+        ${Companies.isMulti() ? `
+        <div class="cell-sub" style="margin-top:8px;display:flex;align-items:center;gap:6px">
+          <span class="ms ms-sm">domain</span>
+          ${esc(t('handover.formCompany').replace('{name}', p.companyName || Companies.nameOf(p.companyId) || AppConfig.companyName || '—'))}
+        </div>` : ''}
       </div>`;
     $('#ho-clear-emp', box).addEventListener('click', () => {
       state.emp = null;
@@ -317,6 +331,22 @@ Views.handover = async function (el) {
       renderSelEmp();
       renderBasket();
     });
+  }
+
+  /**
+   * Flags a basket line whose owner is a different group company than the person
+   * receiving it. Nothing is blocked — handing a sister company's laptop to
+   * someone is legitimate — but it must be visible before the form is printed,
+   * because that is what puts the Owner Company column on the document.
+   */
+  function crossCompanyLabel(item) {
+    if (!Companies.isMulti()) return '';
+    const holderCompany = state.empObj && state.empObj.companyId;
+    if (!item.companyId || !holderCompany || item.companyId === holderCompany) return '';
+    const name = item.companyName || Companies.nameOf(item.companyId);
+    if (!name) return '';
+    return `<span class="pill pill-amber" style="margin-top:4px;display:inline-block">${
+      esc(t('handover.crossItem').replace('{name}', name))}</span>`;
   }
 
   function renderBasket() {
@@ -340,6 +370,7 @@ Views.handover = async function (el) {
             <div class="grow">
               <strong>${esc(asset.brand)} ${esc(asset.model)}</strong>
               <span class="cell-sub mono">${esc(asset.assetTag)}</span>
+              ${crossCompanyLabel(asset)}
             </div>
             <button class="icon-btn" data-remove="${esc(asset.id)}" title="${esc(t('handover.remove'))}"><span class="ms">close</span></button>
           </div>
@@ -354,6 +385,7 @@ Views.handover = async function (el) {
             <div class="grow">
               <strong class="mono">${esc(line.phoneNumber)}</strong>
               <span class="cell-sub">${esc(line.operator || '—')}${line.plan ? ' · ' + esc(line.plan) : ''}</span>
+              ${crossCompanyLabel(line)}
             </div>
             <button class="icon-btn" data-remove-line="${esc(line.id)}" title="${esc(t('handover.remove'))}"><span class="ms">close</span></button>
           </div>
@@ -576,6 +608,15 @@ function handoverReceiptHTML(ctx, tpl) {
       cell: (i) => esc(i.conditionNote || 'New'),
     });
   }
+  // Only when the basket actually crosses companies — a single-company form
+  // keeps exactly the columns it had before this feature existed.
+  if (ctx.showOwnerCol) {
+    cols.push({
+      h: t('handover.colOwnerCompany'),
+      weight: 0.20,
+      cell: (i) => esc((ctx.ownerNameOf ? ctx.ownerNameOf(i) : i.ownerCompanyName) || '—'),
+    });
+  }
   const wSum = cols.reduce((s, c) => s + c.weight, 0);
   cols.forEach((c) => { c.pct = (c.weight / wSum) * 100; });
   // Fix float drift on the last column
@@ -598,8 +639,11 @@ function handoverReceiptHTML(ctx, tpl) {
           <div class="r-card-h"><span class="ms">sim_card</span> ${esc(t('handover.lines'))}</div>
           <table class="r-items">
             <colgroup>
-              <col style="width:8%"><col style="width:28%"><col style="width:18%">
-              <col style="width:22%"><col style="width:24%">
+              ${ctx.showOwnerCol
+                ? '<col style="width:6%"><col style="width:23%"><col style="width:15%">'
+                  + '<col style="width:18%"><col style="width:20%"><col style="width:18%">'
+                : '<col style="width:8%"><col style="width:28%"><col style="width:18%">'
+                  + '<col style="width:22%"><col style="width:24%">'}
             </colgroup>
             <thead><tr>
               <th>${esc(t('handover.colNo'))}</th>
@@ -607,6 +651,7 @@ function handoverReceiptHTML(ctx, tpl) {
               <th>${esc(t('handover.colOperator'))}</th>
               <th>${esc(t('handover.colPlan'))}</th>
               <th>${esc(t('handover.colSim'))}</th>
+              ${ctx.showOwnerCol ? `<th>${esc(t('handover.colOwnerCompany'))}</th>` : ''}
             </tr></thead>
             <tbody>
               ${lineItems.map((i, idx) => `<tr>
@@ -615,6 +660,9 @@ function handoverReceiptHTML(ctx, tpl) {
                 <td>${esc(i.operator || i.brand || '—')}</td>
                 <td>${esc(i.plan || '—')}</td>
                 <td class="mono">${esc(i.simSerial || i.serialNumber || '—')}</td>
+                ${ctx.showOwnerCol
+                  ? `<td>${esc((ctx.ownerNameOf ? ctx.ownerNameOf(i) : i.ownerCompanyName) || '—')}</td>`
+                  : ''}
               </tr>`).join('')}
             </tbody>
           </table>
@@ -745,23 +793,74 @@ async function printHandover(h) {
   } catch { /* print with what we have */ }
 
   const items = h.items || [];
-  const groups = h.documentType === 'separate' ? items.map((i) => [i]) : [items];
+
+  // Letterhead: the snapshot frozen onto the receipt when it was issued, so a
+  // reprint matches the signed original. Older receipts have none — those fall
+  // back to the workspace branding, exactly as they printed before.
+  const snap = h.companySnapshot || null;
+  const brandName = (snap && snap.companyName) || AppConfig.companyName;
+  const brandLogo = (snap && snap.companyLogo) || AppConfig.companyLogo;
+  const brandAddress = (snap && snap.companyAddress) || AppConfig.companyAddress;
+  const brandTerms = (snap && snap.handoverTerms) || AppConfig.handoverTerms;
+  const brandCompanyId = (snap && snap.companyId) || null;
+
+  // Every row names its own owner: a blank cell under a column headed "Sahip
+  // Firma" reads as missing data, not as "same as the header".
+  const ownerNameOf = (i) => (i && i.ownerCompanyName) || '';
+
+  // Belongs to a company other than the one heading the form — this drives the
+  // extra terms clause, not whether the column is drawn.
+  const isForeignOwner = (i) => {
+    const name = ownerNameOf(i);
+    if (!name) return false;
+    if (brandCompanyId) return i.ownerCompanyId !== brandCompanyId;
+    return !!brandName && name !== brandName;
+  };
+  const hasForeign = items.some(isForeignOwner);
+
+  // More than one company on this form? That is the precondition for the column;
+  // the template toggle (Settings → zimmet form design) decides the rest, and is
+  // re-read on every render because the preview lets the template be switched.
+  const companiesOnForm = new Set(items.map(ownerNameOf).filter(Boolean));
+  if (brandName) companiesOnForm.add(brandName);
+  const multiCompanyForm = companiesOnForm.size > 1;
+
+  let groups;
+  if (h.documentType === 'separate') {
+    groups = items.map((i) => [i]);
+  } else if (h.documentType === 'per_company') {
+    const byOwner = new Map();
+    items.forEach((i) => {
+      const key = i.ownerCompanyId || '';
+      if (!byOwner.has(key)) byOwner.set(key, []);
+      byOwner.get(key).push(i);
+    });
+    groups = [...byOwner.values()];
+  } else {
+    groups = [items];
+  }
   const formNo = 'HF-' + String(h.id || '').slice(0, 8).toUpperCase();
   const dateStr = fmtDate(h.transactionDate);
 
   // Prefer localized default terms; only use Settings override when it differs
   // from the stock bilingual default (so language switching actually works).
   const stockDefault = `I acknowledge receipt of the equipment listed above`;
-  const stored = String(AppConfig.handoverTerms || '').trim();
+  const stored = String(brandTerms || '').trim();
   const useCustom = stored && !stored.startsWith(stockDefault);
-  const termsHtml = useCustom
+  const crossNote = hasForeign
+    ? `<p>${esc(t('handover.crossCompanyNote'))}</p>`
+    : '';
+  // Cross-company clause first, matching the PDF — there the terms box is
+  // height-capped, so anything appended after the boilerplate can be cut off.
+  const termsHtml = crossNote + (useCustom
     ? stored.split(/\n\s*\n/).filter((p) => p.trim())
       .map((p) => `<p>${esc(p.trim())}</p>`).join('')
-    : `<p>${esc(t('handover.termsBody'))}</p>`;
+    : `<p>${esc(t('handover.termsBody'))}</p>`);
 
   const ctxBase = {
-    companyName: AppConfig.companyName, companyLogo: AppConfig.companyLogo,
-    companyAddress: AppConfig.companyAddress,
+    companyName: brandName, companyLogo: brandLogo,
+    companyAddress: brandAddress,
+    ownerNameOf,
     formNo, dateStr,
     pageTotal: groups.length,
     employeeName: h.employeeName,
@@ -780,8 +879,11 @@ async function printHandover(h) {
   function buildPrintRoot(tplId) {
     const tpl = resolveHandoverTpl(tplId);
     selectedTplId = tpl.id || tplId;
+    // Templates saved before the toggle existed have no key — treat that as on.
+    const showOwnerCol = multiCompanyForm && tpl.colOwnerCompany !== false;
     $('#print-root').innerHTML = groups.map((group, gi) => handoverReceiptHTML({
       ...ctxBase,
+      showOwnerCol,
       formSuffix: groups.length > 1 ? '-' + (gi + 1) : '',
       pageNum: gi + 1,
       items: group,

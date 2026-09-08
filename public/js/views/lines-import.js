@@ -496,6 +496,7 @@ Views.lines = async function (el, params = {}) {
   $('#line-search', el).addEventListener('change', (e) => rerender({ search: e.target.value }));
   $('#line-status', el).addEventListener('change', (e) => rerender({ status: e.target.value }));
 
+  await Companies.load().catch(() => {});
   const lineForm = (line) => formModal({
     title: line ? (t('lines.editTitle') || 'Edit {num}').replace('{num}', line.phoneNumber) : t('lines.newTitle'),
     fields: [
@@ -507,6 +508,14 @@ Views.lines = async function (el, params = {}) {
         ? [{ name: 'monthlyCost', label: (t('lines.fMonthlyCost') || 'Monthly cost ({cur})').replace('{cur}', appCurrency()), type: 'number', step: '0.01', value: line?.monthlyCost }]
         : []),
       { name: 'status', label: t('common.status'), type: 'select', value: line?.status || 'Active', options: [{ value: 'Active', label: t('lines.stActive') }, { value: 'Suspended', label: t('lines.stSuspended') }, { value: 'Cancelled', label: t('lines.stCancelled') }] },
+      // Which entity holds the subscription. Like a laptop, a line can still be
+      // handed to an employee of another group company.
+      ...(Companies.isMulti() ? [{
+        name: 'companyId', label: t('co.field'), type: 'select',
+        value: line?.companyId || Companies.defaultId() || '',
+        options: [{ value: '', label: t('co.noCompany') },
+          ...Companies.active().map((c) => ({ value: c.id, label: c.name }))],
+      }] : []),
       { name: 'notes', label: t('lines.fNotes'), type: 'textarea', full: true, value: line?.notes },
     ],
     async onSubmit(d) {

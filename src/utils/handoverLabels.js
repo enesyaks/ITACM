@@ -44,6 +44,8 @@ const LABELS = {
     returnedBy: 'Returned By (Employee)',
     receivedBackBy: 'Received Back By (IT Department)',
     nameAndSignature: 'Name & Signature',
+    ownerCompany: 'Owner Company',
+    crossCompanyNote: 'Items marked with another company above are the property of that group company and are handed to the employee for business use only; ownership does not transfer.',
   },
   tr: {
     title: 'Zimmet Belgesi',
@@ -86,6 +88,8 @@ const LABELS = {
     returnedBy: 'İade Eden (Çalışan)',
     receivedBackBy: 'İade Teslim Alan (BT)',
     nameAndSignature: 'Ad ve İmza',
+    ownerCompany: 'Sahip Firma',
+    crossCompanyNote: 'Yukarıda farklı bir firma ile işaretlenen cihazlar ilgili grup şirketinin mülkiyetindedir ve çalışana yalnızca iş amaçlı kullanım için teslim edilmiştir; mülkiyet devri söz konusu değildir.',
   },
   de: {
     title: 'Geräteübergabe',
@@ -128,6 +132,8 @@ const LABELS = {
     returnedBy: 'Zurückgegeben von (Mitarbeiter)',
     receivedBackBy: 'Entgegengenommen von (IT)',
     nameAndSignature: 'Name & Unterschrift',
+    ownerCompany: 'Eigentümerfirma',
+    crossCompanyNote: 'Oben mit einer anderen Firma gekennzeichnete Geräte sind Eigentum dieser Konzerngesellschaft und werden dem Mitarbeiter ausschließlich zur dienstlichen Nutzung überlassen; ein Eigentumsübergang findet nicht statt.',
   },
 };
 

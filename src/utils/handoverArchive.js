@@ -6,13 +6,20 @@
 const { renderHandoverPdfBuffer } = require('./handoverPdf');
 
 async function buildReceiptPdf(handoverId, currentUserName, lang, templateIdOverride) {
-  const { handoverService, employeeService, settingsService } = require('../services');
+  const { handoverService, employeeService, settingsService, companyService } = require('../services');
   const handover = await handoverService.getHandover(handoverId);
   const settings = await settingsService.getSettings();
   let employee = null;
   try {
     employee = await employeeService.getEmployee(handover.employeeId);
   } catch { /* render without dept/title */ }
+
+  // Whose letterhead this form carries. The snapshot taken when the receipt was
+  // created wins, so a reprint matches the signed original even after the person
+  // moves to a sister company or the company is renamed. Only fall back to a
+  // live lookup for receipts created before multi-company existed.
+  const branding = handover.companySnapshot
+    || await companyService.resolveBranding(handover.companyId || null, settings).catch(() => null);
 
   // "Delivered By" is the ORIGINAL assigner; only when that account is
   // disabled/deleted does the current user's name appear instead.
@@ -23,9 +30,9 @@ async function buildReceiptPdf(handoverId, currentUserName, lang, templateIdOver
   const formNo = 'HF-' + String(handover.id).slice(0, 8).toUpperCase();
   const templateId = templateIdOverride || handover.templateId || null;
   const buffer = await renderHandoverPdfBuffer({
-    handover, employee, settings, deliveredBy,
+    handover, employee, settings, deliveredBy, branding,
     lang: lang || settings.language || 'en',
-    templateId,
+    templateId: templateId || (branding && branding.handoverTemplateId) || null,
   });
   return { handover, buffer, formNo, filename: `zimmet-${formNo}.pdf` };
 }

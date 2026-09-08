@@ -3,6 +3,7 @@ Views.consumables = async function (el) {
   const canUpdate = Auth.canIam('consumable', 'update') || Auth.canIam('consumable', 'manage');
   const canDelete = Auth.canIam('consumable', 'delete') || Auth.canIam('consumable', 'manage');
   const items = await api('/consumables');
+  await Companies.load().catch(() => {});
 
   const conRowActions = (c) => `${canUpdate ? `
       <button class="btn btn-outline btn-sm" data-stock="${esc(c.id)}" data-delta="-1">−1</button>
@@ -44,6 +45,13 @@ Views.consumables = async function (el) {
         { name: 'itemName', label: `${t('con.itemName')} *`, required: true, full: true },
         { name: 'totalStock', label: t('con.initialStock'), type: 'number', value: 0 },
         { name: 'minimumStockAlertLevel', label: t('con.minAlert'), type: 'number', value: 0 },
+        // Stock is kept per entity so each company's consumption reports alone.
+        ...(Companies.isMulti() ? [{
+          name: 'companyId', label: t('co.field'), type: 'select', full: true,
+          value: Companies.defaultId() || '',
+          options: [{ value: '', label: t('co.noCompany') },
+            ...Companies.active().map((c) => ({ value: c.id, label: c.name }))],
+        }] : []),
       ],
       async onSubmit(d) {
         await api('/consumables', { method: 'POST', body: d });
