@@ -6614,3 +6614,41 @@ th.tk-sortable.active { color: var(--primary); }
 }
 .btn-link:hover { text-decoration-thickness: 2px; }
 .btn-link:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 3px; }
+
+/* ---------- New-ticket form ----------
+   An agent opens this while someone is still on the phone, so it reads in the
+   order the call goes: who is this for, what is wrong, how is it handled. Three
+   groups, separated by a hairline — the rule carries the grouping, so the five
+   uppercase headings that used to label them are gone along with the height
+   they cost. Every field already says what it is. */
+.tkc { display: flex; flex-direction: column; }
+.tkc-grp {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 12px 14px;
+  padding: 18px 0; align-items: start;
+}
+.tkc-grp:first-child { padding-top: 0; }
+.tkc-grp:last-child { padding-bottom: 0; }
+.tkc-grp + .tkc-grp { border-top: 1px solid var(--outline-variant); }
+.tkc-grp > .full { grid-column: 1 / -1; }
+/* The one line the agent types while listening, and the only required field —
+   this is where the form raises its voice, and the only place it does. At 13.5px
+   like every other control it was indistinguishable; the jump has to be big
+   enough to read as hierarchy rather than a rendering accident. */
+.tkc-subject input { font-size: 18px; line-height: 1.35; padding: 12px 14px; }
+.tkc-subject input::placeholder { font-size: 16px; color: var(--outline); }
+.tkc-subject { margin-bottom: 2px; }
+
+/* Impact / urgency / category are one decision in three parts, so they sit on
+   one row instead of leaving a category stranded beside an empty cell. The
+   template picker takes the width its long option labels need. */
+.tkc-grp.tkc-class { grid-template-columns: repeat(3, 1fr); }
+.tkc-grp.tkc-class > .span2 { grid-column: span 2; }
+
+/* The template hint is empty until a template is chosen — an empty node must
+   not reserve a grid row. */
+.tkc-grp > .cell-sub:empty { display: none; }
+
+@media (max-width: 640px) {
+  .tkc-grp, .tkc-grp.tkc-class { grid-template-columns: 1fr; padding: 14px 0; }
+  .tkc-grp.tkc-class > .span2 { grid-column: auto; }
+}

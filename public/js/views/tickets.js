@@ -1220,58 +1220,41 @@ Views.tickets = async function (el, params = {}) {
   function openCreate() {
     openModal({
       title: t('tk.new'),
+      wide: true,
       body: `<div class="tkc">
-        <section class="tkd-sec">
-          <h4 class="tkd-h">${esc(t('tk.secRequester'))}</h4>
-          <div class="form-grid">
-            <div class="form-field full"><label>${esc(t('tk.requester'))}</label>
-              <div id="tk-c-requester-host"></div>
-              <div class="cell-sub" id="tk-c-requester-hint" style="margin-top:6px">${esc(t('tk.requesterHint'))}</div></div>
-          </div>
-        </section>
-        <section class="tkd-sec">
-          <h4 class="tkd-h">${esc(t('tk.secType'))}</h4>
-          <div class="form-grid">
-            ${templates.length ? `<div class="form-field full"><label>${esc(t('tk.template'))}</label>
-              <select id="tk-c-tpl">
-                <option value="">— ${esc(t('tk.noTemplate'))} —</option>
-                ${templates.map((tp) => `<option value="${esc(tp.id)}">${esc(tp.name)}${tp.category ? ' · ' + esc(tp.category) : ''}</option>`).join('')}
-              </select>
-              <div class="cell-sub" id="tk-c-tpl-hint" style="margin-top:4px"></div></div>` : ''}
-            <div class="form-field" id="tk-c-type-wrap"><label>${esc(t('tk.type'))}</label>
-              <select id="tk-c-type"><option value="incident">${esc(tkTypeLabel('incident'))}</option><option value="request">${esc(tkTypeLabel('request'))}</option></select></div>
-          </div>
-        </section>
-        <section class="tkd-sec">
-          <h4 class="tkd-h">${esc(t('tk.secDetails'))}</h4>
-          <div class="form-grid">
-            <div class="form-field full"><label>${esc(t('tk.subject'))} *</label><input id="tk-c-subject" maxlength="300" placeholder="${esc(t('mtk.subjectPh'))}"></div>
-            <div class="form-field full"><label>${esc(t('tk.description'))}</label><textarea id="tk-c-desc" rows="4" placeholder="${esc(t('mtk.descPh'))}"></textarea></div>
-          </div>
-        </section>
-        <section class="tkd-sec">
-          <h4 class="tkd-h">${esc(t('tk.secClassify'))}</h4>
-          <div class="form-grid">
-            <div class="form-field"><label>${esc(t('tk.impact'))}</label>
-              <select id="tk-c-impact">${['low', 'medium', 'high'].map((l) => `<option value="${l}"${l === 'medium' ? ' selected' : ''}>${esc(tkPriorityLabel(l))}</option>`).join('')}</select></div>
-            <div class="form-field"><label>${esc(t('tk.urgency'))}</label>
-              <select id="tk-c-urgency">${['low', 'medium', 'high'].map((l) => `<option value="${l}"${l === 'medium' ? ' selected' : ''}>${esc(tkPriorityLabel(l))}</option>`).join('')}</select>
-              <div class="cell-sub" id="tk-c-vip-note" style="margin-top:4px"></div></div>
-            <div class="form-field" id="tk-c-cat-wrap"><label>${esc(t('tk.category'))}</label>
-              <select id="tk-c-cat"><option value="">${esc(t('tk.categoryNone'))}</option>${catOptions()}</select></div>
-            <div class="form-field" id="tk-c-amount-wrap" style="display:none"><label>${esc(t('mtk.amount'))}</label>
-              <input id="tk-c-amount" type="number" min="0" step="0.01" placeholder="0">
-              <div class="cell-sub" id="tk-c-amount-hint" style="margin-top:4px"></div></div>
-          </div>
-        </section>
-        <section class="tkd-sec">
-          <h4 class="tkd-h">${esc(t('tk.secLinks'))}</h4>
-          <div class="form-grid">
-            <div class="form-field full"><label>${esc(t('tk.asset'))}</label>
-              <div id="tk-c-asset-host"></div>
-              <div class="cell-sub" id="tk-c-asset-scope" style="margin-top:6px"></div></div>
-          </div>
-        </section>
+        <div class="tkc-grp">
+          <div class="form-field full"><label>${esc(t('tk.requester'))}</label>
+            <div id="tk-c-requester-host"></div>
+            <div class="cell-sub" id="tk-c-requester-hint">${esc(t('tk.requesterHint'))}</div></div>
+          <div class="form-field full"><label>${esc(t('tk.asset'))}</label>
+            <div id="tk-c-asset-host"></div>
+            <div class="cell-sub" id="tk-c-asset-scope"></div></div>
+        </div>
+
+        <div class="tkc-grp">
+          <div class="form-field full tkc-subject"><label>${esc(t('tk.subject'))} *</label>
+            <input id="tk-c-subject" maxlength="300" placeholder="${esc(t('mtk.subjectPh'))}"></div>
+          <div class="form-field full"><label>${esc(t('tk.description'))}</label>
+            <textarea id="tk-c-desc" rows="4" placeholder="${esc(t('mtk.descPh'))}"></textarea></div>
+        </div>
+
+        <div class="tkc-grp tkc-class">
+          ${templates.length ? `<div class="form-field span2"><label>${esc(t('tk.template'))}</label>
+            <div id="tk-c-tpl-host"></div></div>` : ''}
+          <div class="form-field" id="tk-c-type-wrap"><label>${esc(t('tk.type'))}</label>
+            <select id="tk-c-type"><option value="incident">${esc(tkTypeLabel('incident'))}</option><option value="request">${esc(tkTypeLabel('request'))}</option></select></div>
+          ${templates.length ? `<div class="cell-sub full" id="tk-c-tpl-hint"></div>` : ''}
+          <div class="form-field"><label>${esc(t('tk.impact'))}</label>
+            <select id="tk-c-impact">${['low', 'medium', 'high'].map((l) => `<option value="${l}"${l === 'medium' ? ' selected' : ''}>${esc(tkPriorityLabel(l))}</option>`).join('')}</select></div>
+          <div class="form-field"><label>${esc(t('tk.urgency'))}</label>
+            <select id="tk-c-urgency">${['low', 'medium', 'high'].map((l) => `<option value="${l}"${l === 'medium' ? ' selected' : ''}>${esc(tkPriorityLabel(l))}</option>`).join('')}</select>
+            <div class="cell-sub" id="tk-c-vip-note"></div></div>
+          <div class="form-field" id="tk-c-cat-wrap"><label>${esc(t('tk.category'))}</label>
+            <select id="tk-c-cat"><option value="">${esc(t('tk.categoryNone'))}</option>${catOptions()}</select></div>
+          <div class="form-field" id="tk-c-amount-wrap" style="display:none"><label>${esc(t('mtk.amount'))}</label>
+            <input id="tk-c-amount" type="number" min="0" step="0.01" placeholder="0">
+            <div class="cell-sub" id="tk-c-amount-hint"></div></div>
+        </div>
       </div>`,
       foot: `<button class="btn btn-outline" data-close>${esc(t('common.cancel'))}</button>
              <button class="btn btn-primary" id="tk-c-save">${esc(t('tk.create'))}</button>`,
@@ -1338,14 +1321,18 @@ Views.tickets = async function (el, params = {}) {
             ? `${esc(t('tk.assetScoped').replace('{name}', emp.fullName || ''))}
                · <button type="button" class="btn-link" id="tk-c-asset-all">${esc(t('tk.assetShowAll'))}</button>`
             : esc(t('tk.assetNoneForPerson'));
-          const allBtn = $('#tk-c-asset-all', ov);
-          if (allBtn) {
-            allBtn.addEventListener('click', () => {
-              mountAssets(assets);
-              scopeEl.textContent = '';
-            });
-          }
         };
+
+        // Delegated, bound once: the scope line is rewritten on every requester
+        // change, so a listener attached to the button itself dies with the node
+        // it was attached to and has to be re-bound in exactly the right order.
+        // One handler on the container that outlives them all cannot fall out of
+        // step with the markup.
+        scopeEl.addEventListener('click', (e) => {
+          if (!e.target.closest('#tk-c-asset-all')) return;
+          mountAssets(assets);
+          scopeEl.textContent = '';
+        });
 
         const reqPicker = mountCombobox($('#tk-c-requester-host', ov), {
           items: emps,
@@ -1373,30 +1360,54 @@ Views.tickets = async function (el, params = {}) {
         // Template picker: choosing one turns this into a request (category +
         // approval chain come from the template); the type/category fields hide
         // and an amount field appears when the template gates on a threshold.
-        const tplSel = $('#tk-c-tpl', ov);
         const chainStr = (levels) => (levels || []).map((el) => {
           if (el && typeof el === 'object') return '(' + (el.levels || []).map(lvlLabel).join(el.mode === 'all' ? ' & ' : ' / ') + ')';
           return lvlLabel(el);
         }).join(' → ');
-        const onTpl = () => {
-          const tp = templates.find((x) => x.id === (tplSel && tplSel.value));
+        const onTpl = (tp) => {
           const typeWrap = $('#tk-c-type-wrap', ov); const catWrap = $('#tk-c-cat-wrap', ov);
           const amtWrap = $('#tk-c-amount-wrap', ov); const hint = $('#tk-c-tpl-hint', ov);
           if (tp) {
             typeWrap.style.display = 'none'; catWrap.style.display = 'none';
             const chain = Array.isArray(tp.approvalLevels) && tp.approvalLevels.length ? chainStr(tp.approvalLevels) : '';
-            hint.innerHTML = `${tp.category ? `<span class="pill pill-slate">${esc(tp.category)}</span> ` : ''}${chain ? `<span class="ms ms-sm" style="vertical-align:-3px">how_to_reg</span> ${esc(t('mtk.approvalChain'))}: ${esc(chain)}` : ''}`;
+            // The hint row only exists when this install has templates at all.
+            if (hint) hint.innerHTML = `${tp.category ? `<span class="pill pill-slate">${esc(tp.category)}</span> ` : ''}${chain ? `<span class="ms ms-sm" style="vertical-align:-3px">how_to_reg</span> ${esc(t('mtk.approvalChain'))}: ${esc(chain)}` : ''}`;
             if (tp.amountThreshold != null) {
               amtWrap.style.display = '';
               $('#tk-c-amount-hint', ov).textContent = t('mtk.amountHint').replace('{n}', '₺' + Number(tp.amountThreshold).toLocaleString('tr-TR'));
             } else amtWrap.style.display = 'none';
           } else {
-            typeWrap.style.display = ''; catWrap.style.display = ''; amtWrap.style.display = 'none'; hint.textContent = '';
+            typeWrap.style.display = ''; catWrap.style.display = ''; amtWrap.style.display = 'none';
+            if (hint) hint.textContent = '';
           }
         };
-        if (tplSel) { tplSel.addEventListener('change', onTpl); onTpl(); }
+        // The two fields above this one are already searchable pickers; a native
+        // <select> here rendered the OS popup instead — dark system chrome over a
+        // light form, unstyleable, and unsearchable once the template list grows.
+        //
+        // The list also gains the thing that actually decides the choice: a
+        // template commits the request to a category and an approval chain, and
+        // that used to surface only AFTER picking, in the hint line below. It now
+        // sits under each name, where the decision is made.
+        let tplPicker = null;
+        const tplHost = $('#tk-c-tpl-host', ov);
+        if (tplHost) {
+          tplPicker = mountCombobox(tplHost, {
+            items: templates,
+            labelOf: (tp) => tp.name || '—',
+            subOf: (tp) => {
+              const chain = Array.isArray(tp.approvalLevels) && tp.approvalLevels.length
+                ? `${t('mtk.approvalChain')}: ${chainStr(tp.approvalLevels)}`
+                : '';
+              return [tp.category, chain].filter(Boolean).join(' · ');
+            },
+            placeholder: t('tk.templatePh'),
+            onSelect: (tp) => onTpl(tp),
+          });
+        }
+        onTpl(null);
         $('#tk-c-save', ov).addEventListener('click', async () => {
-          const tplId = tplSel && tplSel.value;
+          const tplId = tplPicker ? tplPicker.getId() : null;
           const body = {
             subject: $('#tk-c-subject', ov).value.trim(),
             description: $('#tk-c-desc', ov).value.trim(),
