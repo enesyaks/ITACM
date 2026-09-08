@@ -1222,6 +1222,14 @@ Views.tickets = async function (el, params = {}) {
       title: t('tk.new'),
       body: `<div class="tkc">
         <section class="tkd-sec">
+          <h4 class="tkd-h">${esc(t('tk.secRequester'))}</h4>
+          <div class="form-grid">
+            <div class="form-field full"><label>${esc(t('tk.requester'))}</label>
+              <div id="tk-c-requester-host"></div>
+              <div class="cell-sub" id="tk-c-requester-hint" style="margin-top:6px">${esc(t('tk.requesterHint'))}</div></div>
+          </div>
+        </section>
+        <section class="tkd-sec">
           <h4 class="tkd-h">${esc(t('tk.secType'))}</h4>
           <div class="form-grid">
             ${templates.length ? `<div class="form-field full"><label>${esc(t('tk.template'))}</label>
@@ -1258,18 +1266,76 @@ Views.tickets = async function (el, params = {}) {
         <section class="tkd-sec">
           <h4 class="tkd-h">${esc(t('tk.secLinks'))}</h4>
           <div class="form-grid">
-            <div class="form-field"><label>${esc(t('tk.requester'))}</label>
-              <div id="tk-c-requester-host"></div></div>
-            <div class="form-field"><label>${esc(t('tk.asset'))}</label>
-              <div id="tk-c-asset-host"></div></div>
+            <div class="form-field full"><label>${esc(t('tk.asset'))}</label>
+              <div id="tk-c-asset-host"></div>
+              <div class="cell-sub" id="tk-c-asset-scope" style="margin-top:6px"></div></div>
           </div>
         </section>
       </div>`,
       foot: `<button class="btn btn-outline" data-close>${esc(t('common.cancel'))}</button>
              <button class="btn btn-primary" id="tk-c-save">${esc(t('tk.create'))}</button>`,
       onMount(ov) {
-        const reqPicker = mountCombobox($('#tk-c-requester-host', ov), { items: emps, labelOf: empLabel, subOf: (e) => e.email || '', placeholder: t('tk.searchPh') });
-        const assetCPicker = mountCombobox($('#tk-c-asset-host', ov), { items: assets, labelOf: assetLabel, subOf: (x) => x.serialNo || x.status || '', placeholder: t('tk.searchPh') });
+        // Requester first, and picking one actually pays off: the asset list below
+        // narrows to the devices that person holds, which is the device the ticket
+        // is about nine times out of ten. "Show all" backs out of the narrowing
+        // for the cases where it isn't (a spare, someone else's machine).
+        const assetHost = $('#tk-c-asset-host', ov);
+        const scopeEl = $('#tk-c-asset-scope', ov);
+        const reqHint = $('#tk-c-requester-hint', ov);
+        const heldBy = (empId) => assets.filter((x) => x.currentEmployee && x.currentEmployee.id === empId);
+
+        let assetCPicker = null;
+        // Re-mounting is how the combobox takes a new list; keep the current pick
+        // when it survives the narrowing so a chosen asset isn't silently dropped.
+        const mountAssets = (list) => {
+          const keep = assetCPicker ? assetCPicker.getSelected() : null;
+          const stillThere = keep && list.some((x) => x.id === keep.id) ? keep : null;
+          assetCPicker = mountCombobox(assetHost, {
+            items: list,
+            labelOf: assetLabel,
+            subOf: (x) => x.serialNo || x.status || '',
+            placeholder: t('tk.searchPh'),
+            value: stillThere,
+            emptyText: list.length ? null : t('tk.assetNoneForPerson'),
+          });
+        };
+
+        const scopeAssets = (emp) => {
+          if (!emp) {
+            mountAssets(assets);
+            scopeEl.textContent = '';
+            return;
+          }
+          const own = heldBy(emp.id);
+          mountAssets(own.length ? own : assets);
+          scopeEl.innerHTML = own.length
+            ? `${esc(t('tk.assetScoped').replace('{name}', emp.fullName || ''))}
+               · <button type="button" class="btn-link" id="tk-c-asset-all">${esc(t('tk.assetShowAll'))}</button>`
+            : esc(t('tk.assetNoneForPerson'));
+          const allBtn = $('#tk-c-asset-all', ov);
+          if (allBtn) {
+            allBtn.addEventListener('click', () => {
+              mountAssets(assets);
+              scopeEl.textContent = '';
+            });
+          }
+        };
+
+        const reqPicker = mountCombobox($('#tk-c-requester-host', ov), {
+          items: emps,
+          labelOf: empLabel,
+          subOf: (e) => e.email || '',
+          placeholder: t('tk.searchPh'),
+          onSelect: (emp) => {
+            reqHint.textContent = emp
+              ? t('tk.requesterPicked')
+                .replace('{dept}', emp.department || emp.title || '—')
+                .replace('{n}', heldBy(emp.id).length)
+              : t('tk.requesterHint');
+            scopeAssets(emp);
+          },
+        });
+        mountAssets(assets);
         // Template picker: choosing one turns this into a request (category +
         // approval chain come from the template); the type/category fields hide
         // and an amount field appears when the template gates on a threshold.

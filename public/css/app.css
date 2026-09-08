@@ -6604,3 +6604,13 @@ th.tk-sortable.active { color: var(--primary); }
   .int-nav-item { width: auto; white-space: nowrap; }
   .int-nav-label { max-width: 140px; }
 }
+
+/* Inline text button that reads as a link inside a hint line — used where a
+   sentence needs one clickable word ("… · Tümünü göster") and a real button
+   would break the line's rhythm. */
+.btn-link {
+  padding: 0; border: 0; background: none; font: inherit; color: var(--primary);
+  cursor: pointer; text-decoration: underline; text-underline-offset: 2px;
+}
+.btn-link:hover { text-decoration-thickness: 2px; }
+.btn-link:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 3px; }
