@@ -70,6 +70,42 @@ async function finalizeMail(key, result) {
   return res.rowCount > 0;
 }
 
+/**
+ * How far the poller has read, and why that has to exist.
+ *
+ * The fetch used to be "every unseen message in the folder", which quietly
+ * assumes the mailbox was created for the desk. Point it at a mailbox that has
+ * been in use — a person's own inbox, a shared address with history — and the
+ * first poll tries to turn thousands of old messages into tickets, oldest
+ * first. It never gets far enough to reach today's mail, so the one thing the
+ * operator is watching for (the test they just sent) never happens, and every
+ * tick starts the same doomed crawl again.
+ *
+ * So the poller records a high-water mark and only ever looks above it. The
+ * first sight of a mailbox sets the mark to what is already there — the past is
+ * the past — and each poll advances it. UIDVALIDITY is stored with it: a server
+ * that renumbers the mailbox invalidates the mark rather than replaying it
+ * against different messages. So is the folder, so switching folders starts
+ * clean.
+ */
+const MAX_PER_POLL = 25;
+
+function watchOf(cfg, folder, uidValidity) {
+  const w = cfg && cfg.watch;
+  if (!w || w.folder !== folder || String(w.uidValidity || '') !== String(uidValidity || '')) return null;
+  const uid = Number(w.uid);
+  return Number.isFinite(uid) && uid >= 0 ? uid : null;
+}
+
+async function saveWatch(folder, uidValidity, uid) {
+  await query(
+    `UPDATE app_settings
+        SET imap_json = COALESCE(imap_json, '{}'::jsonb) || jsonb_build_object('watch', $1::jsonb)
+      WHERE id = 1`,
+    [JSON.stringify({ folder, uidValidity: String(uidValidity || ''), uid, at: new Date().toISOString() })]
+  );
+}
+
 /** Most recent refusals, newest first — for the operator to see why mail was skipped. */
 async function recentSkips() {
   const { rows } = await query(
@@ -132,6 +168,9 @@ async function getConfigRaw() {
     // Opt-in: also skip newsletters/automated mail, judged by headers alone.
     // Off by default — a support inbox fed by a mailing list would trip it.
     blockBulk: !!j.blockBulk,
+    // Where the poller has read up to: { folder, uidValidity, uid }. Server-set,
+    // never accepted from the client. See adoptWatch().
+    watch: (j.watch && typeof j.watch === 'object') ? j.watch : null,
   };
 }
 
@@ -143,6 +182,9 @@ async function getConfig() {
     pass: c.pass ? '********' : '', hasPass: !!c.pass,
     oauthClientSecret: c.oauthClientSecret ? '********' : '', hasOauthSecret: !!c.oauthClientSecret,
     authServId: c.authServId || '',
+    // Where the poller has read up to, so the screen can say what "no new mail"
+    // means rather than leaving the operator to guess.
+    watch: c.watch ? { folder: c.watch.folder, uid: Number(c.watch.uid), at: c.watch.at || null } : null,
   };
 }
 
@@ -187,6 +229,10 @@ async function saveConfig(input = {}) {
     // wipe it just because the form doesn't carry it.
     blocklist: input.blocklist != null ? parseBlocklist(input.blocklist) : cur.blocklist,
     blockBulk: input.blockBulk != null ? !!input.blockBulk : cur.blockBulk,
+    // Server-managed, like the blocklist: saving the connection form must not
+    // reset where the poller has read up to. A different folder invalidates it
+    // on its own — the watermark records which folder it belongs to.
+    watch: cur.watch || null,
     pass: nextPass ? encryptSecret(nextPass) : null,
   };
   await query('UPDATE app_settings SET imap_json = $1::jsonb WHERE id = 1', [JSON.stringify(stored)]);
@@ -606,7 +652,11 @@ async function appendEmailReply(ticket, parsed, { fromName, fromAddr, bodyText, 
   return { action: 'appended', ticketId: ticket.id, number: ticket.number, attached };
 }
 
-/** Connect, process every unseen message, mark them seen. Returns a summary. */
+/**
+ * Connect, process what has arrived since the last poll, mark it seen. Bounded
+ * by MAX_PER_POLL so one tick cannot run for an hour; anything left over is
+ * picked up by the next one. Returns a summary.
+ */
 async function poll() {
   const cfg = await getConfigRaw();
   // Delegated auth carries host + account in the shared connection, not here.
@@ -620,19 +670,44 @@ async function poll() {
   const { simpleParser } = require('mailparser');
   const client = await buildImapClient(cfg);
   client.on('error', () => {}); // never let an async 'error' event crash the scheduler tick
+  const folder = cfg.folder || 'INBOX';
   let created = 0; let appended = 0; let failed = 0; let filtered = 0; let duplicate = 0;
+  let handled = 0; let highest = 0; let capped = false;
   try {
     await client.connect();
-    const lock = await client.getMailboxLock(cfg.folder || 'INBOX');
+    const lock = await client.getMailboxLock(folder);
     try {
-      for await (const msg of client.fetch({ seen: false }, { uid: true, source: true })) {
+      const box = client.mailbox || {};
+      const uidValidity = String(box.uidValidity || '');
+      const mark = watchOf(cfg, folder, uidValidity);
+      if (mark === null) {
+        // First sight of this mailbox. Adopt what is in it as history and start
+        // watching from here, rather than ticketing a backlog nobody asked for.
+        const from = Math.max(0, Number(box.uidNext || 1) - 1);
+        await saveWatch(folder, uidValidity, from);
+        await client.logout();
+        console.log('[inbound-mail] now watching', folder, `from uid ${from};`,
+          `${box.exists || 0} existing message(s) left alone. New mail from now on becomes a ticket.`);
+        return { created: 0, appended: 0, failed: 0, filtered: 0, duplicate: 0, adopted: { folder, fromUid: from, existing: box.exists || 0 } };
+      }
+      // `mark+1:*` and NOT "unseen": above the mark every message is new to the
+      // desk whether or not somebody has opened it in the mail client, and the
+      // log still guarantees each becomes a ticket at most once. A mail read in
+      // Gmail before the tick ran used to vanish silently; it no longer can.
+      for await (const msg of client.fetch({ uid: `${mark + 1}:*` }, { uid: true, source: true })) {
+        // A UID range whose start is past the end of the mailbox comes back as
+        // the LAST message — `*` is the highest UID, and servers normalise the
+        // range — so an empty mailbox would re-deliver the newest message on
+        // every tick. Anything at or below the mark is not new.
+        if (!Number.isFinite(msg.uid) || msg.uid <= mark) continue;
+        if (handled >= MAX_PER_POLL) { capped = true; break; }
+        handled += 1;
         let key = null;
-        // Marking \Seen is what consumes a message: an unseen mail comes back on
-        // the next tick, a seen one never does. So it is only ever set once this
-        // message has a row in inbound_mail_log saying what happened to it.
-        // Anything else — a parse that throws before a key exists, a database
-        // that is down — leaves the mail unread and retryable rather than
-        // swallowing it with no trace.
+        // Nothing is consumed until it is recorded. Both the \Seen flag and the
+        // high-water mark move only for a message that left a row in
+        // inbound_mail_log saying what happened to it — a parse that throws
+        // before a key exists, or a database that is down, leaves the mail where
+        // it is for the next tick rather than stepping over it silently.
         let recorded = false;
         try {
           const parsed = await simpleParser(msg.source);
@@ -668,25 +743,35 @@ async function poll() {
           } catch { /* leave it unread so the next tick retries it */ }
         }
         if (recorded) {
+          // The mark only advances over messages that left a record, so a message
+          // the database refused is retried on the next tick instead of being
+          // stepped over and lost.
+          if (msg.uid > highest) highest = msg.uid;
           try { await client.messageFlagsAdd(msg.uid, ['\\Seen'], { uid: true }); } catch { /* best-effort */ }
         }
       }
+      if (highest > mark) await saveWatch(folder, uidValidity, highest);
     } finally { lock.release(); }
     await client.logout();
   } catch (err) {
+    // The poll's own failure used to be the one thing it never said out loud:
+    // it returned {skipped} and the operator saw a request that succeeded and
+    // did nothing.
+    console.error('[inbound-mail] poll failed:', err.message,
+      `| folder: ${folder} | auth: ${cfg.authMethod}`);
     try { await client.close(); } catch { /* ignore */ }
     return { skipped: true, reason: err.message };
   }
-  // A poll that opens nothing is the normal case and the confusing one: the
-  // fetch is scoped to UNSEEN mail, and a message is claimed durably the first
-  // time it is seen, so "nothing happened" can mean the inbox was empty, the
-  // mail was already read, it was filtered, or it was handled on an earlier
-  // tick. The counters distinguish those and were previously visible nowhere.
+  // A poll that opens nothing is the normal case and the confusing one: it only
+  // looks above the high-water mark, and a message is claimed durably the first
+  // time it is seen, so "nothing happened" can mean no new mail arrived, it was
+  // filtered, or it was handled on an earlier tick. The counters distinguish
+  // those and were previously visible nowhere.
   const scanned = created + appended + failed + filtered + duplicate;
   console.log('[inbound-mail] poll:', `scanned=${scanned}`, `created=${created}`,
     `appended=${appended}`, `filtered=${filtered}`, `duplicate=${duplicate}`, `failed=${failed}`,
-    `| folder: ${cfg.folder || 'INBOX'}`);
-  return { created, appended, failed, filtered, duplicate };
+    `| folder: ${folder} | up to uid ${highest || 'unchanged'}${capped ? ` (capped at ${MAX_PER_POLL}, more waiting)` : ''}`);
+  return { created, appended, failed, filtered, duplicate, capped };
 }
 
 /**

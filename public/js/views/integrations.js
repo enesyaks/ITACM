@@ -388,6 +388,10 @@ Views.integrations = async function (el, params = {}) {
           <div class="form-field"><label style="padding-top:26px"><input type="checkbox" id="int-imap-secure" ${inbound.secure !== false ? 'checked' : ''}${chkDis}> TLS (SSL)</label></div>
           <div class="form-field full"><label><input type="checkbox" id="int-imap-enabled" ${inbound.enabled ? 'checked' : ''}${chkDis}> ${esc(t('int.inbound.enable'))}</label>
             <span class="ob-hint">${esc(t('int.inbound.enableHint'))}</span></div>
+          <div class="form-field full">
+            <span class="ob-hint">${inbound.watch
+              ? esc(t('int.inbound.watching').replace('{folder}', inbound.watch.folder || 'INBOX').replace('{uid}', inbound.watch.uid))
+              : esc(t('int.inbound.watchingNone'))}</span></div>
         </div>
         ${canManage ? `<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
           <button class="btn btn-primary" id="int-imap-save">${esc(t('common.save'))}</button>
@@ -1032,8 +1036,16 @@ GET /api/integrations/licenses/:id/sam
       ].filter(Boolean).join('');
       const opened = (r.created || 0) + (r.appended || 0);
       const done = t('int.inbound.pollDone').replace('{n}', opened) + extra
+        + (r.capped ? ' ' + t('int.inbound.pollCapped') : '')
         + (!opened && !extra ? ' ' + t('int.inbound.pollNothing') : '');
-      toast(r.skipped ? (t('int.inbound.pollSkipped') + (r.reason ? ' (' + r.reason + ')' : '')) : done, r.skipped ? 'error' : 'success'); }
+      // First look at a mailbox: what is already in it is history, and saying so
+      // is the difference between "it works" and "it ignored my test mail".
+      const adopted = r.adopted
+        ? t('int.inbound.pollAdopted').replace('{n}', r.adopted.existing).replace('{folder}', r.adopted.folder)
+        : '';
+      toast(r.skipped ? (t('int.inbound.pollSkipped') + (r.reason ? ' (' + r.reason + ')' : '')) : (adopted || done),
+        r.skipped ? 'error' : 'success');
+      if (r.adopted) Views.integrations(el); }
     catch (err) { toast(err.message, 'error'); }
     finally { btn.disabled = false; btn.textContent = label; }
   });
