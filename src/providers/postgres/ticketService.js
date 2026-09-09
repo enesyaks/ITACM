@@ -1240,7 +1240,7 @@ async function updateTicket(id, patch, user) {
     }
     audit('ticket.update', `Updated ${cur.number}`, a, id, cur.number);
     if (statusTo || newAssigneeId) {
-      plan = { id, number: cur.number, subject: cur.subject, actorName: a.name,
+      plan = { id, number: cur.number, subject: cur.subject, actorName: a.name, actorEmail: a.email,
         requesterEmployeeId: cur.requester_employee_id, statusTo, newAssigneeId };
     }
     if (statusTo && TERMINAL.has(statusTo)) {
@@ -1288,7 +1288,7 @@ async function closeLinked(masterId, { status, number }, a) {
     for (const child of rows) {
       await logActivity(child.id, a, 'status', `${status} — with ${number}`);
       notifyUpdate({
-        id: child.id, number: child.number, subject: child.subject, actorName: a.name,
+        id: child.id, number: child.number, subject: child.subject, actorName: a.name, actorEmail: a.email,
         requesterEmployeeId: child.requesterEmployeeId, statusTo: status, newAssigneeId: null,
       });
     }
@@ -1324,7 +1324,15 @@ async function addComment(id, body, user, { ownEmployeeId = null } = {}) {
   if (!ownEmployeeId && !internal) {
     await query('UPDATE tickets SET first_response_at = COALESCE(first_response_at, now()), updated_at = now() WHERE id = $1', [id]);
   }
-  notifyComment({ id, ownEmployeeId, internal, snippet: text.slice(0, 200), body: text, actorName: a.name });
+  notifyComment({
+    id, ownEmployeeId, internal, snippet: text.slice(0, 200), body: text,
+    actorName: a.name, actorEmail: a.email,
+    // The client posts the comment first and uploads its files afterwards (it
+    // needs the comment's id to link them to). So at this moment the comment has
+    // no attachments yet, and the mail that went out never mentioned them. The
+    // count tells the notifier how many to wait for.
+    attachmentCount: Math.min(10, Math.max(0, Number(body && body.attachmentCount) || 0)),
+  });
   const ticket = await getTicket(id, user, { ownEmployeeId });
   ticket.newCommentId = commentId; // lets the client link freshly-uploaded files
   return ticket;
@@ -1597,10 +1605,25 @@ function mail(opts) {
   } catch { /* ignore */ }
 }
 
+/**
+ * Nobody is told what they just did themselves.
+ *
+ * A staff member is often the requester too — they open a ticket for their own
+ * laptop, then work it. Without this they get their own reply back as mail, and
+ * a mail that quotes you to yourself reads as a bug in the system, because it is.
+ */
+function isSelf(address, actorEmail) {
+  const a = String(address || '').trim().toLowerCase();
+  const b = String(actorEmail || '').trim().toLowerCase();
+  return !!a && a === b;
+}
+
 // Notify after an update (status change → requester; new assignee → assignee).
 function notifyUpdate(plan) {
   (async () => {
     const p = await partyEmails({ requesterEmployeeId: plan.requesterEmployeeId, assigneeUserId: plan.newAssigneeId });
+    if (isSelf(p.requesterEmail, plan.actorEmail)) p.requesterEmail = null;
+    if (isSelf(p.assigneeEmail, plan.actorEmail)) p.assigneeEmail = null;
     if (plan.statusTo && p.requesterEmail) {
       mail({ to: p.requesterEmail, ticketId: plan.id, ticketNumber: plan.number, subject: plan.subject, event: `status changed to “${plan.statusTo}”`, actorName: plan.actorName });
     }
@@ -1618,8 +1641,41 @@ function notifyUpdate(plan) {
   })().catch(() => {});
 }
 
+/**
+ * Wait for the files a comment is about to receive.
+ *
+ * The client cannot upload them before the comment exists — it needs the
+ * comment's id to link them — so the reply mail was always composed against a
+ * comment with no attachments and went out saying nothing about them. Rather
+ * than reshape the upload contract, the mail waits a few seconds for the files
+ * the client said were coming, and sends whatever has landed by then.
+ *
+ * Public files only: an internal or staff-only attachment must never leave with
+ * a mail to the requester, whatever it was posted alongside.
+ */
+async function awaitCommentFiles(ticketId, expected, { timeoutMs = 12000, stepMs = 300 } = {}) {
+  const until = Date.now() + timeoutMs;
+  for (;;) {
+    // Counted over every file that landed, returned as only the public ones:
+    // the wait is "has the client finished uploading", which a staff-only file
+    // answers just as well as a public one — while sending it would leak it.
+    const { rows } = await query(
+      `SELECT id, filename, mime, byte_size AS "byteSize",
+              (internal = false AND staff_only = false) AS "public"
+         FROM ticket_documents
+        WHERE ticket_id = $1 AND comment_id IS NOT NULL
+          AND created_at > now() - interval '2 minutes'
+        ORDER BY created_at ASC`, [ticketId]
+    ).catch(() => ({ rows: [] }));
+    if (rows.length >= expected || Date.now() >= until) {
+      return rows.filter((r) => r.public).map(({ id, filename, mime, byteSize }) => ({ id, filename, mime, byteSize }));
+    }
+    await new Promise((r) => setTimeout(r, stepMs));
+  }
+}
+
 // Notify after a comment (staff public reply → requester; employee reply → assignee).
-function notifyComment({ id, ownEmployeeId, internal, snippet, body, actorName }) {
+function notifyComment({ id, ownEmployeeId, internal, snippet, body, actorName, actorEmail, attachmentCount = 0 }) {
   if (internal) return; // internal notes never leave the building
   (async () => {
     const meta = (await query(
@@ -1627,15 +1683,18 @@ function notifyComment({ id, ownEmployeeId, internal, snippet, body, actorName }
     )).rows[0];
     if (!meta) return;
     const p = await partyEmails(meta);
+    if (isSelf(p.requesterEmail, actorEmail)) p.requesterEmail = null;
+    if (isSelf(p.assigneeEmail, actorEmail)) p.assigneeEmail = null;
     const inapp = require('./inappService');
     if (!ownEmployeeId) {
       // Staff public reply → email the requester the reply itself (threaded so
       // their answer comes back onto the ticket) + an in-app bell.
       if (p.requesterEmail) {
+        const files = attachmentCount ? await awaitCommentFiles(id, attachmentCount) : [];
         try {
           require('./notificationService').sendTicketReply({
             to: p.requesterEmail, ticketId: id, ticketNumber: meta.number, subject: meta.subject,
-            replyText: body || snippet || '', actorName,
+            replyText: body || snippet || '', actorName, files,
           }).catch(() => {});
         } catch { /* ignore */ }
       }

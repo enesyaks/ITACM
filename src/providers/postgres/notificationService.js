@@ -27,6 +27,31 @@ function appBaseUrl(notify) {
 }
 
 /**
+ * The address a reply has to come back to for the desk to see it.
+ *
+ * Outbound and inbound need not be the same mailbox, and in practice often are
+ * not: mail goes out through whatever relay the company uses and arrives at the
+ * support address. Without a Reply-To the requester's answer goes to the SENDING
+ * account, which nothing polls — it simply never reaches the ticket, and from
+ * the desk's side the requester "never replied". So every ticket mail carries
+ * the intake mailbox as Reply-To whenever email-to-ticket is switched on.
+ *
+ * Read from the stored connection, never by minting a token: this runs on every
+ * outbound ticket mail. Best-effort — a missing address just means no header.
+ */
+async function intakeAddress() {
+  try {
+    const cfg = await require('./inboundMailService').getConfigRaw();
+    if (!cfg.enabled) return '';
+    if (cfg.authMethod === 'oauth2_delegated') {
+      const st = await require('./mailOAuthService').getStatus();
+      return (st && st.connected && st.email) || '';
+    }
+    return cfg.user || '';
+  } catch { return ''; }
+}
+
+/**
  * A link to one ticket rather than to the app's front door. The SPA opens a
  * ticket from `?open=<id>` in the hash, and a Portal account that lands on the
  * staff route is carried to the same ticket on its own page — so one link works
@@ -91,6 +116,11 @@ const DEFAULT_NOTIFY = {
 };
 
 const SCHEDULE_MODES = ['off', 'daily', 'weekly'];
+
+// How much of a reply's attachments travel with the mail. Receiving servers
+// commonly refuse a message over ~25MB outright — losing the reply along with
+// the file — so the rest is named and left on the ticket instead.
+const MAX_MAIL_ATTACH_BYTES = 12 * 1024 * 1024;
 
 function clampInt(value, min, max, fallback) {
   const n = Number(value);
@@ -342,7 +372,7 @@ function mapSmtpError(err, smtp = {}) {
   return HttpError.badRequest(`SMTP error: ${msg.slice(0, 180)}`);
 }
 
-async function sendMail({ to, subject, text, html, attachments }) {
+async function sendMail({ to, subject, text, html, attachments, replyTo }) {
   const { smtp, companyName } = await getMailConfig();
   const delegated = smtp.authMethod === 'oauth2_delegated';
   const oauth = smtp.authMethod === 'oauth2_ms';
@@ -381,6 +411,7 @@ async function sendMail({ to, subject, text, html, attachments }) {
   try {
     await transport.sendMail({
       from,
+      ...(replyTo && replyTo !== from ? { replyTo } : {}),
       to: recipients.join(', '),
       subject: String(subject || '').slice(0, 200),
       text: text || '',
@@ -728,7 +759,7 @@ async function sendSlaBreachNotification({ to, ticketId, ticketNumber, subject, 
     const logo = logoAttachment(companyLogo);
     return await sendMail({ to, subject: rendered.subject, text: rendered.bodyText,
       html: templateHtml(rendered.bodyHtml, { companyName, hasLogo: !!logo, address: companyAddress }),
-      attachments: logo ? [logo] : undefined });
+      attachments: logo ? [logo] : undefined, replyTo: await intakeAddress() });
   } catch (err) {
     return { skipped: true, reason: err.message };
   }
@@ -750,7 +781,7 @@ async function sendTicketNotification({ to, ticketId, ticketNumber, subject, eve
     const logo = logoAttachment(companyLogo);
     return await sendMail({ to, subject: rendered.subject, text: rendered.bodyText,
       html: templateHtml(rendered.bodyHtml, { companyName, hasLogo: !!logo, address: companyAddress }),
-      attachments: logo ? [logo] : undefined });
+      attachments: logo ? [logo] : undefined, replyTo: await intakeAddress() });
   } catch (err) {
     return { skipped: true, reason: err.message };
   }
@@ -784,7 +815,7 @@ async function sendTicketAck({ to, ticketId, ticketNumber, subject, requesterNam
     const logo = logoAttachment(companyLogo);
     return await sendMail({ to, subject: rendered.subject, text: rendered.bodyText,
       html: templateHtml(rendered.bodyHtml, { companyName, hasLogo: !!logo, address: companyAddress }),
-      attachments: logo ? [logo] : undefined });
+      attachments: logo ? [logo] : undefined, replyTo: await intakeAddress() });
   } catch (err) {
     return { skipped: true, reason: err.message };
   }
@@ -795,7 +826,7 @@ async function sendTicketAck({ to, ticketId, ticketNumber, subject, requesterNam
  * template. The subject carries [{{ticketNumber}}] so the requester's reply threads
  * straight back onto the ticket (the inbound poller reads that reference).
  */
-async function sendTicketReply({ to, ticketId, ticketNumber, subject, replyText, actorName }) {
+async function sendTicketReply({ to, ticketId, ticketNumber, subject, replyText, actorName, files = [] }) {
   try {
     if (!to) return { skipped: true, reason: 'no recipient' };
     const { notify, smtp, companyName, companyLogo, companyAddress } = await getMailConfig();
@@ -803,15 +834,41 @@ async function sendTicketReply({ to, ticketId, ticketNumber, subject, replyText,
     if (!smtp.host) return { skipped: true, reason: 'no smtp host' };
     const base = appBaseUrl(notify) || process.env.APP_URL || 'http://localhost:8000';
     const templates = await getEmailTemplates();
+    // Files posted with the reply travel with it, and are named in the body so a
+    // mail client that hides attachments still shows that something came. Past
+    // the budget they are named but not carried, and the ticket link is how the
+    // requester gets them — better than a mail that silently loses one.
+    const carried = [];
+    const names = [];
+    let budget = MAX_MAIL_ATTACH_BYTES;
+    for (const f of files || []) {
+      names.push(f.filename);
+      if (!f.id || Number(f.byteSize) > budget) continue;
+      try {
+        const doc = await require('./documentService').getTicketDoc(f.id);
+        if (!doc || !doc.buffer) continue;
+        budget -= doc.buffer.length;
+        carried.push({ filename: f.filename, content: doc.buffer, contentType: f.mime || 'application/octet-stream' });
+      } catch { /* a file that will not load must not lose the reply */ }
+    }
     const rendered = renderTemplate(templates.ticket_reply, {
       companyName, ticketNumber, subject,
       actorName: actorName || 'Support', replyText: String(replyText || '').trim(),
+      // The value carries its own label: the renderer has no conditionals, and a
+      // paragraph reading "Attached:" with nothing after it is worse than none.
+      attachmentList: names.length
+        ? `Attached: ${names.join(', ')} — they are on the ticket too, whatever your mail client does with them.`
+        : '',
       ticketUrl: ticketUrl(base, ticketId), appUrl: base,
     });
     const logo = logoAttachment(companyLogo);
-    return await sendMail({ to, subject: rendered.subject, text: rendered.bodyText,
-      html: templateHtml(rendered.bodyHtml, { companyName, hasLogo: !!logo, address: companyAddress }),
-      attachments: logo ? [logo] : undefined });
+    // A placeholder that resolved to nothing leaves an empty paragraph and a
+    // stranded blank line; neither should reach the reader.
+    const bodyHtml = rendered.bodyHtml.replace(/<p[^>]*>\s*<\/p>/g, '');
+    const bodyText = rendered.bodyText.replace(/\n{3,}/g, '\n\n');
+    return await sendMail({ to, subject: rendered.subject, text: bodyText,
+      html: templateHtml(bodyHtml, { companyName, hasLogo: !!logo, address: companyAddress }),
+      attachments: [...(logo ? [logo] : []), ...carried], replyTo: await intakeAddress() });
   } catch (err) {
     return { skipped: true, reason: err.message };
   }
@@ -973,5 +1030,5 @@ module.exports = {
   getEmailTemplates, saveEmailTemplates, sendOnboardingWelcomeEmail, sendPortalAccessEmail, sendHrRequestNotice,
   sendTicketAck, sendTicketNotification, sendTicketReply, sendSlaBreachNotification, sendApprovalNotice, sendApprovalDecisionEmail,
   sendOwnerTransferEmail,
-  DEFAULT_NOTIFY, TEMPLATE_KEYS, PLACEHOLDERS, ticketUrl,
+  DEFAULT_NOTIFY, TEMPLATE_KEYS, PLACEHOLDERS, ticketUrl, intakeAddress,
 };

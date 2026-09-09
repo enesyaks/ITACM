@@ -2061,7 +2061,10 @@ Views.tickets = async function (el, params = {}) {
           if (!body && !replyStaged.length) return;
           const vf = visFlags('#tk-d-vis');
           try {
-            const resp = await api('/tickets/' + encodeURIComponent(id) + '/comments', { method: 'POST', body: { body: body || t('tk.fileOnlyComment'), internal: vf.internal, staffOnly: vf.staffOnly } });
+            // The files can only be linked after the comment exists, so tell the
+            // server how many are coming — otherwise the mail to the requester
+            // goes out before they land and never mentions them.
+            const resp = await api('/tickets/' + encodeURIComponent(id) + '/comments', { method: 'POST', body: { body: body || t('tk.fileOnlyComment'), internal: vf.internal, staffOnly: vf.staffOnly, attachmentCount: replyStaged.length } });
             const commentId = resp && resp.newCommentId;
             for (const f of replyStaged) {
               try { await api('/tickets/' + encodeURIComponent(id) + '/documents', { method: 'POST', body: { base64: await readReplyB64(f), filename: f.name, internal: vf.internal, staffOnly: vf.staffOnly, commentId } }); }

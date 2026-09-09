@@ -43,7 +43,7 @@ const TEMPLATE_PLACEHOLDERS = {
   owner_transfer: ['companyName', 'employeeName', 'employeeEmail', 'credentials', 'appUrl'],
   ticket_ack: ['companyName', 'requesterName', 'ticketNumber', 'subject', 'priority', 'ticketUrl', 'appUrl'],
   ticket_update: ['companyName', 'ticketNumber', 'subject', 'event', 'actorName', 'snippet', 'ticketUrl', 'appUrl'],
-  ticket_reply: ['companyName', 'ticketNumber', 'subject', 'actorName', 'replyText', 'ticketUrl', 'appUrl'],
+  ticket_reply: ['companyName', 'ticketNumber', 'subject', 'actorName', 'replyText', 'attachmentList', 'ticketUrl', 'appUrl'],
   sla_breach: ['companyName', 'ticketNumber', 'subject', 'slaType', 'dueAt', 'overdueBy', 'priority', 'assigneeName', 'ticketUrl', 'appUrl'],
   approval_request: ['companyName', 'summary', 'requesterName', 'resourceRef', 'appUrl'],
   approval_decision: ['companyName', 'summary', 'decision', 'deciderName', 'appUrl'],
@@ -230,6 +230,7 @@ const DEFAULT_EMAIL_TEMPLATES = {
       + '<p style="margin:0 0 8px;color:#334155">{{actorName}} replied:</p>'
       + '<div style="margin:0 0 16px;padding:12px 14px;border-left:3px solid #4f46e5;background:#f5f3ff;'
       + 'border-radius:0 6px 6px 0;color:#1e293b;white-space:pre-wrap">{{replyText}}</div>'
+      + '<p style="margin:0 0 12px;color:#475569;font-size:14px">{{attachmentList}}</p>'
       + '<p style="margin:0 0 12px;color:#475569;font-size:14px">You can reply directly to this email to respond — '
       + 'keep <strong>[{{ticketNumber}}]</strong> in the subject and your message, and any attachments, are added to the ticket.</p>'
       + '<p style="margin:0"><a href="{{ticketUrl}}" style="color:#4f46e5">Open the ticket</a></p>',
@@ -238,6 +239,7 @@ const DEFAULT_EMAIL_TEMPLATES = {
       + '{{subject}} (ticket {{ticketNumber}})\n\n'
       + '{{actorName}} replied:\n\n'
       + '{{replyText}}\n\n'
+      + '{{attachmentList}}\n\n'
       + 'You can reply directly to this email to respond — keep [{{ticketNumber}}] in the\n'
       + 'subject and your message, and any attachments, are added to the ticket.\n\n'
       + 'Open: {{ticketUrl}}\n',
