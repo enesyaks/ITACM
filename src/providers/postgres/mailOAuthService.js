@@ -85,9 +85,17 @@ async function startConnect(provider) {
     config.jwtSecret,
     { expiresIn: '10m', issuer: 'itacm', jwtid: require('crypto').randomUUID() }
   );
+  const redirect = await redirectUri();
+  // The redirect URI is the single most common reason this flow fails, and the
+  // failure happens AT the provider — Google refuses before redirecting back, so
+  // no callback ever reaches us and the access log shows only a 200 on /start.
+  // Without this line there is nothing anywhere to compare against the value
+  // registered with the provider. Neither field is a secret: both travel in the
+  // browser's address bar on the very next hop.
+  console.log('[mail-oauth] authorize:', provider, '| redirect_uri:', redirect);
   const url = buildAuthorizeUrl({
     provider, tenant: app.tenant, clientId: app.clientId,
-    redirectUri: await redirectUri(), state,
+    redirectUri: redirect, state,
   });
   // State is returned so the route can also stash it in an HttpOnly cookie and
   // bind the callback to the same browser (CSRF protection), matching SSO.
