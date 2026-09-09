@@ -1168,6 +1168,13 @@ GET /api/integrations/licenses/:id/sam
         };
         renderList(); renderSkips();
         $('#imapblk-add', overlay).addEventListener('click', () => { if (add(input.value)) input.value = ''; });
+        // The disposition only decides what happens to mail the bulk test
+        // catches, so it means nothing while that test is off.
+        const bulkBox = $('#imapblk-bulk', overlay);
+        const bulkAct = $('#imapblk-bulkaction', overlay);
+        const syncBulk = () => { if (bulkAct) bulkAct.disabled = !bulkBox.checked; };
+        bulkBox?.addEventListener('change', syncBulk);
+        syncBulk();
         input.addEventListener('keydown', (ev) => {
           if (ev.key !== 'Enter') return;
           ev.preventDefault();
