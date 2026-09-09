@@ -112,6 +112,12 @@ router.put('/inbound-mail', authenticate, requirePermission('integration', 'mana
 router.post('/inbound-mail/test', authenticate, requirePermission('integration', 'manage'), asyncHandler(async (req, res) => {
   res.json({ success: true, data: await inboundMailService.testConnection(req.body || {}) });
 }));
+// The mailbox's own folder list, so the folder can be picked instead of typed.
+// POST, not GET: it carries the same unsaved-form fields the test does, and they
+// must not end up in a URL or a proxy log. Same permission as the test.
+router.post('/inbound-mail/folders', authenticate, requirePermission('integration', 'manage'), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await inboundMailService.listFolders(req.body || {}) });
+}));
 // Fetch new mail right now instead of waiting for the scheduler.
 router.post('/inbound-mail/poll', authenticate, requirePermission('integration', 'manage'), asyncHandler(async (req, res) => {
   res.json({ success: true, data: await inboundMailService.poll() });

@@ -247,8 +247,16 @@ async function buildImapClient(cfg) {
   });
 }
 
-/** Verify the mailbox is reachable and the credentials work. */
-async function testConnection(overrides = {}) {
+/**
+ * Resolve the config a probe (test / folder listing) should connect with.
+ *
+ * Shared by both so the guards below cannot drift apart in one copy: the caller
+ * may only influence a whitelisted set of fields, OAuth secrets always come from
+ * storage, and a stored password is reused ONLY when the destination is
+ * unchanged — otherwise the secret could be aimed at a server of the caller's
+ * choosing.
+ */
+async function resolveProbeConfig(overrides = {}) {
   const stored = await getConfigRaw();
   // Whitelist the fields a caller may override — never spread the raw body, and
   // never let a caller-specified destination inherit the stored password.
@@ -299,6 +307,59 @@ async function testConnection(overrides = {}) {
       secure: o.secure != null ? !!o.secure : stored.secure,
     };
   }
+  return cfg;
+}
+
+/** One line describing what a failed probe was aimed at — never any secret. */
+function probeTarget(cfg) {
+  return [
+    `auth: ${cfg.authMethod || 'password'}`,
+    `host: ${cfg.host || (cfg.authMethod === 'oauth2_delegated' ? '(connected mailbox)' : '(unset)')}`,
+    `user: ${cfg.user || '(from connection)'}`,
+    `folder: ${cfg.folder || 'INBOX'}`,
+  ].join(' | ');
+}
+
+/**
+ * The mailbox's own folder list, so the folder can be PICKED rather than typed.
+ *
+ * Typing it blind is how a working connection still fails: the server rejects an
+ * unknown mailbox with the same "Command failed" as a bad credential, and there
+ * is nothing on screen to tell the operator which of the two happened.
+ */
+async function listFolders(overrides = {}) {
+  const cfg = await resolveProbeConfig(overrides);
+  const client = await buildImapClient(cfg);
+  client.on('error', () => {});
+  try {
+    await client.connect();
+    const boxes = await client.list();
+    await client.logout();
+    // Only what the picker needs. `path` is the value IMAP wants; Gmail's is
+    // "[Gmail]/All Mail" while its display name is just "All Mail", so both are
+    // carried and the caller decides which to show.
+    return {
+      folders: (boxes || [])
+        .filter((b) => !(b.flags && b.flags.has && b.flags.has('\\Noselect')))
+        .map((b) => ({
+          path: b.path,
+          name: b.name || b.path,
+          specialUse: b.specialUse || null,
+        })),
+    };
+  } catch (err) {
+    try { await client.close(); } catch { /* ignore */ }
+    if (err && err.message) {
+      console.warn('[inbound-mail] folder list failed:', err.message, '|', probeTarget(cfg),
+        err.responseText ? `| server said: ${err.responseText}` : '');
+    }
+    throw HttpError.badRequest('Could not read the mailbox folder list');
+  }
+}
+
+/** Verify the mailbox is reachable and the credentials work. */
+async function testConnection(overrides = {}) {
+  const cfg = await resolveProbeConfig(overrides);
   const client = await buildImapClient(cfg);
   // ImapFlow emits 'error' asynchronously; without a listener an unhandled
   // 'error' event crashes the whole process. Swallow it — connect() rejects too.
@@ -320,11 +381,7 @@ async function testConnection(overrides = {}) {
     // password and token are never touched here), and the CALLER still gets the
     // generic message so the endpoint stays useless as a network oracle.
     if (err && err.message) {
-      console.warn('[inbound-mail] test failed:', err.message,
-        '| auth:', cfg.authMethod || 'password',
-        '| host:', cfg.host || (cfg.authMethod === 'oauth2_delegated' ? '(connected mailbox)' : '(unset)'),
-        '| user:', cfg.user || '(from connection)',
-        '| folder:', cfg.folder || 'INBOX',
+      console.warn('[inbound-mail] test failed:', err.message, '|', probeTarget(cfg),
         err.responseText ? `| server said: ${err.responseText}` : '');
     }
     throw HttpError.badRequest('IMAP connection failed');
@@ -647,6 +704,6 @@ async function release(messageId) {
 }
 
 module.exports = {
-  getConfig, getConfigRaw, saveConfig, clearConfig, testConnection, createFromEmail, poll,
+  getConfig, getConfigRaw, saveConfig, clearConfig, testConnection, listFolders, createFromEmail, poll,
   getBlocklist, saveBlocklist, recentSkips, release, mailKey,
 };

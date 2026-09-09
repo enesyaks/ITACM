@@ -359,7 +359,12 @@ Views.integrations = async function (el, params = {}) {
           <div class="form-field"><label>${esc(t('int.mail.oauthSecret'))} ${inbound.hasOauthSecret ? `<span class="ob-hint">${esc(t('int.inbound.keep'))}</span>` : ''}</label>
             <input id="int-imap-oauth-secret" type="password" value="" placeholder="${inbound.hasOauthSecret ? '••••••••' : ''}" autocomplete="new-password"${inputDis}></div>
           <div class="form-field"><label>${esc(t('int.inbound.folder'))}</label>
-            <input id="int-imap-folder" value="${esc(inbound.folder || 'INBOX')}" placeholder="INBOX"${inputDis}></div>
+            <div style="display:flex;gap:6px">
+              <input id="int-imap-folder" value="${esc(inbound.folder || 'INBOX')}" placeholder="INBOX" list="int-imap-folder-list"${inputDis}>
+              <button type="button" class="btn btn-outline btn-sm" id="int-imap-folder-load"${inputDis}>${esc(t('int.inbound.folderLoad'))}</button>
+            </div>
+            <datalist id="int-imap-folder-list"></datalist>
+            <span class="ob-hint" id="int-imap-folder-hint">${esc(t('int.inbound.folderHint'))}</span></div>
           <div class="form-field"><label>${esc(t('int.inbound.type'))}</label>
             <select id="int-imap-type" ${inputDis}>
               <option value="incident" ${inbound.defaultType !== 'request' ? 'selected' : ''}>${esc(tkTypeLabel ? tkTypeLabel('incident') : 'Incident')}</option>
@@ -975,6 +980,31 @@ GET /api/integrations/licenses/:id/sam
     try { await api('/integrations/inbound-mail/test', { method: 'POST', body: imapBody() }); toast(t('int.inbound.testOk'), 'success'); }
     catch (err) { toast(t('int.inbound.testFail') + ': ' + err.message, 'error'); }
     finally { btn.disabled = false; btn.textContent = label; }
+  });
+  // Ask the mailbox what folders it actually has, so the name is picked rather
+  // than typed. A wrong folder fails with the same "Command failed" as a bad
+  // credential, which is exactly the confusion this removes.
+  $('#int-imap-folder-load', el)?.addEventListener('click', async () => {
+    const btn = $('#int-imap-folder-load', el);
+    const hint = $('#int-imap-folder-hint', el);
+    const list = $('#int-imap-folder-list', el);
+    const label = btn.textContent;
+    btn.disabled = true; btn.textContent = t('common.loading') || '…';
+    try {
+      const r = await api('/integrations/inbound-mail/folders', { method: 'POST', body: imapBody() });
+      const folders = (r && r.folders) || [];
+      // Gmail's path is "[Gmail]/All Mail" while its name is "All Mail"; the
+      // path is what IMAP wants, so that is the value — the name only labels it.
+      list.innerHTML = folders.map((f) =>
+        `<option value="${esc(f.path)}">${esc(f.name !== f.path ? f.name : '')}</option>`).join('');
+      hint.textContent = folders.length
+        ? t('int.inbound.folderFound').replace('{n}', folders.length)
+        : t('int.inbound.folderNone');
+    } catch (err) {
+      // Listing is a convenience: a mailbox that refuses LIST can still be typed
+      // in by hand, so this must not block the form.
+      hint.textContent = t('int.inbound.folderFail') + ' ' + err.message;
+    } finally { btn.disabled = false; btn.textContent = label; }
   });
   $('#int-imap-poll', el)?.addEventListener('click', async () => {
     const btn = $('#int-imap-poll', el); const label = btn.textContent;
