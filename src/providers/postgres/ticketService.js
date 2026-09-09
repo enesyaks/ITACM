@@ -517,7 +517,51 @@ async function createTicket(body, user, { asEmployee = null, source = 'staff', s
       requesterName: t0.requesterName,
     });
   }
-  return getTicket(id, user);
+  const final = await getTicket(id, user);
+  // Read after the rules and the approval chain have run, so the receipt quotes
+  // the priority the ticket actually ended up with.
+  ackRequester(final, { requesterEmail: (requester && requester.email) || '', senderEmail });
+  return final;
+}
+
+/**
+ * Who, if anyone, gets the receipt — kept as a pure function because the rule is
+ * the whole feature and it has to be readable on its own.
+ *
+ * A requester the install knows (an employee row, however the ticket was raised)
+ * is always written back to. An address that matches nobody only exists on the
+ * email intake, and answering it is a decision a desk has to make: an auto-reply
+ * to an unknown address confirms the mailbox is live to whoever sent it, which
+ * is exactly what a spam run is looking for. So that half is off until switched
+ * on, and then it goes to the raw From: address.
+ */
+function ackTarget({ requesterEmail, senderEmail, ackUnknown }) {
+  const known = String(requesterEmail || '').trim();
+  if (known) return { to: known, known: true };
+  const raw = String(senderEmail || '').trim();
+  if (!raw || !ackUnknown) return null;
+  return { to: raw, known: false };
+}
+
+// Fire-and-forget receipt: a mail problem must never fail the ticket write.
+function ackRequester(ticket, { requesterEmail, senderEmail }) {
+  (async () => {
+    const svc = require('./notificationService');
+    const cfg = await svc.getMailConfig();
+    const target = ackTarget({
+      requesterEmail, senderEmail,
+      ackUnknown: !!(cfg.notify && cfg.notify.ackUnknownSenders),
+    });
+    if (!target) return;
+    await svc.sendTicketAck({
+      to: target.to,
+      ticketId: ticket.id,
+      ticketNumber: ticket.number,
+      subject: ticket.subject,
+      requesterName: ticket.requesterName || target.to,
+      priority: ticket.priority,
+    });
+  })().catch(() => {});
 }
 
 async function getTicket(id, user, { ownEmployeeId = null } = {}) {
@@ -1061,7 +1105,7 @@ async function updateTicket(id, patch, user) {
     }
     audit('ticket.update', `Updated ${cur.number}`, a, id, cur.number);
     if (statusTo || newAssigneeId) {
-      plan = { number: cur.number, subject: cur.subject, actorName: a.name,
+      plan = { id, number: cur.number, subject: cur.subject, actorName: a.name,
         requesterEmployeeId: cur.requester_employee_id, statusTo, newAssigneeId };
     }
   });
@@ -1314,6 +1358,7 @@ function escalateBreach(tk) {
     }
     const res = await svc.sendSlaBreachNotification({
       to,
+      ticketId: tk.id,
       ticketNumber: tk.number,
       subject: tk.subject,
       slaType: (tk.legs || ['SLA']).join(' + '),
@@ -1366,10 +1411,10 @@ function notifyUpdate(plan) {
   (async () => {
     const p = await partyEmails({ requesterEmployeeId: plan.requesterEmployeeId, assigneeUserId: plan.newAssigneeId });
     if (plan.statusTo && p.requesterEmail) {
-      mail({ to: p.requesterEmail, ticketNumber: plan.number, subject: plan.subject, event: `status changed to “${plan.statusTo}”`, actorName: plan.actorName });
+      mail({ to: p.requesterEmail, ticketId: plan.id, ticketNumber: plan.number, subject: plan.subject, event: `status changed to “${plan.statusTo}”`, actorName: plan.actorName });
     }
     if (plan.newAssigneeId && p.assigneeEmail) {
-      mail({ to: p.assigneeEmail, ticketNumber: plan.number, subject: plan.subject, event: 'assigned to you', actorName: plan.actorName });
+      mail({ to: p.assigneeEmail, ticketId: plan.id, ticketNumber: plan.number, subject: plan.subject, event: 'assigned to you', actorName: plan.actorName });
     }
     // In-app: the newly-assigned agent gets a bell notification too.
     if (plan.newAssigneeId) {
@@ -1398,7 +1443,7 @@ function notifyComment({ id, ownEmployeeId, internal, snippet, body, actorName }
       if (p.requesterEmail) {
         try {
           require('./notificationService').sendTicketReply({
-            to: p.requesterEmail, ticketNumber: meta.number, subject: meta.subject,
+            to: p.requesterEmail, ticketId: id, ticketNumber: meta.number, subject: meta.subject,
             replyText: body || snippet || '', actorName,
           }).catch(() => {});
         } catch { /* ignore */ }
@@ -1413,7 +1458,7 @@ function notifyComment({ id, ownEmployeeId, internal, snippet, body, actorName }
       }
     } else {
       // Requester reply → notify the assignee (email + in-app bell).
-      if (p.assigneeEmail) mail({ to: p.assigneeEmail, ticketNumber: meta.number, subject: meta.subject, event: 'the requester replied', actorName, snippet });
+      if (p.assigneeEmail) mail({ to: p.assigneeEmail, ticketId: id, ticketNumber: meta.number, subject: meta.subject, event: 'the requester replied', actorName, snippet });
       if (meta.assigneeUserId) {
         inapp.create({
           userId: meta.assigneeUserId,
@@ -1444,4 +1489,5 @@ module.exports = {
   sweepSlaBreaches, SLA_TARGETS, stats, report, agentReport, slaDetail, getSlaConfig, saveSlaConfig, categories,
   getCannedResponses, saveCannedResponses, getManagedCategories, saveManagedCategories,
   getWorkflow, saveWorkflow, resetWorkflow, sweepAutoCloseResolved,
+  ackTarget,
 };

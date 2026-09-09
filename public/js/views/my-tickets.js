@@ -1,7 +1,7 @@
 /* ======================= SELF-SERVICE TICKETS (Portal) ======================= */
 /* Reuses the pills / label helpers defined in tickets.js (loaded before this). */
 
-Views.myTickets = async function (el) {
+Views.myTickets = async function (el, params) {
   const [list, tplRes, apprRes] = await Promise.all([
     api('/me/tickets').catch(() => []),
     api('/me/request-templates').catch(() => []),
@@ -49,6 +49,9 @@ Views.myTickets = async function (el) {
 
   el.querySelectorAll('#mtk-rows tr[data-open]').forEach((tr) =>
     tr.addEventListener('click', () => openMine(tr.dataset.open)));
+  // #/my-tickets?open=<id> — the link in a service-desk email lands here, so a
+  // Portal account opens the ticket itself instead of a list to hunt through.
+  if (params && params.open) openMine(params.open);
   $('#mtk-new', el).addEventListener('click', openCreate);
   const decideAppr = async (id, decision) => {
     try { await api('/me/approvals/' + encodeURIComponent(id) + '/decide', { method: 'POST', body: { decision } });

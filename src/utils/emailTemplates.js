@@ -6,7 +6,8 @@
 const TEMPLATE_KEYS = [
   'onboarding_welcome', 'portal_access', 'hr_onboard_request', 'hr_offboard_request',
   'handover_completed', 'alert_digest', 'owner_transfer',
-  'ticket_update', 'sla_breach', 'approval_request', 'approval_decision',
+  'ticket_ack', 'ticket_update', 'ticket_reply', 'sla_breach',
+  'approval_request', 'approval_decision',
 ];
 
 /** Shown in the template picker so the list reads as flows, not as keys. */
@@ -18,6 +19,7 @@ const TEMPLATE_LABELS = {
   handover_completed: 'Handover completed — notice to IT recipients',
   alert_digest: 'Daily alert digest — licenses, stock, EOL, onboarding',
   owner_transfer: 'Ownership transfer — notice to the new owner',
+  ticket_ack: 'Service desk — we have your request (first reply to the requester)',
   ticket_update: 'Service desk — ticket update (assigned / status)',
   ticket_reply: 'Service desk — reply to the requester (threaded email)',
   sla_breach: 'Service desk — SLA breached (escalation to the assignee)',
@@ -39,9 +41,10 @@ const TEMPLATE_PLACEHOLDERS = {
   handover_completed: ['companyName', 'employeeName', 'itemCount', 'handoverId', 'ackNote', 'appUrl'],
   alert_digest: ['companyName', 'alertCount', 'alertSummary', 'appUrl'],
   owner_transfer: ['companyName', 'employeeName', 'employeeEmail', 'credentials', 'appUrl'],
-  ticket_update: ['companyName', 'ticketNumber', 'subject', 'event', 'actorName', 'snippet', 'appUrl'],
-  ticket_reply: ['companyName', 'ticketNumber', 'subject', 'actorName', 'replyText', 'appUrl'],
-  sla_breach: ['companyName', 'ticketNumber', 'subject', 'slaType', 'dueAt', 'overdueBy', 'priority', 'assigneeName', 'appUrl'],
+  ticket_ack: ['companyName', 'requesterName', 'ticketNumber', 'subject', 'priority', 'ticketUrl', 'appUrl'],
+  ticket_update: ['companyName', 'ticketNumber', 'subject', 'event', 'actorName', 'snippet', 'ticketUrl', 'appUrl'],
+  ticket_reply: ['companyName', 'ticketNumber', 'subject', 'actorName', 'replyText', 'ticketUrl', 'appUrl'],
+  sla_breach: ['companyName', 'ticketNumber', 'subject', 'slaType', 'dueAt', 'overdueBy', 'priority', 'assigneeName', 'ticketUrl', 'appUrl'],
   approval_request: ['companyName', 'summary', 'requesterName', 'resourceRef', 'appUrl'],
   approval_decision: ['companyName', 'summary', 'decision', 'deciderName', 'appUrl'],
 };
@@ -173,6 +176,36 @@ const DEFAULT_EMAIL_TEMPLATES = {
       + 'Set up two-factor authentication when prompted.\n\n'
       + 'Sign in: {{appUrl}}\n',
   },
+  // The first thing a requester hears back. It is often the ONLY mail they get
+  // before a person picks the ticket up, so it has to answer the two questions
+  // that make someone write in a second time: did it arrive, and where can I see
+  // it. Hence the number, the subject echoed back, and a link straight to the
+  // ticket rather than to the app's front door.
+  ticket_ack: {
+    subject: '[{{ticketNumber}}] {{subject}}',
+    bodyHtml:
+      '<p style="margin:0 0 6px;color:#64748b;font-size:13px">{{companyName}} · Service Desk</p>'
+      + '<h2 style="margin:0 0 10px;font-size:18px">We have your request</h2>'
+      + '<p style="margin:0 0 12px">Hello {{requesterName}}, your request reached the service desk and is queued for an agent.</p>'
+      + '<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 16px;font-size:14px">'
+      + '<tr><td style="padding:2px 14px 2px 0;color:#64748b">Ticket</td><td style="padding:2px 0"><strong>{{ticketNumber}}</strong></td></tr>'
+      + '<tr><td style="padding:2px 14px 2px 0;color:#64748b">Subject</td><td style="padding:2px 0">{{subject}}</td></tr>'
+      + '<tr><td style="padding:2px 14px 2px 0;color:#64748b">Priority</td><td style="padding:2px 0">{{priority}}</td></tr>'
+      + '</table>'
+      + '<p style="margin:0 0 12px;color:#475569;font-size:14px">You can reply directly to this email to add anything — '
+      + 'keep <strong>[{{ticketNumber}}]</strong> in the subject and your message, and any attachments, are added to the ticket.</p>'
+      + '<p style="margin:0"><a href="{{ticketUrl}}" style="color:#4f46e5">Open your ticket</a></p>',
+    bodyText:
+      '{{companyName}} · Service Desk\n\n'
+      + 'We have your request.\n\n'
+      + 'Hello {{requesterName}}, your request reached the service desk and is queued for an agent.\n\n'
+      + 'Ticket: {{ticketNumber}}\n'
+      + 'Subject: {{subject}}\n'
+      + 'Priority: {{priority}}\n\n'
+      + 'You can reply directly to this email to add anything — keep [{{ticketNumber}}] in the\n'
+      + 'subject and your message, and any attachments, are added to the ticket.\n\n'
+      + 'Open your ticket: {{ticketUrl}}\n',
+  },
   ticket_update: {
     subject: '[{{ticketNumber}}] {{subject}}',
     bodyHtml:
@@ -180,13 +213,13 @@ const DEFAULT_EMAIL_TEMPLATES = {
       + '<h2 style="margin:0 0 10px;font-size:18px">{{ticketNumber}} — {{subject}}</h2>'
       + '<p style="margin:0 0 12px">{{actorName}} — {{event}}.</p>'
       + '<p style="margin:0 0 12px;color:#334155">{{snippet}}</p>'
-      + '<p style="margin:0"><a href="{{appUrl}}" style="color:#4f46e5">Open the service desk</a></p>',
+      + '<p style="margin:0"><a href="{{ticketUrl}}" style="color:#4f46e5">Open the ticket</a></p>',
     bodyText:
       '{{companyName}} · Service Desk\n\n'
       + '{{ticketNumber}} — {{subject}}\n'
       + '{{actorName}} — {{event}}.\n\n'
       + '{{snippet}}\n\n'
-      + 'Open: {{appUrl}}\n',
+      + 'Open: {{ticketUrl}}\n',
   },
   ticket_reply: {
     subject: '[{{ticketNumber}}] {{subject}}',
@@ -199,7 +232,7 @@ const DEFAULT_EMAIL_TEMPLATES = {
       + 'border-radius:0 6px 6px 0;color:#1e293b;white-space:pre-wrap">{{replyText}}</div>'
       + '<p style="margin:0 0 12px;color:#475569;font-size:14px">You can reply directly to this email to respond — '
       + 'keep <strong>[{{ticketNumber}}]</strong> in the subject and your message, and any attachments, are added to the ticket.</p>'
-      + '<p style="margin:0"><a href="{{appUrl}}" style="color:#4f46e5">Open the service desk</a></p>',
+      + '<p style="margin:0"><a href="{{ticketUrl}}" style="color:#4f46e5">Open the ticket</a></p>',
     bodyText:
       '{{companyName}} · Service Desk\n\n'
       + '{{subject}} (ticket {{ticketNumber}})\n\n'
@@ -207,7 +240,7 @@ const DEFAULT_EMAIL_TEMPLATES = {
       + '{{replyText}}\n\n'
       + 'You can reply directly to this email to respond — keep [{{ticketNumber}}] in the\n'
       + 'subject and your message, and any attachments, are added to the ticket.\n\n'
-      + 'Open: {{appUrl}}\n',
+      + 'Open: {{ticketUrl}}\n',
   },
   sla_breach: {
     subject: '[{{ticketNumber}}] {{slaType}} SLA breached — {{subject}}',
@@ -217,13 +250,13 @@ const DEFAULT_EMAIL_TEMPLATES = {
       + '<p style="margin:0 0 12px;color:#b91c1c"><strong>{{slaType}} SLA breached.</strong> '
       + 'Due {{dueAt}} · overdue by {{overdueBy}}.</p>'
       + '<p style="margin:0 0 12px;color:#334155">Priority {{priority}} · assigned to {{assigneeName}}</p>'
-      + '<p style="margin:0"><a href="{{appUrl}}" style="color:#4f46e5">Open the ticket</a></p>',
+      + '<p style="margin:0"><a href="{{ticketUrl}}" style="color:#4f46e5">Open the ticket</a></p>',
     bodyText:
       '{{companyName}} · Service Desk\n\n'
       + '{{ticketNumber}} — {{subject}}\n'
       + '{{slaType}} SLA breached. Due {{dueAt}}, overdue by {{overdueBy}}.\n'
       + 'Priority {{priority}} · assigned to {{assigneeName}}\n\n'
-      + 'Open: {{appUrl}}\n',
+      + 'Open: {{ticketUrl}}\n',
   },
 
   approval_request: {

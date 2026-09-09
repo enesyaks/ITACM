@@ -26,6 +26,19 @@ function appBaseUrl(notify) {
   return stored || process.env.APP_URL || process.env.PUBLIC_URL || 'http://localhost:8000';
 }
 
+/**
+ * A link to one ticket rather than to the app's front door. The SPA opens a
+ * ticket from `?open=<id>` in the hash, and a Portal account that lands on the
+ * staff route is carried to the same ticket on its own page — so one link works
+ * for an agent, for an employee with a Portal login, and (via the sign-in
+ * screen) for anyone else.
+ */
+function ticketUrl(base, ticketId) {
+  const root = String(base || '').replace(/\/+$/, '');
+  if (!ticketId) return root;
+  return `${root}/#/tickets?open=${encodeURIComponent(ticketId)}`;
+}
+
 /** Validate + normalize an admin-entered public app URL. Empty = use fallback. */
 function cleanAppUrl(raw) {
   const s = String(raw == null ? '' : raw).trim().slice(0, 200);
@@ -55,6 +68,16 @@ const DEFAULT_NOTIFY = {
   onboarding: true,
   handoverCompleted: false,
   ticketUpdates: false,
+  // The "we have your request" mail to the person who raised the ticket. On by
+  // default, but it only ever goes out with ticketUpdates on — one switch turns
+  // service-desk mail off entirely.
+  ticketAck: true,
+  // Mail that arrives from an address belonging to nobody in the system opens a
+  // ticket all the same, and by default that sender hears nothing back: a desk
+  // whose intake is public would otherwise auto-reply to every spam run and to
+  // every bounce, and each reply proves the address is live. Turn it on for a
+  // desk that serves outsiders — customers, suppliers, applicants.
+  ackUnknownSenders: false,
   // Automatic digest schedule: 'off' | 'daily' | 'weekly'. `hour` is server
   // local time (0-23); `weekday` (0=Sun) applies only to the weekly cadence.
   // `lastRunDate` is server-managed (YYYY-MM-DD) and guards once-per-day sends.
@@ -235,6 +258,8 @@ async function saveMailConfig({ smtp, notify }) {
       onboarding: notify.onboarding !== false,
       handoverCompleted: !!notify.handoverCompleted,
       ticketUpdates: !!notify.ticketUpdates,
+      ticketAck: notify.ticketAck !== false,
+      ackUnknownSenders: !!notify.ackUnknownSenders,
       schedule,
       hour: clampInt(notify.hour, 0, 23, 8),
       weekday: clampInt(notify.weekday, 0, 6, 1),
@@ -686,7 +711,7 @@ function templateHtml(bodyHtml, opts = {}) {
  * from "someone replied". Returns the same {skipped, reason} shape as the other
  * senders so the caller can record WHY nothing went out.
  */
-async function sendSlaBreachNotification({ to, ticketNumber, subject, slaType, dueAt, overdueBy, priority, assigneeName }) {
+async function sendSlaBreachNotification({ to, ticketId, ticketNumber, subject, slaType, dueAt, overdueBy, priority, assigneeName }) {
   try {
     if (!to) return { skipped: true, reason: 'no recipient' };
     const { notify, smtp, companyName, companyLogo, companyAddress } = await getMailConfig();
@@ -697,7 +722,8 @@ async function sendSlaBreachNotification({ to, ticketNumber, subject, slaType, d
     const rendered = renderTemplate(templates.sla_breach, {
       companyName, ticketNumber, subject,
       slaType: slaType || 'SLA', dueAt: dueAt || '-', overdueBy: overdueBy || '-',
-      priority: priority || '-', assigneeName: assigneeName || 'nobody', appUrl: base,
+      priority: priority || '-', assigneeName: assigneeName || 'nobody',
+      ticketUrl: ticketUrl(base, ticketId), appUrl: base,
     });
     const logo = logoAttachment(companyLogo);
     return await sendMail({ to, subject: rendered.subject, text: rendered.bodyText,
@@ -708,7 +734,7 @@ async function sendSlaBreachNotification({ to, ticketNumber, subject, slaType, d
   }
 }
 
-async function sendTicketNotification({ to, ticketNumber, subject, event, actorName, snippet }) {
+async function sendTicketNotification({ to, ticketId, ticketNumber, subject, event, actorName, snippet }) {
   try {
     if (!to) return { skipped: true, reason: 'no recipient' };
     const { notify, smtp, companyName, companyLogo, companyAddress } = await getMailConfig();
@@ -718,7 +744,42 @@ async function sendTicketNotification({ to, ticketNumber, subject, event, actorN
     const templates = await getEmailTemplates();
     const rendered = renderTemplate(templates.ticket_update, {
       companyName, ticketNumber, subject, event,
-      actorName: actorName || 'Someone', snippet: snippet ? `"${snippet}"` : '', appUrl: base,
+      actorName: actorName || 'Someone', snippet: snippet ? `"${snippet}"` : '',
+      ticketUrl: ticketUrl(base, ticketId), appUrl: base,
+    });
+    const logo = logoAttachment(companyLogo);
+    return await sendMail({ to, subject: rendered.subject, text: rendered.bodyText,
+      html: templateHtml(rendered.bodyHtml, { companyName, hasLogo: !!logo, address: companyAddress }),
+      attachments: logo ? [logo] : undefined });
+  } catch (err) {
+    return { skipped: true, reason: err.message };
+  }
+}
+
+/**
+ * "We have your request" — the receipt a requester gets when their ticket is
+ * opened. Its own template rather than a ticket_update with an {{event}}: this
+ * is the one mail that goes to someone who may never have seen the app, so it
+ * carries the number, the subject back, and a link to the ticket itself.
+ *
+ * Gated on `ticketAck` as well as the master ticketUpdates switch. The caller
+ * decides WHO may receive it (see ackTarget in ticketService) — a sender who
+ * matches nobody in the system is only written back to when the desk has opted
+ * into that.
+ */
+async function sendTicketAck({ to, ticketId, ticketNumber, subject, requesterName, priority }) {
+  try {
+    if (!to) return { skipped: true, reason: 'no recipient' };
+    const { notify, smtp, companyName, companyLogo, companyAddress } = await getMailConfig();
+    if (!notify.enabled || !notify.ticketUpdates) return { skipped: true, reason: 'ticket notifications off' };
+    if (notify.ticketAck === false) return { skipped: true, reason: 'ticket acknowledgement off' };
+    if (!smtp.host) return { skipped: true, reason: 'no smtp host' };
+    const base = appBaseUrl(notify) || process.env.APP_URL || 'http://localhost:8000';
+    const templates = await getEmailTemplates();
+    const rendered = renderTemplate(templates.ticket_ack, {
+      companyName, ticketNumber, subject,
+      requesterName: requesterName || 'there', priority: priority || 'medium',
+      ticketUrl: ticketUrl(base, ticketId), appUrl: base,
     });
     const logo = logoAttachment(companyLogo);
     return await sendMail({ to, subject: rendered.subject, text: rendered.bodyText,
@@ -734,7 +795,7 @@ async function sendTicketNotification({ to, ticketNumber, subject, event, actorN
  * template. The subject carries [{{ticketNumber}}] so the requester's reply threads
  * straight back onto the ticket (the inbound poller reads that reference).
  */
-async function sendTicketReply({ to, ticketNumber, subject, replyText, actorName }) {
+async function sendTicketReply({ to, ticketId, ticketNumber, subject, replyText, actorName }) {
   try {
     if (!to) return { skipped: true, reason: 'no recipient' };
     const { notify, smtp, companyName, companyLogo, companyAddress } = await getMailConfig();
@@ -744,7 +805,8 @@ async function sendTicketReply({ to, ticketNumber, subject, replyText, actorName
     const templates = await getEmailTemplates();
     const rendered = renderTemplate(templates.ticket_reply, {
       companyName, ticketNumber, subject,
-      actorName: actorName || 'Support', replyText: String(replyText || '').trim(), appUrl: base,
+      actorName: actorName || 'Support', replyText: String(replyText || '').trim(),
+      ticketUrl: ticketUrl(base, ticketId), appUrl: base,
     });
     const logo = logoAttachment(companyLogo);
     return await sendMail({ to, subject: rendered.subject, text: rendered.bodyText,
@@ -909,7 +971,7 @@ async function sendHrRequestNotice(request) {
 module.exports = {
   getMailConfig, saveMailConfig, clearMailConfig, sendTestEmail, runAlertDigest, runScheduledDigest, notifyHandoverCompleted, sendMail,
   getEmailTemplates, saveEmailTemplates, sendOnboardingWelcomeEmail, sendPortalAccessEmail, sendHrRequestNotice,
-  sendTicketNotification, sendTicketReply, sendSlaBreachNotification, sendApprovalNotice, sendApprovalDecisionEmail,
+  sendTicketAck, sendTicketNotification, sendTicketReply, sendSlaBreachNotification, sendApprovalNotice, sendApprovalDecisionEmail,
   sendOwnerTransferEmail,
-  DEFAULT_NOTIFY, TEMPLATE_KEYS, PLACEHOLDERS,
+  DEFAULT_NOTIFY, TEMPLATE_KEYS, PLACEHOLDERS, ticketUrl,
 };

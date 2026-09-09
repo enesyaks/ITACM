@@ -334,7 +334,16 @@ async function navigate() {
   const route = ROUTES[hash];
   // Portal accounts are confined to their own zimmet page (+ their own tickets).
   const portalOk = hash === PORTAL_HASH || hash === '#/notifications' || (['#/my-tickets', '#/my-kb'].includes(hash) && moduleOn('ticketing'));
-  if (isPortalUser() && !portalOk) { location.hash = PORTAL_HASH; return; }
+  if (isPortalUser() && !portalOk) {
+    // One ticket link works for everyone: mail points at the staff route, and a
+    // Portal account is carried to the same ticket on its own page rather than
+    // being dropped on the portal home with the ticket lost.
+    if (rawHash === '#/tickets' && params.open && moduleOn('ticketing')) {
+      location.hash = `#/my-tickets?open=${encodeURIComponent(params.open)}`;
+      return;
+    }
+    location.hash = PORTAL_HASH; return;
+  }
   if (isHrConfined() && !HR_ALLOWED_HASHES.has(hash)) { location.hash = HR_HOME_HASH; return; }
   // Mirror permittedNavEntries: a portalOnly route or a disabled optional module
   // must bounce home on direct-URL / stale-bookmark hits (the sidebar hides them).
