@@ -690,17 +690,29 @@ async function poll() {
           `${box.exists || 0} existing message(s) left alone. New mail from now on becomes a ticket.`);
         return { created: 0, appended: 0, failed: 0, filtered: 0, duplicate: 0, adopted: { folder, fromUid: from, existing: box.exists || 0 } };
       }
+      // Ask which messages are new, then fetch them ONE AT A TIME.
+      //
+      // Not a `for await (... client.fetch(...))` loop: imapflow streams a fetch
+      // over the connection and forbids any other IMAP command until it is
+      // exhausted ("otherwise you will end up in a deadloop", per its own docs).
+      // The loop marked each message \Seen as it went, which killed the
+      // connection mid-poll — "Connection not available" — and lost everything
+      // after that point. Every command here is issued between fetches instead.
+      //
       // `mark+1:*` and NOT "unseen": above the mark every message is new to the
       // desk whether or not somebody has opened it in the mail client, and the
       // log still guarantees each becomes a ticket at most once. A mail read in
       // Gmail before the tick ran used to vanish silently; it no longer can.
-      for await (const msg of client.fetch({ uid: `${mark + 1}:*` }, { uid: true, source: true })) {
-        // A UID range whose start is past the end of the mailbox comes back as
-        // the LAST message — `*` is the highest UID, and servers normalise the
-        // range — so an empty mailbox would re-deliver the newest message on
-        // every tick. Anything at or below the mark is not new.
-        if (!Number.isFinite(msg.uid) || msg.uid <= mark) continue;
-        if (handled >= MAX_PER_POLL) { capped = true; break; }
+      const found = await client.search({ uid: `${mark + 1}:*` }, { uid: true });
+      // A UID range whose start is past the end of the mailbox comes back as the
+      // LAST message — `*` is the highest UID and servers normalise the range —
+      // so an untouched mailbox would re-deliver its newest message every tick.
+      // Anything at or below the mark is not new.
+      const fresh = (found || []).map(Number).filter((u) => Number.isFinite(u) && u > mark).sort((a, b) => a - b);
+      capped = fresh.length > MAX_PER_POLL;
+      for (const uid of fresh.slice(0, MAX_PER_POLL)) {
+        const msg = await client.fetchOne(String(uid), { uid: true, source: true }, { uid: true });
+        if (!msg || !msg.source) continue; // deleted between the search and now
         handled += 1;
         let key = null;
         // Nothing is consumed until it is recorded. Both the \Seen flag and the
@@ -712,11 +724,11 @@ async function poll() {
         try {
           const parsed = await simpleParser(msg.source);
           const fromAddr = (parsed.from && parsed.from.value && parsed.from.value[0] && parsed.from.value[0].address) || (parsed.from && parsed.from.text) || '';
-          key = mailKey(parsed, msg.uid);
+          key = mailKey(parsed, uid);
           // Durable de-dup: claim the message first. If we do not win the claim it
           // was already handled on an earlier tick — the \Seen flag failing to
           // stick can no longer make it re-open the same ticket.
-          const first = await claimMail(key, msg.uid, fromAddr, parsed.subject || '');
+          const first = await claimMail(key, uid, fromAddr, parsed.subject || '');
           if (!first) {
             duplicate++;
             recorded = true;
@@ -731,26 +743,31 @@ async function poll() {
         } catch (err) {
           failed++;
           const reason = ('failed: ' + (err && err.message ? err.message : 'parse or create failed')).slice(0, 500);
-          console.error('[inbound-mail] message failed:', `uid=${msg.uid}`, reason);
+          console.error('[inbound-mail] message failed:', `uid=${uid}`, reason);
           try {
             // A parse can die before the message is able to identify itself, and
             // the claim itself can fail. Either way fall back to the mailbox's own
             // identifier, so the operator still gets a row to point at — a message
             // that disappears without a trace is the one nobody can debug.
-            const logKey = key || `uid:${cfg.folder || 'INBOX'}:${msg.uid}`;
-            await claimMail(logKey, msg.uid, '', ''); // no-op when already claimed
+            const logKey = key || `uid:${folder}:${uid}`;
+            await claimMail(logKey, uid, '', ''); // no-op when already claimed
             recorded = await finalizeMail(logKey, { action: 'failed', reason });
           } catch { /* leave it unread so the next tick retries it */ }
         }
         if (recorded) {
           // The mark only advances over messages that left a record, so a message
           // the database refused is retried on the next tick instead of being
-          // stepped over and lost.
-          if (msg.uid > highest) highest = msg.uid;
-          try { await client.messageFlagsAdd(msg.uid, ['\\Seen'], { uid: true }); } catch { /* best-effort */ }
+          // stepped over and lost. It is written per message rather than at the
+          // end of the run: a connection that drops halfway through must not
+          // throw away the work already done — that is what made the poll open
+          // one ticket and then never advance past it.
+          if (uid > highest) {
+            highest = uid;
+            await saveWatch(folder, uidValidity, highest);
+          }
+          try { await client.messageFlagsAdd(String(uid), ['\\Seen'], { uid: true }); } catch { /* best-effort */ }
         }
       }
-      if (highest > mark) await saveWatch(folder, uidValidity, highest);
     } finally { lock.release(); }
     await client.logout();
   } catch (err) {
@@ -807,9 +824,10 @@ async function release(messageId) {
     await client.connect();
     const lock = await client.getMailboxLock(cfg.folder || 'INBOX');
     try {
-      for await (const msg of client.fetch({ uid: String(row.imap_uid) }, { uid: true, source: true })) {
-        parsed = await simpleParser(msg.source);
-      }
+      // fetchOne, not a fetch iterator: one message, and the command is finished
+      // before anything else touches the connection.
+      const msg = await client.fetchOne(String(row.imap_uid), { uid: true, source: true }, { uid: true });
+      if (msg && msg.source) parsed = await simpleParser(msg.source);
     } finally { lock.release(); }
     await client.logout();
   } catch (err) {

@@ -18,10 +18,23 @@ const assert = require('node:assert/strict');
 
 const db = require('./helpers/db');
 
-/** Stand-in for the IMAP server: yields the messages, records flags and ranges. */
+/**
+ * Stand-in for the IMAP server. It enforces the one rule imapflow documents and
+ * the poller used to break: no other command may run while a fetch iterator is
+ * open. Breaking it here fails the test the way it failed in production, with
+ * "Connection not available".
+ *
+ * `dropAfter` makes the connection die after N messages, which is how a real
+ * mailbox behaves on a bad link — and how the mark's durability gets tested.
+ */
 function fakeImap(messages, box = {}) {
   const seen = [];
   const ranges = [];
+  const state = { streaming: false, delivered: 0, dropped: false };
+  const guard = () => {
+    if (state.streaming) throw new Error('Connection not available');
+    if (state.dropped) throw new Error('Connection not available');
+  };
   class ImapFlow {
     on() {}
     async connect() {}
@@ -33,11 +46,24 @@ function fakeImap(messages, box = {}) {
       };
       return { release() {} };
     }
-    // Deliberately ignores the range: the poller's own guard against a server
-    // answering "N:*" with the last message is part of what is under test.
-    async *fetch(range) { ranges.push(range); for (const m of messages) yield m; }
-    async messageFlagsAdd(uid) { seen.push(uid); return true; }
-    async logout() {}
+    // Deliberately answers with every message it has: the poller's own guard
+    // against a server answering "N:*" with the last message is under test.
+    async search(range) { guard(); ranges.push(range); return messages.map((m) => m.uid); }
+    async fetchOne(uid) {
+      guard();
+      if (box.dropAfter != null && state.delivered >= box.dropAfter) {
+        state.dropped = true;
+        throw new Error('Connection not available');
+      }
+      state.delivered += 1;
+      return messages.find((m) => String(m.uid) === String(uid)) || null;
+    }
+    async *fetch(range) {
+      guard(); ranges.push(range); state.streaming = true;
+      try { for (const m of messages) yield m; } finally { state.streaming = false; }
+    }
+    async messageFlagsAdd(uid) { guard(); seen.push(Number(uid)); return true; }
+    async logout() { guard(); }
     async close() {}
   }
   return { ImapFlow, seen, ranges };
@@ -93,7 +119,7 @@ test('inbound mail poll', db.skipReason ? { skip: db.skipReason } : {}, async (t
       assert.deepEqual(res.adopted, { folder: 'INBOX', fromUid: 42047, existing: 7352 });
       assert.equal(res.created, 0);
       assert.deepEqual(await logRows(), [], 'not one of the 7352 existing messages was touched');
-      assert.deepEqual(imap.ranges, [], 'and nothing was even fetched');
+      assert.deepEqual(imap.ranges, [], 'and the mailbox was not even searched');
       assert.equal(Number((await savedWatch()).uid), 42047);
     } finally { undo.forEach((f) => f()); }
   });
@@ -107,7 +133,7 @@ test('inbound mail poll', db.skipReason ? { skip: db.skipReason } : {}, async (t
     const undo = [stub('imapflow', imap), stub('mailparser', parserThatWorks)];
     try {
       const res = await inbound.poll();
-      assert.deepEqual(imap.ranges, [{ uid: '42048:*' }], 'the fetch is scoped to what is new');
+      assert.deepEqual(imap.ranges, [{ uid: '42048:*' }], 'only what is new is even asked for');
       assert.equal(res.created, 1);
       const rows = await logRows();
       assert.equal(rows.length, 1);
@@ -128,6 +154,21 @@ test('inbound mail poll', db.skipReason ? { skip: db.skipReason } : {}, async (t
       assert.equal(res.capped, true);
       assert.equal(res.created, 25, 'capped at MAX_PER_POLL');
       assert.equal(Number((await savedWatch()).uid), 125, 'the mark stops where the work stopped');
+    } finally { undo.forEach((f) => f()); }
+  });
+
+  await t.test('a connection that dies mid-run keeps the work it finished', async () => {
+    await query('DELETE FROM inbound_mail_log');
+    await watchAt(200);
+    const imap = fakeImap([msg(201), msg(202), msg(203)], { exists: 3, uidNext: 204, dropAfter: 2 });
+    const undo = [stub('imapflow', imap), stub('mailparser', parserThatWorks)];
+    try {
+      const res = await inbound.poll();
+      assert.equal(res.skipped, true, 'the drop is reported, not hidden');
+      assert.match(res.reason, /Connection not available/);
+      assert.equal((await logRows()).length, 2, 'the two that were handled stayed handled');
+      assert.equal(Number((await savedWatch()).uid), 202,
+        'and the mark kept them — otherwise the next tick starts over and never gets past the same message');
     } finally { undo.forEach((f) => f()); }
   });
 
