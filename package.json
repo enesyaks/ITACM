@@ -45,7 +45,7 @@
     "express": "^5.2.1",
     "imapflow": "^1.7.6",
     "jsonwebtoken": "^9.0.2",
-    "ldapts": "^8.2.0",
+    "ldapts": "^9.0.0",
     "mailparser": "^3.9.16",
     "nodemailer": "^9.1.1",
     "openid-client": "^6.8.7",
