@@ -651,6 +651,15 @@ async function poll() {
     try { await client.close(); } catch { /* ignore */ }
     return { skipped: true, reason: err.message };
   }
+  // A poll that opens nothing is the normal case and the confusing one: the
+  // fetch is scoped to UNSEEN mail, and a message is claimed durably the first
+  // time it is seen, so "nothing happened" can mean the inbox was empty, the
+  // mail was already read, it was filtered, or it was handled on an earlier
+  // tick. The counters distinguish those and were previously visible nowhere.
+  const scanned = created + appended + failed + filtered + duplicate;
+  console.log('[inbound-mail] poll:', `scanned=${scanned}`, `created=${created}`,
+    `appended=${appended}`, `filtered=${filtered}`, `duplicate=${duplicate}`, `failed=${failed}`,
+    `| folder: ${cfg.folder || 'INBOX'}`);
   return { created, appended, failed, filtered, duplicate };
 }
 

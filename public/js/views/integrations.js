@@ -1012,8 +1012,17 @@ GET /api/integrations/licenses/:id/sam
     try { const r = await api('/integrations/inbound-mail/poll', { method: 'POST' });
       // `skipped` is the "didn't run" flag; `filtered` counts messages the
       // blocklist/bulk rules declined — a successful run, not a failure.
-      const done = t('int.inbound.pollDone').replace('{n}', (r.created || 0) + (r.appended || 0))
-        + (r.filtered ? t('int.inbound.pollFiltered').replace('{n}', r.filtered) : '');
+      // "0 ticket" with nothing after it is the reply that sends people looking
+      // in the wrong place: the fetch only takes UNSEEN mail and a message is
+      // claimed the first time it is handled, so say which of those happened.
+      const extra = [
+        r.filtered ? t('int.inbound.pollFiltered').replace('{n}', r.filtered) : '',
+        r.duplicate ? t('int.inbound.pollDuplicate').replace('{n}', r.duplicate) : '',
+        r.failed ? t('int.inbound.pollFailed').replace('{n}', r.failed) : '',
+      ].filter(Boolean).join('');
+      const opened = (r.created || 0) + (r.appended || 0);
+      const done = t('int.inbound.pollDone').replace('{n}', opened) + extra
+        + (!opened && !extra ? ' ' + t('int.inbound.pollNothing') : '');
       toast(r.skipped ? (t('int.inbound.pollSkipped') + (r.reason ? ' (' + r.reason + ')' : '')) : done, r.skipped ? 'error' : 'success'); }
     catch (err) { toast(err.message, 'error'); }
     finally { btn.disabled = false; btn.textContent = label; }

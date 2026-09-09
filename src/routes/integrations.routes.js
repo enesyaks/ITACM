@@ -4,7 +4,7 @@ const { authenticate, requireRole, requirePermission, requireScope } = require('
 const { asyncHandler } = require('../utils/asyncHandler');
 const {
   notificationService, webhookService, customFieldService,
-  apiKeyService, syncService, providerService, permissionService,
+  apiKeyService, syncService, providerService, permissionService, settingsService,
 } = require('../services');
 const { HttpError } = require('../utils/httpError');
 
@@ -177,21 +177,20 @@ router.post('/mail-oauth/disconnect', authenticate, requirePermission('integrati
 // Public: the provider redirects the BROWSER here, so no Bearer token is possible.
 // Safety rests on the signed state (verified in handleCallback), not on a session.
 router.get('/mail-oauth/callback', asyncHandler(async (req, res) => {
-  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const cookieState = moReadCookie(req, MAILOAUTH_COOKIE);
   res.clearCookie(MAILOAUTH_COOKIE, { path: '/api/integrations/mail-oauth' });
-  let ok = false; let msg = '';
+  let ok = false; let email = ''; let provider = ''; let message = '';
   try {
     const r = await mailOAuthService.handleCallback({ code: req.query.code, state: req.query.state, cookieState });
-    ok = true; msg = r.email ? `Connected ${r.email}.` : 'Mailbox connected.';
-  } catch (err) { msg = err.message || 'Connection failed'; }
+    ok = true; email = r.email || ''; provider = r.provider || '';
+  } catch (err) { message = err.message || 'Connection failed'; }
+  // The instance language, not the browser's: this page belongs to the app, and
+  // the operator who started the flow is looking at the app in that language.
+  let lang = 'en';
+  try { lang = (await settingsService.getSettings()).language || 'en'; } catch { /* default */ }
+  const { renderMailOAuthPage } = require('../utils/mailOAuthPage');
   res.status(ok ? 200 : 400).type('html').send(
-    `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">`
-    + `<body style="font-family:system-ui,-apple-system,sans-serif;max-width:32rem;margin:12vh auto;padding:0 24px;text-align:center;color:#1b1b24">`
-    + `<h2 style="margin:0 0 8px">${ok ? '✓ Mailbox connected' : '⚠ Connection failed'}</h2>`
-    + `<p style="color:#464555">${esc(msg)}</p>`
-    + `<p><a href="/#/integrations" style="color:#3525cd">Return to ITACM</a></p>`
-    + `<script>setTimeout(function(){location.href="/#/integrations"},2500)</script></body>`
+    renderMailOAuthPage({ ok, email, provider, message, lang })
   );
 }));
 
