@@ -313,7 +313,20 @@ async function testConnection(overrides = {}) {
     try { await client.close(); } catch { /* ignore */ }
     // Generic message to the caller — don't turn the endpoint into a network
     // oracle; the detail stays in the server log.
-    if (err && err.message) console.warn('[inbound-mail] test failed:', err.message);
+    // "Command failed" on its own says nothing: it is what ImapFlow reports for
+    // any server-side rejection, and the log did not record which auth method or
+    // host produced it — so a token refused by Gmail looked identical to a wrong
+    // password against a hand-typed server. None of these are secrets (the
+    // password and token are never touched here), and the CALLER still gets the
+    // generic message so the endpoint stays useless as a network oracle.
+    if (err && err.message) {
+      console.warn('[inbound-mail] test failed:', err.message,
+        '| auth:', cfg.authMethod || 'password',
+        '| host:', cfg.host || (cfg.authMethod === 'oauth2_delegated' ? '(connected mailbox)' : '(unset)'),
+        '| user:', cfg.user || '(from connection)',
+        '| folder:', cfg.folder || 'INBOX',
+        err.responseText ? `| server said: ${err.responseText}` : '');
+    }
     throw HttpError.badRequest('IMAP connection failed');
   }
 }
