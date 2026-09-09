@@ -53,16 +53,21 @@ async function claimMail(key, uid, fromAddr, subject) {
   return rows.length > 0;
 }
 
-/** Record how a claimed message turned out (created / appended / skipped / failed). */
+/**
+ * Record how a claimed message turned out (created / appended / skipped / failed).
+ * @returns {Promise<boolean>} whether a row was actually written — the caller
+ *   uses that to decide if the message may be marked \Seen.
+ */
 async function finalizeMail(key, result) {
   const status = (result && result.action) || 'failed';
-  await query(
+  const res = await query(
     `UPDATE inbound_mail_log
         SET status = $2, reason = $3, ticket_id = $4, ticket_number = $5, processed_at = now()
       WHERE message_id = $1`,
     [key, status, (result && (result.reason || result.detail)) || null,
       (result && result.ticketId) || null, (result && result.number) || null]
   );
+  return res.rowCount > 0;
 }
 
 /** Most recent refusals, newest first — for the operator to see why mail was skipped. */
@@ -622,6 +627,13 @@ async function poll() {
     try {
       for await (const msg of client.fetch({ seen: false }, { uid: true, source: true })) {
         let key = null;
+        // Marking \Seen is what consumes a message: an unseen mail comes back on
+        // the next tick, a seen one never does. So it is only ever set once this
+        // message has a row in inbound_mail_log saying what happened to it.
+        // Anything else — a parse that throws before a key exists, a database
+        // that is down — leaves the mail unread and retryable rather than
+        // swallowing it with no trace.
+        let recorded = false;
         try {
           const parsed = await simpleParser(msg.source);
           const fromAddr = (parsed.from && parsed.from.value && parsed.from.value[0] && parsed.from.value[0].address) || (parsed.from && parsed.from.text) || '';
@@ -632,18 +644,32 @@ async function poll() {
           const first = await claimMail(key, msg.uid, fromAddr, parsed.subject || '');
           if (!first) {
             duplicate++;
+            recorded = true;
           } else {
             const r = await createFromEmail(parsed, cfg);
             await finalizeMail(key, r);
+            recorded = true;
             if (r.action === 'created') created++;
             else if (r.action === 'appended') appended++;
             else if (r.action === 'skipped' && (r.reason === 'blocked' || r.reason === 'bulk')) filtered++;
           }
-        } catch {
+        } catch (err) {
           failed++;
-          if (key) { try { await finalizeMail(key, { action: 'failed', reason: 'parse or create failed' }); } catch { /* ignore */ } }
+          const reason = ('failed: ' + (err && err.message ? err.message : 'parse or create failed')).slice(0, 500);
+          console.error('[inbound-mail] message failed:', `uid=${msg.uid}`, reason);
+          try {
+            // A parse can die before the message is able to identify itself, and
+            // the claim itself can fail. Either way fall back to the mailbox's own
+            // identifier, so the operator still gets a row to point at — a message
+            // that disappears without a trace is the one nobody can debug.
+            const logKey = key || `uid:${cfg.folder || 'INBOX'}:${msg.uid}`;
+            await claimMail(logKey, msg.uid, '', ''); // no-op when already claimed
+            recorded = await finalizeMail(logKey, { action: 'failed', reason });
+          } catch { /* leave it unread so the next tick retries it */ }
         }
-        try { await client.messageFlagsAdd(msg.uid, ['\\Seen'], { uid: true }); } catch { /* best-effort */ }
+        if (recorded) {
+          try { await client.messageFlagsAdd(msg.uid, ['\\Seen'], { uid: true }); } catch { /* best-effort */ }
+        }
       }
     } finally { lock.release(); }
     await client.logout();
