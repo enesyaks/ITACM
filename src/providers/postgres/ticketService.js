@@ -721,6 +721,70 @@ async function stats() {
  * rating distribution, and a per-agent breakdown (workload, SLA, CSAT).
  * Period metrics key off resolved_at (throughput) and created_at (intake).
  */
+/**
+ * Per-ticket SLA rows for the range — the raw material an SLA review needs.
+ *
+ * The report's SLA panel gives two compliance percentages, which answer "did we
+ * hit target" but never "on what, and by how much". This returns one row per
+ * ticket with both clocks laid out beside their targets, so a breach can be
+ * traced to a priority, a category, an agent or a requester rather than argued
+ * about in the abstract.
+ *
+ * Scope is the two populations an SLA review actually looks at: everything
+ * RESOLVED in the window (what compliance is measured on), plus anything still
+ * open that is already BREACHED (what is bleeding right now). The `state` column
+ * says which is which, so the two never get silently averaged together.
+ */
+async function slaDetail({ from, to } = {}) {
+  const day = (v, fb) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) ? String(v) : fb);
+  const toD = day(to, new Date().toISOString().slice(0, 10));
+  const fromD = day(from, new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10));
+  const params = [fromD, `${toD} 23:59:59`];
+
+  const { rows } = await query(`
+    SELECT
+      t.number, t.type, t.subject, t.category, t.priority, t.impact, t.urgency, t.status,
+      CASE WHEN t.resolved_at BETWEEN $1 AND $2 THEN 'resolved' ELSE 'open_breached' END AS state,
+      re.full_name  AS "requesterName",
+      re.department AS "requesterDepartment",
+      COALESCE(re.vip, false) AS "requesterVip",
+      co.name       AS "requesterCompany",
+      au.username   AS "assigneeName",
+      t.created_at AS "createdAt", t.first_response_at AS "firstResponseAt",
+      t.resolved_at AS "resolvedAt", t.closed_at AS "closedAt",
+      t.response_due_at AS "responseDueAt", t.resolve_due_at AS "resolveDueAt",
+      t.sla_paused_at AS "slaPausedAt",
+      ROUND(EXTRACT(EPOCH FROM (t.first_response_at - t.created_at))/3600, 2) AS "responseHours",
+      ROUND(EXTRACT(EPOCH FROM (t.response_due_at  - t.created_at))/3600, 2) AS "responseTargetHours",
+      ROUND(EXTRACT(EPOCH FROM (t.resolved_at      - t.created_at))/3600, 2) AS "resolutionHours",
+      ROUND(EXTRACT(EPOCH FROM (t.resolve_due_at   - t.created_at))/3600, 2) AS "resolutionTargetHours",
+      -- Minutes over target; negative means finished early. NULL when the clock
+      -- never applied, which is not the same as "met" and must stay distinct.
+      CASE WHEN t.response_due_at IS NOT NULL AND t.first_response_at IS NOT NULL
+           THEN ROUND(EXTRACT(EPOCH FROM (t.first_response_at - t.response_due_at))/60) END AS "responseOverMinutes",
+      CASE WHEN t.resolve_due_at IS NOT NULL AND t.resolved_at IS NOT NULL
+           THEN ROUND(EXTRACT(EPOCH FROM (t.resolved_at - t.resolve_due_at))/60) END AS "resolutionOverMinutes",
+      CASE WHEN t.response_due_at IS NULL OR t.first_response_at IS NULL THEN NULL
+           ELSE t.first_response_at <= t.response_due_at END AS "responseMet",
+      CASE WHEN t.resolve_due_at IS NULL OR t.resolved_at IS NULL THEN NULL
+           ELSE t.resolved_at <= t.resolve_due_at END AS "resolutionMet",
+      t.response_breached_at AS "responseBreachedAt",
+      t.resolve_breached_at  AS "resolveBreachedAt",
+      t.resolution_code AS "resolutionCode", t.csat_rating AS "csatRating"
+    FROM tickets t
+    LEFT JOIN employees re ON re.id = t.requester_employee_id
+    LEFT JOIN companies co ON co.id = re.company_id
+    LEFT JOIN users     au ON au.id = t.assignee_user_id
+    WHERE t.resolved_at BETWEEN $1 AND $2
+       OR (t.status NOT IN ('resolved','closed','cancelled')
+           AND (t.resolve_breached_at IS NOT NULL OR t.response_breached_at IS NOT NULL)
+           AND t.created_at <= $2)
+    ORDER BY t.resolve_breached_at IS NULL, t.resolved_at DESC NULLS FIRST, t.created_at DESC
+    LIMIT 5000`, params);
+
+  return { from: fromD, to: toD, rows };
+}
+
 async function report({ from, to } = {}) {
   const day = (v, fb) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) ? String(v) : fb);
   const toD = day(to, new Date().toISOString().slice(0, 10));
@@ -1377,7 +1441,7 @@ module.exports = {
   createTicket, getTicket, listTickets, updateTicket, addComment, sendToApproval,
   createMyTicket, listMyTickets, getMyTicket, addMyComment, submitMyCsat,
   onRequestApproved, onRequestRejected, onRequestWithdrawn, closeForProblem,
-  sweepSlaBreaches, SLA_TARGETS, stats, report, agentReport, getSlaConfig, saveSlaConfig, categories,
+  sweepSlaBreaches, SLA_TARGETS, stats, report, agentReport, slaDetail, getSlaConfig, saveSlaConfig, categories,
   getCannedResponses, saveCannedResponses, getManagedCategories, saveManagedCategories,
   getWorkflow, saveWorkflow, resetWorkflow, sweepAutoCloseResolved,
 };

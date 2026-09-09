@@ -701,20 +701,56 @@ Views.tickets = async function (el, params = {}) {
       <div class="metric-value">${esc(String(val))}</div>${sub ? `<div class="cell-sub">${esc(sub)}</div>` : ''}</div>`;
     const PRIO_COLOR = { urgent: 'var(--rose-600,#e11d48)', high: 'var(--amber-600,#d97706)', medium: 'var(--primary)', low: 'var(--outline)' };
     // Grouped daily bar chart: opened (primary) vs resolved (emerald).
+    /**
+     * Opened vs resolved per day.
+     *
+     * The bars used to be laid out at a fixed 14px pitch and the SVG given that
+     * same intrinsic width, so a four-day filter drew a 116px chart pinned to the
+     * left of a 900px panel. The day slot is now derived from the range: it grows
+     * to fill the panel when there are few days and stops shrinking at a floor,
+     * where the chart scrolls instead of turning into a smear.
+     *
+     * Labels thinned out on `i % ceil(n/12)`, which is 1 for any range under
+     * twelve days — so a short range labelled EVERY bar, and "08-03" is wider
+     * than the slot it sat in. They now thin on the space a label actually needs.
+     */
     const trendChart = (trend) => {
       if (!trend || !trend.length) return '';
+      const n = trend.length;
       const max = Math.max(1, ...trend.map((d) => Math.max(d.opened, d.resolved)));
-      const bw = 9; const gap = 5; const groupW = bw * 2 + 2; const pad = 8; const h = 130; const base = h - 18;
-      const w = pad * 2 + trend.length * (groupW + gap);
+      const VBW = 900;            // viewBox units ≈ the panel's own width
+      const MIN_PITCH = 15;       // below this a day is unreadable — scroll instead
+      const pad = 12; const h = 150; const base = h - 22;
+      const pitch = Math.max(MIN_PITCH, (VBW - pad * 2) / n);
+      const w = Math.round(pad * 2 + n * pitch);
+      const bw = Math.max(4, Math.min(18, Math.round(pitch * 0.34)));
+      const groupW = bw * 2 + 2;
+      const LABEL_W = 34;         // "08-03" plus breathing room, in viewBox units
+      const every = Math.max(1, Math.ceil(LABEL_W / pitch));
       const bars = trend.map((d, i) => {
-        const x = pad + i * (groupW + gap);
-        const oh = Math.round(d.opened / max * (base - 6)); const rh = Math.round(d.resolved / max * (base - 6));
-        const lbl = (i % Math.ceil(trend.length / 12) === 0) ? `<text x="${x + bw}" y="${h - 4}" font-size="9" fill="var(--on-surface-variant)" text-anchor="middle">${esc(d.date.slice(5))}</text>` : '';
-        return `<rect x="${x}" y="${base - oh}" width="${bw}" height="${oh}" rx="2" fill="var(--primary)"><title>${esc(d.date)}: ${d.opened} ${esc(t('tk.reportOpened'))}</title></rect>`
-          + `<rect x="${x + bw + 2}" y="${base - rh}" width="${bw}" height="${rh}" rx="2" fill="var(--emerald-600,#059669)"><title>${esc(d.date)}: ${d.resolved} ${esc(t('tk.reportResolved'))}</title></rect>${lbl}`;
+        const gx = pad + i * pitch + (pitch - groupW) / 2;
+        const oh = Math.round(d.opened / max * (base - 8));
+        const rh = Math.round(d.resolved / max * (base - 8));
+        const mid = gx + groupW / 2;
+        // Count the grid back from the LAST day rather than forward from the
+        // first. Forcing the final label on top of a forward grid puts it a
+        // single slot from its neighbour whenever the range does not divide
+        // evenly — which is most ranges.
+        const showLbl = (n - 1 - i) % every === 0;
+        const lbl = showLbl
+          ? `<text x="${mid.toFixed(1)}" y="${h - 6}" font-size="11" fill="var(--on-surface-variant)" text-anchor="middle">${esc(d.date.slice(5))}</text>`
+          : '';
+        return `<rect x="${gx.toFixed(1)}" y="${base - oh}" width="${bw}" height="${oh}" rx="2" fill="var(--primary)"><title>${esc(d.date)}: ${d.opened} ${esc(t('tk.reportOpened'))}</title></rect>`
+          + `<rect x="${(gx + bw + 2).toFixed(1)}" y="${base - rh}" width="${bw}" height="${rh}" rx="2" fill="var(--emerald-600,#059669)"><title>${esc(d.date)}: ${d.resolved} ${esc(t('tk.reportResolved'))}</title></rect>${lbl}`;
       }).join('');
+      // Only a range too dense to fit needs to scroll; anything shorter fills the
+      // panel and stays whole.
+      const scrolls = w > VBW;
+      const svg = `<svg viewBox="0 0 ${w} ${h}" ${scrolls ? `width="${w}"` : 'width="100%"'} height="${h}"
+        preserveAspectRatio="xMidYMid meet" style="${scrolls ? 'max-width:none' : 'display:block'}"
+        role="img" aria-label="${esc(t('tk.reportTrend'))}">${bars}<line x1="${pad}" y1="${base}" x2="${w - pad}" y2="${base}" stroke="var(--outline-variant)"/></svg>`;
       return `<div class="tkr-legend"><span><i style="background:var(--primary)"></i> ${esc(t('tk.reportOpened'))}</span><span><i style="background:var(--emerald-600,#059669)"></i> ${esc(t('tk.reportResolved'))}</span></div>
-        <div class="tkr-chart-scroll"><svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" style="max-width:none">${bars}<line x1="${pad}" y1="${base}" x2="${w - pad}" y2="${base}" stroke="var(--outline-variant)"/></svg></div>`;
+        <div class="tkr-chart-scroll"${scrolls ? '' : ' style="overflow-x:visible"'}>${svg}</div>`;
     };
     const hBars = (items, labelFn, colorFn) => {
       const max = Math.max(1, ...items.map((x) => x.n));
@@ -741,7 +777,9 @@ Views.tickets = async function (el, params = {}) {
           <div><h3 class="tkr-h" style="margin-top:0">${esc(t('tk.category'))}</h3>
             ${(rep.byCategory && rep.byCategory.length) ? hBars(rep.byCategory, (x) => x.category) : `<p class="cell-sub">${esc(t('tk.none'))}</p>`}</div>
         </div>
-        <h3 class="tkr-h">${esc(t('tk.slaCol'))}</h3>
+        <h3 class="tkr-h">${esc(t('tk.slaCol'))}
+          <button class="btn btn-outline btn-sm" id="tkr-sla-csv" style="float:right"><span class="ms ms-sm">download</span> CSV</button></h3>
+        <p class="cell-sub" style="margin:-4px 0 8px">${esc(t('tk.slaExportHint'))}</p>
         <div class="grid grid-4">
           ${metric(t('tk.sla.response'), pctTxt(rep.sla.responseCompliance), `${t('tk.reportAvg')} ${fmtH(rep.sla.avgResponseHours)}`)}
           ${metric(t('tk.sla.resolution'), pctTxt(rep.sla.resolutionCompliance), `${t('tk.reportAvg')} ${fmtH(rep.sla.avgResolutionHours)}`)}
@@ -760,6 +798,53 @@ Views.tickets = async function (el, params = {}) {
             : `<tr><td colspan="6" class="table-empty">${esc(t('tk.none'))}</td></tr>`}</tbody>
         </table></div>`;
     };
+    /**
+     * SLA export: one row per ticket, both clocks beside their targets.
+     *
+     * The panel above answers "did we hit target"; a percentage cannot be traced
+     * back to a priority, an agent or a requester. This is the same window's
+     * tickets laid out so a breach can be attributed rather than argued about.
+     *
+     * Booleans are written as met/missed/n-a rather than true/false/empty: an
+     * empty cell in a spreadsheet reads as "no data", and a ticket whose clock
+     * never applied is a different thing from one that missed.
+     */
+    const exportSla = async (from, to) => {
+      const data = await api(`/tickets/report/sla?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`)
+        .catch(() => null);
+      if (!data || !Array.isArray(data.rows)) { toast(t('common.error') || 'Error', 'error'); return; }
+      if (!data.rows.length) { toast(t('tk.none'), 'error'); return; }
+
+      const met = (v) => (v === true ? t('tk.slaMet') : v === false ? t('tk.slaMissed') : t('tk.slaNa'));
+      const dt = (v) => (v ? String(v).replace('T', ' ').slice(0, 19) : '');
+      const num = (v) => (v == null ? '' : String(v));
+      const cols = [
+        ['number', (r) => r.number], ['type', (r) => r.type], ['subject', (r) => r.subject],
+        ['status', (r) => r.status], ['scope', (r) => r.state],
+        ['priority', (r) => r.priority], ['impact', (r) => r.impact], ['urgency', (r) => r.urgency],
+        ['category', (r) => r.category || ''],
+        ['requester', (r) => r.requesterName || ''], ['requesterDepartment', (r) => r.requesterDepartment || ''],
+        ['requesterCompany', (r) => r.requesterCompany || ''], ['requesterVip', (r) => (r.requesterVip ? 'VIP' : '')],
+        ['assignee', (r) => r.assigneeName || ''],
+        ['createdAt', (r) => dt(r.createdAt)], ['firstResponseAt', (r) => dt(r.firstResponseAt)],
+        ['resolvedAt', (r) => dt(r.resolvedAt)], ['closedAt', (r) => dt(r.closedAt)],
+        ['responseDueAt', (r) => dt(r.responseDueAt)], ['responseHours', (r) => num(r.responseHours)],
+        ['responseTargetHours', (r) => num(r.responseTargetHours)],
+        ['responseOverMinutes', (r) => num(r.responseOverMinutes)], ['responseSla', (r) => met(r.responseMet)],
+        ['resolveDueAt', (r) => dt(r.resolveDueAt)], ['resolutionHours', (r) => num(r.resolutionHours)],
+        ['resolutionTargetHours', (r) => num(r.resolutionTargetHours)],
+        ['resolutionOverMinutes', (r) => num(r.resolutionOverMinutes)], ['resolutionSla', (r) => met(r.resolutionMet)],
+        ['slaPausedAt', (r) => dt(r.slaPausedAt)],
+        ['resolutionCode', (r) => r.resolutionCode || ''], ['csat', (r) => num(r.csatRating)],
+      ];
+      const esc2 = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+      const lines = [cols.map((c) => esc2(c[0])).join(',')];
+      data.rows.forEach((r) => lines.push(cols.map((c) => esc2(c[1](r))).join(',')));
+      // BOM so Excel opens Turkish characters correctly, matching the other exports.
+      downloadTextFile(`sla-report-${data.from}_${data.to}.csv`, '\uFEFF' + lines.join('\r\n'));
+      toast(t('tk.slaExported').replace('{n}', data.rows.length), 'success');
+    };
+
     const exportAgents = (rep) => {
       const rows = [['Agent', 'Resolved', 'Closed', 'AvgResolutionHours', 'SLACompliance%', 'CSATAvg']];
       rep.agents.forEach((a) => rows.push([a.agent, a.resolved, a.closed, a.avgResolutionHours ?? '', a.slaCompliance ?? '', a.csatAvg ?? '']));
@@ -801,6 +886,111 @@ Views.tickets = async function (el, params = {}) {
         },
       });
     };
+    /* ---- Advanced tab: the breakdowns behind the summary, plus the workbook ---- */
+
+    /** Opened / resolved / backlog over the window. Backlog is the line that
+     *  matters: daily counts never show whether the queue is growing. */
+    const backlogChart = (daily) => {
+      if (!daily || !daily.length) return '';
+      const n = daily.length;
+      const vals = daily.map((d) => d.backlog);
+      const hi = Math.max(0, ...vals); const lo = Math.min(0, ...vals);
+      const span = Math.max(1, hi - lo);
+      const VBW = 900; const pad = 12; const h = 130; const top = 10;
+      const plot = h - top - 22;
+      const x = (i) => pad + (n === 1 ? (VBW - pad * 2) / 2 : (i * (VBW - pad * 2)) / (n - 1));
+      const y = (v) => top + plot - ((v - lo) / span) * plot;
+      const line = daily.map((d, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(d.backlog).toFixed(1)}`).join(' ');
+      const zero = y(0);
+      const every = Math.max(1, Math.ceil(34 / ((VBW - pad * 2) / n)));
+      const labels = daily.map((d, i) => ((n - 1 - i) % every === 0
+        ? `<text x="${x(i).toFixed(1)}" y="${h - 6}" font-size="11" fill="var(--on-surface-variant)" text-anchor="middle">${esc(d.date.slice(5))}</text>`
+        : '')).join('');
+      return `<svg viewBox="0 0 ${VBW} ${h}" width="100%" height="${h}" preserveAspectRatio="xMidYMid meet"
+        style="display:block" role="img" aria-label="${esc(t('tk.repBacklog'))}">
+        <line x1="${pad}" y1="${zero.toFixed(1)}" x2="${VBW - pad}" y2="${zero.toFixed(1)}" stroke="var(--outline-variant)" stroke-dasharray="3 3"/>
+        <path d="${line}" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linejoin="round"/>
+        ${labels}</svg>`;
+    };
+
+    /** Compliance table: a percentage next to the count it was computed from —
+     *  100% of two tickets and 100% of two hundred are not the same claim. */
+    const complianceRows = (rows) => (rows && rows.length ? `
+      <div class="table-wrap"><table class="data">
+        <thead><tr><th>${esc(t('tk.repBreakdown'))}</th><th>${esc(t('tk.reportResolved'))}</th>
+          <th>${esc(t('tk.slaCompliance'))}</th><th>${esc(t('tk.repAvgOver'))}</th></tr></thead>
+        <tbody>${rows.map((r) => `<tr>
+          <td class="cell-title">${esc(r.key)}</td>
+          <td>${r.resolved}</td>
+          <td>${r.compliance == null ? '—' : `${r.compliance}% <span class="cell-sub">(${r.met}/${r.measurable})</span>`}</td>
+          <td>${r.avgOverMinutes == null ? '—' : esc(fmtH(Math.round(r.avgOverMinutes / 6) / 10))}</td>
+        </tr>`).join('')}</tbody></table></div>` : `<p class="cell-sub">${esc(t('tk.none'))}</p>`);
+
+    const renderAdvanced = (d) => {
+      const has = (k) => d.sections.includes(k);
+      const bars = (rows, cf) => hBars(rows.map((r) => ({ ...r, n: r.n != null ? r.n : r.resolved })), (x) => x.key, cf);
+      return `
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+          <span class="cell-sub">${esc(d.from)} → ${esc(d.to)}</span>
+          <span style="flex:1"></span>
+          <button class="btn btn-primary btn-sm" id="tkr-xlsx"><span class="ms ms-sm">download</span> ${esc(t('tk.repExcel'))}</button>
+        </div>
+        <p class="cell-sub" style="margin:-6px 0 14px">${esc(t('tk.repExcelHint'))}</p>
+
+        ${has('workload') ? `
+        <h3 class="tkr-h">${esc(t('tk.repBacklog'))}
+          <span class="cell-sub" style="float:right;font-weight:400">${esc(t('tk.repNetBacklog').replace('{n}', d.workload.netBacklog > 0 ? '+' + d.workload.netBacklog : d.workload.netBacklog))}</span></h3>
+        <div class="tkr-chart-scroll" style="overflow-x:visible">${backlogChart(d.workload.daily)}</div>` : ''}
+
+        ${has('sla') ? `
+        <h3 class="tkr-h">${esc(t('tk.repSlaByPriority'))}</h3>
+        ${complianceRows(d.sla.byPriority)}
+        <h3 class="tkr-h">${esc(t('tk.repSlaByAgent'))}</h3>
+        ${complianceRows(d.sla.byAgent)}
+        <h3 class="tkr-h">${esc(t('tk.repWorst'))}</h3>
+        ${d.sla.worst.length ? `<div class="table-wrap"><table class="data">
+          <thead><tr><th>${esc(t('tk.number'))}</th><th>${esc(t('tk.subject'))}</th><th>${esc(t('tk.priority'))}</th>
+            <th>${esc(t('tk.assignee'))}</th><th>${esc(t('tk.repOver'))}</th></tr></thead>
+          <tbody>${d.sla.worst.slice(0, 10).map((r) => `<tr>
+            <td class="mono">${esc(r.number)}</td><td>${esc(r.subject)}</td>
+            <td>${esc(tkPriorityLabel(r.priority))}</td><td>${esc(r.assignee)}</td>
+            <td>${esc(fmtH(Math.round(r.overMinutes / 6) / 10))}</td></tr>`).join('')}</tbody></table></div>`
+          : `<p class="cell-sub">${esc(t('tk.none'))}</p>`}` : ''}
+
+        ${has('csat') ? `
+        <h3 class="tkr-h">${esc(t('tk.repCsatByAgent'))}</h3>
+        ${d.csat.byAgent.length ? `<div class="table-wrap"><table class="data">
+          <thead><tr><th>${esc(t('tk.assignee'))}</th><th>${esc(t('tk.repVotes'))}</th><th>${esc(t('tk.repAvg'))}</th><th>${esc(t('tk.repLow'))}</th></tr></thead>
+          <tbody>${d.csat.byAgent.map((r) => `<tr><td class="cell-title">${esc(r.key)}</td><td>${r.votes}</td>
+            <td>${r.avg == null ? '—' : r.avg + ' / 5'}</td><td>${r.low || '—'}</td></tr>`).join('')}</tbody></table></div>`
+          : `<p class="cell-sub">${esc(t('tk.none'))}</p>`}` : ''}
+
+        ${has('inventory') ? `
+        <div class="grid" style="grid-template-columns:1fr 1fr;gap:16px;margin-top:14px">
+          <div><h3 class="tkr-h" style="margin-top:0">${esc(t('tk.repFleetAge'))}</h3>
+            ${bars(d.inventory.ageBuckets)}</div>
+          <div><h3 class="tkr-h" style="margin-top:0">${esc(t('tk.repByCompany'))}</h3>
+            ${bars(d.inventory.byCompany)}</div>
+        </div>` : ''}`;
+    };
+
+    const loadAdvanced = async (ov, key) => {
+      const box = $('#tkr-adv', ov);
+      const [from, to] = key.split('_');
+      box.innerHTML = `<p class="cell-sub">${esc(t('common.loading') || '…')}</p>`;
+      const d = await api(`/tickets/report/advanced?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`)
+        .catch(() => null);
+      if (!d) { box.innerHTML = `<p class="cell-sub">—</p>`; return; }
+      box.innerHTML = renderAdvanced(d);
+      $('#tkr-xlsx', box)?.addEventListener('click', async (e) => {
+        const b = e.currentTarget;
+        b.disabled = true;
+        try {
+          await downloadAuthed(`/api/tickets/report/advanced.xlsx?from=${encodeURIComponent(d.from)}&to=${encodeURIComponent(d.to)}`);
+        } finally { b.disabled = false; }
+      });
+    };
+
     const load = async (ov) => {
       const from = $('#tkr-from', ov).value; const to = $('#tkr-to', ov).value;
       const box = $('#tkr-body', ov);
@@ -809,6 +999,11 @@ Views.tickets = async function (el, params = {}) {
       if (!rep) { box.innerHTML = `<p class="cell-sub">—</p>`; return; }
       box.innerHTML = renderReport(rep);
       $('#tkr-csv', ov)?.addEventListener('click', () => exportAgents(rep));
+      $('#tkr-sla-csv', ov)?.addEventListener('click', async (e) => {
+        const b = e.currentTarget;
+        b.disabled = true;
+        try { await exportSla(rep.from, rep.to); } finally { b.disabled = false; }
+      });
       box.querySelectorAll('tr[data-agent]').forEach((tr) => tr.addEventListener('click', () => {
         if (tr.dataset.agent) openAgentDetail(tr.dataset.agent, rep.from, rep.to);
       }));
@@ -821,12 +1016,41 @@ Views.tickets = async function (el, params = {}) {
           <div class="form-field"><label>${esc(t('tk.reportTo'))}</label><input type="date" id="tkr-to"></div>
           <button class="btn btn-outline btn-sm" id="tkr-apply">${esc(t('common.apply') || 'Apply')}</button>
         </div>
-        <div id="tkr-body"></div>`,
+        <div class="rep-tabs" role="tablist">
+          <button type="button" class="rep-tab on" data-rtab="summary" role="tab">${esc(t('tk.repTabSummary'))}</button>
+          <button type="button" class="rep-tab" data-rtab="advanced" role="tab">${esc(t('tk.repTabAdvanced'))}</button>
+        </div>
+        <div id="tkr-body"></div>
+        <div id="tkr-adv" class="hidden"></div>`,
       foot: `<button class="btn btn-outline" data-close>${esc(t('common.close'))}</button>`,
       onMount(ov) {
         $('#tkr-from', ov).value = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
         $('#tkr-to', ov).value = new Date().toISOString().slice(0, 10);
-        $('#tkr-apply', ov).addEventListener('click', () => load(ov));
+        let tab = 'summary';
+        let advLoadedFor = null;   // the range the advanced tab currently shows
+        const paint = () => {
+          $('#tkr-body', ov).classList.toggle('hidden', tab !== 'summary');
+          $('#tkr-adv', ov).classList.toggle('hidden', tab !== 'advanced');
+          ov.querySelectorAll('[data-rtab]').forEach((b) => b.classList.toggle('on', b.dataset.rtab === tab));
+        };
+        // The advanced tab is several extra queries, so it is fetched when it is
+        // first opened and re-fetched only when the range actually moves.
+        const wantAdv = () => {
+          const key = $('#tkr-from', ov).value + '_' + $('#tkr-to', ov).value;
+          if (advLoadedFor === key) return;
+          advLoadedFor = key;
+          loadAdvanced(ov, key);
+        };
+        ov.querySelectorAll('[data-rtab]').forEach((b) => b.addEventListener('click', () => {
+          tab = b.dataset.rtab; paint();
+          if (tab === 'advanced') wantAdv();
+        }));
+        $('#tkr-apply', ov).addEventListener('click', () => {
+          load(ov);
+          advLoadedFor = null;
+          if (tab === 'advanced') wantAdv();
+        });
+        paint();
         load(ov);
       },
     });

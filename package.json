@@ -41,6 +41,7 @@
     "cors": "^2.8.5",
     "dejavu-fonts-ttf": "^2.37.3",
     "dotenv": "^17.4.2",
+    "exceljs": "^4.4.0",
     "express": "^5.2.1",
     "imapflow": "^1.7.6",
     "jsonwebtoken": "^9.0.2",

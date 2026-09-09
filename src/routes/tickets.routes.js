@@ -52,6 +52,54 @@ router.get('/stats', requirePermission('ticket', 'read'), asyncHandler(async (re
 router.get('/report', requireAnyPermission([['ticket', 'report'], ['ticket', 'manage']]), asyncHandler(async (req, res) => {
   res.json({ success: true, data: await ticketService.report({ from: req.query.from, to: req.query.to }) });
 }));
+// GET /api/tickets/report/sla?from=&to= — one row per ticket, both SLA clocks
+// beside their targets. Feeds the SLA export; same gate as the report itself.
+router.get('/report/sla', requireAnyPermission([['ticket', 'report'], ['ticket', 'manage']]), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await ticketService.slaDetail({ from: req.query.from, to: req.query.to }) });
+}));
+
+/**
+ * Advanced reporting. Sections are resolved per permission rather than gated as
+ * a whole: the inventory half belongs to the asset module, so a user with
+ * ticket:report but no asset:read gets the service-desk sheets and nothing else
+ * instead of a refusal.
+ */
+async function advancedSections(user) {
+  const { permissionService } = require('../services');
+  const [rep, manage, assets] = await Promise.all([
+    permissionService.checkPermission(user, 'ticket', 'report'),
+    permissionService.checkPermission(user, 'ticket', 'manage'),
+    permissionService.checkPermission(user, 'asset', 'read'),
+  ]);
+  return { serviceDesk: !!(rep || manage), inventory: !!assets };
+}
+
+// GET /api/tickets/report/advanced?from=&to= — breakdowns behind the summary
+router.get('/report/advanced', requireAnyPermission([['ticket', 'report'], ['ticket', 'manage']]), asyncHandler(async (req, res) => {
+  const { analyticsService } = require('../services');
+  const sections = await advancedSections(req.user);
+  res.json({
+    success: true,
+    data: await analyticsService.advancedReport({ from: req.query.from, to: req.query.to, sections }),
+  });
+}));
+
+// GET /api/tickets/report/advanced.xlsx?from=&to= — the same thing as a workbook
+router.get('/report/advanced.xlsx', requireAnyPermission([['ticket', 'report'], ['ticket', 'manage']]), asyncHandler(async (req, res) => {
+  const { analyticsService, settingsService } = require('../services');
+  const sections = await advancedSections(req.user);
+  const data = await analyticsService.advancedReport({ from: req.query.from, to: req.query.to, sections });
+  const settings = await settingsService.getSettings().catch(() => ({}));
+  const { buildAdvancedReportXlsx } = require('../utils/reportXlsx');
+  const buffer = await buildAdvancedReportXlsx(data, {
+    companyName: settings.companyName, generatedAt: new Date(),
+  });
+  const filename = `itacm-rapor-${data.from}_${data.to}.xlsx`;
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', require('../utils/contentDisposition').contentDisposition(filename));
+  res.send(buffer);
+}));
+
 // GET /api/tickets/report/agent?userId=&from=&to= — per-agent drill-down
 router.get('/report/agent', requireAnyPermission([['ticket', 'report'], ['ticket', 'manage']]), asyncHandler(async (req, res) => {
   res.json({ success: true, data: await ticketService.agentReport({ userId: req.query.userId, from: req.query.from, to: req.query.to }) });

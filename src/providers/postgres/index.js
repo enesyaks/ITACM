@@ -24,6 +24,7 @@ module.exports = {
   documentService: require('./documentService'),
   catalogService: require('./catalogService'),
   companyService: require('./companyService'),
+  analyticsService: require('./analyticsService'),
   countService: require('./countService'),
   lineService: require('./lineService'),
   importService: require('./importService'),
