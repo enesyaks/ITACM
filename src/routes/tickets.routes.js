@@ -215,6 +215,18 @@ router.post('/:id/comments', requirePermission('ticket', 'update'), asyncHandler
   res.status(201).json({ success: true, data: await ticketService.addComment(req.params.id, req.body || {}, req.user) });
 }));
 
+// POST /api/tickets/:id/links — mark other tickets as duplicates of this one,
+// so closing this one closes them. DELETE detaches a single follower.
+router.post('/:id/links', requirePermission('ticket', 'update'), asyncHandler(async (req, res) => {
+  const body = req.body || {};
+  const ids = body.ticketIds != null ? body.ticketIds : body.ticketId;
+  res.json({ success: true, data: await ticketService.linkTickets(req.params.id, ids, req.user) });
+}));
+
+router.delete('/:id/links/:childId', requirePermission('ticket', 'update'), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await ticketService.unlinkTicket(req.params.id, req.params.childId, req.user) });
+}));
+
 // POST /api/tickets/:id/send-approval — route the ticket to the requester's
 // manager / skip-level / department manager for sign-off.
 router.post('/:id/send-approval', requirePermission('ticket', 'update'), asyncHandler(async (req, res) => {

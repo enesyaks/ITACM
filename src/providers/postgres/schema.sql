@@ -893,10 +893,17 @@ CREATE TABLE IF NOT EXISTS tickets (
   created_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at             TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- 093: duplicate tickets link to one master, and the email intake records the
+-- address a ticket arrived from (a sender matching nobody has no other identity).
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS linked_to_id UUID REFERENCES tickets(id) ON DELETE SET NULL;
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS requester_email TEXT;
+
 CREATE INDEX IF NOT EXISTS idx_tickets_status    ON tickets (status, assignee_user_id);
 CREATE INDEX IF NOT EXISTS idx_tickets_requester ON tickets (requester_employee_id);
 CREATE INDEX IF NOT EXISTS idx_tickets_asset     ON tickets (asset_id);
 CREATE INDEX IF NOT EXISTS idx_tickets_created   ON tickets (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tickets_linked ON tickets (linked_to_id) WHERE linked_to_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_tickets_requester_email ON tickets (lower(requester_email)) WHERE requester_email IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS ticket_comments (
   id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),

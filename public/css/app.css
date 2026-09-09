@@ -5978,6 +5978,31 @@ body.ai-open .ai-panel { opacity: 1; visibility: visible; transform: none; }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tkd-sim-res .ms-sm { color: var(--emerald-600, #059669); flex: none; margin-top: 1px; font-size: 15px; }
 .tkd-sim-res-lbl { font-weight: 700; color: var(--emerald-700, #047857); }
+/* Duplicates: the same problem reported twice, linked to one master ticket. */
+.tkd-linked-banner { display: flex; align-items: center; gap: 8px; margin: 0 0 14px; padding: 8px 12px;
+  font-size: 12.5px; color: var(--on-surface-variant); background: var(--surface-low);
+  border: 1px solid var(--outline-variant); border-left: 3px solid var(--primary); border-radius: 8px; }
+.tkd-linked-banner .ms-sm { color: var(--primary); flex: none; }
+.tkd-lnk-sec { margin-top: 4px; padding-top: 12px; border-top: 1px dashed var(--outline-variant); }
+.tkd-lnk-note { margin: 0 0 6px; }
+.tkd-lnk-note + .tkd-lnk-list { margin-bottom: 10px; }
+.tkd-lnk-list { display: flex; flex-direction: column; gap: 4px; }
+.tkd-lnk { display: flex; align-items: center; gap: 8px; padding: 5px 9px 5px 11px; position: relative;
+  background: var(--surface); border: 1px solid var(--outline-variant); border-radius: 8px; }
+.tkd-lnk::before { content: ''; position: absolute; left: 0; top: 6px; bottom: 6px; width: 2px; border-radius: 2px; background: var(--outline); }
+.tkd-lnk.prio-urgent::before { background: var(--rose-600, #e11d48); }
+.tkd-lnk.prio-high::before { background: var(--amber-600, #d97706); }
+.tkd-lnk.prio-medium::before { background: var(--primary); }
+.tkd-lnk-no { flex: none; font-size: 11px; font-weight: 600; cursor: pointer;
+  color: var(--primary); background: color-mix(in srgb, var(--primary) 10%, transparent); padding: 1px 6px; border-radius: 5px; }
+.tkd-lnk-subj { flex: 1; min-width: 0; font-size: 12.5px; font-weight: 500; cursor: pointer;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tkd-lnk-subj:hover, .tkd-lnk-no:hover { color: var(--primary); text-decoration: underline; }
+.tkd-lnk .pill { font-size: 10.5px; padding: 1px 7px; flex: none; }
+.tkd-lnk .cell-sub { flex: none; font-size: 11px; }
+.tkd-lnk-pick { flex: none; margin: 0; }
+.tkd-lnk-off { flex: none; font-size: 11.5px; }
+.tkd-lnk-go { margin-top: 8px; }
 .tkd-need { outline: 2px solid var(--rose-600, #e11d48); outline-offset: 1px; border-radius: 8px; }
 .tkd-plabel.req::after { content: ' *'; color: var(--rose-600, #e11d48); }
 .tkd-side .form-field.full { margin: 0; }

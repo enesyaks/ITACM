@@ -276,6 +276,9 @@ const SELECT_COLS = `
   t.response_due_at AS "responseDueAt", t.resolve_due_at AS "resolveDueAt",
   t.response_breached_at AS "responseBreachedAt", t.resolve_breached_at AS "resolveBreachedAt",
   t.sla_paused_at AS "slaPausedAt",
+  t.linked_to_id AS "linkedToId", lt.number AS "linkedToNumber",
+  lt.subject AS "linkedToSubject", lt.status AS "linkedToStatus",
+  t.requester_email AS "requesterEmail",
   t.created_at AS "createdAt", t.updated_at AS "updatedAt"`;
 const FROM_JOINS = `
   FROM tickets t
@@ -283,7 +286,8 @@ const FROM_JOINS = `
   LEFT JOIN users au     ON t.assignee_user_id = au.id
   LEFT JOIN assets a     ON t.asset_id = a.id
   LEFT JOIN problems pr  ON t.problem_id = pr.id
-  LEFT JOIN approval_requests ar ON t.approval_request_id = ar.id`;
+  LEFT JOIN approval_requests ar ON t.approval_request_id = ar.id
+  LEFT JOIN tickets lt   ON t.linked_to_id = lt.id`;
 
 /** Resolve the employee row that owns a self-service (Portal) session, by email. */
 async function employeeForUser(user) {
@@ -473,15 +477,19 @@ async function createTicket(body, user, { asEmployee = null, source = 'staff', s
 
   const number = await nextNumber(type);
   const { responseDueAt, resolveDueAt } = slaDueDates(await getSlaConfig(), priority, new Date());
+  // The address an emailed ticket arrived from is kept even when it matches an
+  // employee: it is how "the same sender wrote twice" is answered for people the
+  // install has no row for, and it costs nothing to store for the ones it does.
+  const fromAddr = source === 'email' ? String(senderEmail || '').trim().slice(0, 320) || null : null;
   const { rows } = await query(
     `INSERT INTO tickets (number, type, subject, description, priority, category,
         requester_employee_id, requester_user_id, asset_id, created_by, created_by_name, status,
-        response_due_at, resolve_due_at, impact, urgency)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, 'new', $12, $13, $14, $15)
+        response_due_at, resolve_due_at, impact, urgency, requester_email)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, 'new', $12, $13, $14, $15, $16)
      RETURNING id`,
     [number, type, subject, description || null, priority, category,
       requesterEmployeeId, asEmployee ? null : a.id, assetId, a.id, a.name,
-      responseDueAt, resolveDueAt, effImpact, effUrgency]
+      responseDueAt, resolveDueAt, effImpact, effUrgency, fromAddr]
   );
   const id = rows[0].id;
   await logActivity(id, a, 'created', `${type} · ${priority}`);
@@ -597,6 +605,9 @@ async function getTicket(id, user, { ownEmployeeId = null } = {}) {
     );
     ticket.activity = activity;
     ticket.similar = await findSimilar(ticket);
+    ticket.linked = await linkedTickets(id);
+    // Only worth offering when this ticket can actually take followers.
+    ticket.duplicateCandidates = ticket.linkedToId ? [] : await duplicateCandidates(ticket);
   }
   return ownEmployeeId ? stripSla(ticket) : decorateSla(ticket);
 }
@@ -631,6 +642,116 @@ async function findSimilar(ticket) {
     );
     return rows;
   } catch { return []; }
+}
+
+/* ------------------------------- duplicates ------------------------------- */
+
+/** The tickets that close when this one does. */
+async function linkedTickets(id) {
+  const { rows } = await query(
+    `SELECT t.id, t.number, t.subject, t.status, t.priority, t.created_at AS "createdAt",
+            re.full_name AS "requesterName"
+       FROM tickets t
+       LEFT JOIN employees re ON re.id = t.requester_employee_id
+      WHERE t.linked_to_id = $1
+      ORDER BY t.created_at ASC`, [id]
+  );
+  return rows;
+}
+
+/**
+ * Other OPEN tickets from the same person, offered as candidates to link.
+ *
+ * "The same person" is two things, because a ticket can arrive with either
+ * identity and sometimes only one: the employee row when the requester is known
+ * to the install, and the address the mail came from when they are not. Matching
+ * on both is what makes "the same sender wrote twice" work for an outsider who
+ * has no employee record at all.
+ *
+ * Only open tickets, only unlinked ones, and never a ticket that already has
+ * followers of its own — linking is one level deep, so a candidate that is
+ * already somebody's master would have to be re-parented, which is a merge and
+ * not what this is. Best-effort: never throws.
+ */
+async function duplicateCandidates(ticket) {
+  try {
+    if (!ticket) return [];
+    const empId = ticket.requesterEmployeeId || null;
+    const email = String(ticket.requesterEmail || '').trim().toLowerCase() || null;
+    if (!empId && !email) return [];
+    const { rows } = await query(
+      `SELECT t.id, t.number, t.subject, t.status, t.priority, t.created_at AS "createdAt",
+              re.full_name AS "requesterName", t.requester_email AS "requesterEmail"
+         FROM tickets t
+         LEFT JOIN employees re ON re.id = t.requester_employee_id
+        WHERE t.id <> $1
+          AND t.status NOT IN ('resolved', 'closed', 'cancelled')
+          AND t.linked_to_id IS NULL
+          AND NOT EXISTS (SELECT 1 FROM tickets c WHERE c.linked_to_id = t.id)
+          AND ( ($2::uuid IS NOT NULL AND t.requester_employee_id = $2)
+             OR ($3::text IS NOT NULL AND lower(t.requester_email) = $3) )
+        ORDER BY t.created_at DESC
+        LIMIT 10`,
+      [ticket.id, empId, email]
+    );
+    return rows;
+  } catch { return []; }
+}
+
+/**
+ * Link tickets to this one as duplicates of it. Their numbers, requesters and
+ * history stay; what changes is that closing this ticket now closes them too.
+ *
+ * The rules exist so "what closes this" is always answerable in one hop:
+ * a master may not itself be linked, a ticket that already has followers may not
+ * become one, and nothing terminal is linked (there would be nothing to cascade).
+ */
+async function linkTickets(masterId, childIds, user) {
+  if (!isUuid(masterId)) throw HttpError.notFound('Ticket not found');
+  const ids = [...new Set((Array.isArray(childIds) ? childIds : [childIds])
+    .map((x) => String(x || '')).filter(isUuid))];
+  if (!ids.length) throw HttpError.badRequest('Choose at least one ticket to link');
+  if (ids.includes(masterId)) throw HttpError.badRequest('A ticket cannot be linked to itself');
+
+  const a = actor(user);
+  const master = (await query('SELECT id, number, status, linked_to_id FROM tickets WHERE id = $1', [masterId])).rows[0];
+  if (!master) throw HttpError.notFound('Ticket not found');
+  if (master.linked_to_id) throw HttpError.badRequest('This ticket is itself linked to another one — link them to that one instead');
+
+  const { rows: children } = await query(
+    'SELECT id, number, status, linked_to_id FROM tickets WHERE id = ANY($1::uuid[])', [ids]
+  );
+  if (children.length !== ids.length) throw HttpError.notFound('One of those tickets no longer exists');
+  for (const c of children) {
+    if (TERMINAL.has(c.status)) throw HttpError.badRequest(`${c.number} is already ${c.status} — there is nothing left to link`);
+    if (c.linked_to_id && c.linked_to_id !== masterId) throw HttpError.badRequest(`${c.number} is already linked to another ticket`);
+    const { rows: own } = await query('SELECT number FROM tickets WHERE linked_to_id = $1 LIMIT 1', [c.id]);
+    if (own[0]) throw HttpError.badRequest(`${c.number} has tickets linked to it already (${own[0].number}) — unlink those first`);
+  }
+
+  await query('UPDATE tickets SET linked_to_id = $1, updated_at = now() WHERE id = ANY($2::uuid[])', [masterId, ids]);
+  for (const c of children) {
+    await logActivity(c.id, a, 'linked', `linked to ${master.number}`);
+  }
+  await logActivity(masterId, a, 'linked', `${children.map((c) => c.number).join(', ')} linked to this ticket`);
+  audit('ticket.link', `Linked ${children.map((c) => c.number).join(', ')} to ${master.number}`, a, masterId, master.number);
+  return { linked: await linkedTickets(masterId) };
+}
+
+/** Detach one follower. Its own status is untouched — it just stops following. */
+async function unlinkTicket(masterId, childId, user) {
+  if (!isUuid(masterId) || !isUuid(childId)) throw HttpError.notFound('Ticket not found');
+  const a = actor(user);
+  const { rows } = await query(
+    'UPDATE tickets SET linked_to_id = NULL, updated_at = now() WHERE id = $1 AND linked_to_id = $2 RETURNING number',
+    [childId, masterId]
+  );
+  if (!rows[0]) throw HttpError.notFound('That ticket is not linked to this one');
+  const master = (await query('SELECT number FROM tickets WHERE id = $1', [masterId])).rows[0];
+  await logActivity(childId, a, 'linked', `unlinked from ${master ? master.number : 'the other ticket'}`);
+  await logActivity(masterId, a, 'linked', `${rows[0].number} unlinked`);
+  audit('ticket.unlink', `Unlinked ${rows[0].number} from ${master ? master.number : masterId}`, a, masterId, master && master.number);
+  return { linked: await linkedTickets(masterId) };
 }
 
 // Whitelisted sort keys → SQL. Priority/status sort by workflow order, not
@@ -973,6 +1094,7 @@ async function updateTicket(id, patch, user) {
   const slaTargets = await getSlaConfig(); // read before the tx (separate connection)
   const workflow = await getWorkflow();    // effective (editable) status transition map
   let plan = null;
+  let cascade = null;
   await withTransaction(async (t) => {
     const { rows } = await t.query('SELECT * FROM tickets WHERE id = $1 FOR UPDATE', [id]);
     const cur = rows[0];
@@ -1108,9 +1230,65 @@ async function updateTicket(id, patch, user) {
       plan = { id, number: cur.number, subject: cur.subject, actorName: a.name,
         requesterEmployeeId: cur.requester_employee_id, statusTo, newAssigneeId };
     }
+    if (statusTo && TERMINAL.has(statusTo)) {
+      cascade = { status: statusTo, number: cur.number };
+    }
   });
   if (plan) notifyUpdate(plan);
+  // Duplicates follow their master out. Done after the transaction commits so a
+  // follower that cannot be updated never rolls back the ticket the operator
+  // actually acted on.
+  if (cascade) await closeLinked(id, cascade, a);
   return getTicket(id, user);
+}
+
+/**
+ * Carry a terminal status to the tickets linked to this one.
+ *
+ * Written straight to the rows rather than routed back through updateTicket, on
+ * purpose: the transition map and the "classify before you close" rule are there
+ * to hold a PERSON to a workflow, and a follower is not being worked — it is
+ * being closed by the same act that closed its master. Making the operator
+ * classify four duplicates before they may close the one they solved is exactly
+ * the busywork the link is meant to remove.
+ *
+ * The master's resolution is copied down where a follower has none, so each
+ * requester reads why their own ticket ended, and each is notified separately.
+ */
+async function closeLinked(masterId, { status, number }, a) {
+  try {
+    const stamp = status === 'closed' ? 'closed_at' : (status === 'resolved' ? 'resolved_at' : null);
+    const { rows } = await query(
+      `UPDATE tickets t
+          SET status = $2,
+              ${stamp ? `${stamp} = now(),` : ''}
+              sla_paused_at = NULL,
+              resolution_code = COALESCE(t.resolution_code, m.resolution_code),
+              resolution_note = COALESCE(t.resolution_note, m.resolution_note),
+              updated_at = now()
+         FROM tickets m
+        WHERE t.linked_to_id = $1 AND m.id = $1
+          AND t.status NOT IN ('resolved', 'closed', 'cancelled')
+        RETURNING t.id, t.number, t.subject, t.requester_employee_id AS "requesterEmployeeId"`,
+      [masterId, status]
+    );
+    for (const child of rows) {
+      await logActivity(child.id, a, 'status', `${status} — with ${number}`);
+      notifyUpdate({
+        id: child.id, number: child.number, subject: child.subject, actorName: a.name,
+        requesterEmployeeId: child.requesterEmployeeId, statusTo: status, newAssigneeId: null,
+      });
+    }
+    if (rows.length) {
+      audit('ticket.update', `${rows.map((r) => r.number).join(', ')} ${status} with ${number}`, a, masterId, number);
+    }
+    return rows;
+  } catch (err) {
+    // A follower that would not close must not take the master's close with it;
+    // it stays open and visible in the link list.
+    console.error('[tickets] linked tickets not carried along:', err.message);
+    return [];
+  }
 }
 
 async function addComment(id, body, user, { ownEmployeeId = null } = {}) {
@@ -1489,5 +1667,5 @@ module.exports = {
   sweepSlaBreaches, SLA_TARGETS, stats, report, agentReport, slaDetail, getSlaConfig, saveSlaConfig, categories,
   getCannedResponses, saveCannedResponses, getManagedCategories, saveManagedCategories,
   getWorkflow, saveWorkflow, resetWorkflow, sweepAutoCloseResolved,
-  ackTarget,
+  ackTarget, linkTickets, unlinkTicket, linkedTickets, duplicateCandidates,
 };
