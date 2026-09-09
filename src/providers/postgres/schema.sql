@@ -1070,8 +1070,11 @@ ALTER TABLE tickets ADD COLUMN IF NOT EXISTS impact  TEXT CHECK (impact  IN ('lo
 ALTER TABLE tickets ADD COLUMN IF NOT EXISTS urgency TEXT CHECK (urgency IN ('low', 'medium', 'high'));
 
 -- ITIL closure: resolution categorization + note, and requester CSAT (065).
+-- 094 added 'spam': junk mail is recorded and closed in the same act, and can
+-- then be excluded from the averages the desk is judged by.
 ALTER TABLE tickets ADD COLUMN IF NOT EXISTS resolution_code TEXT
-  CHECK (resolution_code IN ('fixed', 'workaround', 'no_fault', 'duplicate', 'not_reproducible', 'user_education'));
+  CHECK (resolution_code IN ('fixed', 'workaround', 'no_fault', 'duplicate',
+                             'not_reproducible', 'user_education', 'spam'));
 ALTER TABLE tickets ADD COLUMN IF NOT EXISTS resolution_note TEXT;
 ALTER TABLE tickets ADD COLUMN IF NOT EXISTS csat_rating  SMALLINT CHECK (csat_rating BETWEEN 1 AND 5);
 ALTER TABLE tickets ADD COLUMN IF NOT EXISTS csat_comment TEXT;

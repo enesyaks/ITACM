@@ -168,6 +168,11 @@ async function getConfigRaw() {
     // Opt-in: also skip newsletters/automated mail, judged by headers alone.
     // Off by default — a support inbox fed by a mailing list would trip it.
     blockBulk: !!j.blockBulk,
+    // What happens to a message the bulk test catches:
+    //   'skip'  no ticket at all (default, and what this setting always did),
+    //   'close' a ticket recorded and closed as spam in one act — on record,
+    //           never work, no SLA clock, nothing sent back to the sender.
+    bulkAction: j.bulkAction === 'close' ? 'close' : 'skip',
     // Where the poller has read up to: { folder, uidValidity, uid }. Server-set,
     // never accepted from the client. See adoptWatch().
     watch: (j.watch && typeof j.watch === 'object') ? j.watch : null,
@@ -229,6 +234,7 @@ async function saveConfig(input = {}) {
     // wipe it just because the form doesn't carry it.
     blocklist: input.blocklist != null ? parseBlocklist(input.blocklist) : cur.blocklist,
     blockBulk: input.blockBulk != null ? !!input.blockBulk : cur.blockBulk,
+    bulkAction: input.bulkAction != null ? (input.bulkAction === 'close' ? 'close' : 'skip') : cur.bulkAction,
     // Server-managed, like the blocklist: saving the connection form must not
     // reset where the poller has read up to. A different folder invalidates it
     // on its own — the watermark records which folder it belongs to.
@@ -242,7 +248,7 @@ async function saveConfig(input = {}) {
 /** Just the filtering rules — read/written on their own, connection untouched. */
 async function getBlocklist() {
   const c = await getConfigRaw();
-  return { blocklist: c.blocklist, blockBulk: c.blockBulk, recentSkips: await recentSkips() };
+  return { blocklist: c.blocklist, blockBulk: c.blockBulk, bulkAction: c.bulkAction, recentSkips: await recentSkips() };
 }
 
 async function saveBlocklist(input = {}) {
@@ -251,6 +257,7 @@ async function saveBlocklist(input = {}) {
   const stored = (rows[0] && rows[0].imap_json) || {};
   stored.blocklist = input.blocklist != null ? parseBlocklist(input.blocklist) : cur.blocklist;
   stored.blockBulk = input.blockBulk != null ? !!input.blockBulk : cur.blockBulk;
+  stored.bulkAction = input.bulkAction != null ? (input.bulkAction === 'close' ? 'close' : 'skip') : cur.bulkAction;
   await query('UPDATE app_settings SET imap_json = $1::jsonb WHERE id = 1', [JSON.stringify(stored)]);
   return getBlocklist();
 }
@@ -523,10 +530,18 @@ async function createFromEmail(parsed, cfg, opts = {}) {
   if (!opts.force && isBlockedSender(fromAddr, conf.blocklist)) {
     return { action: 'skipped', reason: 'blocked', from: fromAddr };
   }
+  // Bulk mail: either it never becomes a ticket, or it becomes one that is
+  // already shut. The second exists because "skipped" leaves nothing to look at
+  // — an operator asking "did that supplier's mail arrive?" had only the skip
+  // log — while a normal ticket would start an SLA clock over a newsletter.
+  let junk = null;
   if (!opts.force && conf.blockBulk) {
     const bulk = bulkReason(parsed);
     if (bulk) {
-      return { action: 'skipped', reason: 'bulk', detail: bulk, from: fromAddr };
+      if (conf.bulkAction !== 'close') {
+        return { action: 'skipped', reason: 'bulk', detail: bulk, from: fromAddr };
+      }
+      junk = { reason: bulk };
     }
   }
 
@@ -581,19 +596,21 @@ async function createFromEmail(parsed, cfg, opts = {}) {
   const created = await ticketService.createTicket(
     { type: conf.defaultType, subject, description, category: conf.defaultCategory || undefined },
     sysUser,
-    { asEmployee, source: 'email', senderEmail: fromAddr }
+    { asEmployee, source: 'email', senderEmail: fromAddr, junk }
   );
   // Cross-link the referenced ticket only for an authenticated sender: this writes
   // a staff-only note into an enumerable ticket number, so an unauthenticated
   // sender must not be able to drive it.
-  if (related && authenticated) {
+  if (related && authenticated && !junk) {
     await query(
       'INSERT INTO ticket_comments (ticket_id, author_user_id, author_name, body, internal, staff_only) VALUES ($1, NULL, $2, $3, true, true)',
       [related.id, 'E-posta girişi', `${fromName} tarafından ilgili yeni ticket açıldı: ${created.number}`]
     );
     await query('UPDATE tickets SET updated_at = now() WHERE id = $1', [related.id]);
   }
-  return { action: 'created', ticketId: created.id, number: created.number, senderAuthenticated: authenticated, requesterMatched: !!asEmployee, relatedTo: related ? related.number : null };
+  return { action: 'created', ticketId: created.id, number: created.number, junk: !!junk,
+    reason: junk ? 'bulk' : undefined, detail: junk ? junk.reason : undefined,
+    senderAuthenticated: authenticated, requesterMatched: !!asEmployee, relatedTo: related ? related.number : null };
 }
 
 /**
@@ -736,7 +753,7 @@ async function poll() {
             const r = await createFromEmail(parsed, cfg);
             await finalizeMail(key, r);
             recorded = true;
-            if (r.action === 'created') created++;
+            if (r.action === 'created') { if (r.junk) filtered++; else created++; }
             else if (r.action === 'appended') appended++;
             else if (r.action === 'skipped' && (r.reason === 'blocked' || r.reason === 'bulk')) filtered++;
           }

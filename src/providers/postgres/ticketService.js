@@ -17,7 +17,7 @@ const PRIORITIES = new Set(['low', 'medium', 'high', 'urgent']);
 const STATUSES = new Set(['new', 'open', 'in_progress', 'pending', 'resolved', 'closed', 'cancelled']);
 const TERMINAL = new Set(['resolved', 'closed', 'cancelled']);
 const LEVELS = new Set(['low', 'medium', 'high']);
-const RESOLUTION_CODES = new Set(['fixed', 'workaround', 'no_fault', 'duplicate', 'not_reproducible', 'user_education']);
+const RESOLUTION_CODES = new Set(['fixed', 'workaround', 'no_fault', 'duplicate', 'not_reproducible', 'user_education', 'spam']);
 
 // ITIL priority = Impact × Urgency (rows = impact, cols = urgency).
 const PRIORITY_MATRIX = Object.freeze({
@@ -420,7 +420,7 @@ async function applyRules(ticket, ctx, a) {
   return outcome;
 }
 
-async function createTicket(body, user, { asEmployee = null, source = 'staff', senderEmail = '' } = {}) {
+async function createTicket(body, user, { asEmployee = null, source = 'staff', senderEmail = '', junk = null } = {}) {
   // Optional request template: forces type=request and carries a category + an
   // approval chain that must clear before the desk fulfils the request.
   let template = null;
@@ -476,7 +476,13 @@ async function createTicket(body, user, { asEmployee = null, source = 'staff', s
     : (PRIORITIES.has(body && body.priority) ? body.priority : 'medium');
 
   const number = await nextNumber(type);
-  const { responseDueAt, resolveDueAt } = slaDueDates(await getSlaConfig(), priority, new Date());
+  // Junk mail is recorded and shut in the same act: it arrived, this is what it
+  // was, and it was never work. No SLA clock is started — a newsletter must not
+  // count against the desk's response time — and nothing is sent back to the
+  // sender, because answering an advert is how an address gets more of them.
+  const { responseDueAt, resolveDueAt } = junk
+    ? { responseDueAt: null, resolveDueAt: null }
+    : slaDueDates(await getSlaConfig(), priority, new Date());
   // The address an emailed ticket arrived from is kept even when it matches an
   // employee: it is how "the same sender wrote twice" is answered for people the
   // install has no row for, and it costs nothing to store for the ones it does.
@@ -484,16 +490,23 @@ async function createTicket(body, user, { asEmployee = null, source = 'staff', s
   const { rows } = await query(
     `INSERT INTO tickets (number, type, subject, description, priority, category,
         requester_employee_id, requester_user_id, asset_id, created_by, created_by_name, status,
-        response_due_at, resolve_due_at, impact, urgency, requester_email)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, 'new', $12, $13, $14, $15, $16)
+        response_due_at, resolve_due_at, impact, urgency, requester_email,
+        closed_at, resolution_code, resolution_note)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$17, $12, $13, $14, $15, $16, $18, $19, $20)
      RETURNING id`,
-    [number, type, subject, description || null, priority, category,
+    [number, type, subject, description || null, junk ? 'low' : priority, category,
       requesterEmployeeId, asEmployee ? null : a.id, assetId, a.id, a.name,
-      responseDueAt, resolveDueAt, effImpact, effUrgency, fromAddr]
+      responseDueAt, resolveDueAt, effImpact, effUrgency, fromAddr,
+      junk ? 'closed' : 'new', junk ? new Date() : null,
+      junk ? 'spam' : null, junk ? String(junk.reason || 'bulk mail').slice(0, 500) : null]
   );
   const id = rows[0].id;
-  await logActivity(id, a, 'created', `${type} · ${priority}`);
+  await logActivity(id, a, 'created', `${type} · ${junk ? 'low' : priority}`);
+  if (junk) await logActivity(id, a, 'status', `closed as spam — ${junk.reason || 'bulk mail'}`);
   audit('ticket.create', `Opened ${number}: ${subject}`, a, id, number);
+  // Rules can categorise, escalate and assign; none of that is wanted for a
+  // ticket that is already shut, and an assignment would put junk in a queue.
+  if (junk) return getTicket(id, user);
 
   // Automation rules run BEFORE the approval chain: a rule may re-categorise or
   // escalate the ticket, and the approval summary should carry the final values.

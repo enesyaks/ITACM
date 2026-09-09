@@ -15,7 +15,7 @@ const TK_PRIORITY_MATRIX = {
   low: { high: 'medium', medium: 'low', low: 'low' },
 };
 const tkDerivePriority = (impact, urgency) => (TK_PRIORITY_MATRIX[impact] && TK_PRIORITY_MATRIX[impact][urgency]) || null;
-const TK_RESOLUTION_CODES = ['fixed', 'workaround', 'no_fault', 'duplicate', 'not_reproducible', 'user_education'];
+const TK_RESOLUTION_CODES = ['fixed', 'workaround', 'no_fault', 'duplicate', 'not_reproducible', 'user_education', 'spam'];
 const tkStars = (n) => `<span class="tk-stars" title="${n}/5">${'★'.repeat(n)}<span class="tk-stars-off">${'★'.repeat(5 - n)}</span></span>`;
 const tkStatusLabel = (s) => t('tk.status.' + s) || s;
 const tkPriorityLabel = (p) => t('tk.priority.' + p) || p;
