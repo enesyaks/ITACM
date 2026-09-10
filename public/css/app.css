@@ -3902,6 +3902,86 @@ button.af-parent-item,
 /* Product Catalog — category lifecycle grid */
 
 
+
+/* ============================ MAINTENANCE & REPAIR ========================
+   Devices that are away at a repair shop. The page printed the DATE a thing was
+   sent, where the only question is how LONG it has been gone — so the reader
+   subtracted from today, sixteen times, and still had no idea whether the
+   answer was bad.
+
+   The elapsed day count is now the subject and it is set as one: a large
+   tabular figure at the head of every row, which reads before any word does and
+   can be scanned down the left edge in a single pass. Everything beside it is
+   small and quiet, and no row is coloured — the list is ordered longest wait
+   first, so the worst is simply at the top where it belongs.
+
+   Grouped by service company, because chasing a repair is a telephone call to a
+   company; longest job first, so the page reads as a call list. */
+.mnt-find { width: 200px; }
+.mnt-filter { width: auto; }
+.mnt-block { margin-bottom: 34px; }
+.mnt-h { margin: 0 0 2px; font-size: 16px; font-weight: 600; letter-spacing: -.015em; }
+.mnt-h-sub { margin: 0 0 20px; font-size: 12.5px; color: var(--on-surface-variant); }
+.mnt-allback { margin: 0 0 26px; font-size: 13.5px; color: var(--on-surface-variant); }
+
+.mnt-co-block { margin-bottom: 22px; }
+.mnt-co-head { display: flex; align-items: baseline; gap: 10px; padding: 0 0 4px; }
+.mnt-co-head h3 { margin: 0; font-size: 13.5px; font-weight: 600; letter-spacing: -.01em; }
+.mnt-co-n { font-size: 12px; color: var(--outline); font-variant-numeric: tabular-nums; }
+.mnt-usual { margin-left: auto; font-size: 12px; color: var(--outline); }
+.mnt-list { border-top: 1px solid var(--outline-variant); }
+
+.mnt-row {
+  display: grid; align-items: center; gap: 16px; padding: 10px 0;
+  grid-template-columns: 3.4rem minmax(0, 1fr) 6rem minmax(0, 9.5rem);
+  border-bottom: 1px solid var(--surface-container);
+}
+.mnt-row[hidden] { display: none; }
+
+/* The number is the design. Tabular, oversized, and the only thing on the row
+   set above 14px, so sixteen rows can be read down the left edge alone. */
+.mnt-age { display: flex; align-items: baseline; gap: 3px; justify-self: end; }
+.mnt-age b { font-size: 22px; font-weight: 600; line-height: 1; letter-spacing: -.02em;
+  font-variant-numeric: tabular-nums; color: var(--on-surface); }
+.mnt-age i { font-style: normal; font-size: 11px; color: var(--outline); }
+.mnt-age.is-past b { font-size: 17px; font-weight: 500; color: var(--on-surface-variant); }
+
+.mnt-main { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.mnt-issue { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mnt-meta { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--outline); }
+.mnt-meta .mono { color: var(--primary); }
+
+.mnt-cost { font-size: 12.5px; text-align: right; font-variant-numeric: tabular-nums; color: var(--on-surface-variant); }
+.mnt-act { display: flex; align-items: center; gap: 4px; justify-content: flex-end; }
+.mnt-act .btn { white-space: nowrap; }
+/* Neither action shouts: one is rare, the other happens when a courier arrives. */
+.mnt-back { opacity: .55; transition: opacity .12s; }
+.mnt-row:hover .mnt-back, .mnt-back:focus-visible { opacity: 1; }
+.mnt-icon {
+  display: inline-flex; align-items: center; gap: 3px; height: 26px; padding: 0 7px;
+  border: 0; border-radius: 7px; background: transparent; color: var(--on-surface-variant); cursor: pointer;
+}
+.mnt-icon:hover { background: var(--surface-low); color: var(--on-surface); }
+.mnt-icon:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.mnt-icon.is-quiet { color: var(--outline-variant); opacity: 0; transition: opacity .12s; }
+.mnt-row:hover .mnt-icon.is-quiet, .mnt-icon.is-quiet:focus-visible { opacity: 1; }
+.mnt-n { font-size: 11.5px; font-variant-numeric: tabular-nums; }
+
+.mnt-nohits { padding: 24px 0; color: var(--outline); font-size: 13.5px; }
+.mnt-empty { text-align: center; padding: 44px 24px; }
+.mnt-empty p { margin: 0 0 8px; color: var(--on-surface-variant); }
+
+@media (prefers-reduced-motion: reduce) { .mnt-icon.is-quiet, .mnt-back { transition: none; } }
+@media (max-width: 780px) {
+  .mnt-row { grid-template-columns: 3.4rem minmax(0, 1fr) auto; row-gap: 4px; }
+  .mnt-cost { grid-column: 2 / 3; text-align: left; }
+  .mnt-icon.is-quiet { display: none; }
+  .mnt-back { opacity: 1; }
+}
+@media (max-width: 560px) {
+  .mnt-find, .mnt-filter { width: 100%; }
+}
+
 /* ============================== CONSUMABLES ==============================
    The store cupboard. One relationship carries the page: how much is on the
    shelf against how little we are willing to have. The minimum sits at the same
