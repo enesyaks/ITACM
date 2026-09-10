@@ -28,10 +28,14 @@ const LABELS = {
     pick: 'Pick a rating first',
     thanksTitle: 'Thank you',
     thanksBody: 'Your rating for {n} has been recorded.',
-    already: 'You rated this {r} out of 5. Choosing again replaces it.',
     goneTitle: 'This rating link is not valid',
     goneBody: 'It may have been replaced by a newer message, or the ticket may have been removed.',
     notResolved: 'This request is not resolved yet, so there is nothing to rate.',
+    ratedTitle: 'Already rated',
+    ratedBody: 'You gave {n} {r} out of 5. A ticket is rated once, so this link is now closed.',
+    expiredTitle: 'This rating link has closed',
+    expiredBody: 'Ratings are open for {d} days after a request is resolved. If something is still wrong, reply to the email and it lands back on the ticket.',
+    window: 'This link is open for {d} days and can be used once.',
     stars: ['Poor', 'Not great', 'Fine', 'Good', 'Excellent'],
   },
   tr: {
@@ -44,10 +48,14 @@ const LABELS = {
     pick: 'Önce bir puan seçin',
     thanksTitle: 'Teşekkürler',
     thanksBody: '{n} için değerlendirmeniz kaydedildi.',
-    already: 'Bunu 5 üzerinden {r} olarak değerlendirmiştiniz. Yeniden seçerseniz değişir.',
     goneTitle: 'Bu değerlendirme bağlantısı geçerli değil',
     goneBody: 'Daha yeni bir mesajla değişmiş ya da kayıt kaldırılmış olabilir.',
     notResolved: 'Bu talep henüz çözülmedi, değerlendirilecek bir şey yok.',
+    ratedTitle: 'Zaten değerlendirildi',
+    ratedBody: '{n} için 5 üzerinden {r} verdiniz. Bir talep bir kez değerlendirilir, bu bağlantı artık kapalı.',
+    expiredTitle: 'Bu değerlendirme bağlantısı kapandı',
+    expiredBody: 'Değerlendirme, talep çözüldükten sonra {d} gün açık kalır. Hâlâ bir sorun varsa maili yanıtlayın, doğrudan kaydın altına düşer.',
+    window: 'Bu bağlantı {d} gün açık ve bir kez kullanılabilir.',
     stars: ['Kötü', 'İdare eder', 'Fena değil', 'İyi', 'Çok iyi'],
   },
   de: {
@@ -60,10 +68,14 @@ const LABELS = {
     pick: 'Bitte zuerst eine Bewertung wählen',
     thanksTitle: 'Danke',
     thanksBody: 'Ihre Bewertung für {n} wurde gespeichert.',
-    already: 'Sie haben dies mit {r} von 5 bewertet. Eine neue Wahl ersetzt sie.',
     goneTitle: 'Dieser Bewertungslink ist ungültig',
     goneBody: 'Er wurde möglicherweise durch eine neuere Nachricht ersetzt, oder das Ticket wurde entfernt.',
     notResolved: 'Diese Anfrage ist noch nicht gelöst, es gibt nichts zu bewerten.',
+    ratedTitle: 'Bereits bewertet',
+    ratedBody: 'Sie haben {n} mit {r} von 5 bewertet. Ein Ticket wird einmal bewertet, dieser Link ist nun geschlossen.',
+    expiredTitle: 'Dieser Bewertungslink ist geschlossen',
+    expiredBody: 'Bewertungen sind {d} Tage nach der Lösung möglich. Wenn etwas weiterhin nicht stimmt, antworten Sie auf die E-Mail — sie landet wieder am Ticket.',
+    window: 'Dieser Link ist {d} Tage offen und einmal verwendbar.',
     stars: ['Schlecht', 'Mäßig', 'Geht so', 'Gut', 'Ausgezeichnet'],
   },
 };
@@ -156,7 +168,7 @@ function shell({ lang, title, inner }) {
  *                             page still works, it just stops narrating the star
  * @returns {string} a complete HTML document
  */
-function renderCsatPage({ ticket, picked = 0, token = '', error = '', done = false, company = 'ITACM', lang, nonce = '' } = {}) {
+function renderCsatPage({ ticket, picked = 0, token = '', error = '', done = false, company = 'ITACM', lang, nonce = '', windowDays = 30 } = {}) {
   const L = labels(lang);
   const foot = `<div class="foot">${esc(company)}</div>`;
 
@@ -177,6 +189,22 @@ function renderCsatPage({ ticket, picked = 0, token = '', error = '', done = fal
       `<p class="eyebrow">${esc(company)}</p><h1>${esc(L.title)}</h1>
        <p class="lede">${esc(L.notResolved)}</p>${foot}` });
   }
+  // A link that has been used, and one that has run out of time, are dead ends
+  // with something to say: what the score was, or where to go instead.
+  if (error === 'rated') {
+    return shell({ lang, title: L.ratedTitle, inner:
+      `<p class="eyebrow">${esc(company)}</p>
+       <h1>${esc(L.ratedTitle)}</h1>
+       <p class="lede">${esc(L.ratedBody.replace('{n}', ticket.number).replace('{r}', ticket.csatRating || '—'))}</p>
+       <p class="done-stars" role="img" aria-label="${ticket.csatRating || 0}/5">${'★'.repeat(ticket.csatRating || 0)}${'☆'.repeat(5 - (ticket.csatRating || 0))}</p>
+       ${foot}` });
+  }
+  if (error === 'expired') {
+    return shell({ lang, title: L.expiredTitle, inner:
+      `<p class="eyebrow">${esc(company)}</p>
+       <h1>${esc(L.expiredTitle)}</h1>
+       <p class="lede">${esc(L.expiredBody.replace('{d}', windowDays))}</p>${foot}` });
+  }
 
   const star = (n) => `<input type="radio" name="rating" id="r${n}" value="${n}"${n === picked ? ' checked' : ''}>
     <label for="r${n}" title="${esc(L.stars[n - 1])}" aria-label="${n} / 5">★</label>`;
@@ -186,13 +214,13 @@ function renderCsatPage({ ticket, picked = 0, token = '', error = '', done = fal
      <h1>${esc(L.title)}</h1>
      <p class="lede">${esc(L.lede.replace('{n}', ticket.number))}</p>
      ${ticket.resolutionNote ? `<div class="note"><h2>${esc(L.resolution)}</h2>${esc(ticket.resolutionNote)}</div>` : ''}
-     ${ticket.csatRating ? `<p class="lede">${esc(L.already.replace('{r}', ticket.csatRating))}</p>` : ''}
      <form method="POST" action="/csat/${esc(token)}">
        <div class="stars" id="stars">${[5, 4, 3, 2, 1].map(star).join('')}</div>
        <p class="starname" id="starname">${picked ? esc(L.stars[picked - 1]) : ''}</p>
        <label class="field" for="comment">${esc(L.commentLabel)}</label>
        <textarea id="comment" name="comment" maxlength="4000" placeholder="${esc(L.commentPh)}"></textarea>
        <button type="submit">${esc(L.send)}</button>
+       <p class="msg" style="color:var(--muted)">${esc(L.window.replace('{d}', windowDays))}</p>
        ${error && error !== 'gone' && error !== 'not_resolved' ? `<p class="msg bad">${esc(error)}</p>` : ''}
      </form>
      ${foot}

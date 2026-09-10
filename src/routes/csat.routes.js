@@ -25,16 +25,19 @@ async function chrome() {
   } catch { return { lang: 'en', company: 'ITACM' }; }
 }
 
+const windowDays = ticketService.CSAT_WINDOW_DAYS;
+
 router.get('/:token', asyncHandler(async (req, res) => {
   const { lang, company } = await chrome();
   const picked = Math.round(Number(req.query.r));
   let ticket = null;
   try { ticket = await ticketService.getByCsatToken(req.params.token); } catch { /* rendered as gone */ }
-  const notResolved = ticket && !['resolved', 'closed'].includes(ticket.status);
+  // The service decides whether the link can be used at all — used already, out
+  // of time, or the ticket is not resolved. The page only renders the verdict.
   res.status(ticket ? 200 : 404).type('html').send(renderCsatPage({
-    ticket, token: req.params.token, lang, company, nonce: res.locals.cspNonce,
+    ticket, token: req.params.token, lang, company, nonce: res.locals.cspNonce, windowDays,
     picked: picked >= 1 && picked <= 5 ? picked : 0,
-    error: !ticket ? 'gone' : (notResolved ? 'not_resolved' : ''),
+    error: ticket ? (ticket.state === 'ok' ? '' : ticket.state) : 'gone',
   }));
 }));
 
@@ -47,7 +50,7 @@ router.post('/:token', express.urlencoded({ extended: false, limit: '32kb' }), a
     });
     return res.type('html').send(renderCsatPage({
       ticket: { number: out.number }, picked: out.rating, done: true, lang, company,
-      nonce: res.locals.cspNonce,
+      nonce: res.locals.cspNonce, windowDays,
     }));
   } catch (err) {
     let ticket = null;
@@ -56,9 +59,13 @@ router.post('/:token', express.urlencoded({ extended: false, limit: '32kb' }), a
     // down, a bug — is shown as a plain refusal: this page is served to the
     // public, and an internal message is a free look inside.
     const shown = err && err.status && err.status < 500 ? err.message : 'Something went wrong. Please try the link again.';
+    // A spent or expired link gets its own page rather than the form with a red
+    // line under it: there is nothing left to submit, so offering the button
+    // again would only invite a second refusal.
+    const state = ticket && ticket.state !== 'ok' ? ticket.state : '';
     return res.status(ticket ? (err.status || 400) : 404).type('html').send(renderCsatPage({
-      ticket, token: req.params.token, lang, company, nonce: res.locals.cspNonce,
-      error: ticket ? shown : 'gone',
+      ticket, token: req.params.token, lang, company, nonce: res.locals.cspNonce, windowDays,
+      error: ticket ? (state || shown) : 'gone',
     }));
   }
 }));

@@ -48,6 +48,25 @@ test('the rating a link carried is a number or nothing', () => {
   assert.match(renderCsatPage({ ticket: TICKET, token: 'a'.repeat(48), picked: 4 }), /id="r4"[^>]*checked/);
 });
 
+test('a spent link shows the score and no way to change it', () => {
+  const html = renderCsatPage({ ticket: { ...TICKET, csatRating: 4 }, error: 'rated', lang: 'tr' });
+  assert.match(html, /Zaten değerlendirildi/);
+  assert.ok(!html.includes('<form'), 'nothing left to submit');
+  assert.match(html, /★★★★☆/);
+});
+
+test('an expired link points somewhere useful instead of nowhere', () => {
+  const html = renderCsatPage({ ticket: TICKET, error: 'expired', lang: 'tr', windowDays: 30 });
+  assert.match(html, /30 gün/);
+  assert.match(html, /maili yanıtlayın/, 'a dead end is not an acceptable last screen');
+  assert.ok(!html.includes('<form'));
+});
+
+test('the form says what the link is good for', () => {
+  const html = renderCsatPage({ ticket: TICKET, token: 'a'.repeat(48), lang: 'tr', windowDays: 30 });
+  assert.match(html, /30 gün açık ve bir kez kullanılabilir/);
+});
+
 test('a dead link says so without hinting at what exists', () => {
   const html = renderCsatPage({ ticket: null, error: 'gone', lang: 'tr' });
   assert.match(html, /geçerli değil/);

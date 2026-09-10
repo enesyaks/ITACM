@@ -1606,17 +1606,41 @@ async function ensureCsatToken(ticketId) {
   return upd.rows[0] ? upd.rows[0].csat_token : null;
 }
 
+/**
+ * How long a rating link stays open, and how many times it can be used.
+ *
+ * Both limits exist because the link is a bearer secret that lives in somebody's
+ * mailbox forever. Unbounded, it is a permanent door into one ticket, and a
+ * score that can be rewritten years later is not a measurement of anything —
+ * the desk would be reading a number that anyone holding an old email can move.
+ *
+ * So: one rating, and thirty days from the resolution to give it. Nobody rates
+ * a month-old ticket usefully, and a spent link is spent.
+ */
+const CSAT_WINDOW_DAYS = 30;
+
+/** 'ok' | 'rated' | 'expired' | 'not_resolved' — why a link can or cannot be used. */
+function csatState(tk) {
+  if (!tk) return 'gone';
+  if (!['resolved', 'closed'].includes(tk.status)) return 'not_resolved';
+  if (tk.csatAt) return 'rated';
+  const from = tk.resolvedAt ? new Date(tk.resolvedAt).getTime() : 0;
+  if (from && Date.now() - from > CSAT_WINDOW_DAYS * 86400000) return 'expired';
+  return 'ok';
+}
+
 /** What the public rating page may show. Deliberately thin — no requester, no body. */
 async function getByCsatToken(token) {
   const tok = String(token || '').trim();
   if (!tok || tok.length < 16) throw HttpError.notFound('Rating link not found');
   const { rows } = await query(
     `SELECT number, subject, status, resolution_note AS "resolutionNote",
-            csat_rating AS "csatRating", csat_comment AS "csatComment"
+            csat_rating AS "csatRating", csat_comment AS "csatComment",
+            csat_at AS "csatAt", resolved_at AS "resolvedAt"
        FROM tickets WHERE csat_token = $1`, [tok]
   );
   if (!rows[0]) throw HttpError.notFound('Rating link not found');
-  return rows[0];
+  return { ...rows[0], state: csatState(rows[0]) };
 }
 
 /**
@@ -1627,16 +1651,21 @@ async function getByCsatToken(token) {
  */
 async function submitCsatByToken(token, body = {}) {
   const tk = await getByCsatToken(token);
-  if (!['resolved', 'closed'].includes(tk.status)) throw HttpError.badRequest('This ticket is not resolved yet');
+  if (tk.state === 'not_resolved') throw HttpError.badRequest('This ticket is not resolved yet');
+  if (tk.state === 'rated') throw HttpError.badRequest('This ticket has already been rated', { code: 'csat_rated' });
+  if (tk.state === 'expired') throw HttpError.badRequest('This rating link has expired', { code: 'csat_expired' });
   const rating = Math.round(Number(body.rating));
   if (!(rating >= 1 && rating <= 5)) throw HttpError.badRequest('Rating must be 1-5');
   const comment = body.comment ? String(body.comment).trim().slice(0, 4000) : null;
+  // `csat_at IS NULL` in the WHERE, not just the check above: two submissions
+  // racing each other would otherwise both pass the read and both write. The
+  // first one to reach the row wins and the second finds nothing to update.
   const { rows } = await query(
-    `UPDATE tickets SET csat_rating = $2, csat_comment = COALESCE($3, csat_comment), csat_at = now()
-      WHERE csat_token = $1 RETURNING id, number`,
+    `UPDATE tickets SET csat_rating = $2, csat_comment = $3, csat_at = now()
+      WHERE csat_token = $1 AND csat_at IS NULL RETURNING id, number`,
     [String(token).trim(), rating, comment]
   );
-  if (!rows[0]) throw HttpError.notFound('Rating link not found');
+  if (!rows[0]) throw HttpError.badRequest('This ticket has already been rated', { code: 'csat_rated' });
   await query(
     "INSERT INTO ticket_activity (ticket_id, actor_name, action, detail) VALUES ($1, $2, 'csat', $3)",
     [rows[0].id, 'E-posta', `${rating}/5${comment ? ' · comment left' : ''}`]
@@ -1918,5 +1947,5 @@ module.exports = {
   getCannedResponses, saveCannedResponses, getManagedCategories, saveManagedCategories,
   getWorkflow, saveWorkflow, resetWorkflow, sweepAutoCloseResolved,
   ackTarget, linkTickets, unlinkTicket, linkedTickets, duplicateCandidates, markSpam,
-  ensureCsatToken, getByCsatToken, submitCsatByToken,
+  ensureCsatToken, getByCsatToken, submitCsatByToken, CSAT_WINDOW_DAYS,
 };

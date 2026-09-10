@@ -112,6 +112,48 @@ test('resolution mail and CSAT by token', db.skipReason ? { skip: db.skipReason 
     assert.ok(rows[0].csat_at);
   });
 
+  await t.test('a link is spent by the rating it carries', async () => {
+    const tk = await openTicket();
+    await svc.updateTicket(tk.id, { status: 'resolved' }, ACTOR);
+    const token = await svc.ensureCsatToken(tk.id);
+
+    await svc.submitCsatByToken(token, { rating: 5, comment: 'harika' });
+    await assert.rejects(() => svc.submitCsatByToken(token, { rating: 1, comment: 'fikrimi degistirdim' }),
+      /already been rated/, 'a score anyone holding an old email can move is not a measurement');
+    const { rows } = await query('SELECT csat_rating, csat_comment FROM tickets WHERE id = $1', [tk.id]);
+    assert.equal(rows[0].csat_rating, 5, 'the first answer stands');
+    assert.equal(rows[0].csat_comment, 'harika');
+    assert.equal((await svc.getByCsatToken(token)).state, 'rated');
+  });
+
+  await t.test('two submissions racing each other still leave one rating', async () => {
+    const tk = await openTicket();
+    await svc.updateTicket(tk.id, { status: 'resolved' }, ACTOR);
+    const token = await svc.ensureCsatToken(tk.id);
+    // Both read the row before either writes: only the WHERE clause separates them.
+    const results = await Promise.allSettled([
+      svc.submitCsatByToken(token, { rating: 5 }),
+      svc.submitCsatByToken(token, { rating: 1 }),
+    ]);
+    assert.equal(results.filter((r) => r.status === 'fulfilled').length, 1);
+    assert.equal(results.filter((r) => r.status === 'rejected').length, 1);
+  });
+
+  await t.test('the link runs out thirty days after the resolution', async () => {
+    const tk = await openTicket();
+    await svc.updateTicket(tk.id, { status: 'resolved' }, ACTOR);
+    const token = await svc.ensureCsatToken(tk.id);
+
+    await query("UPDATE tickets SET resolved_at = now() - interval '29 days' WHERE id = $1", [tk.id]);
+    assert.equal((await svc.getByCsatToken(token)).state, 'ok', 'still open on day 29');
+
+    await query("UPDATE tickets SET resolved_at = now() - interval '31 days' WHERE id = $1", [tk.id]);
+    assert.equal((await svc.getByCsatToken(token)).state, 'expired');
+    await assert.rejects(() => svc.submitCsatByToken(token, { rating: 5 }), /expired/);
+    assert.equal((await query('SELECT csat_rating FROM tickets WHERE id = $1', [tk.id])).rows[0].csat_rating, null,
+      'nothing was written by the attempt');
+  });
+
   await t.test('a token names one ticket and grants nothing else', async () => {
     await assert.rejects(() => svc.getByCsatToken('deadbeef'), /not found/i, 'too short to be a token');
     await assert.rejects(() => svc.getByCsatToken('f'.repeat(48)), /not found/i, 'a guess is still a guess');
