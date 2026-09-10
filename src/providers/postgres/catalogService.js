@@ -3,8 +3,25 @@ const { query } = require('./pool');
 const { mapRows, isUuid } = require('./rowMapper');
 const { HttpError } = require('../../utils/httpError');
 
+/**
+ * The catalogue, with how many assets each entry actually accounts for.
+ *
+ * Without the count the page is a list of words: every entry looks equally
+ * real, and the ones nobody has bought in three years look exactly like the
+ * laptop half the company is carrying. Matching is on the same three fields the
+ * asset form writes, so a count of zero means precisely "no asset names this",
+ * which is the signal for dead wood — or for something just added.
+ */
 async function listCatalog() {
-  const { rows } = await query('SELECT * FROM catalog_models ORDER BY category, brand, model');
+  const { rows } = await query(
+    `SELECT c.*, COALESCE(u.n, 0)::int AS in_use
+       FROM catalog_models c
+       LEFT JOIN (
+         SELECT category, brand, model, count(*) AS n
+           FROM assets GROUP BY category, brand, model
+       ) u ON u.category = c.category AND u.brand = c.brand AND u.model = c.model
+      ORDER BY c.category, c.brand, c.model`
+  );
   return mapRows(rows);
 }
 

@@ -1,3 +1,19 @@
+/**
+ * The product catalogue — the estate's controlled vocabulary.
+ *
+ * It answers three questions, and the old layout answered none of them well:
+ * what may be typed into an asset form (fourteen stacked tables, one per
+ * category), how long we keep each kind of thing (a number in a box, with the
+ * category's own default hidden in a tooltip), and which entries are actually
+ * carried by anybody (nothing said).
+ *
+ * So the lifespan is DRAWN rather than typed, on one scale shared by every
+ * category: a monitor's 84 months is visibly three phones. A tick marks the
+ * category default, and whether an entry inherits it or overrides it is the
+ * shape of the span against that tick rather than a word next to it. The brand
+ * is a spine instead of a column repeating "Dell" eight times, and the index on
+ * the left turns fourteen pages of scrolling into one.
+ */
 Views.catalog = async function (el) {
   const canCreate = Auth.canIam('catalog', 'create');
   const canUpdate = Auth.canIam('catalog', 'update');
@@ -7,11 +23,12 @@ Views.catalog = async function (el) {
   const cats = [...new Set(items.map((c) => c.category))];
 
   // Ticket categories are managed here too (they feed the ticket forms). Only a
-  // ticket manager sees this section.
+  // ticket manager sees this section — and it sits at the END: this page is
+  // about products, and ticket categories are a tenant, not the headline.
   const canTicketCats = Auth.canIam('ticket', 'manage');
   const ticketCats = canTicketCats ? await api('/tickets/categories/manage').catch(() => []) : [];
   const tcChip = (c) => `<span class="tk-cat-chip" data-cat="${esc(c)}">${esc(c)}<button type="button" class="tk-cat-x" title="${esc(t('common.remove') || 'Remove')}"><span class="ms ms-sm">close</span></button></span>`;
-  const tcCard = () => `<div class="card card-pad" id="tk-cat-card" style="margin-bottom:16px">
+  const tcCard = () => `<section class="card card-pad cat-tickets" id="tk-cat-card">
       <h3 style="margin:0 0 4px">${esc(t('tk.catManageTitle'))}</h3>
       <p class="cell-sub" style="margin:0 0 12px">${esc(t('tk.catManageHint'))}</p>
       <div id="tk-cat-chips" class="tk-cat-chips">${(Array.isArray(ticketCats) ? ticketCats : []).map(tcChip).join('')}</div>
@@ -21,44 +38,136 @@ Views.catalog = async function (el) {
         <span style="flex:1"></span>
         <button class="btn btn-primary btn-sm" id="tk-cat-save">${esc(t('common.save'))}</button>
       </div>
+    </section>`;
+
+  const catDefault = (cat) => ((AppConfig.lifecycles && AppConfig.lifecycles[cat] != null)
+    ? Number(AppConfig.lifecycles[cat]) : null);
+  const monthsOf = (c) => (c.lifecycleMonths != null ? Number(c.lifecycleMonths) : catDefault(c.category));
+
+  // One scale for the whole page — that is what makes the spans comparable at
+  // all. Rounded up to the next year so the axis lands on a whole number.
+  const longest = Math.max(24, ...items.map((c) => monthsOf(c) || 0).filter(Number.isFinite));
+  const SCALE = Math.ceil(longest / 12) * 12;
+  const pct = (m) => Math.max(0, Math.min(100, (Number(m) / SCALE) * 100));
+
+  /**
+   * A lifespan as a length. The span is the entry's own life; the tick is the
+   * category's default. Equal ⇒ the span ends on the tick and the entry is
+   * inheriting; different ⇒ it visibly overshoots or falls short, which is the
+   * whole reason somebody scans this column.
+   */
+  const measure = (c) => {
+    const own = c.lifecycleMonths != null ? Number(c.lifecycleMonths) : null;
+    const def = catDefault(c.category);
+    const eff = own != null ? own : def;
+    if (!Number.isFinite(eff)) {
+      return `<div class="cat-measure cat-measure-none" title="${esc(t('cat.noLifespan'))}"><span class="cat-track"></span></div>`;
+    }
+    const differs = own != null && def != null && own !== def;
+    return `<div class="cat-measure${differs ? ' is-own' : ''}">
+        <span class="cat-track">
+          <span class="cat-span" style="width:${pct(eff).toFixed(2)}%"></span>
+          ${Number.isFinite(def) ? `<span class="cat-tick" style="left:${pct(def).toFixed(2)}%" title="${esc(t('cat.catDefaultTick').replace('{n}', def))}"></span>` : ''}
+        </span>
+      </div>`;
+  };
+
+  const row = (c) => {
+    const own = c.lifecycleMonths != null ? Number(c.lifecycleMonths) : null;
+    const def = catDefault(c.category);
+    const eff = own != null ? own : def;
+    const used = Number(c.inUse) || 0;
+    return `<div class="cat-row" data-find="${esc((c.brand + ' ' + c.model + ' ' + c.category).toLowerCase())}">
+      <span class="cat-model">${esc(c.model)}</span>
+      <span class="cat-used${used ? '' : ' is-zero'}" data-unit="${esc(t('cat.unit'))}" title="${esc(used ? t('cat.inUseTitle').replace('{n}', used) : t('cat.unusedTitle'))}">${used || '—'}</span>
+      ${measure(c)}
+      <span class="cat-months">
+        ${canUpdate
+    ? `<input type="number" class="cat-lc" data-lc="${esc(c.id)}" min="1" max="240" inputmode="numeric"
+             value="${own != null ? esc(String(own)) : ''}" placeholder="${def != null ? esc(String(def)) : '—'}"
+             aria-label="${esc(t('cat.colLifecycle'))} — ${esc(c.brand)} ${esc(c.model)}">`
+    : `<span class="cat-lc-static">${Number.isFinite(eff) ? esc(String(eff)) : '—'}</span>`}
+        <span class="cat-mo">${esc(t('cat.mo'))}</span>
+      </span>
+      <span class="cat-rowend">${canDelete ? `<button class="cat-del" data-del="${esc(c.id)}" title="${esc(t('cat.delete'))}" aria-label="${esc(t('cat.delete'))} ${esc(c.brand)} ${esc(c.model)}"><span class="ms ms-sm">delete</span></button>` : ''}</span>
     </div>`;
+  };
+
+  const group = (cat) => {
+    const mine = items.filter((c) => c.category === cat);
+    const brands = [...new Set(mine.map((c) => c.brand))].sort((a, b) => a.localeCompare(b, 'tr'));
+    const def = catDefault(cat);
+    return `<section class="cat-group" id="cat-g-${esc(cat.replace(/\W+/g, '-'))}" data-cat="${esc(cat)}">
+      <header class="cat-group-head">
+        <h3>${esc(cat)}</h3>
+        <span class="cat-count">${mine.length} ${esc(t('cat.modelWord'))}</span>
+        <span class="cat-def">${def != null ? esc(t('cat.catDefaultShort').replace('{n}', def)) : esc(t('cat.appDefault'))}</span>
+      </header>
+      ${brands.map((b) => `<div class="cat-brand-block">
+        <div class="cat-brand">${esc(b)}</div>
+        ${mine.filter((c) => c.brand === b).map(row).join('')}
+      </div>`).join('')}
+    </section>`;
+  };
 
   el.innerHTML = `
     ${pageHead('cat.pageTitle', 'cat.pageSub', (canCreate || canUpdate) ? `
       ${canCreate || canUpdate ? `<button class="btn btn-outline" id="cat-import"><span class="ms">sync</span> ${esc(t('cat.importExisting'))}</button>` : ''}
       ${canCreate ? `<button class="btn btn-primary" id="cat-new"><span class="ms">add</span> ${esc(t('cat.addModel'))}</button>` : ''}
     ` : '')}
-    ${canTicketCats ? tcCard() : ''}
     ${items.length === 0 ? `
-      <div class="card card-pad" style="text-align:center;padding:48px">
-        <div class="cell-sub" style="margin-bottom:14px">${esc(t('cat.emptyHint'))}</div>
-      </div>` :
-      cats.map((cat) => {
-        const catDef = (AppConfig.lifecycles && AppConfig.lifecycles[cat] != null) ? AppConfig.lifecycles[cat] : null;
-        const catHint = catDef != null ? `${catDef} ${t('cat.mo')}` : t('cat.appDefault');
-        return `
-      <div class="card" style="margin-bottom:16px">
-        <div class="card-head"><h3>${esc(cat)} (${items.filter((c) => c.category === cat).length})</h3></div>
-        <div class="table-wrap"><table class="data">
-          <thead><tr><th>${esc(t('cat.colBrand'))}</th><th>${esc(t('cat.colModel'))}</th><th style="width:180px">${esc(t('cat.colLifecycle'))}</th><th style="text-align:right"></th></tr></thead>
-          <tbody>
-            ${items.filter((c) => c.category === cat).map((c) => `
-            <tr>
-              <td class="cell-title">${esc(c.brand)}</td>
-              <td>${esc(c.model)}</td>
-              <td>${canUpdate
-                ? `<input type="number" class="lc-input" data-lc="${esc(c.id)}" min="1" max="240"
-                     value="${c.lifecycleMonths != null ? esc(String(c.lifecycleMonths)) : ''}"
-                     placeholder="${catDef != null ? esc(String(catDef)) : ''}"
-                     title="${esc(t('cat.lcInputTitle').replace('{cat}', cat).replace('{hint}', catHint))}"
-                     style="width:82px;padding:6px 8px"> <span class="cell-sub">${esc(t('cat.mo'))}</span>`
-                : (c.lifecycleMonths != null ? `${esc(String(c.lifecycleMonths))} ${esc(t('cat.mo'))}` : `<span class="cell-sub">${esc(t('cat.categoryDefault').replace('{hint}', catHint))}</span>`)}</td>
-              <td class="actions">${canDelete ? `<button class="btn btn-outline btn-sm" data-del="${esc(c.id)}">${esc(t('cat.delete'))}</button>` : ''}</td>
-            </tr>`).join('')}
-          </tbody>
-        </table></div>
-      </div>`;
-      }).join('')}`;
+      <div class="card card-pad cat-empty">
+        <p>${esc(t('cat.emptyHint'))}</p>
+        ${canCreate ? `<button class="btn btn-primary" id="cat-new-empty"><span class="ms">add</span> ${esc(t('cat.addModel'))}</button>` : ''}
+      </div>
+      ${canTicketCats ? tcCard() : ''}` : `
+      <div class="cat-layout">
+        <aside class="cat-index">
+          <input type="search" id="cat-find" class="cat-find" placeholder="${esc(t('cat.findPh'))}" aria-label="${esc(t('cat.findPh'))}">
+          <nav class="cat-nav">
+            ${cats.map((c) => `<a href="#cat-g-${esc(c.replace(/\W+/g, '-'))}" data-jump="${esc(c)}">
+              <span>${esc(c)}</span><span class="cat-nav-n">${items.filter((x) => x.category === c).length}</span></a>`).join('')}
+          </nav>
+          <p class="cat-legend">
+            <span class="cat-legend-key"><span class="cat-legend-track"><span class="cat-legend-span"></span><span class="cat-legend-tick"></span></span></span>
+            ${esc(t('cat.legend').replace('{n}', SCALE))}
+          </p>
+        </aside>
+        <div class="cat-list" id="cat-list">
+          ${cats.map(group).join('')}
+          <p class="cat-nohits" id="cat-nohits" hidden>${esc(t('cat.noHits'))}</p>
+        </div>
+      </div>
+      ${canTicketCats ? tcCard() : ''}`}`;
+
+  // Search filters rows in place and hides a group that has nothing left, so the
+  // index and the page keep the same shape instead of re-rendering under you.
+  const find = $('#cat-find', el);
+  find?.addEventListener('input', () => {
+    const q = find.value.trim().toLowerCase();
+    let hits = 0;
+    el.querySelectorAll('.cat-group').forEach((g) => {
+      let shown = 0;
+      g.querySelectorAll('.cat-row').forEach((r) => {
+        const on = !q || r.dataset.find.includes(q);
+        r.hidden = !on;
+        if (on) shown += 1;
+      });
+      g.querySelectorAll('.cat-brand-block').forEach((b) => {
+        b.hidden = ![...b.querySelectorAll('.cat-row')].some((r) => !r.hidden);
+      });
+      g.hidden = shown === 0;
+      hits += shown;
+    });
+    const none = $('#cat-nohits', el);
+    if (none) none.hidden = hits > 0;
+  });
+
+  el.querySelectorAll('[data-jump]').forEach((a) => a.addEventListener('click', (e) => {
+    e.preventDefault();
+    const target = el.querySelector(`.cat-group[data-cat="${CSS.escape(a.dataset.jump)}"]`);
+    target?.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+  }));
 
   if (canTicketCats) {
     const chips = $('#tk-cat-chips', el);
@@ -89,7 +198,7 @@ Views.catalog = async function (el) {
     const brandOpts = (cat) => [...(brandsByCat[cat] || [])].sort((a, b) => a.localeCompare(b)).map((b) => ({ value: b, label: b }));
     const otherLbl = t('cat.brandOther') || 'Other (type a new brand)…';
 
-    $('#cat-new', el)?.addEventListener('click', () => formModal({
+    const openNew = () => formModal({
       title: t('cat.addModelTitle'),
       fields: [
         { name: 'category', label: t('cat.fCategory') + ' *', type: 'select', required: true, value: 'Laptop',
@@ -120,7 +229,11 @@ Views.catalog = async function (el) {
         toast(t('cat.addedToast').replace('{brand}', d.brand).replace('{model}', d.model), 'success');
         Views.catalog(el);
       },
-    }));
+    });
+    // Two doors to the same form: the header button, and the one the empty state
+    // offers — an empty screen is an invitation to act, not a shrug.
+    $('#cat-new', el)?.addEventListener('click', openNew);
+    $('#cat-new-empty', el)?.addEventListener('click', openNew);
   }
   if (canCreate || canUpdate) {
     $('#cat-import', el)?.addEventListener('click', async () => {
@@ -132,13 +245,25 @@ Views.catalog = async function (el) {
     });
   }
 
-  // Inline per-model lifecycle edit → EOL for every asset of that brand/model.
-  el.querySelectorAll('.lc-input').forEach((inp) => {
+  // Inline per-model lifespan edit → EOL for every asset of that brand/model.
+  // The drawn span is redrawn from the same value, so the picture and the number
+  // can never disagree while you type.
+  el.querySelectorAll('.cat-lc').forEach((inp) => {
+    const redraw = () => {
+      const row = inp.closest('.cat-row');
+      const m = inp.value.trim() === '' ? Number(inp.placeholder) : Number(inp.value);
+      const bar = row && row.querySelector('.cat-span');
+      const wrap = row && row.querySelector('.cat-measure');
+      if (!bar || !wrap) return;
+      bar.style.width = Number.isFinite(m) ? Math.max(0, Math.min(100, (m / SCALE) * 100)).toFixed(2) + '%' : '0%';
+      wrap.classList.toggle('is-own', inp.value.trim() !== '' && Number(inp.value) !== Number(inp.placeholder));
+    };
+    inp.addEventListener('input', redraw);
     inp.addEventListener('change', async () => {
       const val = inp.value.trim();
       try {
         await api('/catalog/' + inp.dataset.lc, { method: 'PUT', body: { lifecycleMonths: val === '' ? null : Number(val) } });
-        toast('Lifecycle updated — applies to every asset of this model', 'success');
+        toast(t('cat.lcSaved'), 'success');
       } catch (err) { toast(err.message, 'error'); Views.catalog(el); }
     });
   });

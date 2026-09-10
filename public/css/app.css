@@ -3900,6 +3900,121 @@ button.af-parent-item,
 }
 
 /* Product Catalog — category lifecycle grid */
+
+/* ============================ PRODUCT CATALOGUE ============================
+   The estate's controlled vocabulary. One idea carries the page: a lifespan is
+   a LENGTH, drawn on a single scale shared by every category, so a monitor's 84
+   months reads as three phones without anyone doing the arithmetic. A tick sits
+   at the category's own default — a span that stops on it inherits, one that
+   overshoots or falls short has been overridden, and that difference is a shape
+   rather than a word.
+
+   Everything else is deliberately quiet: hairlines instead of a card per model,
+   the brand as a spine instead of a column repeating "Dell" eight times, and no
+   second accent colour anywhere. */
+.cat-layout { display: grid; grid-template-columns: 208px minmax(0, 1fr); gap: 26px; align-items: start; }
+.cat-index { position: sticky; top: 12px; display: flex; flex-direction: column; gap: 12px; }
+.cat-find { width: 100%; }
+.cat-nav { display: flex; flex-direction: column; }
+.cat-nav a {
+  display: flex; align-items: baseline; gap: 8px; padding: 5px 8px; border-radius: 7px;
+  color: var(--on-surface-variant); text-decoration: none; font-size: 13px;
+}
+.cat-nav a > span:first-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cat-nav a:hover { background: var(--surface-low); color: var(--on-surface); }
+.cat-nav a:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.cat-nav-n { font-size: 12px; font-variant-numeric: tabular-nums; color: var(--outline); }
+.cat-legend { margin: 4px 0 0; padding-top: 12px; border-top: 1px solid var(--outline-variant);
+  font-size: 11.5px; line-height: 1.5; color: var(--outline); }
+.cat-legend-key { display: block; margin-bottom: 6px; }
+.cat-legend-track { position: relative; display: block; height: 4px; border-radius: 2px; background: var(--surface-container); }
+.cat-legend-span { position: absolute; inset: 0 40% 0 0; border-radius: 2px; background: var(--primary); }
+.cat-legend-tick { position: absolute; top: -3px; bottom: -3px; left: 60%; width: 1.5px; background: var(--outline); }
+
+.cat-group { margin-bottom: 26px; }
+.cat-group-head { display: flex; align-items: baseline; gap: 10px; padding: 0 0 8px; }
+.cat-group-head h3 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
+.cat-count { font-size: 12.5px; color: var(--outline); font-variant-numeric: tabular-nums; }
+.cat-def { margin-left: auto; font-size: 12px; color: var(--outline); }
+
+.cat-brand-block { border-top: 1px solid var(--outline-variant); }
+.cat-brand { padding: 9px 0 3px; font-size: 12.5px; font-weight: 700; color: var(--on-surface-variant); }
+.cat-row {
+  display: grid; align-items: center; gap: 12px; padding: 5px 0 6px;
+  grid-template-columns: minmax(120px, 15rem) 3.2rem minmax(80px, 1fr) 5.6rem 1.8rem;
+}
+.cat-row + .cat-row { border-top: 1px solid var(--surface-container); }
+.cat-model { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cat-used { font-size: 12.5px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--on-surface-variant); }
+.cat-used::after { content: ' ' attr(data-unit); font-size: 11px; color: var(--outline); }
+.cat-used.is-zero { color: var(--outline); }
+.cat-used.is-zero::after { color: var(--outline); }
+
+/* The measure. The track is the full scale; the span is this entry's life.
+   The span always carries the ink — it is the subject of the column, and in a
+   healthy catalogue almost every entry inherits its category's figure, so
+   reserving the colour for overrides left the whole page grey and made the one
+   bold element look like decoration. The TICK is what does the comparing: it
+   stands where the category's default is, so an inheriting span ends exactly on
+   it (and it reads as the bar's cap) while an override leaves a visible gap. */
+.cat-measure { position: relative; }
+.cat-track { position: relative; display: block; height: 5px; border-radius: 3px; background: var(--surface-container); }
+.cat-span { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px;
+  background: color-mix(in srgb, var(--primary) 78%, #ffffff); }
+.cat-measure.is-own .cat-span { background: var(--primary); }
+.cat-tick { position: absolute; top: -3px; bottom: -3px; width: 2px; border-radius: 1px;
+  background: var(--on-surface); }
+/* An override is the thing somebody scans for, so the gap it opens against the
+   tick is drawn rather than left to be noticed. */
+.cat-measure.is-own .cat-tick { background: var(--outline); }
+.cat-measure.is-own .cat-track::after {
+  content: ''; position: absolute; inset: -5px -2px; border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--primary) 22%, transparent);
+}
+.cat-measure-none .cat-track { background: repeating-linear-gradient(90deg,
+  var(--surface-container) 0 4px, transparent 4px 8px); }
+
+.cat-months { display: flex; align-items: center; gap: 5px; justify-content: flex-end; }
+.cat-lc {
+  width: 3.4rem; padding: 3px 6px; text-align: right; font-size: 13px;
+  font-variant-numeric: tabular-nums; border-radius: 6px;
+}
+/* The inherited figure IS the value until somebody types over it, so it is
+   readable rather than ghosted — an input that looks empty reads as missing. */
+.cat-lc::placeholder { color: var(--on-surface-variant); opacity: 1; }
+.cat-lc:not(:placeholder-shown) { font-weight: 600; }
+.cat-lc-static { font-size: 13px; font-variant-numeric: tabular-nums; }
+.cat-mo { font-size: 11.5px; color: var(--outline); }
+.cat-rowend { display: flex; justify-content: flex-end; }
+.cat-del {
+  display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px;
+  border: 0; border-radius: 7px; background: transparent; color: var(--outline-variant); cursor: pointer;
+}
+.cat-row:hover .cat-del { color: var(--outline); }
+.cat-del:hover { background: var(--rose-50, #fef2f2); color: var(--rose-700, #ba1a1a); }
+.cat-del:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+
+.cat-nohits { padding: 28px 0; color: var(--outline); font-size: 13.5px; }
+.cat-empty { text-align: center; padding: 44px 24px; }
+.cat-empty p { margin: 0 0 16px; color: var(--on-surface-variant); }
+.cat-tickets { margin-top: 26px; }
+
+@media (max-width: 1000px) {
+  /* minmax(0, 1fr), never a bare 1fr: a bare track takes its min-width from the
+     content, so the list pushed itself past the viewport on a phone. */
+  .cat-layout { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .cat-index { position: static; }
+  .cat-nav { flex-direction: row; gap: 4px; overflow-x: auto; padding-bottom: 4px; }
+  .cat-nav a { flex: 0 0 auto; border: 1px solid var(--outline-variant); }
+  .cat-legend { display: none; }
+}
+@media (max-width: 620px) {
+  /* The measure is the first thing to go: at this width it cannot be read, and
+     the number it stands for is right there. */
+  .cat-row { grid-template-columns: minmax(0, 1fr) 4.4rem 5.4rem 1.8rem; gap: 8px; }
+  .cat-measure { display: none; }
+}
+
 .lc-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
