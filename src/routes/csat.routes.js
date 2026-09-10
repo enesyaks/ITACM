@@ -32,7 +32,7 @@ router.get('/:token', asyncHandler(async (req, res) => {
   try { ticket = await ticketService.getByCsatToken(req.params.token); } catch { /* rendered as gone */ }
   const notResolved = ticket && !['resolved', 'closed'].includes(ticket.status);
   res.status(ticket ? 200 : 404).type('html').send(renderCsatPage({
-    ticket, token: req.params.token, lang, company,
+    ticket, token: req.params.token, lang, company, nonce: res.locals.cspNonce,
     picked: picked >= 1 && picked <= 5 ? picked : 0,
     error: !ticket ? 'gone' : (notResolved ? 'not_resolved' : ''),
   }));
@@ -47,12 +47,18 @@ router.post('/:token', express.urlencoded({ extended: false, limit: '32kb' }), a
     });
     return res.type('html').send(renderCsatPage({
       ticket: { number: out.number }, picked: out.rating, done: true, lang, company,
+      nonce: res.locals.cspNonce,
     }));
   } catch (err) {
     let ticket = null;
     try { ticket = await ticketService.getByCsatToken(req.params.token); } catch { /* gone */ }
-    return res.status(ticket ? 400 : 404).type('html').send(renderCsatPage({
-      ticket, token: req.params.token, lang, company, error: ticket ? (err.message || 'error') : 'gone',
+    // Only a deliberate 4xx explains itself. Anything else — a database that is
+    // down, a bug — is shown as a plain refusal: this page is served to the
+    // public, and an internal message is a free look inside.
+    const shown = err && err.status && err.status < 500 ? err.message : 'Something went wrong. Please try the link again.';
+    return res.status(ticket ? (err.status || 400) : 404).type('html').send(renderCsatPage({
+      ticket, token: req.params.token, lang, company, nonce: res.locals.cspNonce,
+      error: ticket ? shown : 'gone',
     }));
   }
 }));

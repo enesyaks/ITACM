@@ -47,8 +47,16 @@ function createApp() {
     "frame-ancestors 'none'",
   ].join('; ');
   app.use((req, res, next) => {
+    // A per-response nonce for the handful of pages this server renders itself
+    // (the mailbox-OAuth callback, the satisfaction page). They cannot use an
+    // external file — they are standalone, sessionless pages sent to someone who
+    // may not have the app open at all — so without this their inline script is
+    // dropped by script-src 'self' and the page silently loses behaviour. A
+    // nonce is per-response and unguessable, so it grants nothing to injected
+    // markup the way 'unsafe-inline' would.
+    res.locals.cspNonce = require('crypto').randomBytes(16).toString('base64');
     const headers = {
-      'Content-Security-Policy': CSP,
+      'Content-Security-Policy': CSP.replace("script-src 'self'", `script-src 'self' 'nonce-${res.locals.cspNonce}'`),
       'Strict-Transport-Security': 'max-age=15552000; includeSubDomains',
       'X-Content-Type-Options': 'nosniff',
       'Referrer-Policy': 'no-referrer',
@@ -73,7 +81,7 @@ function createApp() {
   const API_WINDOW = config.security.apiRateWindowMs;
   const TRUSTED_CIDRS = config.security.trustedCidrs;
   const apiHits = new Map();
-  app.use('/api', (req, res, next) => {
+  const ipGuard = (req, res, next) => {
     const ipKey = rateLimitIp(req);
     if (TRUSTED_CIDRS.length && ipInCidrList(ipKey, TRUSTED_CIDRS)) return next();
     const now = Date.now();
@@ -83,7 +91,8 @@ function createApp() {
       apiHits.set(ipKey, entry);
     }
     if (++entry.count > API_LIMIT) {
-      return res.status(429).json({ success: false, error: 'Too many requests — slow down' });
+      if (req.path.startsWith('/api')) return res.status(429).json({ success: false, error: 'Too many requests — slow down' });
+      return res.status(429).type('text').send('Too many requests — slow down');
     }
     // Memory guard: sweep only EXPIRED buckets so a flood of throwaway IPs cannot
     // wipe live counters and reset an active abuser's window.
@@ -93,7 +102,12 @@ function createApp() {
       }
     }
     next();
-  });
+  };
+  app.use('/api', ipGuard);
+  // /csat is a page, not an API, but it is just as unauthenticated and it does
+  // touch the database — so it gets the same backstop rather than being the one
+  // public door with no meter on it.
+  app.use('/csat', ipGuard);
 
   // CORS: same-origin only unless CORS_ORIGINS is configured explicitly.
   app.use(cors({ origin: config.corsOrigins.length ? config.corsOrigins : false }));

@@ -89,8 +89,11 @@ const PROVIDER_NAME = { google: 'Google', microsoft: 'Microsoft' };
  * @param {string}  [o.message]   the provider's own words, on failure
  * @param {string}  [o.lang]      instance language
  * @param {number}  [o.redirectSeconds] success only; 0 disables
+ * @param {string}  [o.nonce]     CSP nonce — without it script-src 'self' drops
+ *                                the inline script, and the page silently loses
+ *                                both the countdown and the state-stripping
  */
-function renderMailOAuthPage({ ok, email, provider, message, lang, redirectSeconds = 4 } = {}) {
+function renderMailOAuthPage({ ok, email, provider, message, lang, redirectSeconds = 4, nonce = '' } = {}) {
   const L = labels(lang);
   const other = PROVIDER_NAME[provider] || (ok ? '' : '');
   const secs = ok ? Math.max(0, Number(redirectSeconds) || 0) : 0;
@@ -189,7 +192,7 @@ function renderMailOAuthPage({ ok, email, provider, message, lang, redirectSecon
       ${secs ? `<span class="tick" id="tick"></span>` : ''}
     </div>
   </main>
-<script>
+<script${nonce ? ` nonce="${esc(nonce)}"` : ''}>
 (function(){
   // The signed state rode in on the query string; it has been consumed, so keep
   // it out of history, bookmarks and the next screenshot.

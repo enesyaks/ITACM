@@ -152,8 +152,11 @@ function shell({ lang, title, inner }) {
  * @param {boolean} [o.done]    the rating was recorded
  * @param {string} [o.company]
  * @param {string} [o.lang]
+ * @param {string} [o.nonce]   CSP nonce for the inline script; without it the
+ *                             page still works, it just stops narrating the star
+ * @returns {string} a complete HTML document
  */
-function renderCsatPage({ ticket, picked = 0, token = '', error = '', done = false, company = 'ITACM', lang } = {}) {
+function renderCsatPage({ ticket, picked = 0, token = '', error = '', done = false, company = 'ITACM', lang, nonce = '' } = {}) {
   const L = labels(lang);
   const foot = `<div class="foot">${esc(company)}</div>`;
 
@@ -193,7 +196,7 @@ function renderCsatPage({ ticket, picked = 0, token = '', error = '', done = fal
        ${error && error !== 'gone' && error !== 'not_resolved' ? `<p class="msg bad">${esc(error)}</p>` : ''}
      </form>
      ${foot}
-     <script>
+     <script${nonce ? ` nonce="${esc(nonce)}"` : ''}>
        // Progressive only: the radios already carry the choice without this.
        (function(){
          var names = ${JSON.stringify(L.stars)};

@@ -190,7 +190,7 @@ router.get('/mail-oauth/callback', asyncHandler(async (req, res) => {
   try { lang = (await settingsService.getSettings()).language || 'en'; } catch { /* default */ }
   const { renderMailOAuthPage } = require('../utils/mailOAuthPage');
   res.status(ok ? 200 : 400).type('html').send(
-    renderMailOAuthPage({ ok, email, provider, message, lang })
+    renderMailOAuthPage({ ok, email, provider, message, lang, nonce: res.locals.cspNonce })
   );
 }));
 
