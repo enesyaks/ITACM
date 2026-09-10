@@ -53,24 +53,43 @@ Views.catalog = async function (el) {
   const pct = (m) => Math.max(0, Math.min(100, (Number(m) / SCALE) * 100));
 
   /**
-   * A lifespan, drawn AND set as a length.
+   * A lifespan, drawn AND set as a length. Two shapes, because the two places
+   * this appears ask different questions.
    *
-   * A native range input under the paint: draggable, reachable from the keyboard
-   * and announced to a screen reader — none of which a div with a mousedown
-   * handler would be. The fill runs to the value; the tick stands where the
-   * category's default is, so an inherited figure parks the handle exactly on it
-   * and an override visibly pulls away from it.
+   * On a CATEGORY, the question is "how long do we keep a monitor against a
+   * phone", so the bar is absolute: every category on one scale, filled from
+   * zero, and the lengths are directly comparable.
+   *
+   * On a MODEL, that comparison is already answered above, and drawing it again
+   * wastes the whole track — every laptop sits between 36 and 60 months, so the
+   * first two thirds of every bar is filler and a ten-month difference reads as
+   * no difference at all. The only question left on a model row is how far it
+   * departs from its category's figure, so the bar DIVERGES: the category
+   * default is the centre, and the fill runs left or right by exactly the
+   * deviation. Inheriting draws nothing, which is the honest picture of it.
+   *
+   * A native range under the paint either way — draggable, keyboard reachable
+   * and announced, which a div with a mousedown handler is not.
    */
+  const SWING = 24; // months either side of a category default on a model row
+
   const spanSet = ({ value, tick, id, kind, label, disabled }) => {
     const own = Number.isFinite(value) ? value : null;
-    const eff = own != null ? own : (Number.isFinite(tick) ? tick : null);
-    const differs = own != null && Number.isFinite(tick) && own !== tick;
-    const cls = ['span-set', eff == null ? 'is-none' : '', differs ? 'is-own' : '',
-      Number.isFinite(tick) ? '' : 'no-tick'].filter(Boolean).join(' ');
-    return `<span class="${cls}" style="--pct:${pct(eff || 0).toFixed(2)}%;--tick:${pct(tick || 0).toFixed(2)}%">
-        <input type="range" min="1" max="${SCALE}" step="1" value="${eff || 0}"
-          data-span="${esc(kind)}" data-for="${esc(id)}"${disabled ? ' disabled' : ''}
+    const diverging = Number.isFinite(tick);
+    const lo = diverging ? Math.max(1, tick - SWING) : 1;
+    const hi = diverging ? tick + SWING : SCALE;
+    const at = (m) => (Number.isFinite(m) ? Math.max(0, Math.min(100, ((m - lo) / (hi - lo)) * 100)) : 0);
+    const eff = own != null ? own : (diverging ? tick : null);
+    const differs = own != null && diverging && own !== tick;
+    const cls = ['span-set', diverging ? 'is-diverging' : '', eff == null ? 'is-none' : '',
+      differs ? 'is-own' : ''].filter(Boolean).join(' ');
+    const from = diverging ? at(tick) : 0;
+    const to = at(eff);
+    return `<span class="${cls}" style="--from:${Math.min(from, to).toFixed(2)}%;--to:${Math.max(from, to).toFixed(2)}%;--tick:${from.toFixed(2)}%">
+        <input type="range" min="${lo}" max="${hi}" step="1" value="${eff || lo}"
+          data-span="${esc(kind)}" data-for="${esc(id)}" data-tick="${diverging ? tick : ''}"${disabled ? ' disabled' : ''}
           aria-label="${esc(label)}">
+        <span class="span-tick"></span>
       </span>`;
   };
 
@@ -548,31 +567,37 @@ Views.catalog = async function (el) {
      changes the bar. Dragging repaints live; the save happens on release, which
      is what `change` means for a range input — otherwise a single drag would
      fire a request for every pixel crossed. */
-  const paint = (set, months, tick) => {
-    set.style.setProperty('--pct', `${Math.max(0, Math.min(100, (months / SCALE) * 100)).toFixed(2)}%`);
-    set.classList.toggle('is-own', Number.isFinite(tick) && months !== tick);
+  const paint = (set, range, months) => {
+    const lo = Number(range.min); const hi = Number(range.max);
+    const tick = range.dataset.tick === '' ? null : Number(range.dataset.tick);
+    const at = (m) => Math.max(0, Math.min(100, ((m - lo) / (hi - lo)) * 100));
+    const from = tick == null ? 0 : at(tick);
+    const to = at(months);
+    set.style.setProperty('--from', `${Math.min(from, to).toFixed(2)}%`);
+    set.style.setProperty('--to', `${Math.max(from, to).toFixed(2)}%`);
+    set.classList.toggle('is-own', tick != null && months !== tick);
     set.classList.remove('is-none');
   };
   el.querySelectorAll('.span-set input[type="range"]').forEach((range) => {
     const set = range.closest('.span-set');
     const row = range.closest('.cat-row, .lcx-row');
     const num = row && row.querySelector('input[type="number"]');
-    const tickPct = parseFloat(set.style.getPropertyValue('--tick')) || 0;
-    const tick = Math.round((tickPct / 100) * SCALE) || null;
     range.addEventListener('input', () => {
       const m = Number(range.value);
-      paint(set, m, tick);
+      paint(set, range, m);
       if (num) num.value = String(m);
     });
     range.addEventListener('change', () => {
       if (num) num.dispatchEvent(new Event('change', { bubbles: true }));
     });
-    // Typing a number moves the handle, so the two are never out of step.
+    // Typing a number moves the handle, so the two are never out of step. A
+    // figure outside the drawn window still saves — the bar simply pins to its
+    // end, because the number beside it is the exact one.
     num?.addEventListener('input', () => {
       const m = num.value.trim() === '' ? (Number(num.placeholder) || 0) : Number(num.value);
       if (!Number.isFinite(m)) return;
-      range.value = String(Math.max(1, Math.min(SCALE, m)));
-      paint(set, m, tick);
+      range.value = String(Math.max(Number(range.min), Math.min(Number(range.max), m)));
+      paint(set, range, m);
     });
   });
 

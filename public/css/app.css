@@ -3932,9 +3932,8 @@ button.af-parent-item,
   font-size: 11.5px; line-height: 1.5; color: var(--outline); }
 .cat-legend-key { display: block; margin-bottom: 6px; }
 .cat-legend-track { position: relative; display: block; height: 5px; border-radius: 3px; background: var(--surface-container); }
-.cat-legend-span { position: absolute; inset: 0 40% 0 0; border-radius: 3px;
-  background: color-mix(in srgb, var(--primary) 78%, #ffffff); }
-.cat-legend-tick { position: absolute; top: -3px; bottom: -3px; left: 60%; width: 2px; background: var(--on-surface); }
+.cat-legend-span { position: absolute; inset: 0 50% 0 30%; border-radius: 3px; background: var(--primary); }
+.cat-legend-tick { position: absolute; top: -3px; bottom: -3px; left: 50%; width: 2px; background: var(--on-surface); }
 
 /* ---- one chrome for every vocabulary on the page ---- */
 .vocab { padding-top: 22px; margin-top: 22px; border-top: 1px solid var(--outline-variant); }
@@ -3988,26 +3987,37 @@ button.af-parent-item,
 /* ---- the lifespan: a length you can grab ----
    A native range input, restyled. Native because it has to be draggable AND
    reachable from the keyboard AND announced to a screen reader, and because a
-   div with a mousedown handler is none of those. The fill is painted on the
-   track from --pct; --tick paints where the category's default sits, so an
-   inherited value parks its handle exactly on the tick and an override pulls
-   visibly away from it. */
+   div with a mousedown handler is none of those.
+
+   Two shapes. On a category the fill runs from zero, so seventeen categories
+   can be compared at a glance. On a model it DIVERGES from the category's own
+   figure: the tick is the origin, and the fill runs left or right by exactly
+   the deviation — which is the only question a model row asks, and the reason
+   the absolute version read as seventeen identical bars. */
 .span-set { position: relative; display: block; padding: 6px 0; }
 .span-set::before {
   content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 5px; margin-top: -2.5px;
   border-radius: 3px; background: var(--surface-container);
-  background-image: linear-gradient(to right,
-    color-mix(in srgb, var(--primary) 78%, #ffffff) var(--pct, 0%), transparent 0);
-  background-repeat: no-repeat;
 }
-.span-set.is-own::before {
-  background-image: linear-gradient(to right, var(--primary) var(--pct, 0%), transparent 0);
-}
+/* The fill is a span between two points, not a bar from the left edge, so the
+   same rule draws both shapes. */
+.span-set > .fill, .span-set::after { pointer-events: none; }
 .span-set::after {
-  content: ''; position: absolute; top: 50%; margin-top: -5.5px; height: 11px; width: 2px;
-  left: var(--tick, 0%); background: var(--on-surface); border-radius: 1px;
+  content: ''; position: absolute; top: 50%; margin-top: -2.5px; height: 5px; border-radius: 3px;
+  left: var(--from, 0%); width: calc(var(--to, 0%) - var(--from, 0%));
+  background: color-mix(in srgb, var(--primary) 78%, #ffffff);
 }
-.span-set.no-tick::after { display: none; }
+.span-set.is-own::after { background: var(--primary); }
+.span-set.is-none::before { background: repeating-linear-gradient(90deg,
+  var(--surface-container) 0 4px, transparent 4px 8px); }
+.span-set.is-none::after { display: none; }
+/* The origin a model is measured from. On a diverging row it is the centre, so
+   a bar to its left is a shorter life and to its right a longer one. */
+.span-tick {
+  position: absolute; top: 50%; margin-top: -6px; height: 12px; width: 2px; border-radius: 1px;
+  left: var(--tick, 0%); background: var(--on-surface); pointer-events: none;
+}
+.span-set:not(.is-diverging) .span-tick { display: none; }
 .span-set input[type="range"] {
   /* The app gives every input a border, a background and a radius; a range has
      to shed all three or the painted track sits inside a visible box. */
@@ -4031,8 +4041,6 @@ button.af-parent-item,
 .span-set input[type="range"]:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 1px var(--primary), 0 0 0 4px var(--primary-fixed); }
 .span-set input[type="range"]:disabled { cursor: default; }
 .span-set input[type="range"]:disabled::-webkit-slider-thumb { background: var(--outline-variant); box-shadow: 0 0 0 1px var(--outline-variant); }
-.span-set.is-none::before { background: repeating-linear-gradient(90deg,
-  var(--surface-container) 0 4px, transparent 4px 8px); background-image: none; }
 
 .cat-months { display: flex; align-items: center; gap: 5px; justify-content: flex-end; }
 .cat-lc {
