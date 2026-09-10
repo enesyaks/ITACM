@@ -19,26 +19,28 @@ Views.catalog = async function (el) {
   const canUpdate = Auth.canIam('catalog', 'update');
   const canDelete = Auth.canIam('catalog', 'delete');
   const canEdit = canCreate || canUpdate || canDelete;
-  const items = await api('/catalog');
+  // Everything the page shows is fetched up front, so the sections can be laid
+  // out in the order a person needs them rather than the order they load.
+  const canCompanies = Auth.canIam('settings', 'manage');
+  const [items, lifecycles, locData, specs, departments, providerCategories, contractCategories, companies] =
+    await Promise.all([
+      api('/catalog'),
+      api('/catalog/lifecycles').catch(() => ({})),
+      api('/catalog/locations').catch(() => ({ locations: [], defaultLocation: null })),
+      api('/catalog/specs').catch(() => ({ cpu: [], ram: [], storage: [] })),
+      api('/catalog/departments').catch(() => []),
+      api('/catalog/provider-categories').catch(() => AppConfig.providerCategories || []),
+      api('/catalog/contract-categories').catch(() => AppConfig.contractCategories || []),
+      canCompanies ? api('/companies?counts=1').catch(() => []) : Promise.resolve([]),
+    ]);
   const cats = [...new Set(items.map((c) => c.category))];
+  const lcCats = Object.keys(lifecycles).filter((k) => !/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(k));
 
   // Ticket categories are managed here too (they feed the ticket forms). Only a
   // ticket manager sees this section — and it sits at the END: this page is
   // about products, and ticket categories are a tenant, not the headline.
   const canTicketCats = Auth.canIam('ticket', 'manage');
   const ticketCats = canTicketCats ? await api('/tickets/categories/manage').catch(() => []) : [];
-  const tcChip = (c) => `<span class="tk-cat-chip" data-cat="${esc(c)}">${esc(c)}<button type="button" class="tk-cat-x" title="${esc(t('common.remove') || 'Remove')}"><span class="ms ms-sm">close</span></button></span>`;
-  const tcCard = () => `<section class="card card-pad cat-tickets" id="tk-cat-card">
-      <h3 style="margin:0 0 4px">${esc(t('tk.catManageTitle'))}</h3>
-      <p class="cell-sub" style="margin:0 0 12px">${esc(t('tk.catManageHint'))}</p>
-      <div id="tk-cat-chips" class="tk-cat-chips">${(Array.isArray(ticketCats) ? ticketCats : []).map(tcChip).join('')}</div>
-      <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;align-items:center">
-        <input id="tk-cat-new" placeholder="${esc(t('tk.catAdd'))}" maxlength="120" style="flex:0 0 240px">
-        <button class="btn btn-outline btn-sm" id="tk-cat-add" type="button"><span class="ms ms-sm">add</span></button>
-        <span style="flex:1"></span>
-        <button class="btn btn-primary btn-sm" id="tk-cat-save">${esc(t('common.save'))}</button>
-      </div>
-    </section>`;
 
   const catDefault = (cat) => ((AppConfig.lifecycles && AppConfig.lifecycles[cat] != null)
     ? Number(AppConfig.lifecycles[cat]) : null);
@@ -51,25 +53,25 @@ Views.catalog = async function (el) {
   const pct = (m) => Math.max(0, Math.min(100, (Number(m) / SCALE) * 100));
 
   /**
-   * A lifespan as a length. The span is the entry's own life; the tick is the
-   * category's default. Equal ⇒ the span ends on the tick and the entry is
-   * inheriting; different ⇒ it visibly overshoots or falls short, which is the
-   * whole reason somebody scans this column.
+   * A lifespan, drawn AND set as a length.
+   *
+   * A native range input under the paint: draggable, reachable from the keyboard
+   * and announced to a screen reader — none of which a div with a mousedown
+   * handler would be. The fill runs to the value; the tick stands where the
+   * category's default is, so an inherited figure parks the handle exactly on it
+   * and an override visibly pulls away from it.
    */
-  const measure = (c) => {
-    const own = c.lifecycleMonths != null ? Number(c.lifecycleMonths) : null;
-    const def = catDefault(c.category);
-    const eff = own != null ? own : def;
-    if (!Number.isFinite(eff)) {
-      return `<div class="cat-measure cat-measure-none" title="${esc(t('cat.noLifespan'))}"><span class="cat-track"></span></div>`;
-    }
-    const differs = own != null && def != null && own !== def;
-    return `<div class="cat-measure${differs ? ' is-own' : ''}">
-        <span class="cat-track">
-          <span class="cat-span" style="width:${pct(eff).toFixed(2)}%"></span>
-          ${Number.isFinite(def) ? `<span class="cat-tick" style="left:${pct(def).toFixed(2)}%" title="${esc(t('cat.catDefaultTick').replace('{n}', def))}"></span>` : ''}
-        </span>
-      </div>`;
+  const spanSet = ({ value, tick, id, kind, label, disabled }) => {
+    const own = Number.isFinite(value) ? value : null;
+    const eff = own != null ? own : (Number.isFinite(tick) ? tick : null);
+    const differs = own != null && Number.isFinite(tick) && own !== tick;
+    const cls = ['span-set', eff == null ? 'is-none' : '', differs ? 'is-own' : '',
+      Number.isFinite(tick) ? '' : 'no-tick'].filter(Boolean).join(' ');
+    return `<span class="${cls}" style="--pct:${pct(eff || 0).toFixed(2)}%;--tick:${pct(tick || 0).toFixed(2)}%">
+        <input type="range" min="1" max="${SCALE}" step="1" value="${eff || 0}"
+          data-span="${esc(kind)}" data-for="${esc(id)}"${disabled ? ' disabled' : ''}
+          aria-label="${esc(label)}">
+      </span>`;
   };
 
   const row = (c) => {
@@ -77,19 +79,20 @@ Views.catalog = async function (el) {
     const def = catDefault(c.category);
     const eff = own != null ? own : def;
     const used = Number(c.inUse) || 0;
-    return `<div class="cat-row" data-find="${esc((c.brand + ' ' + c.model + ' ' + c.category).toLowerCase())}">
-      <span class="cat-model">${esc(c.model)}</span>
+    const name = `${c.brand} ${c.model}`;
+    return `<div class="cat-row" data-find="${esc((name + ' ' + c.category).toLowerCase())}">
+      <span class="cat-model" title="${esc(name)}">${esc(c.model)}</span>
       <span class="cat-used${used ? '' : ' is-zero'}" data-unit="${esc(t('cat.unit'))}" title="${esc(used ? t('cat.inUseTitle').replace('{n}', used) : t('cat.unusedTitle'))}">${used || '—'}</span>
-      ${measure(c)}
+      ${spanSet({ value: own, tick: def, id: c.id, kind: 'model', disabled: !canUpdate, label: `${t('cat.colLifecycle')} — ${name}` })}
       <span class="cat-months">
         ${canUpdate
     ? `<input type="number" class="cat-lc" data-lc="${esc(c.id)}" min="1" max="240" inputmode="numeric"
              value="${own != null ? esc(String(own)) : ''}" placeholder="${def != null ? esc(String(def)) : '—'}"
-             aria-label="${esc(t('cat.colLifecycle'))} — ${esc(c.brand)} ${esc(c.model)}">`
+             aria-label="${esc(t('cat.colLifecycle'))} — ${esc(name)}">`
     : `<span class="cat-lc-static">${Number.isFinite(eff) ? esc(String(eff)) : '—'}</span>`}
         <span class="cat-mo">${esc(t('cat.mo'))}</span>
       </span>
-      <span class="cat-rowend">${canDelete ? `<button class="cat-del" data-del="${esc(c.id)}" title="${esc(t('cat.delete'))}" aria-label="${esc(t('cat.delete'))} ${esc(c.brand)} ${esc(c.model)}"><span class="ms ms-sm">delete</span></button>` : ''}</span>
+      <span class="cat-rowend">${canDelete ? `<button class="cat-del" data-del="${esc(c.id)}" title="${esc(t('cat.delete'))}" aria-label="${esc(t('cat.delete'))} ${esc(name)}"><span class="ms ms-sm">delete</span></button>` : ''}</span>
     </div>`;
   };
 
@@ -110,35 +113,74 @@ Views.catalog = async function (el) {
     </section>`;
   };
 
+  /**
+   * One chrome for every list on this page. Eight of them used to be eight
+   * cards, which said they were eight unrelated features instead of one
+   * vocabulary with eight parts.
+   */
+  const vocab = (id, title, { count = null, sub = '', action = '' } = {}) => `
+    <section class="vocab" id="v-${id}" data-vocab="${esc(title)}">
+      <div class="vocab-head">
+        <h2>${esc(title)}</h2>
+        ${count != null ? `<span class="vocab-n">${count}</span>` : ''}
+        ${action}
+      </div>
+      ${sub ? `<p class="vocab-sub">${esc(sub)}</p>` : ''}
+      <div class="vocab-body"></div>
+    </section>`;
+
   el.innerHTML = `
     ${pageHead('cat.pageTitle', 'cat.pageSub', (canCreate || canUpdate) ? `
       ${canCreate || canUpdate ? `<button class="btn btn-outline" id="cat-import"><span class="ms">sync</span> ${esc(t('cat.importExisting'))}</button>` : ''}
       ${canCreate ? `<button class="btn btn-primary" id="cat-new"><span class="ms">add</span> ${esc(t('cat.addModel'))}</button>` : ''}
     ` : '')}
-    ${items.length === 0 ? `
-      <div class="card card-pad cat-empty">
-        <p>${esc(t('cat.emptyHint'))}</p>
-        ${canCreate ? `<button class="btn btn-primary" id="cat-new-empty"><span class="ms">add</span> ${esc(t('cat.addModel'))}</button>` : ''}
-      </div>
-      ${canTicketCats ? tcCard() : ''}` : `
-      <div class="cat-layout">
-        <aside class="cat-index">
-          <input type="search" id="cat-find" class="cat-find" placeholder="${esc(t('cat.findPh'))}" aria-label="${esc(t('cat.findPh'))}">
-          <nav class="cat-nav">
-            ${cats.map((c) => `<a href="#cat-g-${esc(c.replace(/\W+/g, '-'))}" data-jump="${esc(c)}">
-              <span>${esc(c)}</span><span class="cat-nav-n">${items.filter((x) => x.category === c).length}</span></a>`).join('')}
-          </nav>
-          <p class="cat-legend">
-            <span class="cat-legend-key"><span class="cat-legend-track"><span class="cat-legend-span"></span><span class="cat-legend-tick"></span></span></span>
-            ${esc(t('cat.legend').replace('{n}', SCALE))}
-          </p>
-        </aside>
-        <div class="cat-list" id="cat-list">
-          ${cats.map(group).join('')}
-          <p class="cat-nohits" id="cat-nohits" hidden>${esc(t('cat.noHits'))}</p>
-        </div>
-      </div>
-      ${canTicketCats ? tcCard() : ''}`}`;
+    <div class="cat-layout">
+      <aside class="cat-index">
+        <input type="search" id="cat-find" class="cat-find" placeholder="${esc(t('cat.findPh'))}" aria-label="${esc(t('cat.findPh'))}">
+        <nav class="cat-nav" id="cat-nav" aria-label="${esc(t('cat.pageTitle'))}"></nav>
+        <p class="cat-legend">
+          <span class="cat-legend-key"><span class="cat-legend-track"><span class="cat-legend-span"></span><span class="cat-legend-tick"></span></span></span>
+          ${esc(t('cat.legend').replace('{n}', SCALE))}
+        </p>
+      </aside>
+      <div id="cat-sections"></div>
+    </div>`;
+
+  const sections = $('#cat-sections', el);
+  const addSection = (id, title, opts, body) => {
+    sections.insertAdjacentHTML('beforeend', vocab(id, title, opts));
+    const host = sections.lastElementChild.querySelector('.vocab-body');
+    if (body) host.innerHTML = body;
+    return host;
+  };
+
+  // The category defaults come FIRST: every model measured below is measured
+  // against one of these, so the page reads in the order the numbers depend on
+  // each other rather than in the order the features were built.
+  addSection('lifespans', t('cat.lifecycleTitle'), { sub: t('cat.lifecycleSub'), count: lcCats.length }, `
+    <div class="lcx-grid">
+      ${lcCats.map((cat) => {
+    const m = Number(lifecycles[cat]);
+    const on = m > 0;
+    return `<div class="lcx-row${on ? '' : ' is-off'}">
+          <span class="lcx-cat">${esc(cat)}</span>
+          ${spanSet({ value: on ? m : 48, tick: null, id: cat, kind: 'cat', disabled: !canEdit || !on, label: `${t('cat.lifecycleTitle')} — ${cat}` })}
+          <span class="cat-months">
+            <input type="number" class="cat-lc" min="1" max="240" data-lc-cat="${esc(cat)}" inputmode="numeric"
+              value="${on ? m : 48}"${(canEdit && on) ? '' : ' disabled'} aria-label="${esc(cat)} ${esc(t('cat.mo'))}">
+            <span class="cat-mo">${esc(t('cat.mo'))}</span>
+          </span>
+          <label class="lcx-eol"><input type="checkbox" data-lc-cat-on="${esc(cat)}"${on ? ' checked' : ''}${canEdit ? '' : ' disabled'}> EOL</label>
+        </div>`;
+  }).join('')}
+    </div>
+    ${canEdit ? `<button class="btn btn-primary btn-sm lcx-save" id="lc-save">${esc(t('cat.saveLifecycles'))}</button>` : ''}`);
+
+  addSection('models', t('cat.modelsTitle'), { count: items.length, sub: t('cat.modelsSub') },
+    items.length === 0
+      ? `<div class="cat-empty"><p>${esc(t('cat.emptyHint'))}</p>
+           ${canCreate ? `<button class="btn btn-primary" id="cat-new-empty"><span class="ms">add</span> ${esc(t('cat.addModel'))}</button>` : ''}</div>`
+      : `${cats.map(group).join('')}<p class="cat-nohits" id="cat-nohits" hidden>${esc(t('cat.noHits'))}</p>`);
 
   // Search filters rows in place and hides a group that has nothing left, so the
   // index and the page keep the same shape instead of re-rendering under you.
@@ -168,26 +210,6 @@ Views.catalog = async function (el) {
     const target = el.querySelector(`.cat-group[data-cat="${CSS.escape(a.dataset.jump)}"]`);
     target?.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
   }));
-
-  if (canTicketCats) {
-    const chips = $('#tk-cat-chips', el);
-    const wireX = () => chips.querySelectorAll('.tk-cat-x').forEach((b) => { b.onclick = () => b.closest('.tk-cat-chip').remove(); });
-    wireX();
-    const addCat = () => {
-      const inp = $('#tk-cat-new', el); const v = inp.value.trim();
-      if (v && ![...chips.querySelectorAll('.tk-cat-chip')].some((c) => c.dataset.cat.toLowerCase() === v.toLowerCase())) {
-        chips.insertAdjacentHTML('beforeend', tcChip(v)); wireX();
-      }
-      inp.value = ''; inp.focus();
-    };
-    $('#tk-cat-add', el)?.addEventListener('click', addCat);
-    $('#tk-cat-new', el)?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addCat(); } });
-    $('#tk-cat-save', el)?.addEventListener('click', async () => {
-      const items = [...chips.querySelectorAll('.tk-cat-chip')].map((c) => c.dataset.cat);
-      try { await api('/tickets/categories/manage', { method: 'PUT', body: { items } }); toast(t('tk.saved') || t('common.saved') || 'Saved', 'success'); }
-      catch (err) { toast(err.message, 'error'); }
-    });
-  }
 
   if (canCreate) {
     // Existing brands per category — the brand field lists them so you reuse a
@@ -246,19 +268,8 @@ Views.catalog = async function (el) {
   }
 
   // Inline per-model lifespan edit → EOL for every asset of that brand/model.
-  // The drawn span is redrawn from the same value, so the picture and the number
-  // can never disagree while you type.
-  el.querySelectorAll('.cat-lc').forEach((inp) => {
-    const redraw = () => {
-      const row = inp.closest('.cat-row');
-      const m = inp.value.trim() === '' ? Number(inp.placeholder) : Number(inp.value);
-      const bar = row && row.querySelector('.cat-span');
-      const wrap = row && row.querySelector('.cat-measure');
-      if (!bar || !wrap) return;
-      bar.style.width = Number.isFinite(m) ? Math.max(0, Math.min(100, (m / SCALE) * 100)).toFixed(2) + '%' : '0%';
-      wrap.classList.toggle('is-own', inp.value.trim() !== '' && Number(inp.value) !== Number(inp.placeholder));
-    };
-    inp.addEventListener('input', redraw);
+  // The bar is already kept in step by the range wiring below; this is the save.
+  el.querySelectorAll('.cat-lc[data-lc]').forEach((inp) => {
     inp.addEventListener('change', async () => {
       const val = inp.value.trim();
       try {
@@ -275,18 +286,13 @@ Views.catalog = async function (el) {
   // The full records carry tax numbers, addresses and letterhead logos, so the
   // server only serves them to settings:manage. Don't render an empty card at
   // everyone else — the panel simply isn't theirs.
-  const canCompanies = Auth.canIam('settings', 'manage');
-  const companies = canCompanies ? await api('/companies?counts=1').catch(() => []) : [];
   const companyName = (id) => {
     const c = companies.find((x) => x.id === id);
     return c ? c.name : '';
   };
-  if (canCompanies) el.insertAdjacentHTML('beforeend', `
-    <div class="card" style="margin-top:16px" id="co-card">
-      <div class="card-head">
-        <h3>${esc(t('co.title'))} (${companies.length})</h3>
-        ${canCompanies ? `<button class="btn btn-primary btn-sm" id="co-add"><span class="ms">domain_add</span> ${esc(t('co.add'))}</button>` : ''}
-      </div>
+  if (canCompanies) addSection('companies', t('co.title'),
+    { count: companies.length, sub: t('co.foot'),
+      action: `<button class="btn btn-outline btn-sm" id="co-add"><span class="ms ms-sm">domain_add</span> ${esc(t('co.add'))}</button>` }, `
       <div class="table-wrap"><table class="data">
         <thead><tr>
           <th>${esc(t('co.colName'))}</th>
@@ -327,20 +333,14 @@ Views.catalog = async function (el) {
             </td>
           </tr>`).join('')}
         </tbody>
-      </table></div>
-      <div class="table-foot">${esc(t('co.foot'))}</div>
-    </div>`);
+      </table></div>`);
 
   if (canCompanies) bindCompanyCard(el, companies);
 
   /* ---- Office Locations (stored in settings, drives asset form dropdown) ---- */
-  const locData = await api('/catalog/locations').catch(() => ({ locations: [], defaultLocation: null }));
-  el.insertAdjacentHTML('beforeend', `
-    <div class="card" style="margin-top:4px">
-      <div class="card-head">
-        <h3>${esc(t('cat.locations'))} (${locData.locations.length})</h3>
-        ${canEdit ? `<button class="btn btn-primary btn-sm" id="loc-add"><span class="ms">add_location_alt</span> ${esc(t('cat.addLocation'))}</button>` : ''}
-      </div>
+  addSection('locations', t('cat.locations'),
+    { count: locData.locations.length, sub: t('cat.locationsSub'),
+      action: canEdit ? `<button class="btn btn-outline btn-sm" id="loc-add"><span class="ms ms-sm">add_location_alt</span> ${esc(t('cat.addLocation'))}</button>` : '' }, `
       <div class="table-wrap"><table class="data">
         <thead><tr><th>${esc(t('cat.colLocation'))}</th><th>${esc(t('cat.colDefault'))}</th><th style="text-align:right"></th></tr></thead>
         <tbody>
@@ -354,74 +354,37 @@ Views.catalog = async function (el) {
             <td class="actions">${canEdit ? `<button class="btn btn-outline btn-sm" data-delloc="${esc(l)}">${esc(t('cat.delete'))}</button>` : ''}</td>
           </tr>`).join('')}
         </tbody>
-      </table></div>
-      <div class="table-foot">${esc(t('cat.locationsFoot'))}</div>
-    </div>`);
+      </table></div>`);
 
   /* ---- Hardware spec lists (cpu / ram / storage) ---- */
-  const specs = await api('/catalog/specs').catch(() => ({ cpu: [], ram: [], storage: [] }));
-  el.insertAdjacentHTML('beforeend', `
-    <div class="card" style="margin-top:16px">
-      <div class="card-head"><h3>${esc(t('cat.specLists'))}</h3>
-        <span class="cell-sub">${esc(t('cat.specListsSub'))}</span></div>
-      <div class="card-pad" style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px">
+  // Three lists of the same kind of thing, so they sit side by side as words
+  // rather than as three tables — what matters is which values exist, not rows.
+  const specLabel = { cpu: t('cat.specCpu'), ram: t('cat.specRam'), storage: t('cat.specStorage') };
+  addSection('specs', t('cat.specLists'), { sub: t('cat.specListsSub') }, `
+      <div class="vocab-cols">
         ${['cpu', 'ram', 'storage'].map((type) => `
         <div>
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-            <span class="gs-section" style="margin:0">${type.toUpperCase()} (${specs[type].length})</span>
-            ${canEdit ? `<button class="btn btn-outline btn-sm" data-addspec="${type}"><span class="ms">add</span></button>` : ''}
+          <div class="vocab-col-head">
+            <h3>${esc(specLabel[type])}</h3>
+            <span class="vocab-n">${specs[type].length}</span>
+            ${canEdit ? `<button class="btn btn-outline btn-sm" data-addspec="${type}" style="margin-left:auto" aria-label="${esc(specLabel[type])} — ${esc(t('cat.add'))}"><span class="ms ms-sm">add</span></button>` : ''}
           </div>
-          ${specs[type].map((v) => `
-          <div class="history-item" style="justify-content:space-between">
-            <span>${esc(v)}</span>
-            ${canEdit ? `<button class="icon-btn" style="width:26px;height:26px" data-delspec="${type}" data-val="${esc(v)}" title="${esc(t('cat.delete'))}"><span class="ms ms-sm">close</span></button>` : ''}
-          </div>`).join('')}
+          <div class="vocab-words">
+            ${specs[type].length === 0 ? `<span class="vocab-empty">${esc(t('cat.noneYet'))}</span>` : ''}
+            ${specs[type].map((v) => `<span class="vocab-word">${esc(v)}
+              ${canEdit ? `<button type="button" data-delspec="${type}" data-val="${esc(v)}" title="${esc(t('cat.delete'))}" aria-label="${esc(t('cat.delete'))} ${esc(v)}"><span class="ms ms-sm">close</span></button>` : ''}</span>`).join('')}
+          </div>
         </div>`).join('')}
-      </div>
-    </div>`);
-
-  /* ---- Product lifecycle durations + per-category EOL on/off ---- */
-  // Category defaults only — never mix with per-model .lc-input[data-lc] (UUIDs).
-  const lifecycles = await api('/catalog/lifecycles').catch(() => ({}));
-  const lcCats = Object.keys(lifecycles).filter((k) => !/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(k));
-  el.insertAdjacentHTML('beforeend', `
-    <div class="card lc-card" style="margin-top:16px">
-      <div class="card-head">
-        <h3>${esc(t('cat.lifecycleTitle'))}</h3>
-        <span class="cell-sub">${esc(t('cat.lifecycleSub'))}</span>
-      </div>
-      <div class="card-pad">
-        <div class="lc-grid">
-          ${lcCats.map((cat) => {
-            const m = Number(lifecycles[cat]);
-            const on = m > 0;
-            return `
-            <div class="lc-item${!on ? ' is-off' : ''}">
-              <div class="lc-item-top">
-                <span class="lc-cat">${esc(cat)}</span>
-                <label class="lc-eol">
-                  <input type="checkbox" data-lc-cat-on="${esc(cat)}" ${on ? 'checked' : ''} ${canEdit ? '' : 'disabled'}>
-                  <span>EOL</span>
-                </label>
-              </div>
-              <div class="lc-months">
-                <input type="number" min="1" max="240" data-lc-cat="${esc(cat)}"
-                  value="${on ? m : 48}" ${(canEdit && on) ? '' : 'disabled'}>
-                <span class="cell-sub">${esc(t('cat.mo'))}</span>
-              </div>
-            </div>`;
-          }).join('')}
-        </div>
-        ${canEdit ? `<button class="btn btn-primary btn-sm" id="lc-save" style="margin-top:14px"><span class="ms">save</span> ${esc(t('cat.saveLifecycles'))}</button>` : ''}
-      </div>
-    </div>`);
+      </div>`);
 
   if (canEdit) {
     el.querySelectorAll('[data-lc-cat-on]').forEach((c) => c.addEventListener('change', () => {
-      const item = c.closest('.lc-item');
-      const inp = el.querySelector(`[data-lc-cat="${c.dataset.lcCatOn}"]`);
+      const row = c.closest('.lcx-row');
+      const inp = el.querySelector(`[data-lc-cat="${CSS.escape(c.dataset.lcCatOn)}"]`);
       if (inp) inp.disabled = !c.checked;
-      if (item) item.classList.toggle('is-off', !c.checked);
+      const range = row && row.querySelector('input[type="range"]');
+      if (range) range.disabled = !c.checked;
+      if (row) row.classList.toggle('is-off', !c.checked);
     }));
     const lcSave = $('#lc-save', el);
     if (lcSave) lcSave.addEventListener('click', async () => {
@@ -438,58 +401,69 @@ Views.catalog = async function (el) {
     });
   }
 
-  /* ---- Company departments (feed the employee form) ---- */
-  const departments = await api('/catalog/departments').catch(() => []);
-  el.insertAdjacentHTML('beforeend', `
-    <div class="card" style="margin-top:16px">
-      <div class="card-head">
-        <h3>${esc(t('cat.departments'))} (${departments.length})</h3>
-        ${canEdit ? `<button class="btn btn-primary btn-sm" id="dept-add"><span class="ms">add</span> ${esc(t('cat.addDepartment'))}</button>` : ''}
-      </div>
-      <div class="card-pad" style="display:flex;flex-wrap:wrap;gap:8px">
-        ${departments.length === 0 ? `<span class="cell-sub">${esc(t('cat.noDepartments'))}</span>` :
-          departments.map((d) => `
-          <span class="chip" style="display:inline-flex;align-items:center;gap:6px">${esc(d)}
-            ${canEdit ? `<button class="icon-btn" style="width:20px;height:20px" data-deldept="${esc(d)}" title="${esc(t('cat.delete'))}"><span class="ms ms-sm">close</span></button>` : ''}
-          </span>`).join('')}
-      </div>
-      <div class="table-foot">${esc(t('cat.departmentsFoot'))}</div>
-    </div>`);
 
-  /* ---- Provider & contract categories ---- */
-  const providerCategories = await api('/catalog/provider-categories').catch(() => AppConfig.providerCategories || []);
-  const contractCategories = await api('/catalog/contract-categories').catch(() => AppConfig.contractCategories || []);
-  el.insertAdjacentHTML('beforeend', `
-    <div class="grid grid-2" style="margin-top:16px;gap:16px">
-      <div class="card">
-        <div class="card-head">
-          <h3>${esc(t('cat.providerCategories'))} (${providerCategories.length})</h3>
-          ${canEdit ? `<button class="btn btn-primary btn-sm" id="pcat-add"><span class="ms">add</span> ${esc(t('cat.add'))}</button>` : ''}
-        </div>
-        <div class="card-pad" style="display:flex;flex-wrap:wrap;gap:8px">
-          ${providerCategories.length === 0 ? `<span class="cell-sub">${esc(t('cat.noCategories'))}</span>` :
-            providerCategories.map((d) => `
-            <span class="chip" style="display:inline-flex;align-items:center;gap:6px">${esc(d)}
-              ${canEdit ? `<button class="icon-btn" style="width:20px;height:20px" data-delpcat="${esc(d)}" title="${esc(t('cat.delete'))}"><span class="ms ms-sm">close</span></button>` : ''}
-            </span>`).join('')}
-        </div>
-        <div class="table-foot">${esc(t('cat.providerCatFoot'))}</div>
-      </div>
-      <div class="card">
-        <div class="card-head">
-          <h3>${esc(t('cat.contractCategories'))} (${contractCategories.length})</h3>
-          ${canEdit ? `<button class="btn btn-primary btn-sm" id="ccat-add"><span class="ms">add</span> ${esc(t('cat.add'))}</button>` : ''}
-        </div>
-        <div class="card-pad" style="display:flex;flex-wrap:wrap;gap:8px">
-          ${contractCategories.length === 0 ? `<span class="cell-sub">${esc(t('cat.noCategories'))}</span>` :
-            contractCategories.map((d) => `
-            <span class="chip" style="display:inline-flex;align-items:center;gap:6px">${esc(d)}
-              ${canEdit ? `<button class="icon-btn" style="width:20px;height:20px" data-delccat="${esc(d)}" title="${esc(t('cat.delete'))}"><span class="ms ms-sm">close</span></button>` : ''}
-            </span>`).join('')}
-        </div>
-        <div class="table-foot">${esc(t('cat.contractCatFoot'))}</div>
-      </div>
-    </div>`);
+  /* ---- the word lists ----
+     Ticket categories, departments, supplier and contract categories are the
+     same kind of thing — a set of allowed words with no properties of their own
+     — so they get one treatment, one way to add and one way to remove, and they
+     sit together instead of each owning a card. */
+  const wordList = (list, delAttr, emptyText) => `
+    <div class="vocab-words">
+      ${list.length === 0 ? `<span class="vocab-empty">${esc(emptyText)}</span>` : ''}
+      ${list.map((d) => `<span class="vocab-word">${esc(d)}
+        ${canEdit ? `<button type="button" ${delAttr}="${esc(d)}" title="${esc(t('cat.delete'))}" aria-label="${esc(t('cat.delete'))} ${esc(d)}"><span class="ms ms-sm">close</span></button>` : ''}</span>`).join('')}
+    </div>`;
+
+  if (canTicketCats) {
+    const tcList = Array.isArray(ticketCats) ? ticketCats : [];
+    // Saved on the spot, like every other list here. This one used to collect
+    // edits behind its own Save button, so one list behaved unlike the three
+    // under it and a half-finished edit was lost by navigating away.
+    const saveTicketCats = async (next, done) => {
+      try {
+        await api('/tickets/categories/manage', { method: 'PUT', body: { items: next } });
+        toast(done, 'success');
+        Views.catalog(el);
+      } catch (err) { toast(err.message, 'error'); }
+    };
+    addSection('ticket-cats', t('tk.catManageTitle'),
+      { count: tcList.length, sub: t('tk.catManageHint'),
+        action: canEdit ? `<button class="btn btn-outline btn-sm" id="tk-cat-add"><span class="ms ms-sm">add</span> ${esc(t('tk.catAdd'))}</button>` : '' },
+      wordList(tcList, 'data-deltcat', t('cat.noCategories')));
+
+    $('#tk-cat-add', el)?.addEventListener('click', () => formModal({
+      title: t('tk.catAdd'),
+      fields: [{ name: 'name', label: t('tk.catManageTitle'), required: true, full: true }],
+      submitLabel: t('tk.catAdd'),
+      async onSubmit(d2) {
+        const name = String(d2.name || '').trim();
+        if (!name || tcList.some((c) => c.toLowerCase() === name.toLowerCase())) return;
+        await saveTicketCats([...tcList, name], t('cat.addedWord').replace('{w}', name));
+      },
+    }));
+    el.querySelector('#v-ticket-cats')?.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-deltcat]');
+      if (!b) return;
+      saveTicketCats(tcList.filter((c) => c !== b.dataset.deltcat),
+        t('cat.removedWord').replace('{w}', b.dataset.deltcat));
+    });
+  }
+
+
+  addSection('departments', t('cat.departments'),
+    { count: departments.length, sub: t('cat.departmentsFoot'),
+      action: canEdit ? `<button class="btn btn-outline btn-sm" id="dept-add"><span class="ms ms-sm">add</span> ${esc(t('cat.addDepartment'))}</button>` : '' },
+    wordList(departments, 'data-deldept', t('cat.noDepartments')));
+
+  addSection('supplier-cats', t('cat.providerCategories'),
+    { count: providerCategories.length, sub: t('cat.providerCatFoot'),
+      action: canEdit ? `<button class="btn btn-outline btn-sm" id="pcat-add"><span class="ms ms-sm">add</span> ${esc(t('cat.add'))}</button>` : '' },
+    wordList(providerCategories, 'data-delpcat', t('cat.noCategories')));
+
+  addSection('contract-cats', t('cat.contractCategories'),
+    { count: contractCategories.length, sub: t('cat.contractCatFoot'),
+      action: canEdit ? `<button class="btn btn-outline btn-sm" id="ccat-add"><span class="ms ms-sm">add</span> ${esc(t('cat.add'))}</button>` : '' },
+    wordList(contractCategories, 'data-delccat', t('cat.noCategories')));
 
   if (canEdit) {
     $('#dept-add', el).addEventListener('click', () => formModal({
@@ -540,6 +514,67 @@ Views.catalog = async function (el) {
       },
     }));
   }
+
+  /* ---- the index, built from the sections that are actually here ----
+     Permissions decide which sections exist, so the rail is read off the page
+     rather than written twice and left to drift. */
+  const nav = $('#cat-nav', el);
+  if (nav) {
+    nav.innerHTML = [...sections.querySelectorAll('.vocab')].map((sec) => {
+      const title = sec.dataset.vocab;
+      const n = sec.querySelector('.vocab-n');
+      const subs = sec.id === 'v-models'
+        ? cats.map((c) => `<a href="#cat-g-${esc(c.replace(/\W+/g, '-'))}" class="is-sub" data-jump="${esc(c)}">
+             <span>${esc(c)}</span><span class="cat-nav-n">${items.filter((x) => x.category === c).length}</span></a>`).join('')
+        : '';
+      return `<a href="#${sec.id}" data-jump-sec="${sec.id}">
+          <span>${esc(title)}</span>${n ? `<span class="cat-nav-n">${esc(n.textContent)}</span>` : ''}
+        </a>${subs}`;
+    }).join('');
+  }
+
+  const goTo = (target) => target?.scrollIntoView({
+    behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start',
+  });
+  el.querySelectorAll('[data-jump-sec]').forEach((a) => a.addEventListener('click', (e) => {
+    e.preventDefault(); goTo(el.querySelector('#' + a.dataset.jumpSec));
+  }));
+  el.querySelectorAll('[data-jump]').forEach((a) => a.addEventListener('click', (e) => {
+    e.preventDefault(); goTo(el.querySelector(`.cat-group[data-cat="${CSS.escape(a.dataset.jump)}"]`));
+  }));
+
+  /* ---- dragging a lifespan ----
+     The bar is the control, so grabbing it changes the number and the number
+     changes the bar. Dragging repaints live; the save happens on release, which
+     is what `change` means for a range input — otherwise a single drag would
+     fire a request for every pixel crossed. */
+  const paint = (set, months, tick) => {
+    set.style.setProperty('--pct', `${Math.max(0, Math.min(100, (months / SCALE) * 100)).toFixed(2)}%`);
+    set.classList.toggle('is-own', Number.isFinite(tick) && months !== tick);
+    set.classList.remove('is-none');
+  };
+  el.querySelectorAll('.span-set input[type="range"]').forEach((range) => {
+    const set = range.closest('.span-set');
+    const row = range.closest('.cat-row, .lcx-row');
+    const num = row && row.querySelector('input[type="number"]');
+    const tickPct = parseFloat(set.style.getPropertyValue('--tick')) || 0;
+    const tick = Math.round((tickPct / 100) * SCALE) || null;
+    range.addEventListener('input', () => {
+      const m = Number(range.value);
+      paint(set, m, tick);
+      if (num) num.value = String(m);
+    });
+    range.addEventListener('change', () => {
+      if (num) num.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    // Typing a number moves the handle, so the two are never out of step.
+    num?.addEventListener('input', () => {
+      const m = num.value.trim() === '' ? (Number(num.placeholder) || 0) : Number(num.value);
+      if (!Number.isFinite(m)) return;
+      range.value = String(Math.max(1, Math.min(SCALE, m)));
+      paint(set, m, tick);
+    });
+  });
 
   bindView(el, async (e) => {
     const b = e.target.closest('button'); if (!b || !canEdit) return;
@@ -867,7 +902,8 @@ function bindCompanyCard(el, companies) {
 
   $('#co-add', el)?.addEventListener('click', () => companyFormModal(el, null, companies));
 
-  $('#co-card', el).addEventListener('click', async (e) => {
+  // The section, not a card: the companies list is one vocabulary among eight.
+  $('#v-companies', el)?.addEventListener('click', async (e) => {
     const b = e.target.closest('button');
     if (!b) return;
     try {

@@ -3902,18 +3902,19 @@ button.af-parent-item,
 /* Product Catalog — category lifecycle grid */
 
 /* ============================ PRODUCT CATALOGUE ============================
-   The estate's controlled vocabulary. One idea carries the page: a lifespan is
-   a LENGTH, drawn on a single scale shared by every category, so a monitor's 84
-   months reads as three phones without anyone doing the arithmetic. A tick sits
-   at the category's own default — a span that stops on it inherits, one that
-   overshoots or falls short has been overridden, and that difference is a shape
-   rather than a word.
+   Eight lists of allowed words — categories, brands and models, locations,
+   departments, CPU/RAM/storage, legal entities, ticket and supplier categories
+   — that between them fill every dropdown in the app. They used to be eight
+   identical cards stacked down an endless page, which said they were eight
+   unrelated features rather than one vocabulary.
 
-   Everything else is deliberately quiet: hairlines instead of a card per model,
-   the brand as a spine instead of a column repeating "Dell" eight times, and no
-   second accent colour anywhere. */
-.cat-layout { display: grid; grid-template-columns: 208px minmax(0, 1fr); gap: 26px; align-items: start; }
-.cat-index { position: sticky; top: 12px; display: flex; flex-direction: column; gap: 12px; }
+   So: one page, one index, one section chrome, and one control for the only
+   quantity any of them carries. A lifespan is a LENGTH — drawn on a scale
+   shared by every category, and SET by dragging that length, with a tick where
+   the category's own default sits. Nothing else on the page competes: hairlines
+   instead of cards, and no second accent colour anywhere. */
+.cat-layout { display: grid; grid-template-columns: 212px minmax(0, 1fr); gap: 30px; align-items: start; }
+.cat-index { position: sticky; top: 12px; display: flex; flex-direction: column; gap: 10px; }
 .cat-find { width: 100%; }
 .cat-nav { display: flex; flex-direction: column; }
 .cat-nav a {
@@ -3923,60 +3924,119 @@ button.af-parent-item,
 .cat-nav a > span:first-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cat-nav a:hover { background: var(--surface-low); color: var(--on-surface); }
 .cat-nav a:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+/* Model categories are children of one section, so they are indented under it
+   rather than listed as peers of "Locations". */
+.cat-nav a.is-sub { padding-left: 18px; font-size: 12.5px; color: var(--outline); }
 .cat-nav-n { font-size: 12px; font-variant-numeric: tabular-nums; color: var(--outline); }
-.cat-legend { margin: 4px 0 0; padding-top: 12px; border-top: 1px solid var(--outline-variant);
+.cat-legend { margin: 2px 0 0; padding-top: 12px; border-top: 1px solid var(--outline-variant);
   font-size: 11.5px; line-height: 1.5; color: var(--outline); }
 .cat-legend-key { display: block; margin-bottom: 6px; }
-.cat-legend-track { position: relative; display: block; height: 4px; border-radius: 2px; background: var(--surface-container); }
-.cat-legend-span { position: absolute; inset: 0 40% 0 0; border-radius: 2px; background: var(--primary); }
-.cat-legend-tick { position: absolute; top: -3px; bottom: -3px; left: 60%; width: 1.5px; background: var(--outline); }
+.cat-legend-track { position: relative; display: block; height: 5px; border-radius: 3px; background: var(--surface-container); }
+.cat-legend-span { position: absolute; inset: 0 40% 0 0; border-radius: 3px;
+  background: color-mix(in srgb, var(--primary) 78%, #ffffff); }
+.cat-legend-tick { position: absolute; top: -3px; bottom: -3px; left: 60%; width: 2px; background: var(--on-surface); }
 
-.cat-group { margin-bottom: 26px; }
-.cat-group-head { display: flex; align-items: baseline; gap: 10px; padding: 0 0 8px; }
-.cat-group-head h3 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
+/* ---- one chrome for every vocabulary on the page ---- */
+.vocab { padding-top: 22px; margin-top: 22px; border-top: 1px solid var(--outline-variant); }
+.vocab:first-child { padding-top: 0; margin-top: 0; border-top: 0; }
+.vocab-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
+.vocab-head h2 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -.015em; }
+.vocab-n { font-size: 12.5px; color: var(--outline); font-variant-numeric: tabular-nums; }
+.vocab-head .btn { margin-left: auto; }
+.vocab-sub { margin: 0 0 14px; font-size: 12.5px; color: var(--on-surface-variant); max-width: 62ch; }
+.vocab-body { }
+/* Word lists that are just words: chips, one row, no table. */
+.vocab-words { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
+.vocab-word {
+  display: inline-flex; align-items: center; gap: 5px; padding: 4px 8px 4px 11px;
+  font-size: 13px; border: 1px solid var(--outline-variant); border-radius: 999px; background: var(--surface);
+}
+.vocab-word button {
+  display: inline-flex; border: 0; background: transparent; padding: 0; cursor: pointer;
+  color: var(--outline-variant); border-radius: 50%;
+}
+.vocab-word:hover button { color: var(--outline); }
+.vocab-word button:hover { color: var(--rose-700, #ba1a1a); }
+.vocab-word button:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.vocab-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 22px; }
+.vocab-col-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; }
+.vocab-col-head h3 { margin: 0; font-size: 13px; font-weight: 600; }
+.vocab-empty { font-size: 13px; color: var(--outline); }
+
+/* ---- the model list ---- */
+.cat-group { margin-top: 18px; }
+.cat-group:first-of-type { margin-top: 10px; }
+.cat-group-head { display: flex; align-items: baseline; gap: 10px; padding: 0 0 6px; }
+.cat-group-head h3 { margin: 0; font-size: 14px; font-weight: 600; letter-spacing: -.01em; }
 .cat-count { font-size: 12.5px; color: var(--outline); font-variant-numeric: tabular-nums; }
 .cat-def { margin-left: auto; font-size: 12px; color: var(--outline); }
-
 .cat-brand-block { border-top: 1px solid var(--outline-variant); }
 .cat-brand { padding: 9px 0 3px; font-size: 12.5px; font-weight: 700; color: var(--on-surface-variant); }
 .cat-row {
-  display: grid; align-items: center; gap: 12px; padding: 5px 0 6px;
-  grid-template-columns: minmax(120px, 15rem) 3.2rem minmax(80px, 1fr) 5.6rem 1.8rem;
+  display: grid; align-items: center; gap: 12px; padding: 4px 0 5px;
+  grid-template-columns: minmax(120px, 15rem) 4.4rem minmax(90px, 1fr) 6.2rem 1.8rem;
 }
+/* `display: grid` outranks the user agent's [hidden] rule, so a filtered-out
+   row kept rendering — the search hid its brand block and left the row behind. */
+.cat-row[hidden], .lcx-row[hidden] { display: none; }
 .cat-row + .cat-row { border-top: 1px solid var(--surface-container); }
 .cat-model { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cat-used { font-size: 12.5px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--on-surface-variant); }
 .cat-used::after { content: ' ' attr(data-unit); font-size: 11px; color: var(--outline); }
-.cat-used.is-zero { color: var(--outline); }
-.cat-used.is-zero::after { color: var(--outline); }
+.cat-used.is-zero, .cat-used.is-zero::after { color: var(--outline); }
 
-/* The measure. The track is the full scale; the span is this entry's life.
-   The span always carries the ink — it is the subject of the column, and in a
-   healthy catalogue almost every entry inherits its category's figure, so
-   reserving the colour for overrides left the whole page grey and made the one
-   bold element look like decoration. The TICK is what does the comparing: it
-   stands where the category's default is, so an inheriting span ends exactly on
-   it (and it reads as the bar's cap) while an override leaves a visible gap. */
-.cat-measure { position: relative; }
-.cat-track { position: relative; display: block; height: 5px; border-radius: 3px; background: var(--surface-container); }
-.cat-span { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px;
-  background: color-mix(in srgb, var(--primary) 78%, #ffffff); }
-.cat-measure.is-own .cat-span { background: var(--primary); }
-.cat-tick { position: absolute; top: -3px; bottom: -3px; width: 2px; border-radius: 1px;
-  background: var(--on-surface); }
-/* An override is the thing somebody scans for, so the gap it opens against the
-   tick is drawn rather than left to be noticed. */
-.cat-measure.is-own .cat-tick { background: var(--outline); }
-.cat-measure.is-own .cat-track::after {
-  content: ''; position: absolute; inset: -5px -2px; border-radius: 6px;
-  border: 1px solid color-mix(in srgb, var(--primary) 22%, transparent);
+/* ---- the lifespan: a length you can grab ----
+   A native range input, restyled. Native because it has to be draggable AND
+   reachable from the keyboard AND announced to a screen reader, and because a
+   div with a mousedown handler is none of those. The fill is painted on the
+   track from --pct; --tick paints where the category's default sits, so an
+   inherited value parks its handle exactly on the tick and an override pulls
+   visibly away from it. */
+.span-set { position: relative; display: block; padding: 6px 0; }
+.span-set::before {
+  content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 5px; margin-top: -2.5px;
+  border-radius: 3px; background: var(--surface-container);
+  background-image: linear-gradient(to right,
+    color-mix(in srgb, var(--primary) 78%, #ffffff) var(--pct, 0%), transparent 0);
+  background-repeat: no-repeat;
 }
-.cat-measure-none .cat-track { background: repeating-linear-gradient(90deg,
-  var(--surface-container) 0 4px, transparent 4px 8px); }
+.span-set.is-own::before {
+  background-image: linear-gradient(to right, var(--primary) var(--pct, 0%), transparent 0);
+}
+.span-set::after {
+  content: ''; position: absolute; top: 50%; margin-top: -5.5px; height: 11px; width: 2px;
+  left: var(--tick, 0%); background: var(--on-surface); border-radius: 1px;
+}
+.span-set.no-tick::after { display: none; }
+.span-set input[type="range"] {
+  /* The app gives every input a border, a background and a radius; a range has
+     to shed all three or the painted track sits inside a visible box. */
+  -webkit-appearance: none; appearance: none; position: relative; z-index: 1;
+  display: block; width: 100%; height: 16px; margin: 0; padding: 0;
+  border: 0; border-radius: 0; box-shadow: none; background: transparent; cursor: ew-resize;
+}
+.span-set input[type="range"]::-webkit-slider-runnable-track { height: 16px; background: transparent; }
+.span-set input[type="range"]::-moz-range-track { height: 16px; background: transparent; }
+.span-set input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none; width: 13px; height: 13px; margin-top: 1.5px;
+  border-radius: 50%; background: var(--primary); border: 2px solid var(--surface);
+  box-shadow: 0 0 0 1px var(--primary); cursor: ew-resize;
+}
+.span-set input[type="range"]::-moz-range-thumb {
+  width: 13px; height: 13px; border-radius: 50%; background: var(--primary);
+  border: 2px solid var(--surface); box-shadow: 0 0 0 1px var(--primary); cursor: ew-resize;
+}
+.span-set input[type="range"]:focus-visible { outline: none; }
+.span-set input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 1px var(--primary), 0 0 0 4px var(--primary-fixed); }
+.span-set input[type="range"]:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 1px var(--primary), 0 0 0 4px var(--primary-fixed); }
+.span-set input[type="range"]:disabled { cursor: default; }
+.span-set input[type="range"]:disabled::-webkit-slider-thumb { background: var(--outline-variant); box-shadow: 0 0 0 1px var(--outline-variant); }
+.span-set.is-none::before { background: repeating-linear-gradient(90deg,
+  var(--surface-container) 0 4px, transparent 4px 8px); background-image: none; }
 
 .cat-months { display: flex; align-items: center; gap: 5px; justify-content: flex-end; }
 .cat-lc {
-  width: 3.4rem; padding: 3px 6px; text-align: right; font-size: 13px;
+  width: 3.6rem; padding: 3px 6px; text-align: right; font-size: 13px;
   font-variant-numeric: tabular-nums; border-radius: 6px;
 }
 /* The inherited figure IS the value until somebody types over it, so it is
@@ -3994,10 +4054,21 @@ button.af-parent-item,
 .cat-del:hover { background: var(--rose-50, #fef2f2); color: var(--rose-700, #ba1a1a); }
 .cat-del:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
 
+/* ---- category lifespans: the ticks every model measures against ---- */
+.lcx-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 4px 30px; }
+.lcx-row { display: grid; grid-template-columns: minmax(90px, 9rem) minmax(90px, 1fr) 6.2rem 3.4rem;
+  align-items: center; gap: 12px; padding: 5px 0; }
+.lcx-row + .lcx-row { border-top: 1px solid var(--surface-container); }
+.lcx-cat { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lcx-row.is-off .lcx-cat { color: var(--outline); }
+.lcx-row.is-off .span-set { opacity: .45; }
+.lcx-eol { display: flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--outline); }
+.lcx-eol input { margin: 0; }
+.lcx-save { margin-top: 16px; }
+
 .cat-nohits { padding: 28px 0; color: var(--outline); font-size: 13.5px; }
 .cat-empty { text-align: center; padding: 44px 24px; }
 .cat-empty p { margin: 0 0 16px; color: var(--on-surface-variant); }
-.cat-tickets { margin-top: 26px; }
 
 @media (max-width: 1000px) {
   /* minmax(0, 1fr), never a bare 1fr: a bare track takes its min-width from the
@@ -4006,13 +4077,15 @@ button.af-parent-item,
   .cat-index { position: static; }
   .cat-nav { flex-direction: row; gap: 4px; overflow-x: auto; padding-bottom: 4px; }
   .cat-nav a { flex: 0 0 auto; border: 1px solid var(--outline-variant); }
+  .cat-nav a.is-sub { display: none; }
   .cat-legend { display: none; }
 }
 @media (max-width: 620px) {
-  /* The measure is the first thing to go: at this width it cannot be read, and
-     the number it stands for is right there. */
-  .cat-row { grid-template-columns: minmax(0, 1fr) 4.4rem 5.4rem 1.8rem; gap: 8px; }
-  .cat-measure { display: none; }
+  /* The drawn span is the first thing to go: at this width it cannot be read or
+     grabbed, and the number it stands for is right there. */
+  .cat-row { grid-template-columns: minmax(0, 1fr) 4.4rem 5.6rem 1.8rem; gap: 8px; }
+  .lcx-row { grid-template-columns: minmax(0, 1fr) 5.6rem 3.4rem; gap: 8px; }
+  .cat-row .span-set, .lcx-row .span-set { display: none; }
 }
 
 .lc-grid {
