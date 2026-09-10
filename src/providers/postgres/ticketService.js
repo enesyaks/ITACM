@@ -11,6 +11,7 @@
 const { query, withTransaction } = require('./pool');
 const { isUuid } = require('./rowMapper');
 const { HttpError } = require('../../utils/httpError');
+const { blockableAddress } = require('../../utils/mailFilter');
 
 const TYPES = new Set(['incident', 'request']);
 const PRIORITIES = new Set(['low', 'medium', 'high', 'urgent']);
@@ -134,6 +135,13 @@ function stripSla(row) {
   // (the plain-language resolution note + the requester's own CSAT stay visible).
   delete row.problemId; delete row.problemNumber; delete row.problemTitle;
   delete row.resolutionCode;
+  // Nor the ticket this one was linked to as a duplicate: its master usually
+  // belongs to SOMEBODY ELSE — four people report one printer — and its subject
+  // is that person's words. The requester is told their own status, not another
+  // requester's business.
+  delete row.linkedToId; delete row.linkedToNumber;
+  delete row.linkedToSubject; delete row.linkedToStatus;
+  delete row.requesterEmail;
   return row;
 }
 
@@ -680,11 +688,34 @@ async function markSpam(id, { block = false, category = '' } = {}, user) {
   if (!isUuid(id)) throw HttpError.notFound('Ticket not found');
   const a = actor(user);
   const { rows } = await query(
-    'SELECT number, status, requester_email, category FROM tickets WHERE id = $1', [id]
+    `SELECT number, status, requester_email, category,
+            response_breached_at, resolve_breached_at
+       FROM tickets WHERE id = $1`, [id]
   );
   const cur = rows[0];
   if (!cur) throw HttpError.notFound('Ticket not found');
   if (TERMINAL.has(cur.status)) throw HttpError.badRequest(`${cur.number} is already ${cur.status}`);
+  // Removing the clock also removes any breach already recorded against it,
+  // which is worth stating out loud in the trail: otherwise "close as advert"
+  // is a way to make a missed SLA disappear with nothing to show for it.
+  const erased = [cur.response_breached_at ? 'response breach' : '', cur.resolve_breached_at ? 'resolution breach' : '']
+    .filter(Boolean).join(' + ');
+
+  // Never taken straight from the stored address: the From header is written by
+  // the sender, and one that parses to "@gmail.com" would normalise to the
+  // DOMAIN entry "gmail.com" — silently blackholing every future request from
+  // it. A message can only ever get its own address blocked.
+  const sender = blockableAddress(cur.requester_email);
+  // Asked BEFORE anything is written. The blocklist belongs to the mail
+  // integration, so blocking is judged by integration:manage and nothing else:
+  // gating it on a ticket permission opened a side door, since the Helpdesk role
+  // is denied integration outright — it cannot even READ the blocklist — while
+  // ticket:configure is part of its fallback. And refusing halfway would leave
+  // the ticket closed by a call that reported failure.
+  if (block && sender) {
+    const allowed = await require('./permissionService').hasResourceAction(user, 'integration', 'manage');
+    if (!allowed) throw HttpError.forbidden('Blocking a sender needs permission to manage the mail integration');
+  }
 
   // The category is replaced, not filled in: whatever this was filed under, it
   // is junk, and leaving it as "Hardware" hides that from every report that
@@ -702,15 +733,12 @@ async function markSpam(id, { block = false, category = '' } = {}, user) {
       WHERE id = $1`,
     [id, 'Reklam / toplu posta', label]
   );
-  await logActivity(id, a, 'status', `${cur.status} → closed · spam (SLA cleared)`);
+  await logActivity(id, a, 'status',
+    `${cur.status} → closed · spam (SLA cleared${erased ? `, erasing a recorded ${erased}` : ''})`);
   audit('ticket.update', `Closed ${cur.number} as spam`, a, id, cur.number);
 
   let blocked = null;
-  const sender = String(cur.requester_email || '').trim().toLowerCase();
   if (block && sender) {
-    const allowed = await require('./permissionService').hasResourceAction(user, 'ticket', 'configure')
-      || await require('./permissionService').hasResourceAction(user, 'integration', 'manage');
-    if (!allowed) throw HttpError.forbidden('You do not have permission to block senders');
     const inbound = require('./inboundMailService');
     const curList = (await inbound.getBlocklist()).blocklist || [];
     if (!curList.includes(sender)) await inbound.saveBlocklist({ blocklist: [...curList, sender] });

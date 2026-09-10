@@ -59,7 +59,11 @@ async function intakeAddress() {
  * screen) for anyone else.
  */
 function ticketUrl(base, ticketId) {
-  const root = String(base || '').replace(/\/+$/, '');
+  const root = String(base || '').trim().replace(/\/+$/, '');
+  // The value lands inside an href. Nothing hostile can reach it today — the app
+  // URL is validated when it is saved and otherwise comes from the environment —
+  // but a link built here must never be able to carry a scheme of its own.
+  if (!/^https?:\/\//i.test(root)) return '';
   if (!ticketId) return root;
   return `${root}/#/tickets?open=${encodeURIComponent(ticketId)}`;
 }

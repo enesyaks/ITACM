@@ -98,6 +98,47 @@ test('closing a ticket as an advert', db.skipReason ? { skip: db.skipReason } : 
     assert.equal((await row(dup.id)).status, 'closed');
   });
 
+  await t.test('a crafted sender cannot get a whole domain blocked', async () => {
+    // `From: <@gmail.com>` parses to the address "@gmail.com", which the
+    // blocklist would normalise into the DOMAIN entry "gmail.com" — every future
+    // request from it dropped in silence, triggered by one plausible click.
+    const tk = await fromMail('@gmail.com');
+    const before = (await inbound.getBlocklist()).blocklist;
+    const out = await svc.markSpam(tk.id, { block: true }, ACTOR);
+    assert.equal(out.blockedSender, null, 'refused: a message may only block its own address');
+    assert.deepEqual((await inbound.getBlocklist()).blocklist, before, 'nothing was added at all');
+    assert.equal((await row(tk.id)).status, 'closed', 'and the advert is still closed');
+  });
+
+  await t.test('erasing a recorded SLA breach is written into the trail', async () => {
+    const tk = await fromMail('six@ads.example');
+    await query('UPDATE tickets SET response_breached_at = now(), resolve_breached_at = now() WHERE id = $1', [tk.id]);
+    await svc.markSpam(tk.id, { block: false }, ACTOR);
+    const { rows: acts } = await query(
+      "SELECT detail FROM ticket_activity WHERE ticket_id = $1 AND action = 'status' ORDER BY created_at DESC LIMIT 1", [tk.id]
+    );
+    assert.match(acts[0].detail, /erasing a recorded response breach \+ resolution breach/,
+      'otherwise "close as advert" is a way to make a missed SLA disappear with nothing to show for it');
+  });
+
+  await t.test('closing an advert is a desk right; blocking a sender is not', async () => {
+    // The Helpdesk role is denied the mail integration outright — it cannot even
+    // READ the blocklist. Gating this on a TICKET permission opened a side door
+    // into the same state, since ticket:configure is part of that role's
+    // fallback. Blocking is judged by integration:manage and nothing else.
+    const AGENT = { uid: owner.id, id: owner.id, username: 'agent', email: 'agent@test.local', role: 'Helpdesk' };
+    const tk = await fromMail('seven@ads.example');
+    const before = (await inbound.getBlocklist()).blocklist;
+
+    await assert.rejects(() => svc.markSpam(tk.id, { block: true }, AGENT), /manage the mail integration/);
+    assert.deepEqual((await inbound.getBlocklist()).blocklist, before, 'and nothing was written');
+    assert.equal((await row(tk.id)).status, 'new',
+      'refused BEFORE any write: a call that reports failure must not have closed the ticket anyway');
+
+    const out = await svc.markSpam(tk.id, { block: false }, AGENT);
+    assert.equal(out.status, 'closed', 'but the agent can still close the advert');
+  });
+
   await t.test('a ticket that is already finished is refused', async () => {
     const tk = await fromMail('four@ads.example');
     await svc.markSpam(tk.id, { block: false }, ACTOR);

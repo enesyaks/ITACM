@@ -6,6 +6,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   addressOf, normalizeBlockEntry, parseBlocklist, isBlockedSender, bulkReason,
+  blockableAddress,
 } = require('../src/utils/mailFilter');
 
 /** Build a parsed-message stand-in from plain header lines. */
@@ -90,4 +91,29 @@ test('bulkReason — a person writing from a mail client is never bulk', () => {
   assert.equal(bulkReason(msg({ Subject: 'BÜYÜK İNDİRİM! Kampanya son gün' })), '');
   assert.equal(bulkReason({}), '');
   assert.equal(bulkReason(null), '');
+});
+
+/* ---- blockableAddress: what a MESSAGE is allowed to get blocked ---- */
+
+test('an address derived from a message can never block a whole domain', () => {
+  // The blocklist accepts a bare domain on purpose — when a person types it.
+  // But the From header is written by the sender: `From: <@gmail.com>` parses to
+  // the address "@gmail.com", which normalises to the DOMAIN entry "gmail.com".
+  // One crafted advert plus one plausible click on "block this sender" would
+  // then blackhole every future request from that domain, in silence.
+  assert.equal(blockableAddress('@gmail.com'), '');
+  assert.equal(blockableAddress('<@yakisik.com>'), '');
+  assert.equal(blockableAddress('*@sirket.com'), '');
+  assert.equal(blockableAddress('gmail.com'), '');
+});
+
+test('a real sender address still blocks, normalised', () => {
+  assert.equal(blockableAddress('  Kampanya@Ads.EXAMPLE '), 'kampanya@ads.example');
+  assert.equal(blockableAddress('x@gmail.com'), 'x@gmail.com');
+});
+
+test('nothing at all blocks nothing', () => {
+  assert.equal(blockableAddress(''), '');
+  assert.equal(blockableAddress(null), '');
+  assert.equal(blockableAddress('not an address'), '');
 });

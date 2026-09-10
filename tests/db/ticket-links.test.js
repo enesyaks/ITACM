@@ -140,4 +140,24 @@ test('linked duplicate tickets', db.skipReason ? { skip: db.skipReason } : {}, a
     await query("UPDATE tickets SET status='closed' WHERE id=$1", [done.id]);
     await assert.rejects(() => svc.linkTickets(master.id, [done.id], ACTOR), /nothing left to link/);
   });
+
+  await t.test('a requester never sees the ticket theirs was linked to', async () => {
+    // Two different people report the same printer and the desk links them: the
+    // master is somebody ELSE's ticket, and its subject is that person's words.
+    const mine = await db.makeEmployee();
+    const theirs = await db.makeEmployee();
+    const master = await open({ subject: 'CEO laptopu sifre sifirlama', requesterEmployeeId: theirs.id });
+    const dup = await open({ requesterEmployeeId: mine.id });
+    await svc.linkTickets(master.id, [dup.id], ACTOR);
+
+    const portal = await svc.getTicket(dup.id, ACTOR, { ownEmployeeId: mine.id });
+    for (const field of ['linkedToId', 'linkedToNumber', 'linkedToSubject', 'linkedToStatus', 'requesterEmail']) {
+      assert.equal(portal[field], undefined, `${field} must not reach the requester`);
+    }
+    assert.ok(!JSON.stringify(portal).includes('CEO laptopu'),
+      "another requester's words must not appear in a self-service payload at all");
+
+    // Staff still see the whole picture.
+    assert.equal((await svc.getTicket(dup.id, ACTOR)).linkedToNumber, master.number);
+  });
 });

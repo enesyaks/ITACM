@@ -1871,7 +1871,7 @@ Views.tickets = async function (el, params = {}) {
               ${sender
     ? `<p style="margin:0"><strong>${esc(t('tk.spamAsk'))}</strong><br>
                    <span class="mono">${esc(sender)}</span></p>`
-    : `<p class="cell-sub" style="margin:0">${esc(t('tk.spamNoSender'))}</p>`}`,
+    : `<p class="cell-sub" style="margin:0">${esc(tk.requesterEmail && !canBlock ? t('tk.spamNoBlockRight') : t('tk.spamNoSender'))}</p>`}`,
             foot: sender
               ? `<button class="btn btn-outline" data-close>${esc(t('common.cancel'))}</button>
                  <button class="btn btn-outline" id="tk-spam-no">${esc(t('tk.spamCloseOnly'))}</button>

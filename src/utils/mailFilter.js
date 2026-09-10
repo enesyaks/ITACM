@@ -41,6 +41,25 @@ function normalizeBlockEntry(raw) {
   return /^[a-z0-9.-]+\.[a-z]{2,}$/.test(s) ? s : '';
 }
 
+/**
+ * One sender's address, safe to add to the blocklist — or '' when it is not one.
+ *
+ * The blocklist deliberately accepts two shapes, and the domain shape blackholes
+ * everyone at that domain. That is fine when a person typed it; it is dangerous
+ * when the value came from a message, because the From header is written by the
+ * sender. `From: <@gmail.com>` parses to the address "@gmail.com", which
+ * normalises to the DOMAIN entry "gmail.com" — so one crafted advert plus one
+ * plausible click on "block this sender" would silently drop every future
+ * request from gmail.com, or from the company's own domain.
+ *
+ * Anything derived from a message goes through here first: a local part is
+ * required, so a message can only ever get its own address blocked.
+ */
+function blockableAddress(raw) {
+  const s = normalizeBlockEntry(raw);
+  return s.includes('@') ? s : '';
+}
+
 /** Clean a whole list: normalise, drop rejects and duplicates, cap the size. */
 function parseBlocklist(input, { max = 500 } = {}) {
   const list = Array.isArray(input)
@@ -122,4 +141,6 @@ function bulkReason(parsed) {
   return '';
 }
 
-module.exports = { addressOf, normalizeBlockEntry, parseBlocklist, isBlockedSender, bulkReason };
+module.exports = {
+  addressOf, normalizeBlockEntry, blockableAddress, parseBlocklist, isBlockedSender, bulkReason,
+};
