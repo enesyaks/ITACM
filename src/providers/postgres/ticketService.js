@@ -1584,6 +1584,66 @@ async function submitMyCsat(id, body, user) {
   return getMyTicket(id, user);
 }
 
+/* ---------------------------- CSAT from the mail ---------------------------- */
+
+/**
+ * The bearer token behind the rating links in a resolution email.
+ *
+ * Minted only when a ticket is resolved and only once, so a ticket that is never
+ * resolved never grows one. It names a single ticket, carries no identity, and
+ * is never returned by a read API — the only place it is written is into the
+ * mail that goes to the requester.
+ */
+async function ensureCsatToken(ticketId) {
+  const { rows } = await query('SELECT csat_token FROM tickets WHERE id = $1', [ticketId]);
+  if (!rows[0]) return null;
+  if (rows[0].csat_token) return rows[0].csat_token;
+  const token = require('crypto').randomBytes(24).toString('hex');
+  const upd = await query(
+    'UPDATE tickets SET csat_token = COALESCE(csat_token, $2) WHERE id = $1 RETURNING csat_token',
+    [ticketId, token]
+  );
+  return upd.rows[0] ? upd.rows[0].csat_token : null;
+}
+
+/** What the public rating page may show. Deliberately thin — no requester, no body. */
+async function getByCsatToken(token) {
+  const tok = String(token || '').trim();
+  if (!tok || tok.length < 16) throw HttpError.notFound('Rating link not found');
+  const { rows } = await query(
+    `SELECT number, subject, status, resolution_note AS "resolutionNote",
+            csat_rating AS "csatRating", csat_comment AS "csatComment"
+       FROM tickets WHERE csat_token = $1`, [tok]
+  );
+  if (!rows[0]) throw HttpError.notFound('Rating link not found');
+  return rows[0];
+}
+
+/**
+ * Record a rating from the emailed link. No session: the token is the authority,
+ * which is why the page asks for a click rather than scoring straight from the
+ * link — mail scanners follow links, and a rating nobody gave is worse than no
+ * rating at all.
+ */
+async function submitCsatByToken(token, body = {}) {
+  const tk = await getByCsatToken(token);
+  if (!['resolved', 'closed'].includes(tk.status)) throw HttpError.badRequest('This ticket is not resolved yet');
+  const rating = Math.round(Number(body.rating));
+  if (!(rating >= 1 && rating <= 5)) throw HttpError.badRequest('Rating must be 1-5');
+  const comment = body.comment ? String(body.comment).trim().slice(0, 4000) : null;
+  const { rows } = await query(
+    `UPDATE tickets SET csat_rating = $2, csat_comment = COALESCE($3, csat_comment), csat_at = now()
+      WHERE csat_token = $1 RETURNING id, number`,
+    [String(token).trim(), rating, comment]
+  );
+  if (!rows[0]) throw HttpError.notFound('Rating link not found');
+  await query(
+    "INSERT INTO ticket_activity (ticket_id, actor_name, action, detail) VALUES ($1, $2, 'csat', $3)",
+    [rows[0].id, 'E-posta', `${rating}/5${comment ? ' · comment left' : ''}`]
+  ).catch(() => {});
+  return { number: rows[0].number, rating, comment };
+}
+
 /**
  * Stamp newly-breached SLA legs (once each) and log them to ticket_activity.
  * Called from the 1-minute scheduler tick. The `<> breached_at IS NULL` guard
@@ -1721,8 +1781,29 @@ function notifyUpdate(plan) {
     const p = await partyEmails({ requesterEmployeeId: plan.requesterEmployeeId, assigneeUserId: plan.newAssigneeId });
     if (isSelf(p.requesterEmail, plan.actorEmail)) p.requesterEmail = null;
     if (isSelf(p.assigneeEmail, plan.actorEmail)) p.assigneeEmail = null;
-    if (plan.statusTo && p.requesterEmail) {
-      mail({ to: p.requesterEmail, ticketId: plan.id, ticketNumber: plan.number, subject: plan.subject, event: `status changed to “${plan.statusTo}”`, actorName: plan.actorName });
+    // Not every status change is news to the person who wrote in. "In progress",
+    // "pending", "closed" are the desk's own bookkeeping — closed usually happens
+    // days later, automatically, and says nothing that resolved did not. Mail on
+    // every one of them trains people to ignore the desk's mail entirely, which
+    // costs exactly when something IS worth reading.
+    //
+    // Two are worth their inbox: resolved (here is the answer — and the only
+    // moment they will rate it) and cancelled (this is not being done, and
+    // nobody should be left waiting for it).
+    if (plan.statusTo === 'resolved' && p.requesterEmail) {
+      const svc = require('./notificationService');
+      const token = await ensureCsatToken(plan.id);
+      const meta = (await query(
+        `SELECT t.resolution_note AS note, re.full_name AS name
+           FROM tickets t LEFT JOIN employees re ON re.id = t.requester_employee_id
+          WHERE t.id = $1`, [plan.id]
+      ).catch(() => ({ rows: [] }))).rows[0] || {};
+      svc.sendTicketResolved({
+        to: p.requesterEmail, ticketId: plan.id, ticketNumber: plan.number, subject: plan.subject,
+        resolutionNote: meta.note, requesterName: meta.name, actorName: plan.actorName, csatToken: token,
+      }).catch(() => {});
+    } else if (plan.statusTo === 'cancelled' && p.requesterEmail) {
+      mail({ to: p.requesterEmail, ticketId: plan.id, ticketNumber: plan.number, subject: plan.subject, event: 'cancelled', actorName: plan.actorName });
     }
     if (plan.newAssigneeId && p.assigneeEmail) {
       mail({ to: p.assigneeEmail, ticketId: plan.id, ticketNumber: plan.number, subject: plan.subject, event: 'assigned to you', actorName: plan.actorName });
@@ -1837,4 +1918,5 @@ module.exports = {
   getCannedResponses, saveCannedResponses, getManagedCategories, saveManagedCategories,
   getWorkflow, saveWorkflow, resetWorkflow, sweepAutoCloseResolved,
   ackTarget, linkTickets, unlinkTicket, linkedTickets, duplicateCandidates, markSpam,
+  ensureCsatToken, getByCsatToken, submitCsatByToken,
 };

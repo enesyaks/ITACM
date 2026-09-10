@@ -256,6 +256,8 @@ function createApp() {
   app.use('/api/audit', require('./routes/audit.routes'));
   app.use('/api/integrations', require('./routes/integrations.routes'));
   app.use('/api/ack', require('./routes/ack.routes'));
+  // Not under /api: this is a page a person opens from an email, not an endpoint.
+  app.use('/csat', require('./routes/csat.routes'));
   app.use('/api/me', require('./routes/me.routes'));
   app.use('/api/hr', require('./routes/hr.routes'));
   app.use('/api/ai', require('./routes/ai.routes'));

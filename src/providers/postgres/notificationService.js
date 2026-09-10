@@ -68,6 +68,13 @@ function ticketUrl(base, ticketId) {
   return `${root}/#/tickets?open=${encodeURIComponent(ticketId)}`;
 }
 
+/** The public rating page for one ticket. Empty when there is no token to carry. */
+function csatUrl(base, token) {
+  const root = String(base || '').trim().replace(/\/+$/, '');
+  if (!/^https?:\/\//i.test(root) || !token) return '';
+  return `${root}/csat/${encodeURIComponent(token)}`;
+}
+
 /** Validate + normalize an admin-entered public app URL. Empty = use fallback. */
 function cleanAppUrl(raw) {
   const s = String(raw == null ? '' : raw).trim().slice(0, 200);
@@ -769,6 +776,39 @@ async function sendSlaBreachNotification({ to, ticketId, ticketNumber, subject, 
   }
 }
 
+/**
+ * The resolution mail — the one message a requester waits for, and the only
+ * moment they will ever rate the desk. It is its own template rather than a
+ * ticket_update with a different {{event}} because it says something the others
+ * do not: here is the answer, and here is where to tell us what you think of it.
+ *
+ * The rating links carry a per-ticket bearer token, so somebody with no account
+ * can answer — which is the difference between a CSAT figure and an empty column.
+ */
+async function sendTicketResolved({ to, ticketId, ticketNumber, subject, resolutionNote, requesterName, actorName, csatToken }) {
+  try {
+    if (!to) return { skipped: true, reason: 'no recipient' };
+    const { notify, smtp, companyName, companyLogo, companyAddress } = await getMailConfig();
+    if (!notify.enabled || !notify.ticketUpdates) return { skipped: true, reason: 'ticket notifications off' };
+    if (!smtp.host) return { skipped: true, reason: 'no smtp host' };
+    const base = appBaseUrl(notify) || process.env.APP_URL || 'http://localhost:8000';
+    const templates = await getEmailTemplates();
+    const rendered = renderTemplate(templates.ticket_resolved, {
+      companyName, ticketNumber, subject,
+      requesterName: requesterName || 'there',
+      actorName: actorName || 'the service desk',
+      resolutionNote: String(resolutionNote || '').trim() || 'No note was left.',
+      csatUrl: csatUrl(base, csatToken), ticketUrl: ticketUrl(base, ticketId), appUrl: base,
+    });
+    const logo = logoAttachment(companyLogo);
+    return await sendMail({ to, subject: rendered.subject, text: rendered.bodyText,
+      html: templateHtml(rendered.bodyHtml, { companyName, hasLogo: !!logo, address: companyAddress }),
+      attachments: logo ? [logo] : undefined, replyTo: await intakeAddress() });
+  } catch (err) {
+    return { skipped: true, reason: err.message };
+  }
+}
+
 async function sendTicketNotification({ to, ticketId, ticketNumber, subject, event, actorName, snippet }) {
   try {
     if (!to) return { skipped: true, reason: 'no recipient' };
@@ -1032,7 +1072,7 @@ async function sendHrRequestNotice(request) {
 module.exports = {
   getMailConfig, saveMailConfig, clearMailConfig, sendTestEmail, runAlertDigest, runScheduledDigest, notifyHandoverCompleted, sendMail,
   getEmailTemplates, saveEmailTemplates, sendOnboardingWelcomeEmail, sendPortalAccessEmail, sendHrRequestNotice,
-  sendTicketAck, sendTicketNotification, sendTicketReply, sendSlaBreachNotification, sendApprovalNotice, sendApprovalDecisionEmail,
+  sendTicketAck, sendTicketResolved, sendTicketNotification, sendTicketReply, sendSlaBreachNotification, sendApprovalNotice, sendApprovalDecisionEmail,
   sendOwnerTransferEmail,
-  DEFAULT_NOTIFY, TEMPLATE_KEYS, PLACEHOLDERS, ticketUrl, intakeAddress,
+  DEFAULT_NOTIFY, TEMPLATE_KEYS, PLACEHOLDERS, ticketUrl, csatUrl, intakeAddress,
 };

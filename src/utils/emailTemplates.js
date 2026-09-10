@@ -6,7 +6,7 @@
 const TEMPLATE_KEYS = [
   'onboarding_welcome', 'portal_access', 'hr_onboard_request', 'hr_offboard_request',
   'handover_completed', 'alert_digest', 'owner_transfer',
-  'ticket_ack', 'ticket_update', 'ticket_reply', 'sla_breach',
+  'ticket_ack', 'ticket_update', 'ticket_reply', 'ticket_resolved', 'sla_breach',
   'approval_request', 'approval_decision',
 ];
 
@@ -21,6 +21,7 @@ const TEMPLATE_LABELS = {
   owner_transfer: 'Ownership transfer — notice to the new owner',
   ticket_ack: 'Service desk — we have your request (first reply to the requester)',
   ticket_update: 'Service desk — ticket update (assigned / status)',
+  ticket_resolved: 'Service desk — resolved, and how did we do (rating links)',
   ticket_reply: 'Service desk — reply to the requester (threaded email)',
   sla_breach: 'Service desk — SLA breached (escalation to the assignee)',
   approval_request: 'Approval — a request awaits your decision',
@@ -44,6 +45,7 @@ const TEMPLATE_PLACEHOLDERS = {
   ticket_ack: ['companyName', 'requesterName', 'ticketNumber', 'subject', 'priority', 'ticketUrl', 'appUrl'],
   ticket_update: ['companyName', 'ticketNumber', 'subject', 'event', 'actorName', 'snippet', 'ticketUrl', 'appUrl'],
   ticket_reply: ['companyName', 'ticketNumber', 'subject', 'actorName', 'replyText', 'attachmentList', 'ticketUrl', 'appUrl'],
+  ticket_resolved: ['companyName', 'requesterName', 'ticketNumber', 'subject', 'resolutionNote', 'actorName', 'csatUrl', 'ticketUrl', 'appUrl'],
   sla_breach: ['companyName', 'ticketNumber', 'subject', 'slaType', 'dueAt', 'overdueBy', 'priority', 'assigneeName', 'ticketUrl', 'appUrl'],
   approval_request: ['companyName', 'summary', 'requesterName', 'resourceRef', 'appUrl'],
   approval_decision: ['companyName', 'summary', 'decision', 'deciderName', 'appUrl'],
@@ -243,6 +245,44 @@ const DEFAULT_EMAIL_TEMPLATES = {
       + 'You can reply directly to this email to respond — keep [{{ticketNumber}}] in the\n'
       + 'subject and your message, and any attachments, are added to the ticket.\n\n'
       + 'Open: {{ticketUrl}}\n',
+  },
+  // The one message a requester actually waits for, and the only moment they
+  // will ever rate the desk. The rating links carry a per-ticket token, so
+  // somebody with no account and no intention of getting one can still answer —
+  // which is the difference between a CSAT figure and an empty column.
+  ticket_resolved: {
+    subject: '[{{ticketNumber}}] {{subject}}',
+    bodyHtml:
+      '<p style="margin:0 0 6px;color:#64748b;font-size:13px">{{companyName}} · Service Desk</p>'
+      + '<h2 style="margin:0 0 10px;font-size:18px">Your request is resolved</h2>'
+      + '<p style="margin:0 0 12px">Hello {{requesterName}}, {{ticketNumber}} — {{subject}} — has been resolved by {{actorName}}.</p>'
+      + '<div style="margin:0 0 16px;padding:12px 14px;border-left:3px solid #0d9488;background:#f0fdfa;'
+      + 'border-radius:0 6px 6px 0;color:#1e293b;white-space:pre-wrap">{{resolutionNote}}</div>'
+      + '<p style="margin:0 0 6px;font-weight:600">How did we do?</p>'
+      + '<p style="margin:0 0 4px;font-size:26px;letter-spacing:6px">'
+      + '<a href="{{csatUrl}}?r=1" style="text-decoration:none" title="1">☆</a>'
+      + '<a href="{{csatUrl}}?r=2" style="text-decoration:none" title="2">☆</a>'
+      + '<a href="{{csatUrl}}?r=3" style="text-decoration:none" title="3">☆</a>'
+      + '<a href="{{csatUrl}}?r=4" style="text-decoration:none" title="4">☆</a>'
+      + '<a href="{{csatUrl}}?r=5" style="text-decoration:none" title="5">☆</a></p>'
+      + '<p style="margin:0 0 14px;color:#64748b;font-size:13px">One star is poor, five is excellent. You can add a note on the next screen.</p>'
+      + '<p style="margin:0 0 12px;color:#475569;font-size:14px">Not fixed after all? Reply to this email — keep '
+      + '<strong>[{{ticketNumber}}]</strong> in the subject and it lands back on the ticket.</p>'
+      + '<p style="margin:0"><a href="{{ticketUrl}}" style="color:#4f46e5">Open the ticket</a></p>',
+    bodyText:
+      '{{companyName}} · Service Desk\n\n'
+      + 'Your request is resolved.\n\n'
+      + 'Hello {{requesterName}}, {{ticketNumber}} — {{subject}} — has been resolved by {{actorName}}.\n\n'
+      + '{{resolutionNote}}\n\n'
+      + 'How did we do? One star is poor, five is excellent:\n'
+      + '  1 star  {{csatUrl}}?r=1\n'
+      + '  2 stars {{csatUrl}}?r=2\n'
+      + '  3 stars {{csatUrl}}?r=3\n'
+      + '  4 stars {{csatUrl}}?r=4\n'
+      + '  5 stars {{csatUrl}}?r=5\n\n'
+      + 'Not fixed after all? Reply to this email — keep [{{ticketNumber}}] in the subject\n'
+      + 'and it lands back on the ticket.\n\n'
+      + 'Open the ticket: {{ticketUrl}}\n',
   },
   sla_breach: {
     subject: '[{{ticketNumber}}] {{slaType}} SLA breached — {{subject}}',

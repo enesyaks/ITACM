@@ -902,6 +902,10 @@ CREATE INDEX IF NOT EXISTS idx_tickets_status    ON tickets (status, assignee_us
 CREATE INDEX IF NOT EXISTS idx_tickets_requester ON tickets (requester_employee_id);
 CREATE INDEX IF NOT EXISTS idx_tickets_asset     ON tickets (asset_id);
 CREATE INDEX IF NOT EXISTS idx_tickets_created   ON tickets (created_at DESC);
+-- 095: the requester rates the resolution from the mail, via a per-ticket bearer
+-- token (never returned by a read API).
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS csat_token TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tickets_csat_token ON tickets (csat_token) WHERE csat_token IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_tickets_linked ON tickets (linked_to_id) WHERE linked_to_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_tickets_requester_email ON tickets (lower(requester_email)) WHERE requester_email IS NOT NULL;
 

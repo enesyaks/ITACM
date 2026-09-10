@@ -1945,7 +1945,14 @@ Views.tickets = async function (el, params = {}) {
               return;
             }
           }
-          patch({ status: next });
+          // A resolution note typed but not yet sent rides along with the status
+          // change: the mail that announces "resolved" quotes the note, and it
+          // would otherwise go out empty when the agent resolves first and saves
+          // the note a moment later.
+          const pending = $('#tk-d-resnote', ov);
+          const dirty = pending && pending.value.trim() !== (tk.resolutionNote || '').trim();
+          patch(dirty ? { status: next, resolutionNote: pending.value.trim() } : { status: next });
+          if (dirty) { tk.resolutionNote = pending.value.trim(); const b = $('#tk-d-resnote-save', ov); if (b) b.disabled = true; }
         });
         // Clear the required-field highlight once the user fills one in.
         ['#tk-d-impact', '#tk-d-cat', '#tk-d-assignee'].forEach((sel) => $(sel, ov)?.addEventListener('change', (e) => { if (e.target.value) e.target.classList.remove('tkd-need'); }));
