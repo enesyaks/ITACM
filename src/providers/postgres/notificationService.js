@@ -857,7 +857,7 @@ async function sendTicketReply({ to, ticketId, ticketNumber, subject, replyText,
       // The value carries its own label: the renderer has no conditionals, and a
       // paragraph reading "Attached:" with nothing after it is worse than none.
       attachmentList: names.length
-        ? `Attached: ${names.join(', ')} — they are on the ticket too, whatever your mail client does with them.`
+        ? `Attached: ${names.join(', ')}. If your mail client does not show the file, open the ticket and download it there.`
         : '',
       ticketUrl: ticketUrl(base, ticketId), appUrl: base,
     });

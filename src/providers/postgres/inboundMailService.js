@@ -13,6 +13,7 @@ const { encryptSecret, decryptSecret } = require('../../utils/secretCrypto');
 const { HttpError } = require('../../utils/httpError');
 const { resolveAndAssertPublicHost, smtpAllowsPrivate } = require('../../utils/safeOutbound');
 const { parseBlocklist, isBlockedSender, bulkReason } = require('../../utils/mailFilter');
+const { stripQuotedReply } = require('../../utils/mailQuote');
 const { sniffType, safeFilename, MAX_BYTES } = require('../../utils/uploadGuard');
 
 const REF_RE = /\[((?:REQ|INC)-\d+)\]/i;
@@ -520,7 +521,12 @@ async function createFromEmail(parsed, cfg, opts = {}) {
   const fromName = (parsed && parsed.from && ((parsed.from.value && parsed.from.value[0] && parsed.from.value[0].name) || '')) || fromAddr || 'E-posta';
   const subjectRaw = String((parsed && parsed.subject) || '').trim();
   const subject = subjectRaw.replace(/^\s*(re|fwd?|aw|ynt|iletme?):\s*/gi, '').trim() || '(konusuz)';
-  const bodyText = String((parsed && parsed.text) || '').trim().slice(0, 8000)
+  // Every client answers by quoting what it answers, so an untrimmed reply
+  // pastes the whole thread — our own footer included — back into the ticket on
+  // every round. Keep the original when trimming would leave nothing: a reply
+  // that is only a quote is still evidence, and a person can read it.
+  const rawBody = String((parsed && parsed.text) || '').trim();
+  const bodyText = (stripQuotedReply(rawBody) || rawBody).slice(0, 8000)
     || (parsed && parsed.html ? '(HTML e-posta)' : '');
 
   // Filtering, before anything is written. The explicit list wins first — it is
