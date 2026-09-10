@@ -3901,6 +3901,103 @@ button.af-parent-item,
 
 /* Product Catalog — category lifecycle grid */
 
+
+/* ============================== CONSUMABLES ==============================
+   The store cupboard. One relationship carries the page: how much is on the
+   shelf against how little we are willing to have. The minimum sits at the same
+   point on every track, which is what lets two toners and a hundred webcam
+   covers be compared as RISK rather than as quantity — and the number stays
+   exact beside it, because you order in units, not in proportions.
+
+   One accent, used once: rose means below the line. Everything above it is
+   graphite and quiet, because a full shelf is not news. */
+.con-find { width: 220px; }
+.con-block { margin-bottom: 28px; }
+.con-h { margin: 0 0 2px; font-size: 16px; font-weight: 600; letter-spacing: -.015em; }
+.con-h-sub { margin: 0 0 12px; font-size: 12.5px; color: var(--on-surface-variant); }
+.is-short-block .con-h { color: var(--rose-700, #ba1a1a); }
+.con-allgood { margin: 0 0 26px; font-size: 13.5px; color: var(--on-surface-variant); }
+.con-list { border-top: 1px solid var(--outline-variant); }
+
+.con-row {
+  display: grid; align-items: center; gap: 14px; padding: 7px 0;
+  grid-template-columns: minmax(140px, 17rem) minmax(90px, 1fr) 6.5rem 7.2rem 3.6rem;
+  border-bottom: 1px solid var(--surface-container);
+}
+.con-row[hidden] { display: none; }
+.con-name { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.con-co { margin-left: 8px; font-size: 11.5px; color: var(--outline); }
+
+/* The gauge: a track, a threshold, and what is actually on the shelf. */
+.con-gauge { position: relative; display: block; height: 7px; border-radius: 4px; background: var(--surface-container); }
+.con-gauge::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: var(--fill, 0%);
+  border-radius: 4px; background: var(--outline-variant);
+}
+.con-gauge::after {
+  content: ''; position: absolute; left: var(--min, 38%); top: -4px; bottom: -4px;
+  width: 2px; border-radius: 1px; background: var(--on-surface);
+}
+.con-gauge.no-min::after { display: none; }
+.con-gauge.no-min::before { background: repeating-linear-gradient(90deg,
+  var(--outline-variant) 0 4px, transparent 4px 8px); }
+.con-gauge.is-short::before { background: var(--rose-600, #dc2626); }
+
+.con-min { font-size: 12px; color: var(--outline); white-space: nowrap; }
+.con-row.is-short .con-min { color: var(--rose-700, #ba1a1a); }
+
+/* The count is the control: minus, the number itself, plus. Handing one out is
+   the thing that happens all day, so it is one press and no dialog. */
+.con-step { display: inline-flex; align-items: center; justify-self: end; }
+.con-pm {
+  width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center;
+  font-size: 15px; line-height: 1; cursor: pointer; color: var(--on-surface-variant);
+  background: var(--surface); border: 1px solid var(--outline-variant);
+}
+.con-pm:first-child { border-radius: 7px 0 0 7px; }
+.con-pm:last-child { border-radius: 0 7px 7px 0; }
+.con-pm:hover:not(:disabled) { background: var(--surface-low); color: var(--on-surface); }
+.con-pm:disabled { color: var(--outline-variant); cursor: default; }
+.con-pm:focus-visible, .con-count:focus-visible, .con-icon:focus-visible {
+  outline: 2px solid var(--primary); outline-offset: 1px; z-index: 1; position: relative;
+}
+.con-count {
+  min-width: 3.1rem; height: 26px; padding: 0 6px; cursor: pointer;
+  font: inherit; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums;
+  color: var(--on-surface); background: var(--surface);
+  border: 1px solid var(--outline-variant); border-left: 0; border-right: 0;
+}
+.con-count:hover { background: var(--surface-low); }
+.con-count.is-static { border: 0; background: transparent; cursor: default; }
+.con-row.is-short .con-count { color: var(--rose-700, #ba1a1a); }
+
+/* Editing and deleting are rare next to handing one out, so they wait until
+   the row is under the pointer or the keyboard. */
+.con-more { display: flex; justify-content: flex-end; gap: 2px; opacity: 0; transition: opacity .12s; }
+.con-row:hover .con-more, .con-more:focus-within { opacity: 1; }
+.con-icon {
+  width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center;
+  border: 0; border-radius: 7px; background: transparent; color: var(--outline); cursor: pointer;
+}
+.con-icon:hover { background: var(--surface-low); color: var(--on-surface); }
+.con-icon[data-del]:hover { background: var(--rose-50, #fef2f2); color: var(--rose-700, #ba1a1a); }
+
+.con-nohits { padding: 24px 0; color: var(--outline); font-size: 13.5px; }
+.con-empty { text-align: center; padding: 44px 24px; }
+.con-empty p { margin: 0 0 16px; color: var(--on-surface-variant); }
+
+@media (prefers-reduced-motion: reduce) { .con-more { transition: none; } }
+@media (max-width: 900px) {
+  .con-row { grid-template-columns: minmax(0, 1fr) 6.5rem 7.2rem; gap: 10px; row-gap: 4px; }
+  .con-gauge { grid-column: 1 / -1; order: 3; }
+  .con-more { display: none; }
+}
+@media (max-width: 560px) {
+  .con-find { width: 100%; }
+  .con-row { grid-template-columns: minmax(0, 1fr) 7.2rem; }
+  .con-min { grid-column: 1; font-size: 11.5px; }
+}
+
 /* ============================ PRODUCT CATALOGUE ============================
    Eight lists of allowed words — categories, brands and models, locations,
    departments, CPU/RAM/storage, legal entities, ticket and supplier categories
