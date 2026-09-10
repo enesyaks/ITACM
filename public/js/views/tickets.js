@@ -1834,7 +1834,8 @@ Views.tickets = async function (el, params = {}) {
               <div class="tkd-prop"><span class="tkd-plabel">${esc(t('tk.csat'))}</span>
                 <div class="tkd-val">${tk.csatRating ? `${tkStars(tk.csatRating)}${tk.csatComment ? ` <span class="cell-sub">“${esc(tk.csatComment)}”</span>` : ''}` : `<span class="cell-sub">${esc(t('tk.csatNone'))}</span>`}</div></div>
               <div class="tkd-prop"><span class="tkd-plabel">${esc(t('tk.resolutionNote'))}</span>
-                <textarea id="tk-d-resnote" rows="2" ${canUpdate ? '' : 'disabled'} placeholder="${esc(t('tk.resolutionNotePh'))}">${esc(tk.resolutionNote || '')}</textarea></div>
+                <textarea id="tk-d-resnote" rows="2" ${canUpdate ? '' : 'disabled'} placeholder="${esc(t('tk.resolutionNotePh'))}">${esc(tk.resolutionNote || '')}</textarea>
+                ${canUpdate ? `<button type="button" class="btn btn-primary btn-sm tkd-resnote-save" id="tk-d-resnote-save" disabled>${esc(t('tk.resolutionNoteSave'))}</button>` : ''}</div>
               ${canUpdate && !['resolved', 'closed', 'cancelled'].includes(tk.status) ? `<button type="button" class="btn btn-outline btn-sm tkd-spam" id="tk-d-spam">
                 <span class="ms ms-sm">block</span> ${esc(t('tk.spamAction'))}</button>` : ''}
             </aside>
@@ -2006,7 +2007,31 @@ Views.tickets = async function (el, params = {}) {
         $('#tk-d-assignee', ov)?.addEventListener('change', (e) => patch({ assigneeUserId: e.target.value || null }));
         $('#tk-d-cat', ov)?.addEventListener('change', (e) => patch({ category: e.target.value.trim() }));
         $('#tk-d-rescode', ov)?.addEventListener('change', (e) => patch({ resolutionCode: e.target.value || null }));
-        $('#tk-d-resnote', ov)?.addEventListener('change', (e) => patch({ resolutionNote: e.target.value.trim() }));
+        // The resolution note is what the requester is shown as the answer, so it
+        // is saved when somebody says so — not on blur. Half a sentence used to
+        // be enough to file it, and clicking away was enough to send it.
+        const noteEl = $('#tk-d-resnote', ov);
+        const noteBtn = $('#tk-d-resnote-save', ov);
+        if (noteEl && noteBtn) {
+          const saved = () => (tk.resolutionNote || '').trim();
+          const sync = () => { noteBtn.disabled = noteEl.value.trim() === saved(); };
+          noteEl.addEventListener('input', sync);
+          noteBtn.addEventListener('click', async () => {
+            noteBtn.disabled = true;
+            const text = noteEl.value.trim();
+            try {
+              await api('/tickets/' + encodeURIComponent(id), { method: 'PATCH', body: { resolutionNote: text } });
+              tk.resolutionNote = text; // the button stays quiet until it changes again
+              toast(t('tk.saved'), 'success');
+              refresh();
+            } catch (err) { toast(err.message, 'error'); noteBtn.disabled = false; }
+          });
+          // Ctrl/Cmd+Enter from the field itself, for people who never leave the keyboard.
+          noteEl.addEventListener('keydown', (e) => {
+            if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && !noteBtn.disabled) noteBtn.click();
+          });
+          sync();
+        }
         const assetHost = $('#tk-d-asset-host', ov);
         if (assetHost) {
           const assetVal = tk.assetId ? (assetById.get(tk.assetId) || { id: tk.assetId, assetTag: tk.assetTag || tk.assetId }) : null;
