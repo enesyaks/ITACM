@@ -657,6 +657,75 @@ async function findSimilar(ticket) {
   } catch { return []; }
 }
 
+/**
+ * Close a ticket an advert opened, and optionally stop the sender writing again.
+ *
+ * The bulk filter reads headers only and deliberately so — guessing from words
+ * would silently drop a real request from a supplier — which means marketing
+ * that bothers to look like a person gets through. When it does, the desk needs
+ * one action rather than five: classify it, close it, take the clock off it, and
+ * decide about the sender.
+ *
+ * The SLA is not "met" here, it is REMOVED: an advert must not appear in the
+ * response-time figures at all, in either direction, so the due dates and any
+ * breach marks are cleared rather than stamped. It closes without the usual
+ * "classify before you close" rule for the same reason a linked duplicate does —
+ * that rule exists to hold a person to a process, and there is no process here.
+ *
+ * Blocking is a separate decision with a real cost: a wrongly blocked address
+ * has its future requests dropped in silence. So it is asked, never assumed,
+ * and it needs desk-configuration rights rather than the right to work a ticket.
+ */
+async function markSpam(id, { block = false, category = '' } = {}, user) {
+  if (!isUuid(id)) throw HttpError.notFound('Ticket not found');
+  const a = actor(user);
+  const { rows } = await query(
+    'SELECT number, status, requester_email, category FROM tickets WHERE id = $1', [id]
+  );
+  const cur = rows[0];
+  if (!cur) throw HttpError.notFound('Ticket not found');
+  if (TERMINAL.has(cur.status)) throw HttpError.badRequest(`${cur.number} is already ${cur.status}`);
+
+  // The category is replaced, not filled in: whatever this was filed under, it
+  // is junk, and leaving it as "Hardware" hides that from every report that
+  // groups by category.
+  const label = String(category || '').trim().slice(0, 120) || 'Spam';
+  await query(
+    `UPDATE tickets
+        SET status = 'closed', closed_at = now(), updated_at = now(),
+            resolution_code = 'spam',
+            resolution_note = COALESCE(resolution_note, $2),
+            category = $3,
+            response_due_at = NULL, resolve_due_at = NULL,
+            response_breached_at = NULL, resolve_breached_at = NULL,
+            sla_paused_at = NULL
+      WHERE id = $1`,
+    [id, 'Reklam / toplu posta', label]
+  );
+  await logActivity(id, a, 'status', `${cur.status} → closed · spam (SLA cleared)`);
+  audit('ticket.update', `Closed ${cur.number} as spam`, a, id, cur.number);
+
+  let blocked = null;
+  const sender = String(cur.requester_email || '').trim().toLowerCase();
+  if (block && sender) {
+    const allowed = await require('./permissionService').hasResourceAction(user, 'ticket', 'configure')
+      || await require('./permissionService').hasResourceAction(user, 'integration', 'manage');
+    if (!allowed) throw HttpError.forbidden('You do not have permission to block senders');
+    const inbound = require('./inboundMailService');
+    const curList = (await inbound.getBlocklist()).blocklist || [];
+    if (!curList.includes(sender)) await inbound.saveBlocklist({ blocklist: [...curList, sender] });
+    blocked = sender;
+    await logActivity(id, a, 'blocked', `${sender} added to the blocked senders list`);
+    audit('integration.update', `Blocked inbound sender ${sender} (from ${cur.number})`, a, id, cur.number);
+  }
+
+  // Duplicates of an advert are adverts: they go with it.
+  await closeLinked(id, { status: 'closed', number: cur.number }, a);
+  const ticket = await getTicket(id, user);
+  ticket.blockedSender = blocked;
+  return ticket;
+}
+
 /* ------------------------------- duplicates ------------------------------- */
 
 /** The tickets that close when this one does. */
@@ -1739,5 +1808,5 @@ module.exports = {
   sweepSlaBreaches, SLA_TARGETS, stats, report, agentReport, slaDetail, getSlaConfig, saveSlaConfig, categories,
   getCannedResponses, saveCannedResponses, getManagedCategories, saveManagedCategories,
   getWorkflow, saveWorkflow, resetWorkflow, sweepAutoCloseResolved,
-  ackTarget, linkTickets, unlinkTicket, linkedTickets, duplicateCandidates,
+  ackTarget, linkTickets, unlinkTicket, linkedTickets, duplicateCandidates, markSpam,
 };

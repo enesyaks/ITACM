@@ -6003,6 +6003,8 @@ body.ai-open .ai-panel { opacity: 1; visibility: visible; transform: none; }
 .tkd-lnk-pick { flex: none; margin: 0; }
 .tkd-lnk-off { flex: none; font-size: 11.5px; }
 .tkd-lnk-go { margin-top: 8px; }
+.tkd-spam { width: 100%; margin-top: 4px; justify-content: center; color: var(--on-surface-variant); }
+.tkd-spam:hover { color: var(--rose-700, #be123c); border-color: var(--rose-600, #e11d48); }
 .tkd-need { outline: 2px solid var(--rose-600, #e11d48); outline-offset: 1px; border-radius: 8px; }
 .tkd-plabel.req::after { content: ' *'; color: var(--rose-600, #e11d48); }
 .tkd-side .form-field.full { margin: 0; }

@@ -1835,6 +1835,8 @@ Views.tickets = async function (el, params = {}) {
                 <div class="tkd-val">${tk.csatRating ? `${tkStars(tk.csatRating)}${tk.csatComment ? ` <span class="cell-sub">“${esc(tk.csatComment)}”</span>` : ''}` : `<span class="cell-sub">${esc(t('tk.csatNone'))}</span>`}</div></div>
               <div class="tkd-prop"><span class="tkd-plabel">${esc(t('tk.resolutionNote'))}</span>
                 <textarea id="tk-d-resnote" rows="2" ${canUpdate ? '' : 'disabled'} placeholder="${esc(t('tk.resolutionNotePh'))}">${esc(tk.resolutionNote || '')}</textarea></div>
+              ${canUpdate && !['resolved', 'closed', 'cancelled'].includes(tk.status) ? `<button type="button" class="btn btn-outline btn-sm tkd-spam" id="tk-d-spam">
+                <span class="ms ms-sm">block</span> ${esc(t('tk.spamAction'))}</button>` : ''}
             </aside>
           </div>
         </div>`,
@@ -1848,6 +1850,44 @@ Views.tickets = async function (el, params = {}) {
         ov.querySelectorAll('.tkd-sim[data-open]').forEach((row) => row.addEventListener('click', () => {
           if (row.dataset.open) { closeModal(); openTicket(row.dataset.open); }
         }));
+        // An advert that got past the filter. One action does the lot — classify,
+        // close, take the clock off — and the sender is a separate question,
+        // because blocking the wrong address drops that person's future requests
+        // in silence.
+        $('#tk-d-spam', ov)?.addEventListener('click', () => {
+          const sender = tk.requesterEmail || '';
+          const close = async (block) => {
+            await api('/tickets/' + encodeURIComponent(id) + '/spam', {
+              method: 'POST', body: { block, category: t('tk.rescode.spam') },
+            });
+            toast(block ? t('tk.spamDoneBlocked').replace('{a}', sender) : t('tk.spamDone'), 'success');
+            closeModal(true); refresh();
+          };
+          openModal({
+            stack: true,
+            title: t('tk.spamAction'),
+            icon: 'block',
+            body: `<p style="margin:0 0 10px">${esc(t('tk.spamExplain').replace('{n}', tk.number))}</p>
+              ${sender
+    ? `<p style="margin:0"><strong>${esc(t('tk.spamAsk'))}</strong><br>
+                   <span class="mono">${esc(sender)}</span></p>`
+    : `<p class="cell-sub" style="margin:0">${esc(t('tk.spamNoSender'))}</p>`}`,
+            foot: sender
+              ? `<button class="btn btn-outline" data-close>${esc(t('common.cancel'))}</button>
+                 <button class="btn btn-outline" id="tk-spam-no">${esc(t('tk.spamCloseOnly'))}</button>
+                 <button class="btn btn-danger" id="tk-spam-yes">${esc(t('tk.spamBlockAndClose'))}</button>`
+              : `<button class="btn btn-outline" data-close>${esc(t('common.cancel'))}</button>
+                 <button class="btn btn-danger" id="tk-spam-no">${esc(t('tk.spamCloseOnly'))}</button>`,
+            onMount(ov2) {
+              const run = (btn, block) => btn?.addEventListener('click', async () => {
+                btn.disabled = true;
+                try { await close(block); } catch (err) { toast(err.message, 'error'); btn.disabled = false; }
+              });
+              run($('#tk-spam-no', ov2), false);
+              run($('#tk-spam-yes', ov2), true);
+            },
+          });
+        });
         // Duplicates: open one, link the ones that are the same problem, detach
         // one that turned out not to be.
         ov.querySelectorAll('.tkd-linked-banner [data-open], .tkd-lnk [data-open]').forEach((el) =>

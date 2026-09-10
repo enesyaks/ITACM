@@ -215,6 +215,15 @@ router.post('/:id/comments', requirePermission('ticket', 'update'), asyncHandler
   res.status(201).json({ success: true, data: await ticketService.addComment(req.params.id, req.body || {}, req.user) });
 }));
 
+// POST /api/tickets/:id/spam — an advert got through the filter: classify it,
+// close it, take the SLA clock off it, and (optionally) block the sender.
+router.post('/:id/spam', requirePermission('ticket', 'update'), asyncHandler(async (req, res) => {
+  const body = req.body || {};
+  res.json({ success: true, data: await ticketService.markSpam(req.params.id, {
+    block: !!body.block, category: body.category,
+  }, req.user) });
+}));
+
 // POST /api/tickets/:id/links — mark other tickets as duplicates of this one,
 // so closing this one closes them. DELETE detaches a single follower.
 router.post('/:id/links', requirePermission('ticket', 'update'), asyncHandler(async (req, res) => {
