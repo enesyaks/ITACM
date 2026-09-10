@@ -1308,7 +1308,14 @@ async function updateTicket(id, patch, user) {
         statusTo = patch.status;
         if (patch.status === 'resolved') set('resolved_at', new Date());
         else if (patch.status === 'closed') set('closed_at', new Date());
-        else if (['open', 'in_progress'].includes(patch.status)) { set('resolved_at', null); set('closed_at', null); }
+        else if (['open', 'in_progress'].includes(patch.status)) {
+          set('resolved_at', null); set('closed_at', null);
+          // Reopening voids the resolution, and with it the rating link that was
+          // mailed out for it: there is nothing to rate any more, and the link's
+          // expiry is measured from a resolution time that has just been erased.
+          // A new one is minted if the ticket is resolved again.
+          set('csat_token', null);
+        }
 
         // SLA clock-stop: pause the resolution clock while 'pending' (waiting on
         // the requester). On ANY non-cancelled exit (resume to open/in_progress,
@@ -1595,8 +1602,10 @@ async function submitMyCsat(id, body, user) {
  * mail that goes to the requester.
  */
 async function ensureCsatToken(ticketId) {
-  const { rows } = await query('SELECT csat_token FROM tickets WHERE id = $1', [ticketId]);
+  const { rows } = await query('SELECT csat_token, csat_at FROM tickets WHERE id = $1', [ticketId]);
   if (!rows[0]) return null;
+  // A ticket is rated once, so a second link would only lead to a refusal.
+  if (rows[0].csat_at) return null;
   if (rows[0].csat_token) return rows[0].csat_token;
   const token = require('crypto').randomBytes(24).toString('hex');
   const upd = await query(
@@ -1624,8 +1633,13 @@ function csatState(tk) {
   if (!tk) return 'gone';
   if (!['resolved', 'closed'].includes(tk.status)) return 'not_resolved';
   if (tk.csatAt) return 'rated';
+  // Fail closed on a missing resolution time. The window is measured from it, so
+  // without one there is nothing to age against and the link would never run
+  // out — an immortal bearer secret sitting in somebody's mailbox. A live token
+  // always has one (reopening a ticket drops the token), so this branch means
+  // something is off and the safe answer is "closed".
   const from = tk.resolvedAt ? new Date(tk.resolvedAt).getTime() : 0;
-  if (from && Date.now() - from > CSAT_WINDOW_DAYS * 86400000) return 'expired';
+  if (!from || Date.now() - from > CSAT_WINDOW_DAYS * 86400000) return 'expired';
   return 'ok';
 }
 

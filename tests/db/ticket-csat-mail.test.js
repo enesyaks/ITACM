@@ -154,6 +154,41 @@ test('resolution mail and CSAT by token', db.skipReason ? { skip: db.skipReason 
       'nothing was written by the attempt');
   });
 
+  await t.test('reopening a ticket kills the link that was mailed for it', async () => {
+    const tk = await openTicket();
+    await svc.updateTicket(tk.id, { status: 'resolved' }, ACTOR);
+    const token = await svc.ensureCsatToken(tk.id);
+    assert.ok(token);
+
+    await svc.updateTicket(tk.id, { status: 'in_progress' }, ACTOR);
+    await assert.rejects(() => svc.getByCsatToken(token), /not found/i,
+      'the resolution it rated is void, and its expiry was measured from a time just erased');
+
+    // Resolved again, a fresh link — not the old one.
+    await svc.updateTicket(tk.id, { status: 'resolved' }, ACTOR);
+    const second = await svc.ensureCsatToken(tk.id);
+    assert.ok(second && second !== token);
+  });
+
+  await t.test('a link with no resolution time behind it is treated as closed', async () => {
+    // Fail closed: the window is measured from resolved_at, so without one there
+    // is nothing to age against and the link would live for ever.
+    const tk = await openTicket();
+    await svc.updateTicket(tk.id, { status: 'resolved' }, ACTOR);
+    const token = await svc.ensureCsatToken(tk.id);
+    await query("UPDATE tickets SET status='closed', resolved_at=NULL, closed_at=now() WHERE id=$1", [tk.id]);
+    assert.equal((await svc.getByCsatToken(token)).state, 'expired');
+    await assert.rejects(() => svc.submitCsatByToken(token, { rating: 1 }), /expired/);
+  });
+
+  await t.test('a rated ticket is not given a second link', async () => {
+    const tk = await openTicket();
+    await svc.updateTicket(tk.id, { status: 'resolved' }, ACTOR);
+    const token = await svc.ensureCsatToken(tk.id);
+    await svc.submitCsatByToken(token, { rating: 3 });
+    assert.equal(await svc.ensureCsatToken(tk.id), null, 'it would only lead to a refusal');
+  });
+
   await t.test('a token names one ticket and grants nothing else', async () => {
     await assert.rejects(() => svc.getByCsatToken('deadbeef'), /not found/i, 'too short to be a token');
     await assert.rejects(() => svc.getByCsatToken('f'.repeat(48)), /not found/i, 'a guess is still a guess');
