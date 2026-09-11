@@ -2533,12 +2533,22 @@ tr.net-row:hover td { background: var(--surface-low); }
   .table-wrap.mcards td.table-empty::before { content: none; }
   /* hide truly-empty cells (e.g. spacer/QR columns with no content) */
   .table-wrap.mcards td.mcard-blank { display: none; }
+  /* The service-desk priority accent is an absolutely positioned bar inside the
+     first cell. Stacked as a card that cell starts at the text edge, so the bar
+     would sit on top of the title's first letter — move it to the card's own
+     left edge instead. */
+  .table-wrap.mcards .tk-list tr.tk-row > td:first-child::before { display: none; }
+  .table-wrap.mcards .tk-list tbody tr { border-left: 4px solid var(--slate-500); }
+  .table-wrap.mcards .tk-list tbody tr.prio-urgent { border-left-color: var(--rose-600); }
+  .table-wrap.mcards .tk-list tbody tr.prio-high { border-left-color: var(--amber-600); }
+  .table-wrap.mcards .tk-list tbody tr.prio-medium { border-left-color: var(--blue-700); }
+  .table-wrap.mcards .tk-list tbody tr.prio-low { border-left-color: var(--slate-500); }
 }
 
 /* ---------- mobile chrome: bottom nav + FAB + more sheet ---------- */
 .mobile-nav,
 .mobile-more { display: none; }
-.m-asset-list, .m-emp-list, .m-audit-list { display: none; }
+.m-asset-list, .m-emp-list, .m-audit-list, .m-kb-list { display: none; }
 
 @media screen and (max-width: 860px) {
   /* Only while the authenticated app shell is visible — never on login/onboarding */
@@ -2675,7 +2685,7 @@ tr.net-row:hover td { background: var(--surface-low); }
   }
 
   /* Prefer card lists over wide tables when a mobile list is present */
-  .m-asset-list, .m-emp-list, .m-audit-list { display: flex; flex-direction: column; gap: 10px; }
+  .m-asset-list, .m-emp-list, .m-audit-list, .m-kb-list { display: flex; flex-direction: column; gap: 10px; }
   .m-asset-card, .m-emp-card, .m-audit-card {
     background: #fff; border: 1px solid var(--outline-variant);
     border-radius: 14px; padding: 12px 14px; box-shadow: var(--shadow-card);
@@ -2693,18 +2703,48 @@ tr.net-row:hover td { background: var(--surface-low); }
 
   .card:has(> .m-asset-list) > .table-wrap,
   .card:has(> .m-emp-list) > .table-wrap,
-  .card:has(> .m-audit-list) > .table-wrap { display: none; }
+  .card:has(> .m-audit-list) > .table-wrap,
+  .card:has(> .m-kb-list) > .table-wrap { display: none; }
   .card > .m-asset-list,
   .card > .m-emp-list,
-  .card > .m-audit-list { display: flex; }
+  .card > .m-audit-list,
+  .card > .m-kb-list { display: flex; }
   .card:has(> .m-asset-list) > .table-foot,
   .card:has(> .m-emp-list) > .table-foot,
   .card:has(> .m-audit-list) > .table-foot { border-top: 0; padding-top: 8px; }
+
+  /* Knowledge base on a phone: the title is the whole card, everything else
+     stays under it in one quiet line. No status pill for published articles —
+     published is the normal state, so only a draft is worth marking. */
+  /* The cards carry their own surface, so the wrapper that holds the desktop
+     table would only draw a second border around them. */
+  .card:has(> .m-kb-list) { background: none; border: 0; box-shadow: none; padding: 0; }
+  .m-kb-list { gap: 8px; }
+  .m-kb-card {
+    background: #fff; border: 1px solid var(--outline-variant);
+    border-radius: 14px; padding: 13px 15px; box-shadow: var(--shadow-card);
+    cursor: pointer; -webkit-tap-highlight-color: transparent;
+  }
+  .m-kb-card:active { background: var(--surface-low); }
+  .m-kb-title {
+    font-size: 15.5px; font-weight: 600; line-height: 1.32; color: var(--on-surface);
+    word-break: break-word;
+  }
+  .m-kb-meta {
+    display: flex; align-items: baseline; gap: 9px;
+    margin-top: 7px; font-size: 12.5px; color: var(--outline);
+  }
+  .m-kb-cat { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .m-kb-views { margin-left: auto; flex: none; font-variant-numeric: tabular-nums; }
+  .m-kb-draft {
+    flex: none; background: var(--indigo-100); color: var(--indigo-700);
+    font-size: 11.5px; font-weight: 600; border-radius: 999px; padding: 2px 9px;
+  }
 }
 
 @media screen and (min-width: 861px) {
   .mobile-nav, .mobile-more { display: none !important; }
-  .m-asset-list, .m-emp-list, .m-audit-list { display: none !important; }
+  .m-asset-list, .m-emp-list, .m-audit-list, .m-kb-list { display: none !important; }
   .topbar-scan { display: inline-flex; }
   /* Desktop: pin sidebar; never inherit mobile drawer hide/transform */
   .sidebar {

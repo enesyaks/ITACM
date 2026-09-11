@@ -57,12 +57,44 @@ Views.kb = async function (el) {
       <td class="cell-sub tk-date">${esc(String(a.updatedAt || '').slice(0, 10))}</td>
     </tr>`;
 
+  /* On a phone the four-column table stacks into a label/value dump that buries
+     the one thing that matters — the title. The card keeps the title big and
+     lets everything else stay quiet; the draft chip appears only when an
+     article is NOT published, because published is the normal state. */
+  const cardHtml = (a) => `<div class="m-kb-card" data-open="${esc(a.id)}" role="button" tabindex="0">
+      <div class="m-kb-title">${esc(a.title)}</div>
+      <div class="m-kb-meta">
+        ${a.published ? '' : `<span class="m-kb-draft">${esc(t('kb.draft'))}</span>`}
+        <span class="m-kb-cat">${esc(a.category || '—')}</span>
+        <span class="m-kb-views">${esc(String(a.views || 0))} ${esc(t('kb.views'))}</span>
+      </div>
+    </div>`;
+
+  const cardsHtml = (rows) => (Array.isArray(rows) && rows.length)
+    ? rows.map(cardHtml).join('')
+    : `<div class="table-empty" style="padding:24px">${esc(t('kb.none'))}</div>`;
+
+  /* One place that wires both the desktop rows and the phone cards, so a tap
+     opens the article on either. */
+  function bindOpen() {
+    el.querySelectorAll('[data-open]').forEach((node) => {
+      node.addEventListener('click', () => openArticle(node.dataset.open));
+      if (node.getAttribute('role') === 'button') {
+        node.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openArticle(node.dataset.open); }
+        });
+      }
+    });
+  }
+
   async function refresh() {
     const list = await api('/kb?search=' + encodeURIComponent(searchTerm)).catch(() => []);
     const body = $('#kb-rows', el);
     if (body) body.innerHTML = (Array.isArray(list) && list.length) ? list.map(rowHtml).join('')
       : `<tr><td colspan="4" class="table-empty">${esc(t('kb.none'))}</td></tr>`;
-    el.querySelectorAll('#kb-rows tr[data-open]').forEach((tr) => tr.addEventListener('click', () => openArticle(tr.dataset.open)));
+    const cards = $('#kb-cards', el);
+    if (cards) cards.innerHTML = cardsHtml(list);
+    bindOpen();
   }
 
   const list = await api('/kb').catch(() => []);
@@ -71,13 +103,16 @@ Views.kb = async function (el) {
       ? `<button class="btn btn-primary" id="kb-new"><span class="ms">add</span> ${esc(t('kb.new'))}</button>` : '')}
     <div class="card card-pad" style="margin-bottom:14px">
       <input type="search" id="kb-search" class="ops-select" placeholder="${esc(t('kb.searchPh'))}" style="min-width:280px"></div>
-    <div class="card table-wrap"><table class="data tk-list">
-      <thead><tr><th>${esc(t('kb.article'))}</th><th>${esc(t('tk.statusCol'))}</th><th>${esc(t('kb.views'))}</th><th>${esc(t('tk.createdCol'))}</th></tr></thead>
-      <tbody id="kb-rows">${(Array.isArray(list) && list.length) ? list.map(rowHtml).join('')
-        : `<tr><td colspan="4" class="table-empty">${esc(t('kb.none'))}</td></tr>`}</tbody>
-    </table></div>`;
+    <div class="card">
+      <div class="m-kb-list" id="kb-cards">${cardsHtml(list)}</div>
+      <div class="table-wrap"><table class="data tk-list">
+        <thead><tr><th>${esc(t('kb.article'))}</th><th>${esc(t('tk.statusCol'))}</th><th>${esc(t('kb.views'))}</th><th>${esc(t('tk.createdCol'))}</th></tr></thead>
+        <tbody id="kb-rows">${(Array.isArray(list) && list.length) ? list.map(rowHtml).join('')
+          : `<tr><td colspan="4" class="table-empty">${esc(t('kb.none'))}</td></tr>`}</tbody>
+      </table></div>
+    </div>`;
 
-  el.querySelectorAll('#kb-rows tr[data-open]').forEach((tr) => tr.addEventListener('click', () => openArticle(tr.dataset.open)));
+  bindOpen();
   const nb = $('#kb-new', el);
   if (nb) nb.addEventListener('click', () => openEditor(null));
   let searchTimer = null;
