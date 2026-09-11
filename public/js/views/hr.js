@@ -68,6 +68,12 @@ Views.hr = async function (el) {
       + '</select></div>'
       + '<div class="form-field"><label>' + esc(t('hr.title')) + '</label><input id="hr-on-title"></div>'
       + '<div class="form-field"><label>' + esc(t('hr.startDate')) + ' *</label><input id="hr-on-date" type="date" value="' + esc(today) + '"></div>'
+      // Full width: the picker opens a result list, and half a row cramps it.
+      // The new hire has no employee record yet, so the manager is parked on
+      // the ticket and written to that record when IT approves.
+      + '<div class="form-field" style="grid-column:1/-1"><label>' + esc(t('hr.manager')) + '</label>'
+      + '<div data-emp-search="managerEmployeeId"></div>'
+      + '<span class="cell-sub" style="display:block;margin-top:4px">' + esc(t('hr.managerHint')) + '</span></div>'
       + '</div>'
       + '<div style="margin:12px 0 8px;display:flex;justify-content:space-between;align-items:baseline">'
       + '<span class="cell-sub">' + esc(t('hr.equipment')) + '</span>'
@@ -116,7 +122,11 @@ Views.hr = async function (el) {
   const rowHtml = (r) => '<tr data-status="' + esc(r.status) + '">'
     + '<td><span class="pill ' + (r.type === 'offboard' ? 'pill-rose' : 'pill-indigo') + '">'
     + esc(typeLabel(r.type)) + '</span></td>'
-    + '<td><div class="cell-title">' + esc(r.fullName || '') + '</div><div class="cell-sub">' + esc(r.email || r.department || '') + '</div></td>'
+    + '<td><div class="cell-title">' + esc(r.fullName || '') + '</div><div class="cell-sub">' + esc(r.email || r.department || '') + '</div>'
+    + (r.managerName
+      ? '<div class="cell-sub"><span class="ms" style="font-size:13px;vertical-align:-2px">supervisor_account</span> '
+        + esc(r.managerName) + '</div>'
+      : '') + '</td>'
     + '<td>' + esc(String(r.eventDate || '').slice(0, 10)) + '</td>'
     + '<td><span class="pill ' + statusPill(r.status) + '">' + esc(statusLabel(r.status)) + '</span></td>'
     + '<td class="cell-sub">' + ((r.items || []).map((i) => esc(i.category + '×' + i.qty)).join(', ') || '—') + '</td>'
@@ -153,6 +163,16 @@ Views.hr = async function (el) {
       name: 'offEmployeeId',
       searchUrl: '/hr/employees/search',
       placeholder: t('hr.searchEmp'),
+    });
+  }
+
+  const mgrHost = el.querySelector('[data-emp-search="managerEmployeeId"]');
+  let mgrPicker = null;
+  if (mgrHost && typeof mountEmployeeSearchField === 'function') {
+    mgrPicker = mountEmployeeSearchField(mgrHost, {
+      name: 'managerEmployeeId',
+      searchUrl: '/hr/employees/search',
+      placeholder: t('hr.searchManager'),
     });
   }
 
@@ -229,6 +249,7 @@ Views.hr = async function (el) {
             department: el.querySelector('#hr-on-dept').value,
             title: el.querySelector('#hr-on-title').value,
             eventDate: el.querySelector('#hr-on-date').value,
+            managerEmployeeId: (mgrPicker && mgrPicker.getId()) || '',
             notes: el.querySelector('#hr-on-notes').value,
             items,
           },

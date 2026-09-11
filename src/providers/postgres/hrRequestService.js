@@ -99,9 +99,15 @@ function mapRequest(row, items) {
   });
 }
 
+// The id alone is useless to a reader, so every read carries the manager's
+// name with it. LEFT JOIN: the row must survive a manager whose record was
+// deleted (the FK nulls the column) or was never named at all.
+const SELECT_REQUEST = `SELECT r.*, m.full_name AS manager_name
+  FROM hr_requests r LEFT JOIN employees m ON m.id = r.manager_employee_id`;
+
 async function getRequest(id) {
   if (!isUuid(id)) throw HttpError.notFound('HR request ' + id + ' not found');
-  const { rows } = await query('SELECT * FROM hr_requests WHERE id = $1', [id]);
+  const { rows } = await query(SELECT_REQUEST + ' WHERE r.id = $1', [id]);
   if (!rows[0]) throw HttpError.notFound('HR request ' + id + ' not found');
   return mapRequest(rows[0], await loadItems(id));
 }
@@ -110,17 +116,17 @@ async function listRequests(opts) {
   opts = opts || {};
   const where = [];
   const params = [];
-  if (opts.status) { params.push(String(opts.status)); where.push('status = $' + params.length); }
-  if (opts.type) { params.push(String(opts.type)); where.push('type = $' + params.length); }
+  if (opts.status) { params.push(String(opts.status)); where.push('r.status = $' + params.length); }
+  if (opts.type) { params.push(String(opts.type)); where.push('r.type = $' + params.length); }
   if (opts.createdBy) {
     if (!isUuid(opts.createdBy)) return [];
     params.push(opts.createdBy);
-    where.push('created_by = $' + params.length);
+    where.push('r.created_by = $' + params.length);
   }
   params.push(Math.min(Math.max(Number(opts.limit) || 100, 1), 200));
   const whereSql = where.length ? 'WHERE ' + where.join(' AND ') : '';
   const { rows } = await query(
-    'SELECT * FROM hr_requests ' + whereSql + ' ORDER BY created_at DESC LIMIT $' + params.length,
+    SELECT_REQUEST + ' ' + whereSql + ' ORDER BY r.created_at DESC LIMIT $' + params.length,
     params
   );
   const items = await loadItemsFor(rows.map((r) => r.id));
@@ -192,6 +198,25 @@ function audit(event) {
 }
 
 /**
+ * Resolve the manager HR named on an onboard ticket.
+ *
+ * Must be an Active employee: naming someone who has left would hand IT a
+ * reporting line it cannot apply, and the ticket may sit for days before it is
+ * acknowledged. Blank is allowed — HR does not always know yet.
+ *
+ * @returns {Promise<string|null>} the employee id, or null when none was named
+ */
+async function resolveManagerId(t, raw) {
+  const id = String(raw == null ? '' : raw).trim();
+  if (!id) return null;
+  if (!isUuid(id)) throw HttpError.badRequest('Invalid managerEmployeeId');
+  const { rows } = await t.query('SELECT id, status FROM employees WHERE id = $1', [id]);
+  if (!rows[0]) throw HttpError.badRequest('The selected manager is not an employee');
+  if (rows[0].status !== 'Active') throw HttpError.badRequest('The selected manager is not an active employee');
+  return rows[0].id;
+}
+
+/**
  * Open an onboard ticket. This writes ONLY to hr_requests / hr_request_items —
  * the employee record is created later, by IT, at acknowledge time.
  */
@@ -232,12 +257,14 @@ async function createOnboardRequest(body, user) {
         employeeId = existing.rows[0] ? existing.rows[0].id : null;
       }
 
+      const managerEmployeeId = await resolveManagerId(t, body && body.managerEmployeeId);
       const { rows } = await t.query(
         `INSERT INTO hr_requests
-           (type, status, employee_id, full_name, email, department, title, event_date, notes, created_by, created_by_name)
-         VALUES ('onboard', 'pending', $1, $2, $3, $4, $5, $6, $7, $8, $9)
+           (type, status, employee_id, full_name, email, department, title, event_date, notes, created_by, created_by_name,
+            manager_employee_id)
+         VALUES ('onboard', 'pending', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
          RETURNING id`,
-        [employeeId, fullName, email, department, title, eventDate, notes, a.id, a.name]
+        [employeeId, fullName, email, department, title, eventDate, notes, a.id, a.name, managerEmployeeId]
       );
       const id = rows[0].id;
       for (const it of items) {
@@ -404,12 +431,13 @@ async function acknowledgeRequest(id, user, body) {
       const onboardingService = require('./onboardingService');
       const created = await onboardingService.createOnboarding(
         emp
-          ? { employeeId: emp.id, startDate }
+          ? { employeeId: emp.id, startDate, managerEmployeeId: claimed.manager_employee_id || null }
           : {
             fullName: claimed.full_name,
             email: email,
             department: claimed.department || null,
             title: claimed.title || null,
+            managerEmployeeId: claimed.manager_employee_id || null,
             startDate,
           },
         user
@@ -494,6 +522,7 @@ module.exports = {
   EQUIPMENT_CATEGORIES,
   normalizeItems,
   parseDateOnly,
+  resolveManagerId,
   toDateString,
   listRequests,
   getRequest,

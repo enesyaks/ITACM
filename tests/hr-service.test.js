@@ -127,3 +127,47 @@ test('the equipment allowlist is frozen and free of Network/Server categories', 
   assert.ok(!hr.EQUIPMENT_CATEGORIES.includes('Network'));
   assert.ok(!hr.EQUIPMENT_CATEGORIES.includes('Server'));
 });
+
+/* ---------------------------------------------------------------------------
+ * resolveManagerId — the manager HR names on an onboard ticket.
+ *
+ * A ticket can sit pending for days, so the guard has to reject a manager who
+ * is not an active employee at FILING time; accepting one would hand IT a
+ * reporting line it cannot apply. The fake transaction keeps this off a
+ * database — only the branching matters.
+ * ------------------------------------------------------------------------- */
+const fakeTx = (rows) => ({ query: async () => ({ rows }) });
+
+test('resolveManagerId treats blank, null and undefined as "no manager named"', async () => {
+  const t = fakeTx([]);
+  for (const v of ['', '   ', null, undefined]) {
+    assert.equal(await hr.resolveManagerId(t, v), null);
+  }
+});
+
+test('resolveManagerId rejects a value that is not a uuid', async () => {
+  await assert.rejects(
+    () => hr.resolveManagerId(fakeTx([]), 'not-a-uuid'),
+    (e) => e.status === 400 && /managerEmployeeId/.test(e.message)
+  );
+});
+
+test('resolveManagerId rejects a uuid that is nobody', async () => {
+  await assert.rejects(
+    () => hr.resolveManagerId(fakeTx([]), UID_A),
+    (e) => e.status === 400 && /not an employee/.test(e.message)
+  );
+});
+
+test('resolveManagerId rejects an employee who has left', async () => {
+  const t = fakeTx([{ id: UID_A, status: 'Inactive' }]);
+  await assert.rejects(
+    () => hr.resolveManagerId(t, UID_A),
+    (e) => e.status === 400 && /not an active employee/.test(e.message)
+  );
+});
+
+test('resolveManagerId returns the id of an active employee', async () => {
+  const t = fakeTx([{ id: UID_A, status: 'Active' }]);
+  assert.equal(await hr.resolveManagerId(t, UID_A), UID_A);
+});

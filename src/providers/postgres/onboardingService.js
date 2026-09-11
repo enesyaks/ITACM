@@ -218,6 +218,11 @@ async function upsertEmployee(t, body) {
   const startDate = parseDateOnly(body.startDate);
   if (!startDate) throw HttpError.badRequest('startDate is required');
 
+  // The manager an HR ticket named, if any. Validated where it was entered;
+  // re-checked here because this path is also reachable from IT's own form.
+  const managerId = String(body.managerEmployeeId || '').trim();
+  if (managerId && !isUuid(managerId)) throw HttpError.badRequest('Invalid managerEmployeeId');
+
   if (body.employeeId) {
     if (!isUuid(body.employeeId)) throw HttpError.badRequest('Invalid employeeId');
     const { rows } = await t.query('SELECT * FROM employees WHERE id = $1 FOR UPDATE', [body.employeeId]);
@@ -225,7 +230,17 @@ async function upsertEmployee(t, body) {
     if (rows[0].status !== 'Active') {
       throw HttpError.conflict(`${rows[0].full_name} is inactive`);
     }
-    await t.query('UPDATE employees SET start_date = $2 WHERE id = $1', [rows[0].id, startDate]);
+    if (managerId && managerId === rows[0].id) throw HttpError.badRequest('An employee cannot report to themselves');
+    // Only FILL a missing manager on a record that already exists — an
+    // onboarding must not silently rewrite a reporting line somebody set
+    // deliberately. Changing it stays an explicit edit on the employee.
+    await t.query(
+      `UPDATE employees
+          SET start_date = $2,
+              manager_employee_id = COALESCE(manager_employee_id, $3)
+        WHERE id = $1`,
+      [rows[0].id, startDate, managerId || null]
+    );
     const refreshed = await t.query('SELECT * FROM employees WHERE id = $1', [rows[0].id]);
     return refreshed.rows[0];
   }
@@ -235,13 +250,14 @@ async function upsertEmployee(t, body) {
   if (!fullName || !email) throw HttpError.badRequest('fullName and email are required for a new employee');
   try {
     const { rows } = await t.query(
-      `INSERT INTO employees (full_name, email, department, title, status, start_date)
-       VALUES ($1,$2,$3,$4,'Active',$5) RETURNING *`,
-      [fullName, email, body.department || null, body.title || null, startDate]
+      `INSERT INTO employees (full_name, email, department, title, status, start_date, manager_employee_id)
+       VALUES ($1,$2,$3,$4,'Active',$5,$6) RETURNING *`,
+      [fullName, email, body.department || null, body.title || null, startDate, managerId || null]
     );
     return rows[0];
   } catch (err) {
     if (err.code === '23505') throw HttpError.conflict(`An employee with email ${email} already exists`);
+    if (err.code === '23503') throw HttpError.badRequest('The selected manager is not an employee');
     throw err;
   }
 }

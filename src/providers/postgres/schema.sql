@@ -845,6 +845,10 @@ CREATE TABLE IF NOT EXISTS hr_requests (
   fulfilled_handover_id UUID REFERENCES handovers(id) ON DELETE SET NULL,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- The new hire's manager, named by HR at filing time and copied onto the
+-- employee when IT acknowledges (also migration 096_hr_request_manager.sql).
+ALTER TABLE hr_requests
+  ADD COLUMN IF NOT EXISTS manager_employee_id UUID REFERENCES employees(id) ON DELETE SET NULL;
 -- NOTE: no standalone index on fulfilled_at here. schema.sql runs BEFORE the
 -- migrations, and on an existing database CREATE TABLE IF NOT EXISTS skips the
 -- table entirely — so the column above does not exist yet at this point and an
