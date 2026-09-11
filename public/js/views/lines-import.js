@@ -420,78 +420,177 @@ function pickEmployee(title, onPick) {
   });
 }
 
+/**
+ * Group a stored phone number for reading.
+ *
+ * A number people say out loud in pairs should be set the same way. Whatever a
+ * site already types in is respected — the moment the string carries a space,
+ * somebody has chosen a grouping and we do not know better. Only an unbroken
+ * run of digits is regrouped, and only into shapes we can actually recognise;
+ * anything else comes back untouched rather than mangled.
+ */
+function fmtPhone(raw) {
+  const s = String(raw == null ? '' : raw).trim();
+  if (!s || /\s/.test(s)) return s;
+  const plus = s.startsWith('+');
+  const d = s.replace(/\D/g, '');
+  if (plus && d.length === 12) return `+${d.slice(0, 2)} ${d.slice(2, 5)} ${d.slice(5, 8)} ${d.slice(8, 10)} ${d.slice(10)}`;
+  if (!plus && d.length === 11 && d[0] === '0') return `${d.slice(0, 4)} ${d.slice(4, 7)} ${d.slice(7, 9)} ${d.slice(9)}`;
+  if (!plus && d.length === 10) return `${d.slice(0, 3)} ${d.slice(3, 6)} ${d.slice(6, 8)} ${d.slice(8)}`;
+  return s;
+}
+
+/**
+ * Mobile lines.
+ *
+ * A line is not an object on a shelf; it is a bill that renews every month
+ * whether or not anybody is using it. So the page opens with what the estate
+ * costs and how much of that is going nowhere, and it orders itself by that:
+ * lines nobody holds come first, because those are the ones quietly charging.
+ *
+ * The number is the identity of the record, so it is the one thing set large.
+ * Everything else stays quiet, and colour appears only on money being wasted
+ * and on a status that is not "Active".
+ */
 Views.lines = async function (el, params = {}) {
   const canEdit = Auth.canIam('line', 'create') || Auth.canIam('line', 'update') || Auth.canIam('line', 'manage');
   const canAssign = Auth.canIam('line', 'assign') || Auth.canIam('line', 'manage');
   const canUnassign = Auth.canIam('line', 'unassign') || Auth.canIam('line', 'manage');
   const canViewCosts = Auth.canIam('line', 'view_confidential') || Auth.can('canViewLineCosts');
+
   const q = new URLSearchParams();
   if (params.search) q.set('search', params.search);
   if (params.status) q.set('status', params.status);
-  const items = await api('/lines?' + q.toString());
-  const assigned = items.filter((l) => l.currentEmployeeId).length;
-  const monthly = canViewCosts
-    ? items.filter((l) => l.status === 'Active').reduce((s2, l) => s2 + Number(l.monthlyCost || 0), 0)
-    : null;
+  const filtered = !!(params.search || params.status);
+  // The opening sentence is a standing fact about the whole account, so it must
+  // not change shape while somebody types in the search box. The list below it
+  // is the filtered view; only when a filter is on is a second read needed.
+  const [items, whole] = await Promise.all([
+    api('/lines?' + q.toString()),
+    filtered ? api('/lines').catch(() => null) : Promise.resolve(null),
+  ]);
+  const estate = whole || items;
 
-  const lineStatusPill = (l) => (l.status === 'Active' ? `<span class="pill pill-emerald">${esc(t('lines.stActive'))}</span>`
-    : l.status === 'Suspended' ? `<span class="pill pill-amber">${esc(t('lines.stSuspended'))}</span>`
-      : `<span class="pill pill-rose">${esc(t('lines.stCancelled'))}</span>`);
-  const lineRowActions = (l) => `${l.currentEmployeeId
-    ? (canUnassign ? `<button class="btn btn-outline btn-sm" data-line-unassign="${esc(l.id)}"><span class="ms">undo</span> ${esc(t('lines.takeBack'))}</button>` : '')
-    : (canAssign && l.status === 'Active' ? `<button class="btn btn-primary btn-sm" data-line-assign="${esc(l.id)}" data-num="${esc(l.phoneNumber)}"><span class="ms">person_add</span> ${esc(t('lines.assignBtn'))}</button>` : '')}
-    ${canEdit ? `<button class="btn btn-outline btn-sm" data-line-edit="${esc(l.id)}">${esc(t('common.edit'))}</button>` : ''}`;
+  // A line set aside for an onboarding is not waste — it is about to be used —
+  // so it never counts towards the idle total, and the row says who it waits for.
+  const isIdle = (l) => l.status === 'Active' && !l.currentEmployeeId && !l.reservedForEmployeeId;
+  const sumCost = (rows) => rows.reduce((s2, l) => s2 + Number(l.monthlyCost || 0), 0);
+  const activeAll = estate.filter((l) => l.status === 'Active');
+  const idleAll = estate.filter(isIdle);
 
-  const lineCols = columnPicker({
-    storageKey: 'itacm_cols_lines',
-    onChange: () => { const s = $('#line-table', el); if (s) s.innerHTML = lineTableHtml(); },
-    columns: [
-      { key: 'number', label: t('lines.colNumber'), mandatory: true, tdClass: 'mono cell-title', render: (l) => esc(l.phoneNumber), csv: (l) => l.phoneNumber || '' },
-      { key: 'operator', label: t('lines.colOperatorPlan'), render: (l) => `${esc(l.operator || '—')}<div class="cell-sub">${esc(l.plan || '')}</div>`, csv: (l) => `${l.operator || ''} ${l.plan || ''}`.trim() },
-      { key: 'sim', label: t('lines.colSim'), tdClass: 'mono cell-sub', render: (l) => esc(l.simSerial || '—'), csv: (l) => l.simSerial || '' },
-      ...(canViewCosts ? [{ key: 'monthly', label: t('lines.colMonthly'), render: (l) => (l.monthlyCost != null ? fmtMoney(l.monthlyCost) : '—'), csv: (l) => (l.monthlyCost != null ? l.monthlyCost : '') }] : []),
-      { key: 'status', label: t('common.status'), mandatory: true, render: (l) => lineStatusPill(l), csv: (l) => l.status || '' },
-      { key: 'assignedTo', label: t('lines.colAssignedTo'), render: (l) => (l.currentEmployeeName ? esc(l.currentEmployeeName) : '<span class="cell-sub">—</span>'), csv: (l) => l.currentEmployeeName || '' },
-    ],
-  });
-  function lineTableHtml() {
-    return `<table class="data">
-      <thead><tr>${lineCols.headerCells({})}<th style="text-align:right"></th></tr></thead>
-      <tbody>
-        ${items.length === 0 ? `<tr><td colspan="${lineCols.visibleColumns().length + 1}" class="table-empty">${esc(t('lines.noLinesYet'))}</td></tr>` :
-    items.map((l) => `<tr>${lineCols.bodyCells(l)}<td class="actions">${lineRowActions(l)}</td></tr>`).join('')}
-      </tbody>
-    </table>`;
-  }
+  const fill = (key, vals) => {
+    let out = t(key) || '';
+    Object.entries(vals).forEach(([k, v]) => { out = out.split('{' + k + '}').join(v); });
+    return out;
+  };
+  const nLines = (n) => (t('lines.nLines') || '{n}').replace('{n}', n);
+  /* A total is read as a size, not as an invoice, so it drops the minor unit.
+     A single line keeps its exact price, because that one IS an invoice line. */
+  const money0 = (n) => {
+    try {
+      return new Intl.NumberFormat(moneyLocale(), {
+        style: 'currency', currency: appCurrency(), maximumFractionDigits: 0,
+      }).format(Math.round(Number(n) || 0));
+    } catch { return fmtMoney(n); }
+  };
 
-  el.innerHTML = `
-    ${pageHead('Mobile Lines', 'Company SIM cards & phone numbers — who holds which line.', canEdit
-      ? `<button class="btn btn-primary" id="line-new"><span class="ms">sim_card</span> ${esc(t('lines.newLine'))}</button>` : '')}
-    <div class="grid grid-4" style="margin-bottom:20px">
-      <div class="card card-pad metric"><div class="metric-top"><h3 class="card-title">${esc(t('lines.totalLines'))}</h3>${iconChip('sim_card', 'indigo')}</div>
-        <div class="metric-value">${items.length}</div></div>
-      <div class="card card-pad metric"><div class="metric-top"><h3 class="card-title">${esc(t('lines.assignedMetric'))}</h3>${iconChip('person', 'blue')}</div>
-        <div class="metric-value">${assigned}</div></div>
-      <div class="card card-pad metric"><div class="metric-top"><h3 class="card-title">${esc(t('lines.free'))}</h3>${iconChip('sim_card_download', 'emerald')}</div>
-        <div class="metric-value">${items.filter((l) => !l.currentEmployeeId && l.status === 'Active').length}</div></div>
-      <div class="card card-pad metric"><div class="metric-top"><h3 class="card-title">${esc(t('lines.monthlyCost'))}</h3>${iconChip('payments', 'amber')}</div>
-        <div class="metric-value">${canViewCosts ? fmtMoney(monthly) : '—'}</div></div>
-    </div>
-    <div class="card">
-      <div class="card-pad" style="padding-bottom:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-        <div class="search-box" style="width:280px"><span class="ms">search</span>
-          <input type="search" id="line-search" placeholder="${esc(t('lines.searchPh'))}" value="${esc(params.search || '')}"></div>
-        <select id="line-status" style="width:auto">
-          <option value="">${esc(t('lines.allStatuses'))}</option>
-          ${[['Active', t('lines.stActive')], ['Suspended', t('lines.stSuspended')], ['Cancelled', t('lines.stCancelled')]].map(([st, lbl]) => `<option value="${st}" ${params.status === st ? 'selected' : ''}>${esc(lbl)}</option>`).join('')}
-        </select>
-        <div style="margin-left:auto">${lineCols.gearHtml()}</div>
+  /* The lede. Money when the account may see it, counts when it may not —
+     never a row of metric tiles, which says the total without ever saying
+     where it leaks. */
+  const ledeHtml = (() => {
+    const head = canViewCosts
+      ? fill('lines.ledeSpend', { amount: `<b>${esc(money0(sumCost(activeAll)))}</b>`, n: activeAll.length })
+      : fill('lines.ledeCount', { n: estate.length });
+    if (!idleAll.length) return `<p class="ln-lede">${head} ${esc(t('lines.ledeAllHeld'))}</p>`;
+    const tail = canViewCosts
+      ? fill('lines.ledeIdle', { amount: `<b>${esc(money0(sumCost(idleAll)))}</b>`, n: idleAll.length })
+      : fill('lines.ledeIdleCount', { n: idleAll.length });
+    return `<p class="ln-lede">${head} <span class="ln-leak">${tail}</span></p>`;
+  })();
+
+  /* Icon buttons, like the hardware list. Two reasons beyond consistency: a
+     word next to a row of figures competes with them, and a button whose width
+     changes with the translation would knock the money column out of line —
+     each row is its own grid, so only a constant width keeps the column true. */
+  const iconBtn = (attr, id, icon, label, extra = '') =>
+    `<button type="button" class="hw-icon-btn" data-${attr}="${esc(id)}"${extra} title="${esc(label)}" aria-label="${esc(label)}"><span class="ms">${icon}</span></button>`;
+  const rowActions = (l) => `${l.currentEmployeeId
+    ? (canUnassign ? iconBtn('line-unassign', l.id, 'undo', t('lines.takeBack')) : '')
+    : (canAssign && l.status === 'Active' ? iconBtn('line-assign', l.id, 'person_add', t('lines.assignBtn'), ` data-num="${esc(l.phoneNumber)}"`) : '')}
+    ${canEdit ? iconBtn('line-edit', l.id, 'edit', t('common.edit')) : ''}`;
+
+  /* Operator and plan sit on one line without a separator character: the
+     operator carries the weight, the plan does not. A middle dot between them
+     would be one more piece of chrome saying nothing. */
+  /* An account that may not see line costs gets the money track removed
+     outright rather than left standing empty. */
+  const rowHtml = (l) => `<div class="ln-row${canViewCosts ? '' : ' ln-nocost'}">
+      <div class="ln-num">${esc(fmtPhone(l.phoneNumber))}</div>
+      <div class="ln-plan">
+        ${l.operator ? `<span class="ln-op">${esc(l.operator)}</span>` : ''}
+        ${l.plan ? `<span>${esc(l.plan)}</span>` : ''}
       </div>
-      <div class="table-wrap" id="line-table">${lineTableHtml()}</div>
-      <div class="table-foot">${(t('lines.nLines') || '{n} line(s)').replace('{n}', items.length)}</div>
+      <div class="ln-who">${esc(l.currentEmployeeName || '')}</div>
+      ${canViewCosts && l.monthlyCost != null
+    ? `<div class="ln-cost">${esc(fmtMoney(l.monthlyCost))}<span class="ln-per">${esc(t('lines.perMonth'))}</span></div>` : ''}
+      <div class="ln-act">${rowActions(l)}</div>
     </div>`;
 
-  lineCols.mountGear(el);
+  /* Sort on the subscriber number, not the string as typed. One estate holds
+     "+90 530 100 21 09" beside a bare "5301002107" — the same kind of number
+     written two ways — and comparing raw strings files them under their
+     punctuation and country code instead of their value. The last ten digits
+     are the part that identifies the subscriber; anything shorter is compared
+     whole, and the raw string breaks a tie so the order never wobbles. */
+  const sortKeyOf = (l) => {
+    const d = String(l.phoneNumber || '').replace(/\D/g, '');
+    return d.length > 10 ? d.slice(-10) : d.padStart(10, ' ');
+  };
+  const byNumber = (a, b) => sortKeyOf(a).localeCompare(sortKeyOf(b))
+    || String(a.phoneNumber || '').localeCompare(String(b.phoneNumber || ''));
+  const group = (name, rows, { leak = false, billing = true } = {}) => {
+    if (!rows.length) return '';
+    // Suspended and cancelled lines carry a stored price but are not charging
+    // it, so no total is printed over them — the row keeps the plan's price.
+    const cost = canViewCosts && billing && rows.length > 1 ? sumCost(rows) : null;
+    return `<section class="ln-group">
+      <header class="ln-group-head">
+        <h3 class="ln-group-name${leak ? ' is-leak' : ''}">${esc(name)}</h3>
+        <span class="ln-group-n">${esc(nLines(rows.length))}</span>
+        ${cost ? `<span class="ln-group-cost">${esc(fmtMoney(cost))}</span>` : ''}
+      </header>
+      <div class="ln-list">${rows.slice().sort(byNumber).map(rowHtml).join('')}</div>
+    </section>`;
+  };
+
+  const shown = {
+    idle: items.filter(isIdle),
+    reserved: items.filter((l) => l.status === 'Active' && !l.currentEmployeeId && l.reservedForEmployeeId),
+    held: items.filter((l) => l.status === 'Active' && l.currentEmployeeId),
+    susp: items.filter((l) => l.status === 'Suspended'),
+    canc: items.filter((l) => l.status === 'Cancelled'),
+  };
+
+  const emptyHtml = `<div class="table-empty" style="padding:36px 16px">${esc(filtered ? t('lines.noMatch') : t('lines.noLinesYet'))}</div>`;
+
+  el.innerHTML = `
+    ${pageHead(t('nav.lines') || 'Mobile Lines', '', canEdit
+    ? `<button class="btn btn-primary" id="line-new"><span class="ms">sim_card</span> ${esc(t('lines.newLine'))}</button>` : '')}
+    ${ledeHtml}
+    <div class="ln-tools">
+      <div class="search-box" style="flex:1;min-width:0;max-width:340px"><span class="ms">search</span>
+        <input type="search" id="line-search" placeholder="${esc(t('lines.searchPh'))}" value="${esc(params.search || '')}"></div>
+      <select id="line-status" style="width:auto">
+        <option value="">${esc(t('lines.allStatuses'))}</option>
+        ${[['Active', t('lines.stActive')], ['Suspended', t('lines.stSuspended')], ['Cancelled', t('lines.stCancelled')]].map(([st, lbl]) => `<option value="${st}" ${params.status === st ? 'selected' : ''}>${esc(lbl)}</option>`).join('')}
+      </select>
+    </div>
+    ${items.length ? `${group(t('lines.grpIdle'), shown.idle, { leak: true })}
+      ${group(t('lines.reservedFor'), shown.reserved)}
+      ${group(t('lines.grpHeld'), shown.held)}
+      ${group(t('lines.stSuspended'), shown.susp, { billing: false })}
+      ${group(t('lines.stCancelled'), shown.canc, { billing: false })}` : emptyHtml}`;
+
   const rerender = (p) => Views.lines(el, { ...params, ...p });
   $('#line-search', el).addEventListener('change', (e) => rerender({ search: e.target.value }));
   $('#line-status', el).addEventListener('change', (e) => rerender({ status: e.target.value }));
@@ -504,7 +603,7 @@ Views.lines = async function (el, params = {}) {
       { name: 'operator', label: t('lines.operator'), value: line?.operator, placeholder: 'Turkcell / Vodafone / Türk Telekom' },
       { name: 'plan', label: t('lines.fPlan'), value: line?.plan, placeholder: t('lines.planPh') },
       { name: 'simSerial', label: t('lines.fSim'), value: line?.simSerial },
-      ...((Auth.canIam('line', 'view_confidential') || Auth.can('canViewLineCosts'))
+      ...(canViewCosts
         ? [{ name: 'monthlyCost', label: (t('lines.fMonthlyCost') || 'Monthly cost ({cur})').replace('{cur}', appCurrency()), type: 'number', step: '0.01', value: line?.monthlyCost }]
         : []),
       { name: 'status', label: t('common.status'), type: 'select', value: line?.status || 'Active', options: [{ value: 'Active', label: t('lines.stActive') }, { value: 'Suspended', label: t('lines.stSuspended') }, { value: 'Cancelled', label: t('lines.stCancelled') }] },
@@ -529,9 +628,9 @@ Views.lines = async function (el, params = {}) {
   if (canEdit) $('#line-new', el).addEventListener('click', () => lineForm(null));
 
   bindView(el, async (e) => {
-    const b = e.target.closest('button'); if (!b || !canEdit) return;
-    if (b.dataset.lineEdit) return lineForm(items.find((l) => l.id === b.dataset.lineEdit));
-    if (b.dataset.lineAssign) {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.lineEdit && canEdit) return lineForm(items.find((l) => l.id === b.dataset.lineEdit));
+    if (b.dataset.lineAssign && canAssign) {
       return pickEmployee((t('lines.assignToTitle') || 'Assign {num} to…').replace('{num}', b.dataset.num), async (emp) => {
         try {
           const r = await api(`/lines/${b.dataset.lineAssign}/assign`, { method: 'POST', body: { employeeId: emp.id } });
@@ -540,7 +639,7 @@ Views.lines = async function (el, params = {}) {
         } catch (err) { toast(err.message, 'error'); }
       });
     }
-    if (b.dataset.lineUnassign) {
+    if (b.dataset.lineUnassign && canUnassign) {
       try {
         const r = await api(`/lines/${b.dataset.lineUnassign}/unassign`, { method: 'POST' });
         toast((t('lines.takenBack') || '{num} taken back').replace('{num}', r.phoneNumber), 'success');
