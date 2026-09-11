@@ -31,20 +31,47 @@ Views.problems = async function (el) {
       <td class="cell-sub tk-date">${esc(String(p.createdAt || '').slice(0, 10))}</td>
     </tr>`;
 
+  /* Seven columns stack into seven label/value rows on a phone. The card leads
+     with the title; the linked-incident count only appears when there is one,
+     since a problem with no incidents attached has nothing to say there. */
+  const cardHtml = (p) => `<div class="m-rec-card prio-${esc(p.priority)}" data-open="${esc(p.id)}" role="button" tabindex="0">
+      <div class="m-rec-top">
+        <span class="m-rec-num mono">${esc(p.number)}</span>
+        <span class="m-rec-state">${pill(PR_STATUS_PILL[p.status], prStatusLabel(p.status))}</span>
+      </div>
+      <div class="m-rec-title">${esc(p.title)}</div>
+      ${p.incidentCount ? `<div class="m-rec-sub"><span class="ms ms-sm">link</span>${esc(String(p.incidentCount))} ${esc(t('pr.incidents'))}</div>` : ''}
+      <div class="m-rec-meta">
+        <span class="m-rec-mark prio-${esc(p.priority)}">${esc(t('tk.priorityOf.' + p.priority) || tkPriorityLabel(p.priority))}</span>
+        <span class="m-rec-who">${esc(p.assigneeName || t('tk.unassigned'))}</span>
+      </div>
+    </div>`;
+
   const render = (list) => {
     el.innerHTML = `
       ${pageHead(t('pr.title'), t('pr.subtitle'), canCreate
         ? `<button class="btn btn-primary" id="pr-new"><span class="ms">add</span> ${esc(t('pr.new'))}</button>` : '')}
-      <div class="card table-wrap"><table class="data tk-list">
-        <thead><tr>
-          <th>#</th><th>${esc(t('pr.titleCol'))}</th><th>${esc(t('tk.statusCol'))}</th>
-          <th>${esc(t('tk.priorityCol'))}</th><th>${esc(t('pr.incidents'))}</th>
-          <th>${esc(t('tk.assignee'))}</th><th>${esc(t('tk.createdCol'))}</th>
-        </tr></thead>
-        <tbody id="pr-rows">${list.length ? list.map(rowHtml).join('')
-          : `<tr><td colspan="7" class="table-empty">${esc(t('pr.none'))}</td></tr>`}</tbody>
-      </table></div>`;
-    el.querySelectorAll('#pr-rows tr[data-open]').forEach((tr) => tr.addEventListener('click', () => openProblem(tr.dataset.open)));
+      <div class="card">
+        <div class="m-rec-list">${list.length ? list.map(cardHtml).join('')
+          : `<div class="table-empty" style="padding:24px">${esc(t('pr.none'))}</div>`}</div>
+        <div class="table-wrap"><table class="data tk-list">
+          <thead><tr>
+            <th>#</th><th>${esc(t('pr.titleCol'))}</th><th>${esc(t('tk.statusCol'))}</th>
+            <th>${esc(t('tk.priorityCol'))}</th><th>${esc(t('pr.incidents'))}</th>
+            <th>${esc(t('tk.assignee'))}</th><th>${esc(t('tk.createdCol'))}</th>
+          </tr></thead>
+          <tbody id="pr-rows">${list.length ? list.map(rowHtml).join('')
+            : `<tr><td colspan="7" class="table-empty">${esc(t('pr.none'))}</td></tr>`}</tbody>
+        </table></div>
+      </div>`;
+    el.querySelectorAll('[data-open]').forEach((node) => {
+      node.addEventListener('click', () => openProblem(node.dataset.open));
+      if (node.getAttribute('role') === 'button') {
+        node.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openProblem(node.dataset.open); }
+        });
+      }
+    });
     const nb = $('#pr-new', el);
     if (nb) nb.addEventListener('click', openCreate);
   };

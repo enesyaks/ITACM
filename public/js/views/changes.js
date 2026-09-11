@@ -60,7 +60,7 @@ Views.changes = async function (el) {
       </div>
       <div class="m-rec-title">${esc(c.title)}</div>
       <div class="m-rec-meta">
-        <span class="m-rec-risk risk-${esc(c.risk)}">${esc(t('ch.riskOf.' + c.risk) || chRiskLabel(c.risk))}</span>
+        <span class="m-rec-mark risk-${esc(c.risk)}">${esc(t('ch.riskOf.' + c.risk) || chRiskLabel(c.risk))}</span>
         <span class="m-rec-who">${esc(c.assigneeName || t('tk.unassigned'))}</span>
       </div>
       ${c.scheduledStart ? `<div class="m-rec-when"><span class="ms ms-sm">event</span>${esc(chDt(c.scheduledStart))}</div>` : ''}

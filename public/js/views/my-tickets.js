@@ -24,6 +24,23 @@ Views.myTickets = async function (el, params) {
       <td class="cell-sub">${esc(String(tk.createdAt || '').slice(0, 10))}</td>
     </tr>`;
 
+  /* The portal is the page employees open on a phone, so the six-column table
+     is the wrong shape there: the subject is what someone looks for, and the
+     approval chip is what they came back to check. The type only appears when
+     the ticket is a request rather than an incident. */
+  const cardHtml = (tk) => `<div class="m-rec-card prio-${esc(tk.priority)}" data-open="${esc(tk.id)}" role="button" tabindex="0">
+      <div class="m-rec-top">
+        <span class="m-rec-num mono">${esc(tk.number)}</span>
+        ${tk.approvalStatus ? apPill(tk.approvalStatus) : ''}
+        <span class="m-rec-state">${pill(TK_STATUS_PILL[tk.status], tkStatusLabel(tk.status))}</span>
+      </div>
+      <div class="m-rec-title">${esc(tk.subject)}</div>
+      <div class="m-rec-meta">
+        <span class="m-rec-mark prio-${esc(tk.priority)}">${esc(t('tk.priorityOf.' + tk.priority) || tkPriorityLabel(tk.priority))}</span>
+        <span class="m-rec-who">${esc(String(tk.createdAt || '').slice(0, 10))}</span>
+      </div>
+    </div>`;
+
   const apprCard = (a) => `<div class="tk-doc" data-appr="${esc(a.id)}" style="cursor:pointer">
       <span style="flex:1"><strong>${esc(a.summary || t('mtk.apGeneric'))}</strong>
         <span class="cell-sub"> · ${esc(t('mtk.apFrom'))} ${esc(a.requesterName || '—')}</span></span>
@@ -38,17 +55,27 @@ Views.myTickets = async function (el, params) {
     ${approvals.length ? `<div class="card card-pad" style="margin-bottom:14px">
       <h3 style="margin:0 0 10px">${esc(t('mtk.approvalsTitle'))} <span class="pill pill-amber">${approvals.length}</span></h3>
       <div class="tk-docs">${approvals.map(apprCard).join('')}</div></div>` : ''}
-    <div class="card table-wrap"><table class="data mtk-list">
-      <thead><tr>
-        <th>#</th><th>${esc(t('tk.type'))}</th><th>${esc(t('tk.subject'))}</th>
-        <th>${esc(t('tk.statusCol'))}</th><th>${esc(t('tk.priorityCol'))}</th><th>${esc(t('tk.createdCol'))}</th>
-      </tr></thead>
-      <tbody id="mtk-rows">${tickets.length ? tickets.map(rowHtml).join('')
-        : `<tr><td colspan="6" class="table-empty">${esc(t('mtk.none'))}</td></tr>`}</tbody>
-    </table></div>`;
+    <div class="card">
+      <div class="m-rec-list">${tickets.length ? tickets.map(cardHtml).join('')
+        : `<div class="table-empty" style="padding:24px">${esc(t('mtk.none'))}</div>`}</div>
+      <div class="table-wrap"><table class="data mtk-list">
+        <thead><tr>
+          <th>#</th><th>${esc(t('tk.type'))}</th><th>${esc(t('tk.subject'))}</th>
+          <th>${esc(t('tk.statusCol'))}</th><th>${esc(t('tk.priorityCol'))}</th><th>${esc(t('tk.createdCol'))}</th>
+        </tr></thead>
+        <tbody id="mtk-rows">${tickets.length ? tickets.map(rowHtml).join('')
+          : `<tr><td colspan="6" class="table-empty">${esc(t('mtk.none'))}</td></tr>`}</tbody>
+      </table></div>
+    </div>`;
 
-  el.querySelectorAll('#mtk-rows tr[data-open]').forEach((tr) =>
-    tr.addEventListener('click', () => openMine(tr.dataset.open)));
+  el.querySelectorAll('[data-open]').forEach((node) => {
+    node.addEventListener('click', () => openMine(node.dataset.open));
+    if (node.getAttribute('role') === 'button') {
+      node.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openMine(node.dataset.open); }
+      });
+    }
+  });
   // #/my-tickets?open=<id> — the link in a service-desk email lands here, so a
   // Portal account opens the ticket itself instead of a list to hunt through.
   if (params && params.open) openMine(params.open);

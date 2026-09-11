@@ -2758,7 +2758,7 @@ tr.net-row:hover td { background: var(--surface-low); }
   .m-rec-card.risk-low { border-left-color: var(--slate-500); }
   .m-rec-card.risk-medium { border-left-color: var(--amber-600, #d97706); }
   .m-rec-card.risk-high { border-left-color: var(--rose-600, #e11d48); }
-  .m-rec-top { display: flex; align-items: center; gap: 8px; }
+  .m-rec-top { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; row-gap: 6px; }
   .m-rec-num { font-size: 12.5px; color: var(--on-surface-variant); flex: none; }
   .m-rec-state { margin-left: auto; flex: none; }
   .m-rec-title {
@@ -2776,14 +2776,31 @@ tr.net-row:hover td { background: var(--surface-low); }
   }
   .m-rec-when .ms-sm { font-size: 15px; opacity: .7; }
   .m-rec-card .pill { flex: none; }
-  .m-rec-risk {
+  /* The one word that grades the record — a change's risk, a ticket's
+     priority. It repeats the colour of the card's left edge so the edge stays
+     readable for anyone who cannot use colour alone. */
+  .m-rec-mark {
     display: inline-flex; align-items: center; gap: 6px; flex: none;
     font-size: 12.5px; font-weight: 600; color: var(--on-surface-variant);
   }
-  .m-rec-risk::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
-  .m-rec-risk.risk-low { color: var(--slate-500); }
-  .m-rec-risk.risk-medium { color: var(--amber-600, #d97706); }
-  .m-rec-risk.risk-high { color: var(--rose-600, #e11d48); }
+  .m-rec-mark::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .m-rec-mark.risk-low, .m-rec-mark.prio-low { color: var(--slate-500); }
+  .m-rec-mark.risk-medium { color: var(--amber-600, #d97706); }
+  .m-rec-mark.risk-high { color: var(--rose-600, #e11d48); }
+  .m-rec-mark.prio-medium { color: var(--blue-700); }
+  .m-rec-mark.prio-high { color: var(--amber-600, #d97706); }
+  .m-rec-mark.prio-urgent { color: var(--rose-600, #e11d48); }
+  .m-rec-card.prio-low { border-left-color: var(--slate-500); }
+  .m-rec-card.prio-medium { border-left-color: var(--blue-700); }
+  .m-rec-card.prio-high { border-left-color: var(--amber-600, #d97706); }
+  .m-rec-card.prio-urgent { border-left-color: var(--rose-600, #e11d48); }
+  /* A quiet line hanging off the title — the asset a ticket is about. */
+  .m-rec-sub {
+    display: flex; align-items: center; gap: 5px; margin-top: 5px;
+    font-size: 12.5px; color: var(--outline); min-width: 0;
+  }
+  .m-rec-sub .ms-sm { font-size: 15px; opacity: .7; }
+  .m-rec-end { margin-left: auto; flex: none; }
 }
 
 @media screen and (min-width: 861px) {

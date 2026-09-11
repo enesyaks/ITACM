@@ -174,7 +174,41 @@ Views.tickets = async function (el, params = {}) {
     const arrow = sortKey === key ? (sortOrder === 'asc' ? ' ▲' : ' ▼') : '';
     return `<th class="tk-sortable${sortKey === key ? ' active' : ''}" data-sort="${key}">${esc(label)}${arrow}</th>`;
   };
-  const tableHtml = (list) => `<div class="card table-wrap"><table class="data tk-list">
+  /* Nine columns become nine label/value rows on a phone, so one ticket fills
+     the screen and the subject — the only part anyone reads while scanning —
+     lands in the middle of the stack. The card leads with the subject and shows
+     the rest only where it earns the space: the asset line when the ticket is
+     about one, the VIP chip for a VIP requester, and the SLA badge only while
+     the clock still means something (a met, paused or absent target is not
+     something to act on). Priority is the card's left edge and one quiet
+     coloured word, so status stays the only filled chip.
+
+     The requester is deliberately absent: printed next to the assignee it was
+     just a second unlabelled name, and nobody triaging a queue needs it before
+     opening the ticket. */
+  const mCardHtml = (tk) => {
+    const leg = tk.sla && tk.sla.resolve;
+    const live = leg && (leg.state === 'due' || leg.state === 'breached');
+    return `<div class="m-rec-card prio-${esc(tk.priority)}" data-open="${esc(tk.id)}" role="button" tabindex="0">
+      <div class="m-rec-top">
+        <span class="m-rec-num mono">${esc(tk.number)}</span>
+        ${tk.requesterVip ? `<span class="pill pill-amber">${esc(t('emp.vip'))}</span>` : ''}
+        <span class="m-rec-state">${pill(TK_STATUS_PILL[tk.status], tkStatusLabel(tk.status))}</span>
+      </div>
+      <div class="m-rec-title">${esc(tk.subject)}</div>
+      ${tk.assetTag ? `<div class="m-rec-sub"><span class="ms ms-sm">devices</span>${esc(tk.assetTag)}</div>` : ''}
+      <div class="m-rec-meta">
+        <span class="m-rec-mark prio-${esc(tk.priority)}">${esc(t('tk.priorityOf.' + tk.priority) || tkPriorityLabel(tk.priority))}</span>
+        <span class="m-rec-who">${esc(tk.assigneeName || t('tk.unassigned'))}</span>
+      </div>
+      ${live ? `<div class="m-rec-when">${tkSlaBadge(leg)}</div>` : ''}
+    </div>`;
+  };
+
+  const mListHtml = (list) => `<div class="m-rec-list">${list.length ? list.map(mCardHtml).join('')
+      : `<div class="table-empty" style="padding:24px">${esc(t('tk.none'))}</div>`}</div>`;
+
+  const tableHtml = (list) => `<div class="card">${mListHtml(list)}<div class="table-wrap"><table class="data tk-list">
       <thead><tr>
         ${canBulk ? '<th class="tk-selcell"><input type="checkbox" id="tk-sel-all"></th>' : ''}
         ${sortTh('number', '#')}<th>${esc(t('tk.type'))}</th>${sortTh('subject', t('tk.subject'))}
@@ -183,7 +217,7 @@ Views.tickets = async function (el, params = {}) {
       </tr></thead>
       <tbody id="tk-rows">${list.length ? list.map(rowHtml).join('')
         : `<tr><td colspan="${canBulk ? 10 : 9}" class="table-empty">${esc(t('tk.none'))}</td></tr>`}</tbody>
-    </table></div>`;
+    </table></div></div>`;
 
   const cardHtml = (tk) => `<div class="tk-card" data-id="${esc(tk.id)}" data-status="${esc(tk.status)}"${canUpdate ? ' draggable="true"' : ''}>
       <div class="tk-card-top"><span class="mono cell-sub">${esc(tk.number)}</span>${pill(TK_PRIORITY_PILL[tk.priority], tkPriorityLabel(tk.priority))}</div>
@@ -205,8 +239,14 @@ Views.tickets = async function (el, params = {}) {
     const box = $('#tk-content', el); if (!box) return;
     selected.clear(); // a fresh paint (sort/filter/refresh) starts with no selection
     box.innerHTML = tableHtml(list);
-    box.querySelectorAll('#tk-rows tr[data-open]').forEach((tr) =>
-      tr.addEventListener('click', () => openTicket(tr.dataset.open)));
+    box.querySelectorAll('[data-open]').forEach((node) => {
+      node.addEventListener('click', () => openTicket(node.dataset.open));
+      if (node.getAttribute('role') === 'button') {
+        node.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openTicket(node.dataset.open); }
+        });
+      }
+    });
     box.querySelectorAll('th.tk-sortable').forEach((th) => th.addEventListener('click', () => {
       const key = th.dataset.sort;
       if (sortKey === key) sortOrder = sortOrder === 'asc' ? 'desc' : 'asc';
