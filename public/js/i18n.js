@@ -1595,6 +1595,11 @@
     'ch.risk.low': L('Low', 'Düşük', 'Niedrig', 'Faible', 'Bajo', 'Basso', 'Baixo', 'Laag', 'Niskie', 'Низкий', 'منخفض', '低'),
     'ch.risk.medium': L('Medium', 'Orta', 'Mittel', 'Moyen', 'Medio', 'Medio', 'Médio', 'Gemiddeld', 'Średnie', 'Средний', 'متوسط', '中'),
     'ch.risk.high': L('High', 'Yüksek', 'Hoch', 'Élevé', 'Alto', 'Alto', 'Alto', 'Hoog', 'Wysokie', 'Высокий', 'مرتفع', '高'),
+    // Phone cards name the risk in full ("Medium risk"), which is a different
+    // string from the table's bare "Medium" in every language that inflects.
+    'ch.riskOf.low': L('Low risk', 'Düşük risk', 'Geringes Risiko', 'Risque faible', 'Riesgo bajo', 'Rischio basso', 'Risco baixo', 'Laag risico', 'Niskie ryzyko', 'Низкий риск', 'مخاطرة منخفضة', 'リスク低'),
+    'ch.riskOf.medium': L('Medium risk', 'Orta risk', 'Mittleres Risiko', 'Risque moyen', 'Riesgo medio', 'Rischio medio', 'Risco médio', 'Gemiddeld risico', 'Średnie ryzyko', 'Средний риск', 'مخاطرة متوسطة', 'リスク中'),
+    'ch.riskOf.high': L('High risk', 'Yüksek risk', 'Hohes Risiko', 'Risque élevé', 'Riesgo alto', 'Rischio alto', 'Risco alto', 'Hoog risico', 'Wysokie ryzyko', 'Высокий риск', 'مخاطرة مرتفعة', 'リスク高'),
     'ch.status.draft': L('Draft', 'Taslak', 'Entwurf', 'Brouillon', 'Borrador', 'Bozza', 'Rascunho', 'Concept', 'Wersja robocza', 'Черновик', 'مسودة', '下書き'),
     'ch.status.pending_approval': L('Pending approval', 'Onay bekliyor', 'Genehmigung ausstehend', 'En attente d\'approbation', 'Pendiente de aprobación', 'In attesa di approvazione', 'Aguardando aprovação', 'Wacht op goedkeuring', 'Oczekuje na zatwierdzenie', 'Ожидает согласования', 'بانتظار الموافقة', '承認待ち'),
     'ch.status.approved': L('Approved', 'Onaylandı', 'Genehmigt', 'Approuvé', 'Aprobado', 'Approvato', 'Aprovado', 'Goedgekeurd', 'Zatwierdzono', 'Согласовано', 'تمت الموافقة', '承認済み'),

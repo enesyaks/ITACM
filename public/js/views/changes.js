@@ -46,20 +46,51 @@ Views.changes = async function (el) {
       <td class="cell-sub tk-date">${esc(chDt(c.scheduledStart) || '—')}</td>
     </tr>`;
 
+  /* Seven columns stack into seven label/value rows on a phone — one change
+     fills the whole screen and the title, the thing you actually read, ends up
+     buried in the middle. The card leads with the title and shows the rest only
+     where it earns its place: the type pill appears only when the change is not
+     a normal one, and the schedule line only when a window is set. Risk is a
+     pill AND the card's left edge, so it survives a glance. */
+  const cardHtml = (c) => `<div class="m-rec-card risk-${esc(c.risk)}" data-open="${esc(c.id)}" role="button" tabindex="0">
+      <div class="m-rec-top">
+        <span class="m-rec-num mono">${esc(c.number)}</span>
+        ${c.type && c.type !== 'normal' ? pill(CH_TYPE_PILL[c.type], chTypeLabel(c.type)) : ''}
+        <span class="m-rec-state">${pill(CH_STATUS_PILL[c.status], chStatusLabel(c.status))}</span>
+      </div>
+      <div class="m-rec-title">${esc(c.title)}</div>
+      <div class="m-rec-meta">
+        <span class="m-rec-risk risk-${esc(c.risk)}">${esc(t('ch.riskOf.' + c.risk) || chRiskLabel(c.risk))}</span>
+        <span class="m-rec-who">${esc(c.assigneeName || t('tk.unassigned'))}</span>
+      </div>
+      ${c.scheduledStart ? `<div class="m-rec-when"><span class="ms ms-sm">event</span>${esc(chDt(c.scheduledStart))}</div>` : ''}
+    </div>`;
+
   const render = (list) => {
     el.innerHTML = `
       ${pageHead(t('ch.title'), t('ch.subtitle'), canCreate
         ? `<button class="btn btn-primary" id="ch-new"><span class="ms">add</span> ${esc(t('ch.new'))}</button>` : '')}
-      <div class="card table-wrap"><table class="data tk-list">
-        <thead><tr>
-          <th>#</th><th>${esc(t('pr.titleCol'))}</th><th>${esc(t('tk.type'))}</th>
-          <th>${esc(t('tk.statusCol'))}</th><th>${esc(t('ch.risk'))}</th>
-          <th>${esc(t('tk.assignee'))}</th><th>${esc(t('ch.scheduled'))}</th>
-        </tr></thead>
-        <tbody id="ch-rows">${list.length ? list.map(rowHtml).join('')
-          : `<tr><td colspan="7" class="table-empty">${esc(t('ch.none'))}</td></tr>`}</tbody>
-      </table></div>`;
-    el.querySelectorAll('#ch-rows tr[data-open]').forEach((tr) => tr.addEventListener('click', () => openChange(tr.dataset.open)));
+      <div class="card">
+        <div class="m-rec-list">${list.length ? list.map(cardHtml).join('')
+          : `<div class="table-empty" style="padding:24px">${esc(t('ch.none'))}</div>`}</div>
+        <div class="table-wrap"><table class="data tk-list">
+          <thead><tr>
+            <th>#</th><th>${esc(t('pr.titleCol'))}</th><th>${esc(t('tk.type'))}</th>
+            <th>${esc(t('tk.statusCol'))}</th><th>${esc(t('ch.risk'))}</th>
+            <th>${esc(t('tk.assignee'))}</th><th>${esc(t('ch.scheduled'))}</th>
+          </tr></thead>
+          <tbody id="ch-rows">${list.length ? list.map(rowHtml).join('')
+            : `<tr><td colspan="7" class="table-empty">${esc(t('ch.none'))}</td></tr>`}</tbody>
+        </table></div>
+      </div>`;
+    el.querySelectorAll('[data-open]').forEach((node) => {
+      node.addEventListener('click', () => openChange(node.dataset.open));
+      if (node.getAttribute('role') === 'button') {
+        node.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openChange(node.dataset.open); }
+        });
+      }
+    });
     const nb = $('#ch-new', el);
     if (nb) nb.addEventListener('click', openCreate);
   };

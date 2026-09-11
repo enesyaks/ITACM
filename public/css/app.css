@@ -2548,7 +2548,7 @@ tr.net-row:hover td { background: var(--surface-low); }
 /* ---------- mobile chrome: bottom nav + FAB + more sheet ---------- */
 .mobile-nav,
 .mobile-more { display: none; }
-.m-asset-list, .m-emp-list, .m-audit-list, .m-kb-list { display: none; }
+.m-asset-list, .m-emp-list, .m-audit-list, .m-kb-list, .m-rec-list { display: none; }
 
 @media screen and (max-width: 860px) {
   /* Only while the authenticated app shell is visible — never on login/onboarding */
@@ -2685,7 +2685,7 @@ tr.net-row:hover td { background: var(--surface-low); }
   }
 
   /* Prefer card lists over wide tables when a mobile list is present */
-  .m-asset-list, .m-emp-list, .m-audit-list, .m-kb-list { display: flex; flex-direction: column; gap: 10px; }
+  .m-asset-list, .m-emp-list, .m-audit-list, .m-kb-list, .m-rec-list { display: flex; flex-direction: column; gap: 10px; }
   .m-asset-card, .m-emp-card, .m-audit-card {
     background: #fff; border: 1px solid var(--outline-variant);
     border-radius: 14px; padding: 12px 14px; box-shadow: var(--shadow-card);
@@ -2704,11 +2704,13 @@ tr.net-row:hover td { background: var(--surface-low); }
   .card:has(> .m-asset-list) > .table-wrap,
   .card:has(> .m-emp-list) > .table-wrap,
   .card:has(> .m-audit-list) > .table-wrap,
-  .card:has(> .m-kb-list) > .table-wrap { display: none; }
+  .card:has(> .m-kb-list) > .table-wrap,
+  .card:has(> .m-rec-list) > .table-wrap { display: none; }
   .card > .m-asset-list,
   .card > .m-emp-list,
   .card > .m-audit-list,
-  .card > .m-kb-list { display: flex; }
+  .card > .m-kb-list,
+  .card > .m-rec-list { display: flex; }
   .card:has(> .m-asset-list) > .table-foot,
   .card:has(> .m-emp-list) > .table-foot,
   .card:has(> .m-audit-list) > .table-foot { border-top: 0; padding-top: 8px; }
@@ -2718,7 +2720,8 @@ tr.net-row:hover td { background: var(--surface-low); }
      published is the normal state, so only a draft is worth marking. */
   /* The cards carry their own surface, so the wrapper that holds the desktop
      table would only draw a second border around them. */
-  .card:has(> .m-kb-list) { background: none; border: 0; box-shadow: none; padding: 0; }
+  .card:has(> .m-kb-list),
+  .card:has(> .m-rec-list) { background: none; border: 0; box-shadow: none; padding: 0; }
   .m-kb-list { gap: 8px; }
   .m-kb-card {
     background: #fff; border: 1px solid var(--outline-variant);
@@ -2740,11 +2743,52 @@ tr.net-row:hover td { background: var(--surface-low); }
     flex: none; background: var(--indigo-100); color: var(--indigo-700);
     font-size: 11.5px; font-weight: 600; border-radius: 999px; padding: 2px 9px;
   }
+
+  /* Record card — a ticket-shaped row (number, title, state, risk, owner, a
+     date) as one card. The left edge carries the risk colour so a list can be
+     triaged without reading, and the pill names it for everyone else. Lines
+     that have nothing to say are left out rather than printed as a dash. */
+  .m-rec-card {
+    position: relative;
+    background: #fff; border: 1px solid var(--outline-variant); border-left-width: 4px;
+    border-left-color: var(--outline); border-radius: 14px; padding: 12px 14px;
+    box-shadow: var(--shadow-card); cursor: pointer; -webkit-tap-highlight-color: transparent;
+  }
+  .m-rec-card:active { background: var(--surface-low); }
+  .m-rec-card.risk-low { border-left-color: var(--slate-500); }
+  .m-rec-card.risk-medium { border-left-color: var(--amber-600, #d97706); }
+  .m-rec-card.risk-high { border-left-color: var(--rose-600, #e11d48); }
+  .m-rec-top { display: flex; align-items: center; gap: 8px; }
+  .m-rec-num { font-size: 12.5px; color: var(--on-surface-variant); flex: none; }
+  .m-rec-state { margin-left: auto; flex: none; }
+  .m-rec-title {
+    margin-top: 6px; font-size: 15.5px; font-weight: 600; line-height: 1.32;
+    color: var(--on-surface); word-break: break-word;
+  }
+  .m-rec-meta { display: flex; align-items: center; gap: 10px; margin-top: 9px; }
+  .m-rec-who {
+    margin-left: auto; min-width: 0; font-size: 12.5px; color: var(--outline);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .m-rec-when {
+    display: flex; align-items: center; gap: 5px; margin-top: 8px;
+    font-size: 12.5px; color: var(--outline); font-variant-numeric: tabular-nums;
+  }
+  .m-rec-when .ms-sm { font-size: 15px; opacity: .7; }
+  .m-rec-card .pill { flex: none; }
+  .m-rec-risk {
+    display: inline-flex; align-items: center; gap: 6px; flex: none;
+    font-size: 12.5px; font-weight: 600; color: var(--on-surface-variant);
+  }
+  .m-rec-risk::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .m-rec-risk.risk-low { color: var(--slate-500); }
+  .m-rec-risk.risk-medium { color: var(--amber-600, #d97706); }
+  .m-rec-risk.risk-high { color: var(--rose-600, #e11d48); }
 }
 
 @media screen and (min-width: 861px) {
   .mobile-nav, .mobile-more { display: none !important; }
-  .m-asset-list, .m-emp-list, .m-audit-list, .m-kb-list { display: none !important; }
+  .m-asset-list, .m-emp-list, .m-audit-list, .m-kb-list, .m-rec-list { display: none !important; }
   .topbar-scan { display: inline-flex; }
   /* Desktop: pin sidebar; never inherit mobile drawer hide/transform */
   .sidebar {
