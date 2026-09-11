@@ -294,7 +294,14 @@ function renderMobileMoreSheet() {
   const extras = Object.entries(ROUTES)
     .filter(([h, r]) => {
       if (typeof isHrUser === 'function' && isHrUser()) {
-        return (typeof HR_ALLOWED_HASHES !== 'undefined' ? HR_ALLOWED_HASHES.has(h) : (h === '#/hr' || h === '#/zimmetlerim')) && !primary.has(h);
+        // Mirror the sidebar: HR's own two screens PLUS the self-service ones
+        // (own tickets, help centre, notifications). Without these an HR
+        // account on a phone had no way to reach its own tickets at all.
+        const hrOk = typeof HR_ALLOWED_HASHES !== 'undefined'
+          ? HR_ALLOWED_HASHES.has(h)
+          : (h === '#/hr' || h === '#/zimmetlerim');
+        const selfOk = typeof isSelfServiceHash === 'function' && isSelfServiceHash(h);
+        return (hrOk || selfOk) && !primary.has(h);
       }
       if (typeof isPortalUser === 'function' && isPortalUser()) return false;
       return !primary.has(h) && (!r.perm || Auth.can(r.perm));

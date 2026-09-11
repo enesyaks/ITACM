@@ -80,6 +80,22 @@ const PORTAL_HASH = '#/zimmetlerim';
 const HR_HOME_HASH = '#/hr';
 const HR_ALLOWED_HASHES = new Set(['#/hr', '#/zimmetlerim']);
 
+/**
+ * The self-service surfaces: your own tickets, the help centre, your
+ * notifications. Nothing here reads anyone else's data — every one of them
+ * talks to /api/me/*, which the server already opens to Portal AND HR.
+ *
+ * A confined HR account needs these as much as a Portal one does: raising a
+ * ticket about your own laptop is not an IT surface, and without this an HR
+ * user had no way to open a ticket at all. One function so the sidebar filter
+ * and the route guard below cannot drift apart.
+ */
+function isSelfServiceHash(hash) {
+  if (hash === '#/notifications') return true;
+  if (hash === '#/my-tickets' || hash === '#/my-kb') return moduleOn('ticketing');
+  return false;
+}
+
 /** A route's `iam` list is ALL-of — every [resource, action] pair must pass. */
 function hasAllIam(pairs) {
   return (pairs || []).every(([resource, action]) => Auth.canIam(resource, action));
@@ -120,8 +136,8 @@ function saveNavPref() {
 /** Every route this account may open, in declaration order. */
 function permittedNavEntries() {
   return Object.entries(ROUTES).filter(([hash, r]) => {
-    if (isPortalUser()) return hash === PORTAL_HASH || hash === '#/notifications' || (['#/my-tickets', '#/my-kb'].includes(hash) && moduleOn('ticketing'));
-    if (isHrConfined()) return HR_ALLOWED_HASHES.has(hash);
+    if (isPortalUser()) return hash === PORTAL_HASH || isSelfServiceHash(hash);
+    if (isHrConfined()) return HR_ALLOWED_HASHES.has(hash) || isSelfServiceHash(hash);
     if (r.portalOnly) return false; // self-service-only routes never show for staff
     // Optional module (e.g. Service Desk): hidden unless the Owner enabled it.
     if (r.module && !moduleOn(r.module)) return false;
@@ -333,7 +349,7 @@ async function navigate() {
   const hash = ROUTES[rawHash] ? rawHash : homeHash;
   const route = ROUTES[hash];
   // Portal accounts are confined to their own zimmet page (+ their own tickets).
-  const portalOk = hash === PORTAL_HASH || hash === '#/notifications' || (['#/my-tickets', '#/my-kb'].includes(hash) && moduleOn('ticketing'));
+  const portalOk = hash === PORTAL_HASH || isSelfServiceHash(hash);
   if (isPortalUser() && !portalOk) {
     // One ticket link works for everyone: mail points at the staff route, and a
     // Portal account is carried to the same ticket on its own page rather than
@@ -344,10 +360,18 @@ async function navigate() {
     }
     location.hash = PORTAL_HASH; return;
   }
-  if (isHrConfined() && !HR_ALLOWED_HASHES.has(hash)) { location.hash = HR_HOME_HASH; return; }
+  if (isHrConfined() && !(HR_ALLOWED_HASHES.has(hash) || isSelfServiceHash(hash))) {
+    // Same courtesy the Portal gets: a ticket mail points at the staff route,
+    // so carry HR to the same ticket on its own page instead of dropping it.
+    if (rawHash === '#/tickets' && params.open && moduleOn('ticketing')) {
+      location.hash = `#/my-tickets?open=${encodeURIComponent(params.open)}`;
+      return;
+    }
+    location.hash = HR_HOME_HASH; return;
+  }
   // Mirror permittedNavEntries: a portalOnly route or a disabled optional module
   // must bounce home on direct-URL / stale-bookmark hits (the sidebar hides them).
-  if (route.portalOnly && !isPortalUser()) { location.hash = homeHash; return; }
+  if (route.portalOnly && !isPortalUser() && !isHrConfined()) { location.hash = homeHash; return; }
   if (route.module && !moduleOn(route.module)) { location.hash = homeHash; return; }
   // Typing #/hr by hand must not work for IT either — approving happens on the
   // Dashboard, and this page is scoped to the people who file the tickets.
