@@ -11,6 +11,8 @@
  */
 'use strict';
 
+const { confinedPath } = require('./confinedPath');
+
 // Self-service auth actions an HR account needs to manage its own session.
 // Mirrors PORTAL_AUTH_PATHS today — deliberately duplicated, not imported.
 const HR_AUTH_PATHS = new Set([
@@ -26,7 +28,10 @@ const HR_AUTH_PATHS = new Set([
 
 /** True when an HR account may reach this URL. */
 function isHrAllowedPath(originalUrl) {
-  const path = String(originalUrl || '').split('?')[0].replace(/\/+$/, '') || '/';
+  // A traversal or an encoded separator is refused before any prefix is
+  // tested — a prefix test is only as honest as the string it is given.
+  const path = confinedPath(originalUrl);
+  if (path === null) return false;
   if (path === '/api/me' || path.startsWith('/api/me/')) return true;
   if (path === '/api/hr' || path.startsWith('/api/hr/')) return true;
   if (path === '/api/dashboard/hr-stats') return true;

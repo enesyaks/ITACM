@@ -850,10 +850,17 @@ async function adoptFromMaster(masterId, masterNumber, a, user) {
         WHERE linked_to_id = $1 AND status NOT IN ('resolved', 'closed', 'cancelled')`,
       [masterId]
     );
+    // Handing an owner down is an assignment, and updateTicket rightly refuses
+    // one from a caller who may only update. Asked once here instead: without
+    // it a caller who cannot assign loses the whole patch to a 403 and the
+    // classification never travels either.
+    const mayAssign = m.assignee_user_id
+      ? await require('./permissionService').hasResourceAction(user, 'ticket', 'assign')
+      : false;
     const carried = [];
     for (const c of kids) {
       const patch = {};
-      if (m.assignee_user_id && !c.assignee_user_id) patch.assigneeUserId = m.assignee_user_id;
+      if (mayAssign && !c.assignee_user_id) patch.assigneeUserId = m.assignee_user_id;
       if (m.impact && m.impact !== c.impact) patch.impact = m.impact;
       if (m.urgency && m.urgency !== c.urgency) patch.urgency = m.urgency;
       const mCat = String(m.category || '').trim();
