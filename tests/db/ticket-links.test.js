@@ -76,6 +76,85 @@ test('linked duplicate tickets', db.skipReason ? { skip: db.skipReason } : {}, a
     assert.deepEqual(child.duplicateCandidates, [], 'a follower offers no duplicates of its own');
   });
 
+  await t.test('the master\'s owner travels down to the duplicates that have none', async () => {
+    const emp = await db.makeEmployee();
+    const master = await open({ requesterEmployeeId: emp.id });
+    const dup = await open({ requesterEmployeeId: emp.id });
+    await query('UPDATE tickets SET assignee_user_id = $2 WHERE id = $1', [master.id, owner.id]);
+
+    await svc.linkTickets(master.id, [dup.id], ACTOR);
+
+    const child = await svc.getTicket(dup.id, ACTOR);
+    assert.equal(child.assigneeUserId, owner.id,
+      'a follower left unassigned reads as unclaimed work and gets picked up twice');
+  });
+
+  await t.test('a follower that already has somebody keeps them', async () => {
+    const emp = await db.makeEmployee();
+    const { rows: [other] } = await query(
+      `INSERT INTO users (username, email, password_hash, role)
+       VALUES ($1, $1 || '@example.com', 'x', 'Helpdesk') RETURNING id`,
+      [`agent_${Date.now()}${Math.floor(Math.random() * 1000)}`]
+    );
+    const master = await open({ requesterEmployeeId: emp.id });
+    const dup = await open({ requesterEmployeeId: emp.id });
+    await query('UPDATE tickets SET assignee_user_id = $2 WHERE id = $1', [master.id, owner.id]);
+    await query('UPDATE tickets SET assignee_user_id = $2 WHERE id = $1', [dup.id, other.id]);
+
+    await svc.linkTickets(master.id, [dup.id], ACTOR);
+
+    const child = await svc.getTicket(dup.id, ACTOR);
+    assert.equal(child.assigneeUserId, other.id,
+      'tidying duplicates must not quietly take work off the person doing it');
+  });
+
+  await t.test('classification follows the master, and the priority re-derives from it', async () => {
+    const emp = await db.makeEmployee();
+    const master = await open({ requesterEmployeeId: emp.id });
+    const dup = await open({ requesterEmployeeId: emp.id });
+    // The follower was read differently before anyone knew it was a duplicate.
+    await svc.updateTicket(dup.id, { impact: 'high', urgency: 'high', category: 'Yazici' }, ACTOR);
+    await svc.updateTicket(master.id, { impact: 'low', urgency: 'low', category: 'Donanim' }, ACTOR);
+    const m = await svc.getTicket(master.id, ACTOR);
+
+    await svc.linkTickets(master.id, [dup.id], ACTOR);
+
+    const child = await svc.getTicket(dup.id, ACTOR);
+    assert.equal(child.impact, 'low', 'the master is the true reading of one problem');
+    assert.equal(child.urgency, 'low');
+    assert.equal(child.category, 'Donanim');
+    assert.equal(child.priority, m.priority, 'priority is Impact x Urgency, so it follows the pair');
+    assert.notEqual(child.priority, 'high');
+  });
+
+  await t.test('a classification changed after the link reaches the duplicates too', async () => {
+    const emp = await db.makeEmployee();
+    const master = await open({ requesterEmployeeId: emp.id });
+    const dup = await open({ requesterEmployeeId: emp.id });
+    await svc.linkTickets(master.id, [dup.id], ACTOR);
+
+    await svc.updateTicket(master.id, {
+      assigneeUserId: owner.id, impact: 'high', urgency: 'high', category: 'Ag',
+    }, ACTOR);
+
+    const child = await svc.getTicket(dup.id, ACTOR);
+    const m = await svc.getTicket(master.id, ACTOR);
+    assert.equal(child.assigneeUserId, owner.id, 'the order of two clicks must not change the answer');
+    assert.equal(child.impact, 'high');
+    assert.equal(child.urgency, 'high');
+    assert.equal(child.category, 'Ag');
+    assert.equal(child.priority, m.priority);
+  });
+
+  await t.test('a ticket that follows nothing is untouched by all of this', async () => {
+    const emp = await db.makeEmployee();
+    const lone = await open({ requesterEmployeeId: emp.id });
+    await svc.updateTicket(lone.id, { impact: 'high', urgency: 'high' }, ACTOR);
+    const after = await svc.getTicket(lone.id, ACTOR);
+    assert.equal(after.impact, 'high', 'and the update still lands on the ticket itself');
+    assert.equal(after.linkedToNumber, null);
+  });
+
   await t.test('the link stays one hop deep', async () => {
     const emp = await db.makeEmployee();
     const master = await open({ requesterEmployeeId: emp.id });

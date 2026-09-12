@@ -809,6 +809,78 @@ async function duplicateCandidates(ticket) {
 }
 
 /**
+ * Carry the master's owner and classification down to its duplicates.
+ *
+ * Linking says these are one problem. Left alone, the followers kept whatever
+ * was guessed about them before anyone knew that: a different priority, no
+ * category, nobody assigned. The queue then shows one problem under several
+ * classifications, and a follower reading as unclaimed work gets picked up and
+ * solved a second time — the cost the link exists to remove.
+ *
+ * Two different rules, because the two kinds of field are not alike:
+ *
+ *   Classification (impact, urgency, category) FOLLOWS the master. A duplicate
+ *   is the same problem, so the master's reading of it is the true one; the
+ *   follower's was a guess made before the duplication was known. Priority is
+ *   not copied — it is Impact x Urgency, so it re-derives itself once the pair
+ *   lands, together with the SLA target. Only when the master's own pair is
+ *   incomplete is its priority carried across directly.
+ *
+ *   The owner is FILLED IN, never moved. Taking a ticket off the person already
+ *   working it is a deliberate reassignment, not a side effect of tidying
+ *   duplicates.
+ *
+ * Routed through updateTicket rather than written straight to the rows: the
+ * priority derivation, the SLA re-target and the activity log all live there,
+ * and a second copy of those rules would be a second set to keep true.
+ *
+ * Best-effort per follower, like closeLinked — one that will not take the
+ * change must never undo the act the operator actually performed.
+ */
+async function adoptFromMaster(masterId, masterNumber, a, user) {
+  try {
+    const { rows: [m] } = await query(
+      'SELECT assignee_user_id, impact, urgency, category, priority FROM tickets WHERE id = $1',
+      [masterId]
+    );
+    if (!m) return [];
+    const { rows: kids } = await query(
+      `SELECT id, number, assignee_user_id, impact, urgency, category, priority
+         FROM tickets
+        WHERE linked_to_id = $1 AND status NOT IN ('resolved', 'closed', 'cancelled')`,
+      [masterId]
+    );
+    const carried = [];
+    for (const c of kids) {
+      const patch = {};
+      if (m.assignee_user_id && !c.assignee_user_id) patch.assigneeUserId = m.assignee_user_id;
+      if (m.impact && m.impact !== c.impact) patch.impact = m.impact;
+      if (m.urgency && m.urgency !== c.urgency) patch.urgency = m.urgency;
+      const mCat = String(m.category || '').trim();
+      if (mCat && mCat !== String(c.category || '').trim()) patch.category = mCat;
+      // Impact x Urgency re-derives the priority on its own. Carry the master's
+      // priority only when that pair cannot do the work — an unclassified master
+      // still has a priority somebody set by hand.
+      const pairAfter = (patch.impact || c.impact) && (patch.urgency || c.urgency);
+      if (!pairAfter && m.priority && m.priority !== c.priority) patch.priority = m.priority;
+      if (!Object.keys(patch).length) continue;
+      try {
+        await updateTicket(c.id, patch, user);
+        // updateTicket logs what changed; this line says why it changed by itself.
+        await logActivity(c.id, a, 'linked', `followed ${masterNumber}`);
+        carried.push(c);
+      } catch (err) {
+        console.error(`[tickets] ${c.number} did not follow ${masterNumber}:`, err.message);
+      }
+    }
+    return carried;
+  } catch (err) {
+    console.error('[tickets] linked tickets did not follow their master:', err.message);
+    return [];
+  }
+}
+
+/**
  * Link tickets to this one as duplicates of it. Their numbers, requesters and
  * history stay; what changes is that closing this ticket now closes them too.
  *
@@ -824,7 +896,7 @@ async function linkTickets(masterId, childIds, user) {
   if (ids.includes(masterId)) throw HttpError.badRequest('A ticket cannot be linked to itself');
 
   const a = actor(user);
-  const master = (await query('SELECT id, number, status, linked_to_id FROM tickets WHERE id = $1', [masterId])).rows[0];
+  const master = (await query('SELECT id, number, status, linked_to_id, assignee_user_id FROM tickets WHERE id = $1', [masterId])).rows[0];
   if (!master) throw HttpError.notFound('Ticket not found');
   if (master.linked_to_id) throw HttpError.badRequest('This ticket is itself linked to another one — link them to that one instead');
 
@@ -843,6 +915,7 @@ async function linkTickets(masterId, childIds, user) {
   for (const c of children) {
     await logActivity(c.id, a, 'linked', `linked to ${master.number}`);
   }
+  await adoptFromMaster(masterId, master.number, a, user);
   await logActivity(masterId, a, 'linked', `${children.map((c) => c.number).join(', ')} linked to this ticket`);
   audit('ticket.link', `Linked ${children.map((c) => c.number).join(', ')} to ${master.number}`, a, masterId, master.number);
   return { linked: await linkedTickets(masterId) };
@@ -1205,6 +1278,7 @@ async function updateTicket(id, patch, user) {
   const workflow = await getWorkflow();    // effective (editable) status transition map
   let plan = null;
   let cascade = null;
+  let adopt = null;
   await withTransaction(async (t) => {
     const { rows } = await t.query('SELECT * FROM tickets WHERE id = $1 FOR UPDATE', [id]);
     const cur = rows[0];
@@ -1216,6 +1290,8 @@ async function updateTicket(id, patch, user) {
     const acts = [];
     let statusTo = null;
     let newAssigneeId = null;
+    // Fields a duplicate inherits from this ticket (see adoptFromMaster).
+    let inheritedChanged = false;
 
     // ITIL prioritization: Impact × Urgency drives priority. Changing either
     // re-derives the priority; an explicit priority still works when impact/
@@ -1228,11 +1304,11 @@ async function updateTicket(id, patch, user) {
     let resolveDueNext;
     if (patch.impact !== undefined) {
       if (patch.impact !== null && !LEVELS.has(patch.impact)) throw HttpError.badRequest('Invalid impact');
-      if (String(patch.impact || '') !== String(cur.impact || '')) { set('impact', patch.impact || null); effImpact = patch.impact || null; iuChanged = true; }
+      if (String(patch.impact || '') !== String(cur.impact || '')) { set('impact', patch.impact || null); effImpact = patch.impact || null; iuChanged = true; inheritedChanged = true; }
     }
     if (patch.urgency !== undefined) {
       if (patch.urgency !== null && !LEVELS.has(patch.urgency)) throw HttpError.badRequest('Invalid urgency');
-      if (String(patch.urgency || '') !== String(cur.urgency || '')) { set('urgency', patch.urgency || null); effUrgency = patch.urgency || null; iuChanged = true; }
+      if (String(patch.urgency || '') !== String(cur.urgency || '')) { set('urgency', patch.urgency || null); effUrgency = patch.urgency || null; iuChanged = true; inheritedChanged = true; }
     }
     let newPriority;
     if (iuChanged && effImpact && effUrgency) newPriority = derivePriority(effImpact, effUrgency);
@@ -1242,6 +1318,7 @@ async function updateTicket(id, patch, user) {
     }
     if (newPriority !== undefined && newPriority !== cur.priority) {
       set('priority', newPriority);
+      inheritedChanged = true;
       acts.push(['priority', `${cur.priority} → ${newPriority}`]);
       // Re-target the SLA clocks that haven't completed yet (relative to creation).
       // Clear the matching breach marker too, so the sweep can re-flag against the
@@ -1250,7 +1327,11 @@ async function updateTicket(id, patch, user) {
       if (!cur.first_response_at) { set('response_due_at', due.responseDueAt); set('response_breached_at', null); }
       if (!cur.resolved_at) { resolveDueNext = due.resolveDueAt; set('resolve_breached_at', null); }
     }
-    if (patch.category !== undefined) set('category', patch.category ? String(patch.category).trim().slice(0, 120) : null);
+    if (patch.category !== undefined) {
+      const nextCat = patch.category ? String(patch.category).trim().slice(0, 120) : null;
+      set('category', nextCat);
+      if (String(nextCat || '') !== String(cur.category || '')) inheritedChanged = true;
+    }
     if (patch.resolutionCode !== undefined) {
       if (patch.resolutionCode && !RESOLUTION_CODES.has(patch.resolutionCode)) throw HttpError.badRequest('Invalid resolutionCode');
       set('resolution_code', patch.resolutionCode || null);
@@ -1350,8 +1431,14 @@ async function updateTicket(id, patch, user) {
     if (statusTo && TERMINAL.has(statusTo)) {
       cascade = { status: statusTo, number: cur.number };
     }
+    // Anything a duplicate inherits, changed on the master, has to reach the
+    // duplicates too — otherwise the answer depends on the order of two clicks.
+    if (newAssigneeId || inheritedChanged) {
+      adopt = { number: cur.number };
+    }
   });
   if (plan) notifyUpdate(plan);
+  if (adopt) await adoptFromMaster(id, adopt.number, a, user);
   // Duplicates follow their master out. Done after the transaction commits so a
   // follower that cannot be updated never rolls back the ticket the operator
   // actually acted on.
