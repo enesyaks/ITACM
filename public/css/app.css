@@ -2009,7 +2009,11 @@ textarea { resize: vertical; min-height: 60px; }
   text-transform: uppercase; color: var(--r-muted); font-weight: 700;
 }
 .receipt-v2 .sig-date { font-size: 7.5pt; color: var(--r-body); white-space: nowrap; }
-.receipt-v2 .sig-date-line {
+/* The form is signed on the day it is issued, so this states the date the
+   document already carries rather than leaving a rule to write it on by hand.
+   The dashed rule stays for a form with no date on it at all. */
+.receipt-v2 .sig-date-val { font-weight: 600; }
+.receipt-v2 .sig-date-val:empty {
   display: inline-block; width: 48px; border-bottom: 1px dashed var(--r-border-strong); vertical-align: middle;
 }
 .receipt-v2 .r-write-line {

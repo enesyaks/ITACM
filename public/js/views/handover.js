@@ -731,7 +731,7 @@ function handoverReceiptHTML(ctx, tpl) {
                 <strong>${esc(ctx.deliveredByName || 'IT Department')}</strong>
                 <small>${esc(t('handover.signature'))}</small>
               </div>
-              <div class="sig-date"><small>${esc(t('handover.date'))}:</small> <span class="sig-date-line"></span></div>
+              <div class="sig-date"><small>${esc(t('handover.date'))}:</small> <span class="sig-date-val">${esc(ctx.dateStr || '')}</span></div>
             </div>
           </div>
           <div class="sig">
@@ -742,7 +742,7 @@ function handoverReceiptHTML(ctx, tpl) {
                 <strong>${esc(ctx.employeeName)}</strong>
                 <small>${esc(t('handover.signature'))}</small>
               </div>
-              <div class="sig-date"><small>${esc(t('handover.date'))}:</small> <span class="sig-date-line"></span></div>
+              <div class="sig-date"><small>${esc(t('handover.date'))}:</small> <span class="sig-date-val">${esc(ctx.dateStr || '')}</span></div>
             </div>
           </div>
         </section>

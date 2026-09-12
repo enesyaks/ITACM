@@ -27,9 +27,9 @@ const FOOTER_RESERVE = 30; // keep content clear of footer rule + text
 const SCALE_MIN = 0.72;
 const SCALE_MAX = 1;
 
-const fmtDate = (v, lang) => {
+const fmtDate = (v, lang, fallback = '—') => {
   const d = v && v.toDate ? v.toDate() : new Date(v);
-  if (Number.isNaN(d.getTime())) return '—';
+  if (!v || Number.isNaN(d.getTime())) return fallback;
   const locale = ({ en: 'en-GB', tr: 'tr-TR', de: 'de-DE' })[lang] || 'en-GB';
   return d.toLocaleDateString(locale);
 };
@@ -500,9 +500,12 @@ function buildHandoverPdf(stream, { handover, employee, settings, deliveredBy, b
         width: showDate ? sigW * 0.5 : sigW - 16,
       });
       if (showDate) {
-        at(doc, 'r', 6.5, C.muted, `${L.date}: ______`, x + sigW * 0.5, lineY + 9 * Sz.s, {
-          width: sigW * 0.45, align: 'right',
-        });
+        // A handover is signed on the day it is issued, so the date the form
+        // already carries in its header belongs here too — asking somebody to
+        // write by hand a date the document itself states invites the two to
+        // disagree. A form with no usable date keeps the write-in rule.
+        at(doc, 'r', 6.5, C.muted, `${L.date}: ${fmtDate(handover.transactionDate, lang, '______')}`,
+          x + sigW * 0.5, lineY + 9 * Sz.s, { width: sigW * 0.45, align: 'right' });
       }
     };
     drawSig(M, issuedLabel, L.issuedByRole, deliveredBy || 'IT');
