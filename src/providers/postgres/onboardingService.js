@@ -222,6 +222,8 @@ async function upsertEmployee(t, body) {
   // re-checked here because this path is also reachable from IT's own form.
   const managerId = String(body.managerEmployeeId || '').trim();
   if (managerId && !isUuid(managerId)) throw HttpError.badRequest('Invalid managerEmployeeId');
+  const companyId = String(body.companyId || '').trim();
+  if (companyId && !isUuid(companyId)) throw HttpError.badRequest('Invalid companyId');
 
   if (body.employeeId) {
     if (!isUuid(body.employeeId)) throw HttpError.badRequest('Invalid employeeId');
@@ -237,9 +239,10 @@ async function upsertEmployee(t, body) {
     await t.query(
       `UPDATE employees
           SET start_date = $2,
-              manager_employee_id = COALESCE(manager_employee_id, $3)
+              manager_employee_id = COALESCE(manager_employee_id, $3),
+              company_id = COALESCE(company_id, $4)
         WHERE id = $1`,
-      [rows[0].id, startDate, managerId || null]
+      [rows[0].id, startDate, managerId || null, companyId || null]
     );
     const refreshed = await t.query('SELECT * FROM employees WHERE id = $1', [rows[0].id]);
     return refreshed.rows[0];
@@ -248,16 +251,27 @@ async function upsertEmployee(t, body) {
   const fullName = String(body.fullName || '').trim();
   const email = String(body.email || '').trim().toLowerCase();
   if (!fullName || !email) throw HttpError.badRequest('fullName and email are required for a new employee');
+  // Which entity employs this person decides whose logo heads their zimmet
+  // form, so it falls back to the default company rather than staying NULL —
+  // the same rule the Employees form applies. Before this, anyone hired through
+  // an HR ticket belonged to no company at all.
+  let company = companyId || null;
+  if (!company) {
+    const { rows: def } = await t.query(
+      'SELECT id FROM companies WHERE is_default AND active ORDER BY created_at LIMIT 1'
+    );
+    company = def[0] ? def[0].id : null;
+  }
   try {
     const { rows } = await t.query(
-      `INSERT INTO employees (full_name, email, department, title, status, start_date, manager_employee_id)
-       VALUES ($1,$2,$3,$4,'Active',$5,$6) RETURNING *`,
-      [fullName, email, body.department || null, body.title || null, startDate, managerId || null]
+      `INSERT INTO employees (full_name, email, department, title, status, start_date, manager_employee_id, company_id)
+       VALUES ($1,$2,$3,$4,'Active',$5,$6,$7) RETURNING *`,
+      [fullName, email, body.department || null, body.title || null, startDate, managerId || null, company]
     );
     return rows[0];
   } catch (err) {
     if (err.code === '23505') throw HttpError.conflict(`An employee with email ${email} already exists`);
-    if (err.code === '23503') throw HttpError.badRequest('The selected manager is not an employee');
+    if (err.code === '23503') throw HttpError.badRequest('The selected manager or company does not exist');
     throw err;
   }
 }

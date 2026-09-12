@@ -35,6 +35,10 @@ function isHrAllowedPath(originalUrl) {
   if (path === '/api/me' || path.startsWith('/api/me/')) return true;
   if (path === '/api/hr' || path.startsWith('/api/hr/')) return true;
   if (path === '/api/dashboard/hr-stats') return true;
+  // The company picker on the onboarding form. Exact path, never the prefix:
+  // /api/companies/options is identifiers only, while /api/companies/:id
+  // carries branding and tax details HR has no business reading.
+  if (path === '/api/companies/options') return true;
   if (path === '/api/config') return true;
   return HR_AUTH_PATHS.has(path);
 }

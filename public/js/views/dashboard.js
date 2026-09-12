@@ -379,6 +379,7 @@ async function openHrRequestModal(requestId, el) {
         ${row(t('hr.department'), r.department)}
         ${row(t('hr.title'), r.title)}
         ${row(t('hr.manager'), r.managerName)}
+        ${row(t('co.field'), r.companyName)}
         ${row(t(isOffboard ? 'hr.endDate' : 'hr.startDate'), String(r.eventDate || '').slice(0, 10))}
         ${row(t('hr.requestedBy'), r.createdByName)}
         ${row(t('hr.status'), t(r.status === 'acknowledged' ? 'hr.statusAcknowledged'

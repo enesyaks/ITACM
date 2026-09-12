@@ -119,3 +119,31 @@ test('the HR fulfilment columns are added by a migration, not only schema.sql', 
       `${col} must be added by a migration, not only declared in schema.sql`);
   }
 });
+
+test('schema.sql never points a foreign key at a table it has not created yet', () => {
+  // schema.sql runs top to bottom in one go, so a REFERENCES to a table defined
+  // further down the file aborts startup with "relation does not exist" — the
+  // whole app, on every boot, on a FRESH database only. It cost a full red test
+  // run to find, and a reordering of this file is exactly when it happens again.
+  const sql = stripComments(schemaSql);
+
+  const createdAt = new Map();
+  for (const m of sql.matchAll(/CREATE TABLE IF NOT EXISTS\s+(\w+)/g)) {
+    if (!createdAt.has(m[1])) createdAt.set(m[1], m.index);
+  }
+  assert.ok(createdAt.size > 10, 'sanity: expected to parse many tables');
+
+  const problems = [];
+  for (const m of sql.matchAll(/REFERENCES\s+(\w+)\s*\(/g)) {
+    const target = m[1];
+    const declared = createdAt.get(target);
+    // A table this file never creates is somebody else's (an extension, or a
+    // migration-only table) and is out of scope for the ordering rule.
+    if (declared === undefined) continue;
+    if (declared > m.index) {
+      const line = sql.slice(0, m.index).split('\n').length;
+      problems.push(`line ${line}: REFERENCES ${target} before ${target} is created`);
+    }
+  }
+  assert.deepEqual(problems, [], problems.join('; '));
+});

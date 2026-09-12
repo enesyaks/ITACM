@@ -17,6 +17,9 @@ Views.hr = async function (el) {
     api('/hr/categories').catch(() => []),
     api('/hr/requests').catch(() => []),
     api('/dashboard/hr-stats').catch(() => ({ hrOnboardPending: 0, hrOffboardPending: 0, myPendingCount: 0 })),
+    // The entity picker below. Harmless on a single-company install — the list
+    // comes back with one row and no picker is drawn.
+    Companies.load().catch(() => {}),
   ]);
   const cats = Array.isArray(categories) ? categories : [];
   const list = Array.isArray(requests) ? requests : [];
@@ -71,6 +74,15 @@ Views.hr = async function (el) {
       // Full width: the picker opens a result list, and half a row cramps it.
       // The new hire has no employee record yet, so the manager is parked on
       // the ticket and written to that record when IT approves.
+      // Only when there is a choice to make. One entity needs no question asked,
+      // and the request falls back to it on the server either way.
+      + (Companies.isMulti()
+        ? '<div class="form-field"><label>' + esc(t('co.field')) + '</label>'
+          + '<select id="hr-on-company">'
+          + Companies.active().map((c) => '<option value="' + esc(c.id) + '"'
+            + (c.id === Companies.defaultId() ? ' selected' : '') + '>' + esc(c.name) + '</option>').join('')
+          + '</select></div>'
+        : '')
       + '<div class="form-field" style="grid-column:1/-1"><label>' + esc(t('hr.manager')) + '</label>'
       + '<div data-emp-search="managerEmployeeId"></div>'
       + '<span class="cell-sub" style="display:block;margin-top:4px">' + esc(t('hr.managerHint')) + '</span></div>'
@@ -126,6 +138,11 @@ Views.hr = async function (el) {
     + (r.managerName
       ? '<div class="cell-sub"><span class="ms" style="font-size:13px;vertical-align:-2px">supervisor_account</span> '
         + esc(r.managerName) + '</div>'
+      : '')
+    // Only worth a line when more than one entity exists to tell apart.
+    + (Companies.isMulti() && r.companyName
+      ? '<div class="cell-sub"><span class="ms" style="font-size:13px;vertical-align:-2px">apartment</span> '
+        + esc(r.companyName) + '</div>'
       : '') + '</td>'
     + '<td>' + esc(String(r.eventDate || '').slice(0, 10)) + '</td>'
     + '<td><span class="pill ' + statusPill(r.status) + '">' + esc(statusLabel(r.status)) + '</span></td>'
@@ -250,6 +267,7 @@ Views.hr = async function (el) {
             title: el.querySelector('#hr-on-title').value,
             eventDate: el.querySelector('#hr-on-date').value,
             managerEmployeeId: (mgrPicker && mgrPicker.getId()) || '',
+            companyId: el.querySelector('#hr-on-company')?.value || '',
             notes: el.querySelector('#hr-on-notes').value,
             items,
           },

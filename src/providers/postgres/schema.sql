@@ -1215,6 +1215,11 @@ SELECT COALESCE(NULLIF(btrim(s.company_name), ''), 'IT Asset Control Pro'), TRUE
    AND NOT EXISTS (SELECT 1 FROM companies);
 
 ALTER TABLE employees     ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id) ON DELETE SET NULL;
+-- Which entity an HR onboarding ticket was filed under, applied to the employee
+-- when IT acknowledges (also migration 097_hr_request_company.sql). Stated here
+-- rather than beside the hr_requests table above: schema.sql runs top to bottom
+-- and `companies` is created on this line's side of the file.
+ALTER TABLE hr_requests   ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id) ON DELETE SET NULL;
 ALTER TABLE assets        ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id) ON DELETE SET NULL;
 ALTER TABLE mobile_lines  ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id) ON DELETE SET NULL;
 ALTER TABLE licenses      ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id) ON DELETE SET NULL;

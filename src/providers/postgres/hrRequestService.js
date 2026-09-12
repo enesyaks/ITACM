@@ -102,8 +102,10 @@ function mapRequest(row, items) {
 // The id alone is useless to a reader, so every read carries the manager's
 // name with it. LEFT JOIN: the row must survive a manager whose record was
 // deleted (the FK nulls the column) or was never named at all.
-const SELECT_REQUEST = `SELECT r.*, m.full_name AS manager_name
-  FROM hr_requests r LEFT JOIN employees m ON m.id = r.manager_employee_id`;
+const SELECT_REQUEST = `SELECT r.*, m.full_name AS manager_name, co.name AS company_name
+  FROM hr_requests r
+  LEFT JOIN employees m ON m.id = r.manager_employee_id
+  LEFT JOIN companies co ON co.id = r.company_id`;
 
 async function getRequest(id) {
   if (!isUuid(id)) throw HttpError.notFound('HR request ' + id + ' not found');
@@ -217,6 +219,34 @@ async function resolveManagerId(t, raw) {
 }
 
 /**
+ * Resolve the entity HR filed this hire under.
+ *
+ * Must be an ACTIVE company: a dissolved one cannot employ anybody, and the
+ * ticket may sit for days before IT picks it up. Left blank — which is what a
+ * single-company install always sends, since it shows no picker — it falls back
+ * to the default company, so the field is never a silent null that leaves the
+ * new employee belonging to nobody.
+ *
+ * @returns {Promise<string|null>} the company id, or null when none exists yet
+ */
+async function resolveCompanyId(t, raw) {
+  const id = String(raw == null ? '' : raw).trim();
+  if (id) {
+    if (!isUuid(id)) throw HttpError.badRequest('Invalid companyId');
+    const { rows } = await t.query('SELECT id, active FROM companies WHERE id = $1', [id]);
+    if (!rows[0]) throw HttpError.badRequest('The selected company does not exist');
+    if (rows[0].active === false) throw HttpError.badRequest('The selected company is not active');
+    return rows[0].id;
+  }
+  const { rows } = await t.query(
+    'SELECT id FROM companies WHERE is_default AND active ORDER BY created_at LIMIT 1'
+  );
+  if (rows[0]) return rows[0].id;
+  const any = await t.query('SELECT id FROM companies WHERE active ORDER BY created_at LIMIT 1');
+  return any.rows[0] ? any.rows[0].id : null;
+}
+
+/**
  * Open an onboard ticket. This writes ONLY to hr_requests / hr_request_items —
  * the employee record is created later, by IT, at acknowledge time.
  */
@@ -258,13 +288,14 @@ async function createOnboardRequest(body, user) {
       }
 
       const managerEmployeeId = await resolveManagerId(t, body && body.managerEmployeeId);
+      const companyId = await resolveCompanyId(t, body && body.companyId);
       const { rows } = await t.query(
         `INSERT INTO hr_requests
            (type, status, employee_id, full_name, email, department, title, event_date, notes, created_by, created_by_name,
-            manager_employee_id)
-         VALUES ('onboard', 'pending', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            manager_employee_id, company_id)
+         VALUES ('onboard', 'pending', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
          RETURNING id`,
-        [employeeId, fullName, email, department, title, eventDate, notes, a.id, a.name, managerEmployeeId]
+        [employeeId, fullName, email, department, title, eventDate, notes, a.id, a.name, managerEmployeeId, companyId]
       );
       const id = rows[0].id;
       for (const it of items) {
@@ -431,13 +462,18 @@ async function acknowledgeRequest(id, user, body) {
       const onboardingService = require('./onboardingService');
       const created = await onboardingService.createOnboarding(
         emp
-          ? { employeeId: emp.id, startDate, managerEmployeeId: claimed.manager_employee_id || null }
+          ? {
+            employeeId: emp.id, startDate,
+            managerEmployeeId: claimed.manager_employee_id || null,
+            companyId: claimed.company_id || null,
+          }
           : {
             fullName: claimed.full_name,
             email: email,
             department: claimed.department || null,
             title: claimed.title || null,
             managerEmployeeId: claimed.manager_employee_id || null,
+            companyId: claimed.company_id || null,
             startDate,
           },
         user
@@ -523,6 +559,7 @@ module.exports = {
   normalizeItems,
   parseDateOnly,
   resolveManagerId,
+  resolveCompanyId,
   toDateString,
   listRequests,
   getRequest,
