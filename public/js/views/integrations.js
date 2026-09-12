@@ -121,7 +121,7 @@ Views.integrations = async function (el, params = {}) {
         <div class="form-grid">
           <div class="form-field full"><label>${esc(t('int.mail.authMethod'))}</label>
             <select id="int-smtp-authmethod" ${inputDis}>
-              <option value="password" ${smtp.authMethod !== 'oauth2_ms' ? 'selected' : ''}>${esc(t('int.mail.authPassword'))}</option>
+              <option value="password" ${smtp.authMethod !== 'oauth2_ms' && smtp.authMethod !== 'oauth2_delegated' ? 'selected' : ''}>${esc(t('int.mail.authPassword'))}</option>
               <option value="oauth2_ms" ${smtp.authMethod === 'oauth2_ms' ? 'selected' : ''}>${esc(t('int.mail.authMs'))}</option>
               <option value="oauth2_delegated" ${smtp.authMethod === 'oauth2_delegated' ? 'selected' : ''}>${esc(t('int.mail.authConnected'))}</option>
             </select>
@@ -348,7 +348,7 @@ Views.integrations = async function (el, params = {}) {
         <div class="form-grid">
           <div class="form-field full"><label>${esc(t('int.mail.authMethod'))}</label>
             <select id="int-imap-authmethod" ${inputDis}>
-              <option value="password" ${inbound.authMethod !== 'oauth2_ms' ? 'selected' : ''}>${esc(t('int.mail.authPassword'))}</option>
+              <option value="password" ${inbound.authMethod !== 'oauth2_ms' && inbound.authMethod !== 'oauth2_delegated' ? 'selected' : ''}>${esc(t('int.mail.authPassword'))}</option>
               <option value="oauth2_ms" ${inbound.authMethod === 'oauth2_ms' ? 'selected' : ''}>${esc(t('int.mail.authMs'))}</option>
               <option value="oauth2_delegated" ${inbound.authMethod === 'oauth2_delegated' ? 'selected' : ''}>${esc(t('int.mail.authConnected'))}</option>
             </select>

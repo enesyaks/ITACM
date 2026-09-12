@@ -219,6 +219,30 @@ function isBlankOrMaskedPass(pass) {
   return !s || s === MASKED_PASS;
 }
 
+/**
+ * Must this save carry a password typed into the form?
+ *
+ * Three things have to be true at once, and the first is the one that was
+ * missed: only PASSWORD auth needs a password at all. An OAuth mailbox proves
+ * itself with a token and is meant to be saved with that field empty, so
+ * demanding a password there rejected exactly the setup the OAuth options
+ * exist for. Beyond that the rule is unchanged — a blank form is how you say
+ * "keep what is stored", and that is only a problem when nothing usable is
+ * stored (never saved, or the ciphertext no longer decrypts).
+ *
+ * Pure, so the rule can be pinned in tests without a database.
+ */
+function smtpNeedsTypedPassword({ authMethod, typedPass, storedPass, passCorrupt, user, host }) {
+  // Named OAuth methods only. Anything unrecognised falls through to the
+  // password rules rather than skipping the guard — a credential check should
+  // fail towards asking, not towards letting a blank configuration save.
+  if (authMethod === 'oauth2_ms' || authMethod === 'oauth2_delegated') return false;
+  if (!isBlankOrMaskedPass(typedPass)) return false;
+  if (!passCorrupt && storedPass) return false;
+  // Nothing identifying the server yet = an empty form, not a broken one.
+  return !!(user || host);
+}
+
 async function assertSmtpHostSafe(host) {
   if (!host) return;
   await resolveAndAssertPublicHost(host, {
@@ -233,18 +257,27 @@ async function saveMailConfig({ smtp, notify }) {
   if (smtp !== undefined) {
     if (typeof smtp !== 'object' || Array.isArray(smtp)) throw HttpError.badRequest('smtp must be an object');
     const cur = await getMailConfig();
+    // Decide how this mailbox authenticates BEFORE guarding the password: an
+    // OAuth method proves itself with a token and is meant to be saved with the
+    // password field empty. Checking the password first rejected exactly the
+    // configuration the OAuth options exist for.
+    const authMethod = ['oauth2_ms', 'oauth2_delegated'].includes(smtp.authMethod) ? smtp.authMethod : 'password';
     const typedPass = smtp.pass;
     // Empty / masked password = keep existing secret (never persist the UI placeholder).
     let nextPassPlain = isBlankOrMaskedPass(typedPass)
       ? (cur.smtp?.pass || '')
       : String(typedPass).slice(0, 200);
-    // Corrupt ciphertext + blank form would otherwise re-save an empty password.
-    if (isBlankOrMaskedPass(typedPass) && (cur.smtp?.passCorrupt || !nextPassPlain)) {
-      if (smtp.user || smtp.host) {
-        throw HttpError.badRequest(
-          'SMTP password is missing or could not be read — enter the mail password (app-specific for iCloud/Gmail) and Save'
-        );
-      }
+    if (smtpNeedsTypedPassword({
+      authMethod,
+      typedPass,
+      storedPass: nextPassPlain,
+      passCorrupt: cur.smtp?.passCorrupt,
+      user: smtp.user,
+      host: smtp.host,
+    })) {
+      throw HttpError.badRequest(
+        'SMTP password is missing or could not be read — enter the mail password (app-specific for iCloud/Gmail) and Save'
+      );
     }
     const normalized = normalizeSmtpTransport({
       host: String(smtp.host || '').slice(0, 200),
@@ -254,7 +287,6 @@ async function saveMailConfig({ smtp, notify }) {
       from: String(smtp.from || '').slice(0, 200),
     });
     if (normalized.host) await assertSmtpHostSafe(normalized.host);
-    const authMethod = ['oauth2_ms', 'oauth2_delegated'].includes(smtp.authMethod) ? smtp.authMethod : 'password';
     // Keep the stored client secret when the field is blank/masked.
     const nextOauthSecret = isBlankOrMaskedPass(smtp.oauthClientSecret)
       ? (cur.smtp?.oauthClientSecret || '')
@@ -1075,4 +1107,5 @@ module.exports = {
   sendTicketAck, sendTicketResolved, sendTicketNotification, sendTicketReply, sendSlaBreachNotification, sendApprovalNotice, sendApprovalDecisionEmail,
   sendOwnerTransferEmail,
   DEFAULT_NOTIFY, TEMPLATE_KEYS, PLACEHOLDERS, ticketUrl, csatUrl, intakeAddress,
+  smtpNeedsTypedPassword,
 };
