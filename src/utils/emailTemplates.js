@@ -47,8 +47,8 @@ const TEMPLATE_PLACEHOLDERS = {
   ticket_reply: ['companyName', 'ticketNumber', 'subject', 'actorName', 'replyText', 'attachmentList', 'ticketUrl', 'appUrl'],
   ticket_resolved: ['companyName', 'requesterName', 'ticketNumber', 'subject', 'resolutionNote', 'actorName', 'csatUrl', 'ticketUrl', 'appUrl'],
   sla_breach: ['companyName', 'ticketNumber', 'subject', 'slaType', 'dueAt', 'overdueBy', 'priority', 'assigneeName', 'ticketUrl', 'appUrl'],
-  approval_request: ['companyName', 'summary', 'requesterName', 'resourceRef', 'appUrl'],
-  approval_decision: ['companyName', 'summary', 'decision', 'deciderName', 'appUrl'],
+  approval_request: ['companyName', 'summary', 'requesterName', 'resourceRef', 'approvalUrl', 'appUrl'],
+  approval_decision: ['companyName', 'summary', 'decision', 'deciderName', 'requestUrl', 'appUrl'],
 };
 
 const DEFAULT_EMAIL_TEMPLATES = {
@@ -309,12 +309,12 @@ const DEFAULT_EMAIL_TEMPLATES = {
       '<p style="margin:0 0 6px;color:#64748b;font-size:13px">{{companyName}} · Approvals</p>'
       + '<h2 style="margin:0 0 10px;font-size:18px">{{summary}}</h2>'
       + '<p style="margin:0 0 12px">{{requesterName}} needs your approval{{resourceRef}}.</p>'
-      + '<p style="margin:0"><a href="{{appUrl}}" style="color:#4f46e5">Review the request</a></p>',
+      + '<p style="margin:0"><a href="{{approvalUrl}}" style="color:#4f46e5">Review the request</a></p>',
     bodyText:
       '{{companyName}} · Approvals\n\n'
       + '{{summary}}\n'
       + '{{requesterName}} needs your approval{{resourceRef}}.\n\n'
-      + 'Review: {{appUrl}}\n',
+      + 'Review: {{approvalUrl}}\n',
   },
   approval_decision: {
     subject: '{{summary}} — {{decision}}',
@@ -323,13 +323,13 @@ const DEFAULT_EMAIL_TEMPLATES = {
       + '<h2 style="margin:0 0 10px;font-size:18px">{{summary}}</h2>'
       + '<p style="margin:0 0 12px">Your request was <strong>{{decision}}</strong>.</p>'
       + '<p style="margin:0 0 12px;color:#334155">{{deciderName}}</p>'
-      + '<p style="margin:0"><a href="{{appUrl}}" style="color:#4f46e5">Open the app</a></p>',
+      + '<p style="margin:0"><a href="{{requestUrl}}" style="color:#4f46e5">Open the request</a></p>',
     bodyText:
       '{{companyName}} · Approvals\n\n'
       + '{{summary}}\n'
       + 'Your request was {{decision}}.\n'
       + '{{deciderName}}\n\n'
-      + 'Open: {{appUrl}}\n',
+      + 'Open: {{requestUrl}}\n',
   },
 };
 

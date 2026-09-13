@@ -75,6 +75,25 @@ function csatUrl(base, token) {
   return `${root}/csat/${encodeURIComponent(token)}`;
 }
 
+/**
+ * Where an approval mail should land: on the thing being approved, not on the
+ * app's front door. A ticket approval opens that ticket — the detail already
+ * carries Approve / Reject for the pending approver — and names the request
+ * too, so an approver whose login is self-service only (Portal, confined HR)
+ * is carried to that approval on their own page instead of a ticket they may
+ * not open. Anything else opens the approvals inbox at that request.
+ */
+function approvalUrl(base, request) {
+  const root = String(base || '').trim().replace(/\/+$/, '');
+  if (!/^https?:\/\//i.test(root)) return '';
+  if (!request || !request.id) return root;
+  const ticketId = request.payload && request.payload.ticketId;
+  if (request.type === 'ticket_request' && ticketId) {
+    return `${root}/#/tickets?open=${encodeURIComponent(ticketId)}&approval=${encodeURIComponent(request.id)}`;
+  }
+  return `${root}/#/approvals?open=${encodeURIComponent(request.id)}`;
+}
+
 /** Validate + normalize an admin-entered public app URL. Empty = use fallback. */
 function cleanAppUrl(raw) {
   const s = String(raw == null ? '' : raw).trim().slice(0, 200);
@@ -976,6 +995,7 @@ async function sendApprovalNotice(request, { reminder = false } = {}) {
       summary: request.summary || 'Approval needed',
       requesterName: request.requesterName || 'A requester',
       resourceRef: request.resourceRef ? ` (${request.resourceRef})` : '',
+      approvalUrl: approvalUrl(base, request) || base,
       appUrl: base,
     });
     const subject = reminder ? `[Reminder] ${rendered.subject}` : rendered.subject;
@@ -1002,11 +1022,15 @@ async function sendApprovalDecisionEmail(request, { decision, deciderName } = {}
     if (!smtp.host) return { skipped: true, reason: 'no smtp host' };
     const base = appBaseUrl(notify) || process.env.APP_URL || 'http://localhost:8000';
     const templates = await getEmailTemplates();
+    // The requester reads the outcome on their own ticket. ticketUrl carries a
+    // self-service login from the staff route to the same ticket on its page.
+    const ticketId = request.payload && request.payload.ticketId;
     const rendered = renderTemplate(templates.approval_decision, {
       companyName,
       summary: request.summary || 'Your request',
       decision: decision === 'approved' ? 'approved' : 'rejected',
       deciderName: deciderName ? `Decided by ${deciderName}.` : '',
+      requestUrl: (request.type === 'ticket_request' && ticketId ? ticketUrl(base, ticketId) : '') || base,
       appUrl: base,
     });
     const logo = logoAttachment(companyLogo);
@@ -1106,6 +1130,6 @@ module.exports = {
   getEmailTemplates, saveEmailTemplates, sendOnboardingWelcomeEmail, sendPortalAccessEmail, sendHrRequestNotice,
   sendTicketAck, sendTicketResolved, sendTicketNotification, sendTicketReply, sendSlaBreachNotification, sendApprovalNotice, sendApprovalDecisionEmail,
   sendOwnerTransferEmail,
-  DEFAULT_NOTIFY, TEMPLATE_KEYS, PLACEHOLDERS, ticketUrl, csatUrl, intakeAddress,
+  DEFAULT_NOTIFY, TEMPLATE_KEYS, PLACEHOLDERS, ticketUrl, csatUrl, approvalUrl, intakeAddress,
   smtpNeedsTypedPassword,
 };

@@ -94,6 +94,15 @@ Views.myTickets = async function (el, params) {
     if (a) openApprDetail(a);
   }));
 
+  // #/my-tickets?approval=<id> — an approval mail sent to somebody whose login
+  // is self-service only. The ticket belongs to someone else, so it is the
+  // approval that opens here, with the context that request exposes.
+  if (params && params.approval) {
+    const target = byApprId.get(String(params.approval));
+    if (target) openApprDetail(target);
+    else toast(t('mtk.apNotPending'), 'info');
+  }
+
   // Read-only detail for a request awaiting my approval, with approve/reject.
   function openApprDetail(a) {
     const amount = a.payload && a.payload.amount;

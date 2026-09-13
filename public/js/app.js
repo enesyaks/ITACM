@@ -90,6 +90,32 @@ const HR_ALLOWED_HASHES = new Set(['#/hr', '#/zimmetlerim']);
  * user had no way to open a ticket at all. One function so the sidebar filter
  * and the route guard below cannot drift apart.
  */
+/**
+ * Where a mail link aimed at a staff route should land for a self-service login.
+ *
+ * One link works for everyone: mail points at the staff route, and a Portal or
+ * confined HR account is carried to the same thing on its own page rather than
+ * dropped on its home screen with the link lost.
+ *
+ * An approval link names the request as well as the ticket, and for these
+ * logins the request wins: the approver is not the requester, so the ticket
+ * itself would refuse them — the approval, with the context it exposes, is
+ * what they came to decide.
+ */
+function selfServiceTarget(rawHash, params) {
+  if (!moduleOn('ticketing')) return null;
+  if (params && params.approval && (rawHash === '#/tickets' || rawHash === '#/approvals')) {
+    return `#/my-tickets?approval=${encodeURIComponent(params.approval)}`;
+  }
+  if (rawHash === '#/approvals' && params && params.open) {
+    return `#/my-tickets?approval=${encodeURIComponent(params.open)}`;
+  }
+  if (rawHash === '#/tickets' && params && params.open) {
+    return `#/my-tickets?open=${encodeURIComponent(params.open)}`;
+  }
+  return null;
+}
+
 function isSelfServiceHash(hash) {
   if (hash === '#/notifications') return true;
   if (hash === '#/my-tickets' || hash === '#/my-kb') return moduleOn('ticketing');
@@ -351,22 +377,13 @@ async function navigate() {
   // Portal accounts are confined to their own zimmet page (+ their own tickets).
   const portalOk = hash === PORTAL_HASH || isSelfServiceHash(hash);
   if (isPortalUser() && !portalOk) {
-    // One ticket link works for everyone: mail points at the staff route, and a
-    // Portal account is carried to the same ticket on its own page rather than
-    // being dropped on the portal home with the ticket lost.
-    if (rawHash === '#/tickets' && params.open && moduleOn('ticketing')) {
-      location.hash = `#/my-tickets?open=${encodeURIComponent(params.open)}`;
-      return;
-    }
+    const carried = selfServiceTarget(rawHash, params);
+    if (carried) { location.hash = carried; return; }
     location.hash = PORTAL_HASH; return;
   }
   if (isHrConfined() && !(HR_ALLOWED_HASHES.has(hash) || isSelfServiceHash(hash))) {
-    // Same courtesy the Portal gets: a ticket mail points at the staff route,
-    // so carry HR to the same ticket on its own page instead of dropping it.
-    if (rawHash === '#/tickets' && params.open && moduleOn('ticketing')) {
-      location.hash = `#/my-tickets?open=${encodeURIComponent(params.open)}`;
-      return;
-    }
+    const carried = selfServiceTarget(rawHash, params);
+    if (carried) { location.hash = carried; return; }
     location.hash = HR_HOME_HASH; return;
   }
   // Mirror permittedNavEntries: a portalOnly route or a disabled optional module

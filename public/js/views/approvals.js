@@ -2,7 +2,7 @@
 /* Two queues: requests routed to me and requests I raised. Only meaningful once
  * the workflow is switched on from Organization. Strings follow the app language
  * via T(en, tr); other languages fall back to English. */
-Views.approvals = async function (el) {
+Views.approvals = async function (el, params = {}) {
   if (isStaleView(el)) return;
   const _lng = (typeof window.i18nLang === 'function' ? window.i18nLang() : 'en');
   // 12-language table keyed by the English string. Order: de, fr, es, it, pt, nl,
@@ -159,6 +159,14 @@ Views.approvals = async function (el) {
       const r = byId.get(tr.dataset.open);
       if (r) openDetail(r, { mine: mineIds.has(r.id) });
     }));
+    // #/approvals?open=<id> — the link in an approval mail. Opened once, on the
+    // first paint; a later reload after a decision must not pop it back up.
+    if (openOnce) {
+      const target = byId.get(openOnce);
+      openOnce = null;
+      if (target) openDetail(target, { mine: mineIds.has(target.id) });
+      else toast(t('mtk.apNotPending'), 'info');
+    }
   }
 
   function withdraw(id) {
@@ -216,6 +224,8 @@ Views.approvals = async function (el) {
       },
     });
   }
+
+  let openOnce = (params && params.open) ? String(params.open) : null;
 
   async function load() {
     const [pending, mine, config] = await Promise.all([
