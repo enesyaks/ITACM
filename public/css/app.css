@@ -6677,6 +6677,15 @@ body.ai-open .ai-panel { opacity: 1; visibility: visible; transform: none; }
 .rt-config-rem { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--on-surface-variant); white-space: nowrap; }
 .rt-config-rem input { width: 64px; }
 .rt-hint { margin: 0 0 14px; }
+/* Stated beside the switch, in amber, because the chains below it look exactly
+   the same whether or not they will ever run. */
+.rt-off-warn {
+  display: flex; align-items: flex-start; gap: 6px; margin: 0 0 10px;
+  font-size: 12.5px; line-height: 1.45; color: var(--amber-700, #b45309);
+}
+.rt-off-warn .ms-sm { font-size: 16px; flex: none; margin-top: 1px; }
+/* display:flex above would otherwise outrank the hidden attribute. */
+.rt-off-warn[hidden] { display: none; }
 .rt-add-btn { margin-top: 2px; }
 
 .rt-card { border: 1px solid var(--outline-variant); border-radius: var(--radius-lg); padding: 14px 16px; margin-bottom: 12px; background: var(--surface); }

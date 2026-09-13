@@ -313,7 +313,21 @@ async function employeeForUser(user) {
  */
 async function applyTemplateApproval(ticket, template, { amount, requesterEmployeeId, requesterName } = {}) {
   if (!template || !Array.isArray(template.approvalLevels) || !template.approvalLevels.length) return;
-  if (!requesterEmployeeId) return;
+  // A template that carries an approval chain and then opens none must say so
+  // on the ticket. Silence here reads as "approved" or "nobody needed to sign",
+  // and the operator has no way to tell a switched-off module from a chain that
+  // worked — the manual "send to approval" path already refuses loudly; this
+  // path used to just return.
+  const skipped = (why) => logActivity(ticket.id, { name: 'system' }, 'approval_skipped', why).catch(() => {});
+  if (!requesterEmployeeId) {
+    await skipped(`${template.name}: no approval requested — the ticket has no requester to route it from`);
+    return;
+  }
+  const approvalCfg = await require('./approvalService').getConfig().catch(() => ({ enabled: false }));
+  if (!approvalCfg.enabled) {
+    await skipped(`${template.name}: no approval requested — request approvals are switched off (Request templates → Enable request approvals)`);
+    return;
+  }
   const amt = Number(amount);
   const hasAmount = Number.isFinite(amt) && amt >= 0;
   let levels = template.approvalLevels;
@@ -343,6 +357,10 @@ async function applyTemplateApproval(ticket, template, { amount, requesterEmploy
   if (approval && approval.required && approval.request) {
     await query('UPDATE tickets SET approval_request_id = $1 WHERE id = $2', [approval.request.id, ticket.id]);
     logActivity(ticket.id, { name: 'system' }, 'approval_requested', `Pending ${levels.join(' → ')}`).catch(() => {});
+  } else if (approval && !approval.error) {
+    // The module is on and the chain exists, but no step resolved to a person —
+    // typically a requester with no manager and a department with none either.
+    await skipped(`${template.name}: no approval requested — nobody could be resolved for ${levels.join(' → ')}; check the requester's manager and department manager`);
   }
 }
 

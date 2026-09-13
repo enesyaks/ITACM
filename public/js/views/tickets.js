@@ -625,6 +625,7 @@ Views.tickets = async function (el, params = {}) {
               <input type="number" id="rt-escalate-days" min="0" max="90" step="1" value="${esc(cfg.escalateDays || 0)}"></label>
           </div>
         </div>
+        <p class="rt-off-warn" id="rt-off-warn"${cfg.enabled ? ' hidden' : ''}><span class="ms ms-sm">warning</span> ${esc(t('rt.approvalsOffWarn'))}</p>
         <p class="cell-sub rt-hint">${esc(t('rt.enableApprovalsSub'))} ${esc(t('rt.hint'))}</p>
         <div id="rt-list">${(loaded.length ? loaded : [null]).map(rowHtml).join('')}</div>
         <button class="btn btn-outline btn-sm rt-add-btn" id="rt-add" type="button"><span class="ms ms-sm">add</span> ${esc(t('rt.add'))}</button>`,
@@ -632,6 +633,10 @@ Views.tickets = async function (el, params = {}) {
              <button class="btn btn-primary" id="rt-save">${esc(t('common.save'))}</button>`,
       onMount(ov) {
         const listEl = $('#rt-list', ov);
+        // The chains below look identical whether or not they will ever run, so
+        // say it next to the switch that decides it — and follow the switch.
+        const offWarn = $('#rt-off-warn', ov);
+        $('#rt-approvals-on', ov)?.addEventListener('change', (e) => { if (offWarn) offWarn.hidden = e.target.checked; });
         const wireDel = () => listEl.querySelectorAll('.rt-del').forEach((b) => { b.onclick = () => b.closest('.rt-card').remove(); });
         // Number every chain's steps (1,2,3…) after add / remove / reorder.
         const renumber = (scope) => {
