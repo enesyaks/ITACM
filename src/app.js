@@ -198,6 +198,23 @@ function createApp() {
   });
 
   // Public bootstrap info for the UI: branding + onboarding state (no secrets).
+  /**
+   * What an anonymous caller may learn from /api/config.
+   *
+   * The endpoint has to be public — the login and first-run screens render
+   * before anybody has a session — but it used to answer with the WHOLE
+   * settings row. That handed anyone who could reach the URL the company's
+   * postal address, its department list, every office and warehouse name, the
+   * asset-tag scheme, the hardware vocabulary, the approval policy and the
+   * handover terms: no credentials, but a ready-made map of the organisation
+   * for anyone writing a phishing mail.
+   *
+   * So the anonymous answer is now an allowlist of what those two screens
+   * actually read — branding, language, whether setup is done — and the rest
+   * arrives once the caller proves who they are.
+   */
+  const PUBLIC_SETTINGS_KEYS = ['companyName', 'companyLogo', 'onboarded', 'language'];
+
   app.get('/api/config', async (req, res) => {
     let settings = { companyName: 'IT Asset Control Pro', companyLogo: null, onboarded: false };
     let configError = null;
@@ -225,6 +242,26 @@ function createApp() {
       const ssoCfg = await require('./providers/postgres/ssoService').getSsoConfig();
       if (ssoCfg.ready) sso = { enabled: true, label: ssoCfg.buttonLabel };
     } catch { /* SSO stays off if it can't be resolved */ }
+    // A session, if this caller has one. Never a 401: the endpoint stays public,
+    // an unreadable or absent token simply means the anonymous answer.
+    let signedIn = false;
+    try {
+      const [scheme, token] = String(req.headers.authorization || '').split(' ');
+      if (scheme === 'Bearer' && token) {
+        if (token.startsWith('itacm_')) {
+          signedIn = !!(await require('./providers/postgres/apiKeyService').verifyRawKey(token));
+        } else {
+          signedIn = !!(await require('./providers').authProvider.verifyToken(token));
+        }
+      }
+    } catch { signedIn = false; }
+
+    const visible = signedIn
+      ? settings
+      : Object.fromEntries(PUBLIC_SETTINGS_KEYS
+        .filter((k) => settings[k] !== undefined)
+        .map((k) => [k, settings[k]]));
+
     res.json({
       success: true,
       data: {
@@ -235,7 +272,10 @@ function createApp() {
         onboardingVideoUrl,
         ownerMfaRequired,
         sso,
-        ...settings,
+        // Which answer this is. The client uses it to notice it is holding the
+        // anonymous one and fetch again once it has a session.
+        scope: signedIn ? 'full' : 'public',
+        ...visible,
       },
     });
   });

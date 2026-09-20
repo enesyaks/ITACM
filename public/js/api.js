@@ -91,9 +91,29 @@ const Auth = {
 };
 let AppConfig = { backend: 'postgres' };
 
+/**
+ * Make sure the config in hand is the signed-in one.
+ *
+ * The first fetch happens on the login screen, with no session, so it comes
+ * back without the instance settings. Called once the session exists, before
+ * anything that renders from them.
+ */
+async function ensureFullConfig() {
+  if (!Auth.token || AppConfig.scope === 'full') return AppConfig;
+  return loadAppConfig();
+}
+
+/**
+ * /api/config answers anonymously with branding and little else — the login and
+ * first-run screens are the only things that read it before anybody signs in.
+ * Everything the app proper needs (departments, locations, lifecycles, the
+ * handover templates) arrives only when the request carries a session, so the
+ * token goes along whenever we have one.
+ */
 async function loadAppConfig() {
   try {
-    const res = await fetch('/api/config');
+    const headers = Auth.token ? { authorization: `Bearer ${Auth.token}` } : undefined;
+    const res = await fetch('/api/config', headers ? { headers } : undefined);
     const json = await res.json();
     if (json.success) AppConfig = json.data;
   } catch { /* offline default */ }

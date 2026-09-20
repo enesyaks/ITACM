@@ -677,7 +677,7 @@ function hideBootSplash() {
   }
 }
 
-function showApp() {
+async function showApp() {
   hideBootSplash();
   if (needsForcedPasswordChange(Auth.profile)) {
     showMandatoryPasswordChange();
@@ -715,6 +715,13 @@ function showApp() {
   const scanBtn = $('#btn-quick-scan');
   if (scanBtn) scanBtn.style.display = Auth.canIam('asset', 'read') ? '' : 'none';
   applyBranding();
+  // Everything below renders from the instance settings, and the config in hand
+  // may still be the anonymous one fetched on the login screen.
+  if (typeof ensureFullConfig === 'function') {
+    await ensureFullConfig();
+    applyBranding();
+    if (typeof refreshLang === 'function') refreshLang();
+  }
   if (typeof initMobileShell === 'function' && !window.__mobileShellReady) {
     window.__mobileShellReady = true;
     initMobileShell();
