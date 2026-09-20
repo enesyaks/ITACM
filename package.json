@@ -46,7 +46,7 @@
     "imapflow": "^1.7.8",
     "jsonwebtoken": "^9.0.2",
     "ldapts": "^9.0.0",
-    "mailparser": "^3.9.22",
+    "mailparser": "^3.9.24",
     "nodemailer": "^9.1.1",
     "openid-client": "^6.8.8",
     "otplib": "^12.0.1",
