@@ -43,7 +43,7 @@
     "dotenv": "^17.4.2",
     "exceljs": "^4.4.0",
     "express": "^5.2.1",
-    "imapflow": "^1.7.8",
+    "imapflow": "^2.0.2",
     "jsonwebtoken": "^9.0.2",
     "ldapts": "^9.0.0",
     "mailparser": "^3.9.24",
