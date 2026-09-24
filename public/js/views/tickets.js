@@ -926,7 +926,9 @@ Views.tickets = async function (el, params = {}) {
         foot: `<button class="btn btn-outline" data-close>${esc(t('common.close'))}</button>`,
         onMount(ov) {
           ov.querySelectorAll('tr[data-open]').forEach((tr) => tr.addEventListener('click', () => {
-            if (tr.dataset.open) openTicket(tr.dataset.open);
+            // Stacked with a way back: the manager is going through a list,
+            // not leaving the report.
+            if (tr.dataset.open) openTicket(tr.dataset.open, { back: true });
           }));
         },
       });
@@ -1704,7 +1706,10 @@ Views.tickets = async function (el, params = {}) {
     });
   }
 
-  async function openTicket(id) {
+  /** opts.back: opened from a list that sits in a modal (the report's agent
+   *  drill-down). The detail then stacks on top of it and gets a Back button
+   *  instead of wiping the report away. */
+  async function openTicket(id, opts = {}) {
     const tk = await api('/tickets/' + encodeURIComponent(id)).catch((e) => { toast(e.message, 'error'); return null; });
     if (!tk) return;
     // If this ticket is awaiting approval AND the signed-in user is the pending
@@ -1754,6 +1759,11 @@ Views.tickets = async function (el, params = {}) {
           ${canUpdate ? `<button type="button" class="btn btn-outline btn-sm tkd-lnk-go" id="tk-link-go" disabled>${esc(t('tk.linkAction'))}</button>` : ''}` : ''}
       </section>` : '';
 
+    // A re-open (after a comment, a link, an approval…) replaces the detail
+    // that is already up rather than stacking a second copy over it.
+    if (opts.back) {
+      while ($('#modal-root')?.lastElementChild?._tkDetail) closeModal();
+    }
     openModal({
       title: `${tk.number} · ${tk.subject}`,
       xwide: true,
@@ -1886,15 +1896,21 @@ Views.tickets = async function (el, params = {}) {
             </aside>
           </div>
         </div>`,
-      foot: `<button class="btn btn-outline" data-close>${esc(t('common.close'))}</button>`,
+      stack: !!opts.back,
+      foot: opts.back
+        ? `<button class="btn btn-outline" data-close style="margin-right:auto"><span class="ms ms-sm">arrow_back</span> ${esc(t('common.back'))}</button>
+           <button class="btn btn-outline" id="tk-d-close-all">${esc(t('common.close'))}</button>`
+        : `<button class="btn btn-outline" data-close>${esc(t('common.close'))}</button>`,
       onMount(ov) {
+        ov._tkDetail = true;
+        $('#tk-d-close-all', ov)?.addEventListener('click', () => closeModal(true));
         const patch = async (body) => {
           try { await api('/tickets/' + encodeURIComponent(id), { method: 'PATCH', body }); toast(t('tk.saved'), 'success'); refresh(); }
           catch (err) { toast(err.message, 'error'); }
         };
         // Click a similar past ticket to open it.
         ov.querySelectorAll('.tkd-sim[data-open]').forEach((row) => row.addEventListener('click', () => {
-          if (row.dataset.open) { closeModal(); openTicket(row.dataset.open); }
+          if (row.dataset.open) { closeModal(); openTicket(row.dataset.open, opts); }
         }));
         // An advert that got past the filter. One action does the lot — classify,
         // close, take the clock off — and the sender is a separate question,
@@ -1907,7 +1923,9 @@ Views.tickets = async function (el, params = {}) {
               method: 'POST', body: { block, category: t('tk.rescode.spam') },
             });
             toast(block ? t('tk.spamDoneBlocked').replace('{a}', sender) : t('tk.spamDone'), 'success');
-            closeModal(true); refresh();
+            // Back mode: drop this dialog and the detail, land on the report list.
+            if (opts.back) { closeModal(); closeModal(); } else closeModal(true);
+            refresh();
           };
           openModal({
             stack: true,
@@ -1937,7 +1955,7 @@ Views.tickets = async function (el, params = {}) {
         // Duplicates: open one, link the ones that are the same problem, detach
         // one that turned out not to be.
         ov.querySelectorAll('.tkd-linked-banner [data-open], .tkd-lnk [data-open]').forEach((el) =>
-          el.addEventListener('click', () => { closeModal(); openTicket(el.dataset.open); }));
+          el.addEventListener('click', () => { closeModal(); openTicket(el.dataset.open, opts); }));
         const picks = () => [...ov.querySelectorAll('.tkd-lnk-pick:checked')].map((c) => c.value);
         const goBtn = $('#tk-link-go', ov);
         ov.querySelectorAll('.tkd-lnk-pick').forEach((c) => c.addEventListener('change', () => {
@@ -1950,14 +1968,14 @@ Views.tickets = async function (el, params = {}) {
           try {
             await api('/tickets/' + encodeURIComponent(id) + '/links', { method: 'POST', body: { ticketIds: ids } });
             toast(t('tk.linkDone').replace('{n}', ids.length), 'success');
-            closeModal(); openTicket(id); refresh();
+            closeModal(); openTicket(id, opts); refresh();
           } catch (err) { toast(err.message, 'error'); goBtn.disabled = false; }
         });
         ov.querySelectorAll('[data-unlink]').forEach((b) => b.addEventListener('click', async () => {
           try {
             await api('/tickets/' + encodeURIComponent(id) + '/links/' + encodeURIComponent(b.dataset.unlink), { method: 'DELETE' });
             toast(t('tk.unlinkDone'), 'success');
-            closeModal(); openTicket(id); refresh();
+            closeModal(); openTicket(id, opts); refresh();
           } catch (err) { toast(err.message, 'error'); }
         }));
         // Visibility segmented selector (Everyone / Approvers-only / IT-team-only);
@@ -2039,7 +2057,7 @@ Views.tickets = async function (el, params = {}) {
               await api('/tickets/' + encodeURIComponent(id) + '/send-approval', { method: 'POST', body: { level } });
               toast(t('tk.sentToApproval'), 'success');
               // Re-open the detail (fresh approval status) after formModal auto-closes.
-              setTimeout(() => openTicket(id), 0);
+              setTimeout(() => openTicket(id, opts), 0);
             },
           });
         });
@@ -2049,7 +2067,7 @@ Views.tickets = async function (el, params = {}) {
             toast(decision === 'approved' ? t('ch.approved') : t('ch.rejected'), 'success');
             if (typeof refreshNotifBadge === 'function') refreshNotifBadge();
             closeModal();
-            setTimeout(() => openTicket(id), 0);
+            setTimeout(() => openTicket(id, opts), 0);
           } catch (err) { toast(err.message, 'error'); }
         };
         $('#tk-d-appr-approve', ov)?.addEventListener('click', () => decideAppr('approved'));
@@ -2187,7 +2205,7 @@ Views.tickets = async function (el, params = {}) {
               try { await api('/tickets/' + encodeURIComponent(id) + '/documents', { method: 'POST', body: { base64: await readReplyB64(f), filename: f.name, internal: vf.internal, staffOnly: vf.staffOnly, commentId } }); }
               catch { /* best-effort per file */ }
             }
-            closeModal(); openTicket(id); refresh();
+            closeModal(); openTicket(id, opts); refresh();
           } catch (err) { toast(err.message, 'error'); }
         });
       },
