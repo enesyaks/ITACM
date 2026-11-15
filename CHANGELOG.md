@@ -6,6 +6,8 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.11.0] — 2026-11-15
+
 ### Added
 - **Several companies under one roof (holding support).** A group that runs more
   than one legal entity can now register each of them in **Product Catalog →
@@ -62,6 +64,155 @@ project adheres to [Semantic Versioning](https://semver.org/).
   — inline signature images are ignored. A reply is appended only when the sender
   is the ticket's own requester (or DMARC-authenticated), so no one can post into a
   ticket by guessing its number.
+- **Open a skipped mail anyway.** A message a filter refused is kept with its
+  mailbox id, and the Blocked-senders sheet gains an **Open anyway** action that
+  re-fetches it and turns it into a ticket despite the filter. The skip list is
+  now durable rather than in-memory, so it survives a restart.
+- **The requester is told their ticket exists.** A new editable **ticket
+  acknowledgement** template is sent when a ticket is created: the number, the
+  subject echoed back, the priority it landed on, and a link that opens that very
+  ticket — staff land on the ticket detail, a Portal or HR account on the same
+  ticket in its own self-service view. A requester the install knows always gets
+  it; a sender matching no employee only does once the desk turns on **answer
+  senders who are not in the system** under Integrations → SMTP, because replying
+  to a stranger confirms the mailbox is live.
+- **Requesters can rate a resolved ticket straight from the mail.** CSAT used to
+  be given only inside the Portal, which most requesters never open. The
+  resolution mail now carries five star links; the page they open asks for one
+  confirming click (mail scanners follow links, and a scanner's score cannot be
+  told apart from a person's), takes an optional comment, is localised and works
+  without JavaScript. A link rates one ticket once, for thirty days from the
+  resolution; a spent link shows the score given, an expired one says so and
+  points at replying to the mail instead, and reopening the ticket voids the link
+  — a fresh one is sent if it is resolved again.
+- **Link duplicate reports to one ticket and close them together.** The ticket
+  detail lists the requester's other open tickets (matched by sender address for
+  emailed tickets too) and ticking one links it to the ticket being worked.
+  Resolving or closing the master carries its followers with it, each notified
+  under its own number and given the master's resolution note if it has none. It
+  is deliberately not a merge: every ticket keeps its requester and history.
+  Followers also take the master's impact, urgency and category — so priority and
+  SLA target follow — and get its assignee when they have none; a follower that
+  already has an owner is never reassigned. Links are one hop deep.
+- **Adverts are closed as adverts.** The bulk-mail filter gains a disposition:
+  open no ticket (as before) or record one that is already closed with the new
+  resolution **spam** — no SLA clock, no assignment rules, no acknowledgement — so
+  a newsletter is on the record without counting against response times. For
+  marketing that gets past the header-only filter, the ticket detail offers
+  **Close as an advert**: it closes the ticket as spam, replaces its category,
+  removes its SLA (recorded in the activity trail), takes linked duplicates with
+  it, and asks whether to block the sender too.
+- **VIP requesters.** An employee can be flagged VIP, and their tickets are
+  raised one step of **urgency** — which the priority matrix carries into
+  priority and the SLA clock — rather than being pinned to a priority. In the
+  new-ticket form the raise happens visibly and can be dialled back; on the
+  server it applies only where nobody chose an urgency (Portal, inbound email,
+  API). The badge shows in the directory, the profile, the queue and the ticket
+  detail, and the assistant can answer questions about VIP tickets.
+- **An advanced tab behind the service-desk report, and an Excel workbook.** The
+  new tab shows the backlog curve (opened minus resolved across the window), SLA
+  compliance by priority and by agent with the ticket count beside every
+  percentage, the biggest overruns, CSAT per agent, fleet age and devices per
+  company. The same data downloads as a real `.xlsx` — fifteen sheets with frozen
+  headers, filters and in-cell data bars — and a CSV gives one row per ticket with
+  both SLA clocks beside their targets. Sections follow the user's permissions
+  rather than refusing the whole report. The daily trend chart now fills the panel
+  on short ranges and labels only as many days as fit.
+- **The AI assistant can see the service desk.** Asked how many tickets were
+  opened, it used to count audit-log entries, because it had no ticket data at
+  all. It now has curated, read-only views of tickets, problems and changes —
+  names resolved, free-text bodies and comments left out — subject to the same
+  per-record permissions as the UI.
+- **Pick the IMAP folder from the mailbox.** A **List folders** button on
+  email-to-ticket asks the mailbox what folders it has and offers them as
+  suggestions (Gmail's `[Gmail]/All Mail` included), since a mistyped folder
+  fails with the same error as a wrong password. A server that refuses the
+  listing leaves the field typable.
+- **HR names the new hire's manager and legal entity on the onboarding ticket.**
+  The employee record does not exist when HR files the ticket, so neither could
+  be set and nobody set them afterwards. The onboard form now has a manager
+  picker and, on installs with more than one company, an entity picker that
+  defaults to the holding; both are shown to IT in the review dialog and written
+  to the employee on approval. The manager must be an active employee and the
+  entity a live company, checked when the ticket is filed. An existing employee's
+  manager is only filled in, never overwritten, and employees created through the
+  HR flow now always get a company instead of none.
+
+### Changed
+- **The new-ticket form follows the order the call goes.** It opens with **who
+  the ticket is for**, and picking a person narrows the asset picker to the
+  devices they hold (a **Show all** link backs out) and shows their department
+  and device count. Section headings gave way to three quiet groups — who, what is
+  wrong, how it is handled — so the form fits without scrolling, the subject (the
+  only required field) stands out, and impact, urgency and category share a row.
+  The template picker is now searchable and shows each template's category and
+  approval chain before you pick it.
+- **Requesters are mailed only what is news.** Status-change mail used to go out
+  on every transition, including the desk's own bookkeeping. The requester now
+  gets a mail when the ticket is **resolved** (its own template, quoting the
+  resolution note, with the rating links) or **cancelled**, and nothing for the
+  steps in between. Assignee notifications are unchanged. The resolution note no
+  longer saves on blur: it has a **Send** button (or Ctrl/Cmd+Enter), and a note
+  typed but not yet sent rides along with the status change, so the mail is never
+  sent empty.
+- **Approval mails open the thing being approved.** A ticket approval mail links
+  to that ticket, whose detail carries Approve / Reject; other approvals open the
+  inbox at that request, and the requester's decision mail opens their own
+  ticket. Portal and HR approvers are carried to the approval on their own page.
+  A link to something already decided says so instead of opening a blank page.
+  Templates gain `{{approvalUrl}}` and `{{requestUrl}}`.
+- **Integrations is one pane at a time.** The fifteen configuration sections sit
+  behind a sticky side nav with a filter box, fronted by an overview board that
+  shows what is actually live (active webhooks, API keys, customised mail
+  templates and so on). Sections can be linked to directly. Behaviour and
+  permissions are unchanged.
+- **The mailbox OAuth callback page looks like ITACM and keeps an error on
+  screen.** A refusal from the provider (`redirect_uri_mismatch`, revoked
+  consent, expired state) is shown in the provider's own words with what to
+  check, and no longer auto-dismisses after 2.5 seconds. A manual poll now reports
+  every outcome — created, appended, filtered, duplicate, failed — and says why an
+  empty run was empty instead of a bare "0 tickets".
+- **Product catalogue redesigned.** Every word list on the page — categories,
+  brands and models, locations, departments, CPU/RAM/storage, legal entities,
+  ticket and supplier categories — shares one index, one layout and a search.
+  Category lifespans come first, drawn as lengths on one shared scale, and are
+  **set by dragging** the bar (keyboard and screen-reader accessible) as well as by
+  typing. A model's bar shows how far it departs from its category's figure, so
+  an override is visible at a glance and an inheriting model draws nothing. Each
+  entry shows how many assets use it, so dead wood is easy to spot. Ticket
+  categories now add and remove with an immediate save like the other lists.
+- **Consumables shows what to order.** Stock is drawn against each item's own
+  minimum, short items come first ordered by how short they are, and handing one
+  out is a minus button beside the count. The status pill, the table header and
+  the column picker are gone; edit and delete appear on hover or focus.
+- **Maintenance leads with how long a device has been away.** Each repair shows
+  the elapsed day count as its headline, longest first, grouped by service
+  company. Notes only announce themselves when there are any, and **Came back**
+  appears on hover.
+- **Mobile Lines reads as the bill.** The page opens with one sentence — the
+  monthly cost and how much of it goes to lines nobody holds — and lists idle
+  lines first. Lines reserved for an onboarding sit in their own group and stay
+  out of the idle total. Numbers are grouped as they are read aloud, money stays
+  aligned down the page, and the row rearranges itself on a phone. The column
+  picker is gone; the SIM serial is still searchable and on the edit form.
+- **Phone cards for the service-desk lists.** On a phone, tickets, problems,
+  changes, Portal requests and knowledge-base articles are now a card each instead
+  of a stack of label/value rows: the subject or title first, priority or risk as
+  the card's coloured left edge, status as the only filled chip, and extra lines
+  only when they carry something (an asset, a VIP requester, a pending approval, an
+  SLA that is still running).
+- **The HR requests screen and the onboarding device picker are redesigned.** The
+  onboard form is split into sections, and its equipment checklist is a grid of
+  tiles with a quantity stepper (1–99); the offboard form gains an explanatory
+  note, and the requests list filters with a segmented control showing a count per
+  status. In the onboarding-due dialog, reserving devices happens in a titled
+  panel with hardware and lines in counted groups, a selection counter, a clear
+  link and a **Reserve selected** button that stays disabled until something is picked.
+- **Handover signatures carry the form's date.** Both signature boxes on a
+  handover print the transaction date in the PDF and on screen instead of asking
+  for it by hand; a form with no usable date keeps the write-in line. Return
+  signatures are unchanged.
+- CI now tests on Node 22, the floor the app already declares.
 
 ### Fixed
 - **Email-to-ticket no longer opens the same ticket over and over.** The poller's
@@ -70,12 +221,91 @@ project adheres to [Semantic Versioning](https://semver.org/).
   the same email opened the same ticket again. Messages are now de-duplicated by
   Message-ID (a content hash when the header is missing), recorded durably, so a
   message becomes a ticket at most once whatever the mailbox does with the flag.
+- **Email-to-ticket on a well-used mailbox reaches today's mail.** Pointed at an
+  inbox with thousands of unread messages, every poll started at the oldest and
+  never got to new mail; and the connection dropped partway through each run, so
+  the poller opened one ticket and then stalled on it. The first poll now adopts
+  what is already in the mailbox as history and says so; later polls read only
+  newer mail, at most 25 messages per run, keeping their place message by message.
+  Mail somebody already opened in a mail client still becomes a ticket, and a
+  message is only marked read once there is a record of what happened to it, so
+  nothing vanishes without a trace.
+- **Replies reach the ticket and carry their files.** When outgoing and incoming
+  mail use different mailboxes, a requester's reply went to the sending account,
+  which nothing polls; ticket mail now sets the intake mailbox as Reply-To. Files
+  attached to a staff reply are now sent with it (up to 12MB, public attachments
+  only). Nobody is mailed about their own action any more. Staff replies to
+  requesters, which were silently not being sent because the reply template was
+  never registered, go out again, and the template preview shows sample ticket
+  data instead of raw placeholders.
+- **A reply lands on the ticket without the whole thread it quoted.** Inbound
+  bodies are trimmed where the sender's mail client started quoting, judged by
+  quoting markers rather than wording; a reply that is nothing but a quote is kept
+  as is.
+- **Mailbox failures say what failed.** A failed IMAP test logs the auth method,
+  host, account, folder and the server's own response, instead of a bare "Command
+  failed", and starting a mailbox OAuth flow logs the redirect URI in use — the
+  usual cause of `redirect_uri_mismatch`, and the Settings App URL silently
+  overrides `APP_URL`. No passwords or tokens are logged.
+- **An OAuth SMTP mailbox can be saved without a password.** Choosing **Connected
+  mailbox (OAuth)** with the password left blank was refused with "SMTP password
+  is missing".
+- **A template approval chain that opens nothing now says why.** With request
+  approvals switched off, tickets from a template with an approval step looked
+  like tickets that needed none. The ticket now records why no chain opened
+  (module off, no requester, nobody to ask), and the template dialog warns under
+  the switch while approvals are off.
+- **An HR account can open a ticket of its own.** A confined HR login was limited
+  to HR requests and My assets, so it could not raise a ticket, and ticket links
+  in its mail bounced it home. It now reaches its own tickets, the help centre and
+  its notifications, and a mailed ticket link opens the ticket — nothing beyond
+  the self-service routes HR was already allowed.
+- **A ticket opened from the report has a way back.** Opening a ticket from the
+  report's agent drill-down wiped the report; the detail now opens on top with a
+  Back button.
+- **Onboarding device picker keeps its selection.** Typing in the filter cleared
+  the ticks on devices already picked while they were still reserved on save; the
+  ticks now survive filtering, phone search
+  matches digits regardless of spaces, the remaining English strings are
+  translated, and the **Delivered** pill on HR requests is styled.
+- Smaller fixes: the **Show all** link under the asset picker works; the
+  knowledge-base priority stripe no longer covers the first letter of a title on
+  phones; filtered-out catalogue rows no longer keep rendering.
 
-### Added
-- **Open a skipped mail anyway.** A message a filter refused is kept with its
-  mailbox id, and the Blocked-senders sheet gains an **Open anyway** action that
-  re-fetches it and turns it into a ticket despite the filter. The skip list is
-  now durable rather than in-memory, so it survives a restart.
+### Security
+- **`/api/config` no longer describes the organisation to anonymous callers.** The
+  public answer the login screen needs used to include the postal address,
+  departments, offices, asset-tag scheme, approval policy and handover templates.
+  Anonymous callers now get only branding, language and setup state; the rest is
+  sent once signed in.
+- **Confined roles (Portal, HR) are checked against a normalised path.** Path
+  traversal and encoded forms such as `/api/me/../tickets` are refused rather than
+  matched by prefix. It was not exploitable behind the current router, but no
+  longer depends on that.
+- **Three holes in the new ticket mail features closed.** A crafted From header
+  could get a whole domain blocked (a blocked address taken from a message now
+  needs a local part); a Helpdesk agent could write to the mail blocklist through
+  **Close as an advert** (blocking now requires integration management, checked
+  before anything is written); and a Portal requester could see the master
+  ticket's subject and status through a duplicate link (link fields are dropped
+  from self-service payloads).
+- **The public rating page is rate-limited and its scripts run under a nonce.**
+  `/csat` falls under the per-IP limit, unexpected errors are not echoed to the
+  public, and the rating and mailbox-OAuth pages carry a per-response CSP nonce —
+  the OAuth page's script, which strips the signed state from the address bar, had
+  never been allowed to run.
+- **The mailbox OAuth callback is bound to the browser that started it** with an
+  HttpOnly cookie, like SSO, and its signed state is verified with a pinned
+  algorithm.
+- **The AI assistant treats tool results as data.** Ticket subjects written by
+  Portal users now reach the model, so text inside query results is never taken
+  as instructions.
+
+### Dependencies
+- nodemailer 9.0 → 10.3, imapflow 1.7 → 2.10, ldapts 8 → 9.2, dotenv 17 → 18,
+  mailparser 3.9 → 3.14, body-parser 2.4, express 5.3, pdfjs-dist 6.4,
+  openid-client 6.8.8, ip-address 10.7.5, brace-expansion, and the
+  production-minor-patch group. exceljs is new, for the report workbook.
 
 ## [1.10.0] — 2026-09-06
 
