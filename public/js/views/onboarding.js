@@ -17,6 +17,15 @@ function assetList(res) {
   if (Array.isArray(res)) return res;
   return res && res.items ? res.items : [];
 }
+// Asset categories are free text; known ones get a matching glyph.
+const OBN_CAT_ICONS = {
+  laptop: 'laptop_mac', notebook: 'laptop_mac', desktop: 'desktop_windows', pc: 'desktop_windows',
+  monitor: 'monitor', phone: 'smartphone', mobile: 'smartphone', tablet: 'tablet_mac',
+  headset: 'headset_mic', dock: 'dock', keyboard: 'keyboard', mouse: 'mouse', printer: 'print',
+};
+function obnCatIcon(c) {
+  return OBN_CAT_ICONS[String(c || '').trim().toLowerCase()] || 'devices_other';
+}
 function lineList(res) {
   if (Array.isArray(res)) return res;
   return res && res.items ? res.items : [];
@@ -423,11 +432,11 @@ async function openOnboardingDueModal({ force = false, focusId = null, onDone = 
       </div>
       ${hrRequestPanel(detail.hrRequest, items)}
       <h3 style="font-size:11px;text-transform:uppercase;color:var(--on-surface-variant);margin:0 0 6px">
-        Reserved items (${items.length})</h3>
+        ${esc(t('onb.reservedTitle'))} (${items.length})</h3>
       ${items.length === 0
         ? `<div class="banner banner-amber" style="margin-bottom:10px">${esc(t('emp.onboardNoItems'))}</div>`
         : `<div class="table-wrap" style="margin-bottom:12px"><table class="data">
-            <thead><tr><th>Item</th><th>Note</th><th></th></tr></thead>
+            <thead><tr><th>${esc(t('onb.colItem'))}</th><th>${esc(t('onb.colNote'))}</th><th></th></tr></thead>
             <tbody>
               ${items.map((it) => `
                 <tr>
@@ -438,18 +447,31 @@ async function openOnboardingDueModal({ force = false, focusId = null, onDone = 
                        <div class="cell-sub">${esc([it.operator, it.plan].filter(Boolean).join(' · ') || 'Line')}</div>`}
                   </td>
                   <td class="cell-sub">${esc(it.conditionNote || '—')}</td>
-                  <td class="actions"><button type="button" class="btn btn-outline btn-sm" data-rm="${esc(it.id)}"><span class="ms">close</span></button></td>
+                  <td class="actions"><button type="button" class="btn btn-outline btn-sm" data-rm="${esc(it.id)}" title="${esc(t('onb.removeItem'))}" aria-label="${esc(t('onb.removeItem'))}"><span class="ms">close</span></button></td>
                 </tr>`).join('')}
             </tbody></table></div>`}
-      <div id="obn-add-panel" class="hidden" style="margin-top:8px">
-        <div class="search-box" style="margin-bottom:8px;max-width:320px">
+      <section id="obn-add-panel" class="obn-add hidden" aria-labelledby="obn-add-title">
+        <header class="obn-add-head">
+          <span class="icon-chip obn-add-ic"><span class="ms">add_box</span></span>
+          <div class="grow">
+            <h4 id="obn-add-title">${esc(t('onb.addTitle'))}</h4>
+            <p>${esc(t('onb.addHint'))}</p>
+          </div>
+          <button type="button" class="obn-add-x" id="obn-add-close" aria-label="${esc(t('common.close'))}"><span class="ms">close</span></button>
+        </header>
+        <div class="search-box obn-add-search">
           <span class="ms">search</span>
-          <input type="search" id="obn-add-q" placeholder="Filter…" autocomplete="off">
+          <input type="search" id="obn-add-q" placeholder="${esc(t('onb.filterAll'))}" aria-label="${esc(t('onb.filterAll'))}" autocomplete="off">
         </div>
-        <div id="obn-add-assets" style="max-height:160px;overflow:auto;border:1px solid var(--outline-variant);border-radius:8px;margin-bottom:8px"></div>
-        <div id="obn-add-lines" style="max-height:120px;overflow:auto;border:1px solid var(--outline-variant);border-radius:8px;margin-bottom:8px"></div>
-        <button type="button" class="btn btn-outline btn-sm" id="obn-add-save">${esc(t('emp.onboardSaveItems'))}</button>
-      </div>
+        <div id="obn-add-lists" class="obn-add-lists"><div class="cell-sub">${esc(t('common.loading'))}</div></div>
+        <footer class="obn-add-foot">
+          <span class="obn-add-count" id="obn-add-count" aria-live="polite"></span>
+          <button type="button" class="obn-add-clear hidden" id="obn-add-clear">${esc(t('onb.clearSel'))}</button>
+          <span class="grow"></span>
+          <button type="button" class="btn btn-outline btn-sm" id="obn-add-cancel">${esc(t('common.cancel'))}</button>
+          <button type="button" class="btn btn-primary btn-sm" id="obn-add-save" disabled><span class="ms">bookmark_add</span> ${esc(t('onb.reserveSelected'))}</button>
+        </footer>
+      </section>
       <div id="obn-due-error" class="form-error hidden" style="margin-top:10px"></div>`;
 
     host.querySelectorAll('[data-pick]').forEach((btn) => {
@@ -522,11 +544,29 @@ async function openOnboardingDueModal({ force = false, focusId = null, onDone = 
         });
       });
 
-      $('#obn-due-add', overlay).addEventListener('click', async () => {
+      const addBtn = $('#obn-due-add', overlay);
+      const closeAddPanel = () => {
+        const panel = $('#obn-add-panel', overlay);
+        if (panel) panel.classList.add('hidden');
+        addBtn.classList.remove('active');
+        addBtn.setAttribute('aria-expanded', 'false');
+      };
+      addBtn.setAttribute('aria-expanded', 'false');
+      addBtn.addEventListener('click', async () => {
         const panel = $('#obn-add-panel', overlay);
         if (!panel) return;
-        panel.classList.toggle('hidden');
-        if (panel.classList.contains('hidden')) return;
+        if (!panel.classList.contains('hidden')) { closeAddPanel(); return; }
+        panel.classList.remove('hidden');
+        addBtn.classList.add('active');
+        addBtn.setAttribute('aria-expanded', 'true');
+        panel.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+
+        const lists = $('#obn-add-lists', panel);
+        const q = $('#obn-add-q', panel);
+        const countEl = $('#obn-add-count', panel);
+        const clearBtn = $('#obn-add-clear', panel);
+        const saveBtn = $('#obn-add-save', panel);
+        lists.innerHTML = `<div class="cell-sub">${esc(t('common.loading'))}</div>`;
 
         const [stockRes, linesRes] = await Promise.all([
           api('/assets?status=In+Stock&limit=500').catch(() => ({ items: [] })),
@@ -534,41 +574,82 @@ async function openOnboardingDueModal({ force = false, focusId = null, onDone = 
         ]);
         const stock = assetList(stockRes).filter((a) => a.category !== 'Network' && a.category !== 'Server');
         const freeLines = lineList(linesRes).filter((l) => !l.currentEmployeeId && !l.reservedForEmployeeId);
+        // Selection lives in these sets, not in the DOM: filtering repaints the
+        // rows, and a repaint must not silently forget (or hide) a pick.
         const pickedA = new Set();
         const pickedL = new Set();
 
-        const paint = (q) => {
-          const term = (q || '').trim().toLowerCase();
-          $('#obn-add-assets', panel).innerHTML = stock
-            .filter((a) => !term || `${a.assetTag} ${a.brand} ${a.model}`.toLowerCase().includes(term))
+        const syncCount = () => {
+          const n = pickedA.size + pickedL.size;
+          countEl.textContent = t('onb.selectedN').replace('{n}', String(n));
+          countEl.classList.toggle('on', n > 0);
+          clearBtn.classList.toggle('hidden', n === 0);
+          saveBtn.disabled = n === 0;
+        };
+
+        const group = (icon, title, total, rows, empty) => `
+          <div class="obn-add-group">
+            <div class="obn-add-group-h"><span class="ms">${icon}</span>${esc(title)}<span class="obn-add-n">${total}</span></div>
+            ${rows ? `<div class="obn-pick-list">${rows}</div>` : `<div class="obn-add-empty">${esc(empty)}</div>`}
+          </div>`;
+
+        const paint = (raw) => {
+          const term = (raw || '').trim().toLowerCase();
+          // Phone numbers are stored with spaces; compare digits to digits so
+          // "5051238" finds "+90 505 123 86 46".
+          const digits = term.replace(/\D/g, '');
+          const aRows = stock
+            .filter((a) => !term || `${a.assetTag} ${a.brand} ${a.model} ${a.category || ''} ${a.serialNumber || ''}`.toLowerCase().includes(term))
             .map((a) => `
-              <label class="obn-pick-row">
-                <input type="checkbox" data-a="${esc(a.id)}">
+              <label class="obn-pick-row obn-pick-row2${pickedA.has(a.id) ? ' on' : ''}">
+                <input type="checkbox" data-a="${esc(a.id)}"${pickedA.has(a.id) ? ' checked' : ''}>
+                <span class="obn-pick-ic"><span class="ms">${obnCatIcon(a.category)}</span></span>
+                <span class="obn-pick-main">
+                  <strong>${esc([a.brand, a.model].filter(Boolean).join(' ') || a.assetTag)}</strong>
+                  <span class="obn-pick-sub">${a.category ? esc(a.category) : ''}${a.serialNumber ? ` <span class="obn-pick-sn">SN ${esc(a.serialNumber)}</span>` : ''}</span>
+                </span>
                 <span class="obn-pick-tag">${esc(a.assetTag)}</span>
-                <span class="obn-pick-meta">${esc(a.brand)} ${esc(a.model)}</span>
-              </label>`).join('') || '<div class="cell-sub" style="padding:8px">No stock</div>';
-          $('#obn-add-lines', panel).innerHTML = freeLines
-            .filter((l) => !term || String(l.phoneNumber).includes(term))
+              </label>`).join('');
+          const lRows = freeLines
+            .filter((l) => !term
+              || `${l.operator || ''} ${l.plan || ''}`.toLowerCase().includes(term)
+              || (digits && String(l.phoneNumber || '').replace(/\D/g, '').includes(digits)))
             .map((l) => `
-              <label class="obn-pick-row">
-                <input type="checkbox" data-l="${esc(l.id)}">
-                <span class="obn-pick-meta">${esc(l.phoneNumber)}</span>
-              </label>`).join('') || '<div class="cell-sub" style="padding:8px">No lines</div>';
-          panel.querySelectorAll('[data-a]').forEach((cb) => {
-            cb.addEventListener('change', () => { if (cb.checked) pickedA.add(cb.dataset.a); else pickedA.delete(cb.dataset.a); });
-          });
-          panel.querySelectorAll('[data-l]').forEach((cb) => {
-            cb.addEventListener('change', () => { if (cb.checked) pickedL.add(cb.dataset.l); else pickedL.delete(cb.dataset.l); });
+              <label class="obn-pick-row obn-pick-row2${pickedL.has(l.id) ? ' on' : ''}">
+                <input type="checkbox" data-l="${esc(l.id)}"${pickedL.has(l.id) ? ' checked' : ''}>
+                <span class="obn-pick-ic"><span class="ms">sim_card</span></span>
+                <span class="obn-pick-main">
+                  <strong class="obn-pick-num">${esc(l.phoneNumber)}</strong>
+                  <span class="obn-pick-sub">${esc([l.operator, l.plan].filter(Boolean).join(' · ') || '—')}</span>
+                </span>
+              </label>`).join('');
+          lists.innerHTML = group('inventory_2', t('emp.onboardPickStock'), stock.length, aRows, t('onb.noStock'))
+            + group('sim_card', t('emp.onboardPickLines'), freeLines.length, lRows,
+              freeLines.length ? t('onb.noLineMatch') : t('onb.noLines'));
+          lists.querySelectorAll('input[data-a], input[data-l]').forEach((cb) => {
+            cb.addEventListener('change', () => {
+              const set = cb.dataset.a ? pickedA : pickedL;
+              const id = cb.dataset.a || cb.dataset.l;
+              if (cb.checked) set.add(id); else set.delete(id);
+              cb.closest('.obn-pick-row').classList.toggle('on', cb.checked);
+              syncCount();
+            });
           });
         };
         paint('');
-        const addAssets = $('#obn-add-assets', panel);
-        const addLines = $('#obn-add-lines', panel);
-        if (addAssets) addAssets.classList.add('obn-pick-list');
-        if (addLines) addLines.classList.add('obn-pick-list');
-        $('#obn-add-q', panel).oninput = (e) => paint(e.target.value);
-        $('#obn-add-save', panel).onclick = async () => {
+        syncCount();
+        q.value = '';
+        q.oninput = (e) => paint(e.target.value);
+        setTimeout(() => q.focus(), 50);
+        clearBtn.onclick = () => { pickedA.clear(); pickedL.clear(); paint(q.value); syncCount(); };
+        $('#obn-add-close', panel).onclick = closeAddPanel;
+        $('#obn-add-cancel', panel).onclick = closeAddPanel;
+        saveBtn.onclick = async () => {
           const err = $('#obn-due-error', overlay);
+          err.classList.add('hidden');
+          saveBtn.disabled = true;
+          const label = saveBtn.innerHTML;
+          saveBtn.innerHTML = `<span class="btn-spin"></span>${esc(t('common.sending'))}`;
           try {
             await api(`/onboardings/${encodeURIComponent(detail.id)}/items`, {
               method: 'POST',
@@ -577,11 +658,13 @@ async function openOnboardingDueModal({ force = false, focusId = null, onDone = 
                 lines: [...pickedL].map((id) => ({ lineId: id })),
               },
             });
-            panel.classList.add('hidden');
+            closeAddPanel();
             await renderBody(overlay);
             refreshOnboardingBell().catch(() => {});
-            toast(t('emp.onboardSaveItems'), 'success');
+            toast(t('onb.reservedOk'), 'success');
           } catch (e) {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = label;
             err.textContent = e.message || String(e);
             err.classList.remove('hidden');
           }

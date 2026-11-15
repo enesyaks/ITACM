@@ -38,68 +38,105 @@ Views.hr = async function (el) {
     : s === 'cancelled' ? 'hr.statusCancelled' : 'hr.statusPending');
   const statusPill = (s) => (s === 'pending' ? 'pill-amber' : s === 'cancelled' ? 'pill-slate' : 'pill-indigo');
 
-  // The global `input { width: 100% }` rule stretches a bare checkbox across the
-  // row, so pin it and let the label take the slack instead.
+  // Category names come from the server as free text; known ones get a
+  // matching glyph, anything else falls back to a generic device icon.
+  const CAT_ICONS = {
+    laptop: 'laptop_mac', notebook: 'laptop_mac', desktop: 'desktop_windows', pc: 'desktop_windows',
+    monitor: 'monitor', screen: 'monitor', phone: 'smartphone', mobile: 'smartphone',
+    headset: 'headset_mic', dock: 'dock', keyboard: 'keyboard', mouse: 'mouse',
+    tablet: 'tablet_mac', printer: 'print', sim: 'sim_card', webcam: 'videocam', camera: 'videocam',
+  };
+  const catIcon = (c) => CAT_ICONS[String(c || '').trim().toLowerCase()] || 'devices_other';
+
+  // Each tile is a div, not one big <label>: clicking the − / + buttons must
+  // not toggle the checkbox. The global `input { width: 100% }` rule is undone
+  // in CSS (.hr-tile input).
   const checklist = cats.map((c) =>
-    '<label class="hr-check" style="display:flex;align-items:center;gap:10px;margin:4px 0;cursor:pointer">'
-    + '<input type="checkbox" data-cat="' + esc(c) + '" style="width:auto;flex:0 0 auto;margin:0">'
-    + '<span style="flex:1">' + esc(c) + '</span>'
-    + '<input type="number" min="1" max="99" value="1" data-qty="' + esc(c) + '"'
-    + ' style="width:64px;flex:0 0 auto" disabled>'
+    '<div class="hr-tile" data-tile="' + esc(c) + '">'
+    + '<label class="hr-tile-main">'
+    + '<input type="checkbox" data-cat="' + esc(c) + '">'
+    + '<span class="hr-tile-ic"><span class="ms">' + catIcon(c) + '</span></span>'
+    + '<span class="hr-tile-name">' + esc(c) + '</span>'
     + '</label>'
+    + '<div class="hr-qty" aria-label="' + esc(t('hr.qty')) + '">'
+    + '<button type="button" data-step="-1" aria-label="' + esc(t('hr.qtyDec')) + '" disabled><span class="ms">remove</span></button>'
+    + '<input type="number" min="1" max="99" value="1" data-qty="' + esc(c) + '" aria-label="' + esc(t('hr.qty') + ' — ' + c) + '" disabled>'
+    + '<button type="button" data-step="1" aria-label="' + esc(t('hr.qtyInc')) + '" disabled><span class="ms">add</span></button>'
+    + '</div></div>'
   ).join('');
+
+  const cardHead = (icon, tone, title, sub) => '<div class="hr-card-head">'
+    + '<span class="icon-chip hr-chip-' + tone + '"><span class="ms">' + icon + '</span></span>'
+    + '<div><h3>' + esc(title) + '</h3><p>' + esc(sub) + '</p></div></div>';
+
+  const metric = (tint, tone, icon, label, value) => '<div class="card metric2 tint-' + tint + '">'
+    + '<div class="metric2-head" style="margin-bottom:0"><div>'
+    + '<div class="metric2-label">' + esc(label) + '</div>'
+    + '<div class="metric2-value">' + Number(value || 0) + '</div></div>'
+    + '<span class="icon-chip hr-chip-' + tone + '"><span class="ms">' + icon + '</span></span></div></div>';
 
   el.innerHTML = pageHead(t('nav.hr'), t('hr.sub'), '')
     + '<div class="grid-metrics" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-bottom:20px">'
-    + '<div class="card metric2 tint-indigo"><div class="metric2-label">' + esc(t('hr.pendingOnboard')) + '</div>'
-    + '<div class="metric2-value">' + Number(stats.hrOnboardPending || 0) + '</div></div>'
-    + '<div class="card metric2 tint-rose"><div class="metric2-label">' + esc(t('hr.pendingOffboard')) + '</div>'
-    + '<div class="metric2-value">' + Number(stats.hrOffboardPending || 0) + '</div></div>'
-    + '<div class="card metric2 tint-blue"><div class="metric2-label">' + esc(t('hr.approved')) + '</div>'
-    + '<div class="metric2-value">' + approvedCount + '</div></div></div>';
+    + metric('indigo', 'indigo', 'person_add', t('hr.pendingOnboard'), stats.hrOnboardPending)
+    + metric('rose', 'rose', 'person_remove', t('hr.pendingOffboard'), stats.hrOffboardPending)
+    + metric('blue', 'green', 'task_alt', t('hr.approved'), approvedCount)
+    + '</div>';
 
   if (canCreate) {
-    el.innerHTML += '<div class="grid grid-2" style="gap:20px;margin-bottom:20px;align-items:start">'
-      + '<div class="card card-pad"><h3 style="margin:0 0 12px">' + esc(t('hr.onboardTitle')) + '</h3>'
-      + '<div id="hr-on-err" class="form-error hidden" style="margin-bottom:10px"></div>'
-      + '<div class="grid grid-2">'
-      + '<div class="form-field"><label>' + esc(t('hr.fullName')) + ' *</label><input id="hr-on-name" autocomplete="name"></div>'
-      + '<div class="form-field"><label>' + esc(t('hr.email')) + '</label><input id="hr-on-email" type="email" autocomplete="email">'
-      + '<span class="cell-sub" style="display:block;margin-top:4px">' + esc(t('hr.emailOptionalHint')) + '</span></div>'
-      + '<div class="form-field"><label>' + esc(t('hr.department')) + '</label><select id="hr-on-dept"><option value="">—</option>'
+    el.innerHTML += '<div class="grid grid-2 hr-forms">'
+      + '<div class="card hr-card">'
+      + cardHead('person_add', 'indigo', t('hr.onboardTitle'), t('hr.onboardSub'))
+      + '<div class="hr-card-body">'
+      + '<div id="hr-on-err" class="form-error hidden" style="margin:0 0 14px"></div>'
+      + '<div class="hr-sec"><span class="ms">badge</span>' + esc(t('hr.secPerson')) + '</div>'
+      + '<div class="grid grid-2 hr-fields">'
+      + '<div class="form-field"><label for="hr-on-name">' + esc(t('hr.fullName')) + ' <span class="hr-req">*</span></label><input id="hr-on-name" autocomplete="name"></div>'
+      + '<div class="form-field"><label for="hr-on-email">' + esc(t('hr.email')) + '</label><input id="hr-on-email" type="email" autocomplete="email" aria-describedby="hr-on-email-hint">'
+      + '<span class="hr-hint" id="hr-on-email-hint">' + esc(t('hr.emailOptionalHint')) + '</span></div>'
+      + '<div class="form-field"><label for="hr-on-dept">' + esc(t('hr.department')) + '</label><select id="hr-on-dept"><option value="">—</option>'
       + (AppConfig.departments || []).map((d) => '<option value="' + esc(d) + '">' + esc(d) + '</option>').join('')
       + '</select></div>'
-      + '<div class="form-field"><label>' + esc(t('hr.title')) + '</label><input id="hr-on-title"></div>'
-      + '<div class="form-field"><label>' + esc(t('hr.startDate')) + ' *</label><input id="hr-on-date" type="date" value="' + esc(today) + '"></div>'
-      // Full width: the picker opens a result list, and half a row cramps it.
-      // The new hire has no employee record yet, so the manager is parked on
-      // the ticket and written to that record when IT approves.
+      + '<div class="form-field"><label for="hr-on-title">' + esc(t('hr.title')) + '</label><input id="hr-on-title"></div>'
+      + '<div class="form-field"><label for="hr-on-date">' + esc(t('hr.startDate')) + ' <span class="hr-req">*</span></label><input id="hr-on-date" type="date" value="' + esc(today) + '"></div>'
       // Only when there is a choice to make. One entity needs no question asked,
       // and the request falls back to it on the server either way.
       + (Companies.isMulti()
-        ? '<div class="form-field"><label>' + esc(t('co.field')) + '</label>'
+        ? '<div class="form-field"><label for="hr-on-company">' + esc(t('co.field')) + '</label>'
           + '<select id="hr-on-company">'
           + Companies.active().map((c) => '<option value="' + esc(c.id) + '"'
             + (c.id === Companies.defaultId() ? ' selected' : '') + '>' + esc(c.name) + '</option>').join('')
           + '</select></div>'
         : '')
+      // Full width: the picker opens a result list, and half a row cramps it.
+      // The new hire has no employee record yet, so the manager is parked on
+      // the ticket and written to that record when IT approves.
       + '<div class="form-field" style="grid-column:1/-1"><label>' + esc(t('hr.manager')) + '</label>'
       + '<div data-emp-search="managerEmployeeId"></div>'
-      + '<span class="cell-sub" style="display:block;margin-top:4px">' + esc(t('hr.managerHint')) + '</span></div>'
+      + '<span class="hr-hint">' + esc(t('hr.managerHint')) + '</span></div>'
       + '</div>'
-      + '<div style="margin:12px 0 8px;display:flex;justify-content:space-between;align-items:baseline">'
-      + '<span class="cell-sub">' + esc(t('hr.equipment')) + '</span>'
-      + '<span class="cell-sub" id="hr-on-count">0 ' + esc(t('hr.selectedItems')) + '</span></div>'
-      + '<div id="hr-on-cats">' + checklist + '</div>'
-      + '<div class="form-field" style="margin-top:10px"><label>' + esc(t('hr.notes')) + '</label><textarea id="hr-on-notes" rows="2"></textarea></div>'
-      + '<button class="btn btn-primary" id="hr-on-submit" style="margin-top:12px">' + esc(t('hr.submitOnboard')) + '</button></div>'
-      + '<div class="card card-pad"><h3 style="margin:0 0 12px">' + esc(t('hr.offboardTitle')) + '</h3>'
-      + '<div id="hr-off-err" class="form-error hidden" style="margin-bottom:10px"></div>'
-      + '<div class="form-field"><label>' + esc(t('hr.employee')) + ' *</label>'
+      + '<div class="hr-sec hr-sec-split"><span><span class="ms">devices</span>' + esc(t('hr.equipment')) + '</span>'
+      + '<span class="badge-count zero" id="hr-on-count" title="' + esc(t('hr.selectedItems')) + '">0</span></div>'
+      + '<p class="hr-hint" style="margin:-4px 0 10px">' + esc(t('hr.equipmentHint')) + '</p>'
+      + (cats.length
+        ? '<div id="hr-on-cats" class="hr-equip">' + checklist + '</div>'
+        : '<div class="hr-empty-cats">' + esc(t('hr.noCats')) + '</div>')
+      + '<div class="hr-sec"><span class="ms">notes</span>' + esc(t('hr.notes')) + '</div>'
+      + '<div class="form-field"><textarea id="hr-on-notes" rows="3" aria-label="' + esc(t('hr.notes')) + '" placeholder="' + esc(t('hr.notesPh')) + '"></textarea></div>'
+      + '</div>'
+      + '<div class="hr-card-foot"><button class="btn btn-primary" id="hr-on-submit"><span class="ms">send</span>' + esc(t('hr.submitOnboard')) + '</button></div>'
+      + '</div>'
+      + '<div class="card hr-card">'
+      + cardHead('person_remove', 'rose', t('hr.offboardTitle'), t('hr.offboardSub'))
+      + '<div class="hr-card-body">'
+      + '<div id="hr-off-err" class="form-error hidden" style="margin:0 0 14px"></div>'
+      + '<div class="form-field"><label>' + esc(t('hr.employee')) + ' <span class="hr-req">*</span></label>'
       + '<div data-emp-search="offEmployeeId"></div></div>'
-      + '<div class="form-field"><label>' + esc(t('hr.endDate')) + ' *</label><input id="hr-off-date" type="date" value="' + esc(today) + '"></div>'
-      + '<div class="form-field"><label>' + esc(t('hr.notes')) + '</label><textarea id="hr-off-notes" rows="2"></textarea></div>'
-      + '<button class="btn btn-primary" id="hr-off-submit" style="margin-top:12px">' + esc(t('hr.submitOffboard')) + '</button></div></div>';
+      + '<div class="form-field"><label for="hr-off-date">' + esc(t('hr.endDate')) + ' <span class="hr-req">*</span></label><input id="hr-off-date" type="date" value="' + esc(today) + '"></div>'
+      + '<div class="form-field"><label for="hr-off-notes">' + esc(t('hr.notes')) + '</label><textarea id="hr-off-notes" rows="3" placeholder="' + esc(t('hr.offNotesPh')) + '"></textarea></div>'
+      + '<div class="hr-note"><span class="ms">info</span><span>' + esc(t('hr.offboardInfo')) + '</span></div>'
+      + '</div>'
+      + '<div class="hr-card-foot"><button class="btn btn-primary hr-btn-rose" id="hr-off-submit"><span class="ms">send</span>' + esc(t('hr.submitOffboard')) + '</button></div>'
+      + '</div></div>';
   }
 
   function actionsFor(r) {
@@ -154,14 +191,19 @@ Views.hr = async function (el) {
     ? list.map(rowHtml).join('')
     : '<tr><td colspan="7" class="table-empty">' + esc(t('hr.none')) + '</td></tr>';
 
-  el.innerHTML += '<div class="card"><div class="card-head">'
+  const countOf = (st) => list.filter((r) => r.status === st).length;
+  const filterBtn = (val, label, n) => '<button type="button" class="seg-btn' + (val ? '' : ' active') + '"'
+    + ' data-filter="' + val + '" aria-pressed="' + (val ? 'false' : 'true') + '">' + esc(label)
+    + ' <span class="hr-seg-n">' + n + '</span></button>';
+
+  el.innerHTML += '<div class="card"><div class="card-head hr-list-head">'
     + '<h3>' + esc(t('hr.requests')) + '</h3>'
-    + '<select id="hr-filter" class="btn btn-outline btn-sm" style="min-width:160px">'
-    + '<option value="">' + esc(t('hr.filterAll')) + '</option>'
-    + '<option value="pending">' + esc(t('hr.statusPending')) + '</option>'
-    + '<option value="acknowledged">' + esc(t('hr.statusAcknowledged')) + '</option>'
-    + '<option value="cancelled">' + esc(t('hr.statusCancelled')) + '</option>'
-    + '</select></div>'
+    + '<div class="seg hr-seg" id="hr-filter" role="group" aria-label="' + esc(t('hr.status')) + '">'
+    + filterBtn('', t('hr.filterAll'), list.length)
+    + filterBtn('pending', t('hr.statusPending'), countOf('pending'))
+    + filterBtn('acknowledged', t('hr.statusAcknowledged'), countOf('acknowledged'))
+    + filterBtn('cancelled', t('hr.statusCancelled'), countOf('cancelled'))
+    + '</div></div>'
     + '<div class="table-wrap"><table class="data"><thead><tr>'
     + '<th>' + esc(t('hr.type')) + '</th><th>' + esc(t('hr.employee')) + '</th>'
     + '<th>' + esc(t('hr.eventDate')) + '</th><th>' + esc(t('hr.status')) + '</th>'
@@ -193,10 +235,13 @@ Views.hr = async function (el) {
     });
   }
 
-  const filterEl = el.querySelector('#hr-filter');
-  if (filterEl) {
-    filterEl.addEventListener('change', () => {
-      const want = filterEl.value;
+  el.querySelectorAll('#hr-filter [data-filter]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const want = btn.dataset.filter;
+      el.querySelectorAll('#hr-filter [data-filter]').forEach((b) => {
+        b.classList.toggle('active', b === btn);
+        b.setAttribute('aria-pressed', b === btn ? 'true' : 'false');
+      });
       let shown = 0;
       el.querySelectorAll('#hr-rows tr[data-status]').forEach((tr) => {
         const match = !want || tr.dataset.status === want;
@@ -206,7 +251,7 @@ Views.hr = async function (el) {
       const emptyBody = el.querySelector('#hr-empty');
       if (emptyBody) emptyBody.classList.toggle('hidden', shown > 0 || !list.length);
     });
-  }
+  });
 
   el.querySelectorAll('[data-cancel]').forEach((b) => {
     b.addEventListener('click', () => {
@@ -234,14 +279,27 @@ Views.hr = async function (el) {
   function syncItemCount() {
     if (!countEl) return;
     const n = el.querySelectorAll('input[data-cat]:checked').length;
-    countEl.textContent = n + ' ' + t('hr.selectedItems');
+    countEl.textContent = String(n);
+    countEl.classList.toggle('zero', n === 0);
   }
-  el.querySelectorAll('input[data-cat]').forEach((cb) => {
+  // Scope lookups to the tile rather than building a selector from the
+  // category name — server-supplied text may contain quotes.
+  el.querySelectorAll('.hr-tile').forEach((tile) => {
+    const cb = tile.querySelector('input[data-cat]');
+    const qty = tile.querySelector('input[data-qty]');
+    const steps = tile.querySelectorAll('[data-step]');
+    const clamp = () => { qty.value = String(Math.min(99, Math.max(1, Math.round(Number(qty.value) || 1)))); };
     cb.addEventListener('change', () => {
-      const qty = el.querySelector('input[data-qty="' + cb.dataset.cat + '"]');
-      if (qty) qty.disabled = !cb.checked;
+      tile.classList.toggle('on', cb.checked);
+      qty.disabled = !cb.checked;
+      steps.forEach((s) => { s.disabled = !cb.checked; });
       syncItemCount();
     });
+    qty.addEventListener('change', clamp);
+    steps.forEach((s) => s.addEventListener('click', () => {
+      qty.value = String((Number(qty.value) || 1) + Number(s.dataset.step));
+      clamp();
+    }));
   });
 
   const onSubmit = el.querySelector('#hr-on-submit');
@@ -251,7 +309,7 @@ Views.hr = async function (el) {
       err.classList.add('hidden');
       const items = [];
       el.querySelectorAll('input[data-cat]:checked').forEach((cb) => {
-        const qtyEl = el.querySelector('input[data-qty="' + cb.dataset.cat + '"]');
+        const qtyEl = cb.closest('.hr-tile').querySelector('input[data-qty]');
         items.push({ category: cb.dataset.cat, qty: Number(qtyEl && qtyEl.value) || 1 });
       });
       onSubmit.disabled = true;
